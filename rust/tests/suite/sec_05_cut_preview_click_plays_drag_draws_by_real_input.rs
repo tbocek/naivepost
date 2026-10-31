@@ -56,8 +56,8 @@ fn project(root: &Path) -> PathBuf {
     dir
 }
 
-fn playing(window: &adw::ApplicationWindow) -> bool {
-    ui::preview_player(window).transport.playing
+fn playing() -> bool {
+    ui::preview_player().transport.playing
 }
 
 fn status(window: &adw::ApplicationWindow) -> String {
@@ -78,11 +78,11 @@ fn click_only_plays(
     playing_after: bool,
     what: &str,
 ) {
-    let fx = ui::review_cut_of(window).fx;
+    let fx = ui::window_preview::newest_review_cut().fx;
     real_click(preview, at.0, at.1, 1);
     common::settle();
     assert_eq!(
-        playing(window),
+        playing(),
         playing_after,
         "{what}: the click toggled play (status \"{}\")",
         status(window)
@@ -93,12 +93,12 @@ fn click_only_plays(
         status(window)
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "{what}: the click took no zoom in hand (status \"{}\")",
         status(window)
     );
     assert_eq!(
-        ui::review_cut_of(window).fx,
+        ui::window_preview::newest_review_cut().fx,
         fx,
         "{what}: the click changed no effect"
     );
@@ -120,14 +120,15 @@ fn sec_05_cut_a_click_on_the_preview_plays_and_a_drag_draws_by_real_input() {
         common::settle_workers();
         let preview = common::widget_in(&window, "preview-panel").expect("the preview panel");
         let (w, h) = (f64::from(preview.width()), f64::from(preview.height()));
-        assert!(!playing(&window), "a fresh preview is paused");
+        assert!(!playing(), "a fresh preview is paused");
         assert!(!undo_lit(&window), "a fresh page has nothing to undo");
 
         // (3) Nothing placed under the line: a click plays, a second pauses.
         ui::set_playhead(&window, 10.0);
         common::settle();
         assert!(
-            ui::cut_zoom_hand::framed_boxes(&ui::review_cut_of(&window), 10.0, (w, h)).is_empty(),
+            ui::cut_zoom_hand::framed_boxes(&ui::window_preview::newest_review_cut(), 10.0, (w, h))
+                .is_empty(),
             "no zoom stands at 0:10"
         );
         click_only_plays(
@@ -150,8 +151,8 @@ fn sec_05_cut_a_click_on_the_preview_plays_and_a_drag_draws_by_real_input() {
         common::settle();
         assert!(
             !ui::cut_zoom_hand::framed_boxes(
-                &ui::review_cut_of(&window),
-                ui::cut_lane::paste_line(&window),
+                &ui::window_preview::newest_review_cut(),
+                ui::cut_lane::paste_line(),
                 (w, h)
             )
             .is_empty(),
@@ -172,11 +173,11 @@ fn sec_05_cut_a_click_on_the_preview_plays_and_a_drag_draws_by_real_input() {
             "over a zoom, second click",
         );
         // ...and a click INSIDE the zoom's box is the same click: it plays and pauses, and takes nothing in hand.
-        let fit =
-            ui::cut_preview_frame::fit_size_of(&window, ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
-        let line_at = ui::cut_lane::paste_line(&window);
+        let fit = ui::cut_preview_frame::fit_size_of(ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
+        let line_at = ui::cut_lane::paste_line();
         let (_, zoom_box) =
-            ui::cut_zoom_hand::framed_boxes(&ui::review_cut_of(&window), line_at, fit)[0];
+            ui::cut_zoom_hand::framed_boxes(&ui::window_preview::newest_review_cut(), line_at, fit)
+                [0];
         let inside = (zoom_box.0 + zoom_box.2 / 2.0, zoom_box.1 + zoom_box.3 / 2.0);
         click_only_plays(
             &window,
@@ -194,7 +195,7 @@ fn sec_05_cut_a_click_on_the_preview_plays_and_a_drag_draws_by_real_input() {
         );
 
         // (2) A drag clear of the box draws a new rectangle: its form opens, and play does not start.
-        let fx = ui::review_cut_of(&window).fx;
+        let fx = ui::window_preview::newest_review_cut().fx;
         real_drag(&preview, (w * 0.6, h * 0.55), (w * 0.9, h * 0.9), 1);
         common::settle();
         assert!(
@@ -202,10 +203,13 @@ fn sec_05_cut_a_click_on_the_preview_plays_and_a_drag_draws_by_real_input() {
             "a drag clear of the box drew a new rectangle (status \"{}\")",
             status(&window)
         );
-        assert!(!playing(&window), "the drag did not start play");
-        assert!(ui::held_effect().is_none(), "the drag took no zoom in hand");
+        assert!(!playing(), "the drag did not start play");
+        assert!(
+            ui::cut_hand::held_effect().is_none(),
+            "the drag took no zoom in hand"
+        );
         assert_eq!(
-            ui::review_cut_of(&window).fx,
+            ui::window_preview::newest_review_cut().fx,
             fx,
             "the drag wrote nothing until its form is applied"
         );

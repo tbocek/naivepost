@@ -192,7 +192,7 @@ fn seeded_after_stage(dir: &Path) -> cut::Cut {
 pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::cut_card_preview::set_card_snapshot_dir(dir);
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(window, &seeded());
+    ui::seed_review_cut(&seeded());
     // Deepen the zoom so a 5 s card is a real bar (at 4 px/s it is a hairline).
     for _ in 0..4 {
         ui::press_zoom(window, true);
@@ -202,7 +202,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     // Scroll stays at the head so the whole staged span is inside the window.
     let staged = seeded_after_stage(dir);
     // Drawn FROM the cut before any press: `cut_insert::place` is Apply's call, so the three real presses below reproduce this state (re-seeded after each).
-    ui::seed_review_cut(window, &staged);
+    ui::seed_review_cut(&staged);
 
     // 1. BETWEEN via the real buttons. Its words come FIRST in the log line.
     ui::note_place(true);
@@ -218,7 +218,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     said.push(ui::press_insert_apply(window));
 
     // 2. OVER: a drawn selection supplies length and overwrite.
-    ui::seed_review_cut(window, &staged);
+    ui::seed_review_cut(&staged);
     ui::draw_selection(
         window,
         crate::cut_select::Surface::PictureRow(0),
@@ -236,7 +236,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     said.push(ui::press_insert_apply(window));
 
     // 3. LANE: a video onto a row of its own; the lane radio appears only for a video-shaped file and cuts nothing.
-    ui::seed_review_cut(window, &staged);
+    ui::seed_review_cut(&staged);
     ui::clear_selection(window);
     ui::set_line_position(window, LinePos { t: 34.0 });
     said.push(ui::insert_chosen_with_length(
@@ -257,10 +257,10 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
         Some(5.0),
     ));
     said.push(ui::close_insert_form(window));
-    ui::seed_review_cut(window, &staged);
+    ui::seed_review_cut(&staged);
 
     // 4. §5's own length and §S4's sound tick: the same card as stage 1 with no length (Seconds reads 1.6), then re-opened on a card that brings a sound. The form left open is what `05-insert-form` paints.
-    ui::seed_review_cut(window, &staged);
+    ui::seed_review_cut(&staged);
     ui::note_place(true);
     ui::clear_selection(window);
     ui::set_line_position(window, LinePos { t: 15.0 });
@@ -303,10 +303,10 @@ fn find_form_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
 }
 
 /// The band's arithmetic behind the shot, for the log line: lanes after the LANE insert and the video's new length.
-pub fn describe(window: &adw::ApplicationWindow) -> String {
+pub fn describe() -> String {
     let held = cut::Cut {
-        segs: ui::review_cut_segs(window),
-        lanes: ui::review_lanes(window),
+        segs: ui::review_cut_segs(),
+        lanes: ui::review_lanes(),
         ..Default::default()
     };
     let lane_names: Vec<&str> = held.lanes.iter().map(|lane| lane.name.as_str()).collect();

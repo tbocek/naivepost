@@ -739,8 +739,7 @@ pub fn set_title(
 }
 
 /// `set_description`: always replaced (S8); a blank reply does not keep last run's prose.
-pub fn set_description(publish: &Publish, text: &str) -> String {
-    let _ = publish;
+pub fn set_description(text: &str) -> String {
     format!("description set ({} chars)", text.chars().count())
 }
 

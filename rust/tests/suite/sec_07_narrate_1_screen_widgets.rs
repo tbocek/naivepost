@@ -210,7 +210,7 @@ fn round(app: &adw::Application) {
             !ui::narrate_band::red_bar_seen_for_test(),
             "a fresh page has no clicked red bar of its own yet"
         );
-        let gesture = ui::narrate_band::band_gesture_for_test(&window)
+        let gesture = ui::narrate_band::band_gesture_for_test()
             .expect("the page attached one drag gesture to `take-band`");
         let (_seconds, pps) = ui::narrate_band::painted_view_for_test();
         // The band's own mapping at this allocation: whatever px/s its painter is working with, the
@@ -253,7 +253,7 @@ fn round(app: &adw::Application) {
     // --- S3: ＋ and − act on that selection; a short one is refused ----------------------
     {
         let window = narrate_page(app, base_state());
-        let gesture = ui::narrate_band::band_gesture_for_test(&window).expect("the band gesture");
+        let gesture = ui::narrate_band::band_gesture_for_test().expect("the band gesture");
         let (from_px, to_px) = (100.0, 400.0);
         gesture.emit_by_name::<()>("drag-begin", &[&from_px, &20.0]);
         gesture.emit_by_name::<()>("drag-update", &[&(to_px - from_px), &0.0]);
@@ -676,7 +676,7 @@ fn second_round(app: &adw::Application) {
             &std::env::current_dir().unwrap(),
         ))
         .expect("the scratch session folder");
-        let reference = naivepost::narrate_data::base_reference(&tree);
+        let reference = tree.voice_ref_base_wav();
         std::fs::create_dir_all(reference.parent().expect("narrate folder")).expect("folder");
         // 60 s of 8 kHz mono: long enough that zooming past fit outgrows the strip.
         write_wav(&reference, 8_000, 60 * 8_000);
@@ -763,7 +763,7 @@ fn second_round(app: &adw::Application) {
         // file (rate from the header, sample count from the bytes after its `data` chunk) instead of
         // trusting a slot only a real paint would have filled.
         let seconds = {
-            let path = naivepost::narrate_data::base_reference(&tree);
+            let path = tree.voice_ref_base_wav();
             let (_, rate) = naivepost::voice_ref::wav_header(&path).expect("the 60 s reference");
             let bytes = std::fs::read(&path).expect("the reference wav");
             let data_at = (12..bytes.len().saturating_sub(4))
@@ -796,7 +796,7 @@ fn second_round(app: &adw::Application) {
             naivepost::ui::narrate_band::zoom()
         );
         let asked = lane.width_request();
-        // The request is exactly what `fit_lane_to_view` handed the widget after that notch, computed
+        // The request is exactly what `narrate_band::note_lane_size` handed the widget after that notch, computed
         // through the same door the program uses.
         let want =
             naivepost::ui::narrate_band::lane_width(ui::narrate_band::zoom(), seconds, viewport);
@@ -890,7 +890,7 @@ fn text_of(widget: &gtk::Widget) -> String {
 /// so the icon swap cannot have broken the wire.
 fn s9_glyph_round(app: &adw::Application) {
     let window = narrate_page(app, base_state());
-    let gesture = ui::narrate_band::band_gesture_for_test(&window).expect("the band gesture");
+    let gesture = ui::narrate_band::band_gesture_for_test().expect("the band gesture");
     // Make a take first, by dragging and pressing the real ＋, so there is something to take away.
     ui::narrate_band::clear_hand();
     gesture.emit_by_name::<()>("drag-begin", &[&100.0f64, &20.0f64]);

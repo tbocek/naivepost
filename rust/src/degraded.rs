@@ -240,8 +240,7 @@ pub fn tools_fallback(error: &str, round: u32) -> ToolsFallback {
     }
 }
 
-pub fn cut_off(finish_reason: &str, has_text: bool) -> bool {
-    let _ = has_text;
+pub fn cut_off(finish_reason: &str) -> bool {
     finish_reason == FINISH_LENGTH
 }
 

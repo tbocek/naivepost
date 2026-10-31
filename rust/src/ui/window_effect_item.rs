@@ -9,9 +9,7 @@ use crate::ui::cut_svg::press_svg_item;
 use crate::ui::cut_text_hand::press_text_item;
 use crate::ui::cut_volume_hand::press_volume_item;
 use crate::ui::cut_zoom_hand::press_zoom_item;
-use crate::ui::window::{
-    paste_line, record_edit, refresh_effects_lane, review_cut_of, save_insert_cut,
-};
+use crate::ui::window::{record_edit, refresh_effects_lane, save_insert_cut};
 
 pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind) -> String {
     // F3.1 S1: a Zoom is NOT recorded here. The dropdown's ⊕ Zoom entry ARMS a drag — the box someone draws is
@@ -47,10 +45,10 @@ pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind)
     if kind == cut::EffectKind::Label {
         return press_label_item(window);
     }
-    let mut cut_ = review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     // The red line, read the way Paste reads it: the live preview's playhead if one is going, else the
     // saved line position. No new position store — the line already has one owner.
-    let at = paste_line(window);
+    let at = crate::ui::cut_lane::paste_line();
     fx_record::record_into(&mut cut_, kind, at, fx_record::NEW_EFFECT_SECONDS);
     save_insert_cut(&cut_);
     record_edit(window, &cut_);

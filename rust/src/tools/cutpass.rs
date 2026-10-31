@@ -29,12 +29,6 @@ pub const SHORT_TARGET_SECONDS: f64 = 60.0;
 /// video, so [`footage_window`] guards on this rather than a bare `0.0`.
 pub const NO_TARGET: f64 = 0.0;
 
-/// Seconds as the model reads them: [`crate::tools::mm_ss`] under this module's name. Past an hour the
-/// minutes keep counting: `clock(3725.0)` is `62:05`.
-pub fn clock(seconds: f64) -> String {
-    crate::tools::mm_ss(seconds)
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     pub start: f64,
@@ -104,8 +98,8 @@ impl Plan {
         if end < start {
             return crate::tools::error(&format!(
                 "your segment ends at {} and starts at {}, so it has no length",
-                clock(end),
-                clock(start)
+                crate::tools::mm_ss(end),
+                crate::tools::mm_ss(start)
             ));
         }
         if start < 0.0 || end > self.footage_end {
@@ -115,9 +109,9 @@ impl Plan {
             return crate::tools::error(&format!(
                 "{} is past the end of the footage, which runs to {} -- keep your segment inside \
                  0 to {}",
-                clock(outside),
-                clock(self.footage_end),
-                clock(self.footage_end)
+                crate::tools::mm_ss(outside),
+                crate::tools::mm_ss(self.footage_end),
+                crate::tools::mm_ss(self.footage_end)
             ));
         }
         // No footage under an edge: this module only refuses; the caller says where the gaps are.
@@ -128,10 +122,10 @@ impl Plan {
         {
             return crate::tools::error(&format!(
                 "{} to {} has no footage under it -- there is a gap from {} to {}",
-                clock(start),
-                clock(end),
-                clock(gap.0),
-                clock(gap.1)
+                crate::tools::mm_ss(start),
+                crate::tools::mm_ss(end),
+                crate::tools::mm_ss(gap.0),
+                crate::tools::mm_ss(gap.1)
             ));
         }
         let placed = self.snap((start, end));
@@ -144,10 +138,10 @@ impl Plan {
         {
             return crate::tools::error(&format!(
                 "{} to {} overlaps the segment already added at {} to {}",
-                clock(placed.0),
-                clock(placed.1),
-                clock(other.start),
-                clock(other.end)
+                crate::tools::mm_ss(placed.0),
+                crate::tools::mm_ss(placed.1),
+                crate::tools::mm_ss(other.start),
+                crate::tools::mm_ss(other.end)
             ));
         }
         let mark = self.mark_seconds(placed.0, placed.1);
@@ -183,7 +177,7 @@ impl Plan {
         }) else {
             return crate::tools::error(&format!(
                 "there is no segment starting at {} -- the cut holds {} segment(s), at {}",
-                clock(start),
+                crate::tools::mm_ss(start),
                 self.segments.len(),
                 self.starts()
             ));
@@ -204,7 +198,7 @@ impl Plan {
         }) else {
             return crate::tools::error(&format!(
                 "there is no segment starting at {} -- the cut holds {} segment(s), at {}",
-                clock(start),
+                crate::tools::mm_ss(start),
                 self.segments.len(),
                 self.starts()
             ));
@@ -284,7 +278,7 @@ impl Plan {
         }
         self.segments
             .iter()
-            .map(|segment| clock(segment.start))
+            .map(|segment| crate::tools::mm_ss(segment.start))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -449,14 +443,14 @@ pub fn cut_problems(status: &Status) -> Vec<String> {
     if low > 0.0 && status.footage < low {
         problems.push(format!(
             "{} kept is under the {} this cut accepts -- add footage or speed it up",
-            clock(status.footage),
-            clock(low)
+            crate::tools::mm_ss(status.footage),
+            crate::tools::mm_ss(low)
         ));
     } else if high > 0.0 && status.footage > high {
         problems.push(format!(
             "{} kept is over the {} this cut accepts -- drop some footage",
-            clock(status.footage),
-            clock(high)
+            crate::tools::mm_ss(status.footage),
+            crate::tools::mm_ss(high)
         ));
     }
     if status.segments < status.min_segments {
@@ -475,7 +469,7 @@ pub fn cut_problems(status: &Status) -> Vec<String> {
         problems.push(format!(
             "the segment at {} runs {:.1} s on screen, under the shortest stretch this cut keeps \
              ({MIN_SCENE_SECONDS} s)",
-            clock(short.0),
+            crate::tools::mm_ss(short.0),
             short.1
         ));
     }

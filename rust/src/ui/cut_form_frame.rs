@@ -215,8 +215,8 @@ pub fn set_pinned(window: &adw::ApplicationWindow, heading: Option<&str>) -> boo
     true
 }
 
-pub fn open_form_title(window: &adw::ApplicationWindow) -> Option<String> {
-    if let Some((path, _, _)) = ui::insert_open(window) {
+pub fn open_form_title() -> Option<String> {
+    if let Some((path, _, _)) = ui::insert_open() {
         let base = std::path::Path::new(&path)
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
@@ -226,17 +226,17 @@ pub fn open_form_title(window: &adw::ApplicationWindow) -> Option<String> {
     if ui::zoom_form_open().is_some() {
         return Some("place the zoom".to_string());
     }
-    if ui::held_effect().is_some() {
+    if ui::cut_hand::held_effect().is_some() {
         return Some("edit the effect".to_string());
     }
-    if ui::held_segment().is_some() || ui::held_edge().is_some() {
+    if ui::cut_hand::held_clip_or_edge().is_some() || ui::cut_hand::held_edge().is_some() {
         return Some("picked up clip".to_string());
     }
     None
 }
 
 pub fn press_close(window: &adw::ApplicationWindow) -> String {
-    if ui::insert_open(window).is_some() {
+    if ui::insert_open().is_some() {
         let said = ui::close_insert_form(window);
         set_pinned(window, None);
         return said;

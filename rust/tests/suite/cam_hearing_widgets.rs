@@ -66,10 +66,10 @@ fn seeded_cut() -> cut::Cut {
 }
 
 /// This window's cut as a whole, read back through the same accessors the page draws from.
-fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
+fn cut_of() -> cut::Cut {
     let mut fresh = cut::Cut::default();
-    fresh.segs = ui::review_cut_segs(window);
-    fresh.lanes = ui::review_lanes(window);
+    fresh.segs = ui::review_cut_segs();
+    fresh.lanes = ui::review_lanes();
     fresh
 }
 
@@ -111,7 +111,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     common::wait_for_stable_layout(&window);
-    ui::seed_review_cut(&window, &seeded_cut());
+    ui::seed_review_cut(&seeded_cut());
     // The line sits at 25 s: inside BOTH recordings' span, and inside the scene whose picture comes
     // from camera 0 — which is what makes S3's "the cut shows camera 1 here" sentence owed.
     ui::set_line_position(&window, LinePos { t: 25.0 });
@@ -132,7 +132,7 @@ fn check_a_row_click_watches_it_and_says_what_the_cut_shows(app: &adw::Applicati
     // named controls stay in the tree, unseen, as the doors the band's marks fire.
     ui::camera_rows_box(&window).expect("the Cut page keeps `camera-rows`");
     assert_eq!(
-        ui::cut_view::band_scene_for(&window).row_count,
+        ui::cut_view::band_scene_for().row_count,
         2,
         "the band draws a row per camera"
     );
@@ -156,7 +156,7 @@ fn check_a_row_click_watches_it_and_says_what_the_cut_shows(app: &adw::Applicati
     settle();
     assert_eq!(ui::watched_row(), Some(1), "the click watched row 2");
     assert_eq!(
-        ui::camera_watch(&window).borrow().row,
+        ui::camera_watch().borrow().row,
         Some(1),
         "and the window's own watch agrees"
     );
@@ -193,7 +193,7 @@ fn check_the_lens_badge_moves_the_picture_to_that_row(app: &adw::Application) {
     // A hold from an earlier check would win over the line (S1's "the scene under the line, OR THE HELD
     // ONE"), so this check starts from no hold — otherwise it edits whatever a previous click picked up.
     ui::set_held_clip(None);
-    let before = ui::review_cut_segs(&window);
+    let before = ui::review_cut_segs();
     assert_eq!(
         before[0].cam, 0,
         "the scene under the line starts out shown from row 1"
@@ -207,7 +207,7 @@ fn check_the_lens_badge_moves_the_picture_to_that_row(app: &adw::Application) {
     lens.emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let after = ui::review_cut_segs(&window);
+    let after = ui::review_cut_segs();
     assert_eq!(after[0].cam, 1, "the scene is shown from row 2 now");
     assert_eq!(
         (after[0].s, after[0].e),
@@ -239,7 +239,7 @@ fn check_the_speaker_badge_silences_this_scene(app: &adw::Application) {
 
     badge.set_active(true);
     settle();
-    let segs = ui::review_cut_segs(&window);
+    let segs = ui::review_cut_segs();
     assert!(
         !segs[0].hears("cam1"),
         "the press put the lane in this scene's quiet list: {:?}",
@@ -250,7 +250,7 @@ fn check_the_speaker_badge_silences_this_scene(app: &adw::Application) {
 
     badge.set_active(false);
     settle();
-    let segs = ui::review_cut_segs(&window);
+    let segs = ui::review_cut_segs();
     assert!(
         segs[0].hears("cam1"),
         "pressing again took the lane back: {:?}",
@@ -283,7 +283,7 @@ fn check_a_held_scene_is_the_one_the_badge_silences(app: &adw::Application) {
 
     badge.set_active(true);
     settle();
-    let segs = ui::review_cut_segs(&window);
+    let segs = ui::review_cut_segs();
     assert!(
         !segs[1].hears("cam1"),
         "the press silenced the HELD scene (index 1), not the line's: {:?}",
@@ -316,7 +316,7 @@ fn check_the_gutter_switch_speaks_for_the_whole_cut(app: &adw::Application) {
 
     switch.set_active(false);
     settle();
-    let cut_now = cut_of(&window);
+    let cut_now = cut_of();
     assert!(
         hear::all_silent(&cut_now, &["cam1"]),
         "every kept scene now lists the lane: {:?}",
@@ -363,7 +363,7 @@ fn check_play_takes_the_preview_back(app: &adw::Application) {
         "\u{25b6} handed the preview back to the cut"
     );
     assert_eq!(
-        ui::camera_watch(&window).borrow().row,
+        ui::camera_watch().borrow().row,
         None,
         "and the watch holds no row"
     );
@@ -469,12 +469,12 @@ fn window_round() {
 /// (`Seg::mute`), says so, and one ↶ brings it back.
 fn check_the_row_switch_speaks_for_the_whole_row(app: &adw::Application) {
     let window = cut_window(app);
-    ui::reopen_history_on(&window, &seeded_cut());
+    ui::reopen_history_on(&seeded_cut());
     let switch = ui::toggle_button(&window, "row-switch-1").expect("`row-switch-1` exists");
     assert!(switch.is_active(), "row 1 is heard at first");
     switch.set_active(false);
     settle();
-    let cut_now = cut_of(&window);
+    let cut_now = cut_of();
     assert!(
         cut_now
             .segs
@@ -495,7 +495,7 @@ fn check_the_row_switch_speaks_for_the_whole_row(app: &adw::Application) {
     assert!(!switch.is_active(), "the face reads OFF");
     common::click(&window, "undo-button");
     assert!(
-        cut_of(&window).segs.iter().all(|seg| !seg.mute),
+        cut_of().segs.iter().all(|seg| !seg.mute),
         "one ↶ brings the row's sound back"
     );
     window.close();
@@ -514,8 +514,8 @@ fn check_a_switch_whose_press_changes_nothing_presses_once(app: &adw::Applicatio
         off: 0.0,
         dur: 5.0,
     });
-    ui::seed_review_cut(&window, &seeded);
-    ui::reopen_history_on(&window, &seeded);
+    ui::seed_review_cut(&seeded);
+    ui::reopen_history_on(&seeded);
     ui::refresh_camera_rows(&window);
     settle();
     let switch =

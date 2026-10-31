@@ -6,7 +6,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::cut::{self, Cut};
+use crate::cut::Cut;
 use crate::cut_fold;
 use crate::cut_screen;
 use crate::ui::cut_cameras::refresh_camera_rows;
@@ -91,8 +91,7 @@ pub fn fold_badges_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
         .ok()
 }
 
-pub fn folded_gap_at(window: &adw::ApplicationWindow, index: usize) -> Option<(f64, f64)> {
-    let _ = window;
+pub fn folded_gap_at(index: usize) -> Option<(f64, f64)> {
     FOLD_TABLES.with(|slots| {
         slots
             .borrow()
@@ -102,8 +101,7 @@ pub fn folded_gap_at(window: &adw::ApplicationWindow, index: usize) -> Option<(f
 }
 
 /// The gaps this window currently wears a badge over, in tape order.
-pub fn fold_gaps(window: &adw::ApplicationWindow) -> Vec<(f64, f64)> {
-    let _ = window;
+pub fn fold_gaps() -> Vec<(f64, f64)> {
     FOLD_TABLES.with(|slots| {
         slots
             .borrow()
@@ -233,13 +231,6 @@ fn remember_fold_gaps(gaps: Vec<(f64, f64)>) {
     });
 }
 
-/// This window's cut as the page sees it, folds included — what a widget test reads back instead of
-/// reaching into a thread-local.
-pub fn review_fold_rows(window: &adw::ApplicationWindow) -> cut::Cut {
-    let _ = window;
-    newest_review_cut()
-}
-
 /// F2.11 S1 (`\u{2212} in such a gap folds it to a seam \u00b7 + on the seam unfolds`): the seam a
 /// badge forwards to. Saves the cut afterwards, because a fold is a view but IS kept in `cut.json`.
 #[expect(
@@ -247,7 +238,7 @@ pub fn review_fold_rows(window: &adw::ApplicationWindow) -> cut::Cut {
     reason = "no badge at that index means nothing to fold, and no status line"
 )]
 pub fn press_fold_gap(window: &adw::ApplicationWindow, index: usize) -> Option<String> {
-    let Some(gap) = folded_gap_at(window, index) else {
+    let Some(gap) = folded_gap_at(index) else {
         return None;
     };
     press_fold_at(window, gap)
@@ -259,7 +250,7 @@ pub fn press_fold_gap(window: &adw::ApplicationWindow, index: usize) -> Option<S
 pub fn press_fold_at(window: &adw::ApplicationWindow, gap: (f64, f64)) -> Option<String> {
     let mut cut_ = newest_review_cut();
     let said = cut_fold::toggle_fold(&mut cut_, gap);
-    seed_review_cut(window, &cut_);
+    seed_review_cut(&cut_);
     save_folds(&cut_);
     refresh_fold_badges(window);
     if let Some(status) = find_status(window.upcast_ref()) {
@@ -274,7 +265,7 @@ pub fn unfold_fold_for_playback(window: &adw::ApplicationWindow, index: usize) -
     let mut cut_ = newest_review_cut();
     let [start, _] = *cut_.folds.get(index)?;
     cut_.folds.remove(index);
-    seed_review_cut(window, &cut_);
+    seed_review_cut(&cut_);
     save_folds(&cut_);
     refresh_fold_badges(window);
     // §B's sentence for THIS event ("unfolded m:ss — ▶ ran into it"), which is preview's wording,
@@ -292,7 +283,7 @@ pub fn press_fold_all(window: &adw::ApplicationWindow) -> String {
     let segs = cut_now.segs.clone();
     let mut cut_ = cut_now;
     let said = cut_fold::fold_all(&mut cut_, &gaps, &runs, &segs);
-    seed_review_cut(window, &cut_);
+    seed_review_cut(&cut_);
     save_folds(&cut_);
     refresh_fold_badges(window);
     if let Some(status) = find_status(window.upcast_ref()) {

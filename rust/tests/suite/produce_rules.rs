@@ -482,12 +482,9 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
     );
 
     stamp::write_stamp(&tree, &current).expect("stamp");
-    assert!(
-        data::video_is_up_to_date(Some(&current), &current),
-        "{current}"
-    );
+    assert!(stamp::skip_encode(Some(&current), &current), "{current}");
     // The stamp lives beside the video, in `produce/` — not under `publish/`, which is the picture's own.
-    assert_eq!(data::stamp_path(&tree), tree.final_stamp());
+    assert_eq!(tree.final_stamp(), tree.final_stamp());
 
     // A change to anything the render reads asks for the encode again: a codec is one keystroke on §A.
     let retuned = Produce {
@@ -503,7 +500,7 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
     };
     let next = stamp::stamp(&retuned, |_| None, |_| (0, 0));
     assert_ne!(next, current);
-    assert!(!data::video_is_up_to_date(Some(&current), &next));
+    assert!(!stamp::skip_encode(Some(&current), &next));
 
     // And a stamp is written only when an encode actually ran and did not fail: writing one on a failure would
     // let the next ▶ skip work that was never done.
@@ -571,7 +568,7 @@ fn sec_08_produce_5_rules_s3_publish_json_goes_down_before_the_picture() {
     let dir = std::env::temp_dir().join(format!("np-rules-order-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let tree = tree_in(&dir.join("p.naivepost"));
-    let video_stamp = data::stamp_path(&tree);
+    let video_stamp = tree.final_stamp();
     assert_eq!(video_stamp.file_name().unwrap(), "final.stamp");
     assert_ne!(
         video_stamp,

@@ -128,25 +128,22 @@ fn f5_7_where_it_runs_a_press_returns_busy_then_lands() {
         let window = ui::build_window(app, &model, naivepost::shell::Page::Produce.label());
         window.present();
         common::settle();
-        ui::seed_review_cut(
-            &window,
-            &Cut {
-                segs: vec![
-                    Seg {
-                        s: 0.0,
-                        e: 15.0,
-                        ..Default::default()
-                    },
-                    Seg {
-                        s: 15.0,
-                        e: 30.0,
-                        ..Default::default()
-                    },
-                ],
-                aspect: "16:9".to_string(),
-                ..Default::default()
-            },
-        );
+        ui::seed_review_cut(&Cut {
+            segs: vec![
+                Seg {
+                    s: 0.0,
+                    e: 15.0,
+                    ..Default::default()
+                },
+                Seg {
+                    s: 15.0,
+                    e: 30.0,
+                    ..Default::default()
+                },
+            ],
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        });
         let mut page = ui::produce_page::read_state();
         page.instruction = "an instruction already on the page".to_string();
         page.thumb_title = "other words on the picture".to_string();

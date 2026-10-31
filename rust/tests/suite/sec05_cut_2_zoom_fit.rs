@@ -64,7 +64,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(&window, &scenes());
+    ui::seed_review_cut(&scenes());
     settle();
     window
 }
@@ -97,7 +97,7 @@ fn check_the_floor_is_the_fit(app: &adw::Application) {
         zoom_out.emit_by_name::<()>("clicked", &[]);
         settle();
     }
-    let stopped = ui::cut_view::band_scene_for(&window).pps;
+    let stopped = ui::cut_view::band_scene_for().pps;
     assert!(
         (stopped - want).abs() < 1e-6,
         "− bottoms out at the filmed-length fit {want}, not at {stopped}"
@@ -116,7 +116,7 @@ fn check_the_stored_zoom_moves_the_layout(app: &adw::Application) {
     let window = cut_page(app);
     let view = ui::cut_view::view_px(f64::from(ui::window::STRIP_WIDTH));
     let zoom_in = button(&window, "zoom-in-button");
-    let painted = || ui::review_cut_segs(&window);
+    let painted = || ui::review_cut_segs();
     let _ = painted;
 
     let before = ui::window::strip_pps();

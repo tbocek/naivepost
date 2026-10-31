@@ -41,11 +41,11 @@ fn captions_round(app: &adw::Application) {
     // dialled the pass gets no calls, so zero captions land and the cut is
     // untouched — never invented words standing in for a proposal.
     let window = cut_page(app, &common::three_clips_cut());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let started = ui::run_captions_pass(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "with no proposal from the model no caption is invented into the cut"
     );
@@ -90,7 +90,7 @@ fn captions_round(app: &adw::Application) {
             calls: good,
         }],
     );
-    let fx: Vec<Fx> = ui::review_cut_of(&window).fx.clone();
+    let fx: Vec<Fx> = ui::window_preview::newest_review_cut().fx.clone();
     assert_eq!(
         fx.len(),
         1,
@@ -145,7 +145,7 @@ fn captions_round(app: &adw::Application) {
         }],
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "the valid caption went down with the invalid one -- a batch is one answer"
     );
@@ -176,15 +176,19 @@ fn captions_round(app: &adw::Application) {
     // No control greys out any more — F3.9 is a job of the run after the cut, not a button — so what the
     // switch owns is the refusal itself, the same predicate `cut_suggest_passes::order` filters on.
     let window = cut_page(app, &common::three_clips_cut());
-    ui::set_captions_pass_for_test(&window, false);
+    ui::set_captions_pass_for_test(false);
     let refused = ui::run_captions_pass(&window);
     assert!(
         refused.contains("off"),
         "the pass itself refuses, got {refused}"
     );
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "and places nothing");
+    assert_eq!(
+        ui::window_preview::newest_review_cut().fx.len(),
+        0,
+        "and places nothing"
+    );
     // And back on: the gate follows the field both ways, so the refusal is never sticky.
-    ui::set_captions_pass_for_test(&window, true);
+    ui::set_captions_pass_for_test(true);
     let reopened = ui::run_captions_pass(&window);
     assert!(
         !reopened.contains("off"),
@@ -218,11 +222,11 @@ fn captions_round(app: &adw::Application) {
         }],
     );
     assert_eq!(said, "2 caption(s) placed", "both landed, got {said}");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 2);
+    assert_eq!(ui::window_preview::newest_review_cut().fx.len(), 2);
     ui::press_undo(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "one ↶ undoes the whole pass -- it went through record_edit, not seed_review_cut"
     );

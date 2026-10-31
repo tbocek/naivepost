@@ -69,7 +69,7 @@ fn f3_9_s3_a_live_captions_answer_is_cached_so_the_next_identical_ask_opens_no_s
         "a readable answer is kept"
     );
     // The stored bytes are the ANSWERING round's envelope: since §3's answer on this item the answer IS a call
-    // list, so what the pass read and keeps is the envelope carrying `add_caption` (see `chat_envelope`). A tool
+    // list, so what the pass read and keeps is the envelope carrying `add_caption` (see `clip_rules_tools_leg::answering_envelope`). A tool
     // answer's prose `content` is not the answer, which is why it is no longer what lands in the slot.
     assert!(
         kept(&fixture, "add_caption"),

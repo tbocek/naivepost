@@ -7,7 +7,7 @@ use crate::ui::window;
 
 /// F3.11 S1–S5.
 pub fn run_effects_pass(window: &adw::ApplicationWindow) -> String {
-    let inputs = window::pass_inputs(window);
+    let inputs = window::pass_inputs();
     let cut_ = window::newest_review_cut();
     let out = walk_effects(&inputs, &cut_);
     window::land_pass(window, &out);
@@ -25,7 +25,7 @@ pub fn run_effects_pass_with_reply(
     window: &adw::ApplicationWindow,
     calls: &[crate::cut_effects_pass::Call],
 ) -> String {
-    let inputs = window::pass_inputs(window);
+    let inputs = window::pass_inputs();
     let out = walk_effects_with(&inputs, &window::newest_review_cut(), &|_, _| {
         calls.to_vec()
     });

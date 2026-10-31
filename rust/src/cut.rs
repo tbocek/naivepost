@@ -143,7 +143,7 @@ pub enum EffectKind {
 }
 
 impl EffectKind {
-    fn parse(name: &str) -> Option<Self> {
+    pub fn parse(name: &str) -> Option<Self> {
         match name {
             "zoom" => Some(Self::Zoom),
             // A stop is a speed whose rate is 0 (§1's column reads "speed/stop"), so it is the same
@@ -276,12 +276,6 @@ impl Seg {
 impl Fx {
     pub fn effect_kind(&self) -> Option<EffectKind> {
         EffectKind::parse(&self.kind)
-    }
-
-    /// The kind behind a stored kind id — the public door onto the private `parse`, for callers
-    /// that hold the id rather than an `Fx` (the effects dropdown's rows carry it as their `tip`).
-    pub fn parse_kind(id: &str) -> Option<EffectKind> {
-        EffectKind::parse(id)
     }
 
     /// The window it covers on the timeline: `dur` already includes the fades, so the

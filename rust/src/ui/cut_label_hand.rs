@@ -8,8 +8,8 @@ use crate::fx_label;
 use crate::shell::Page;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
-    live_form_refused, log_line, paste_line, record_edit, refresh_effects_lane, review_cut_of,
-    save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
+    live_form_refused, log_line, record_edit, refresh_effects_lane, save_insert_cut, selection,
+    trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 // --- F3.7 Label by hand: the press, the form, the Apply --------------------------------------------------
@@ -17,7 +17,7 @@ use crate::ui::window::{
 // The rule half lives in `src/fx_label.rs` (`press`/`Pressed`, `NO_SECONDS`, `NO_NAME`, `initial`/
 // `initial_at_line`, `LINE_SECONDS`/`MIN_SECONDS`/`NAME_MAX_CHARS`, `form_title`, `FORM_FIELDS`, `NAME_HELP`/
 // `LENGTH_HELP`, `Form`, `apply`, `label`/`placed_status`/`NOTHING_CHANGES`, `never_rendered`,
-// `drawn_as_a_tag`). What is here is only the state a press leaves behind and the widgets that show it — no
+// `fx_lane::drawn_paused`). What is here is only the state a press leaves behind and the widgets that show it — no
 // decision of its own. A label has no box and nothing to arm; unlike Volume it also has a second refusal, the
 // one for a missing NAME, which is why its Apply can fail twice over.
 
@@ -36,11 +36,11 @@ fn label_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
 /// when there is a moment to name. The refusal is answered BEFORE any form is drawn, so a cancelled
 /// dialog can never cost the user a refusal (the F2.12 Insert lesson).
 pub fn press_label_item(window: &adw::ApplicationWindow) -> String {
-    let band = selection(window)
+    let band = selection()
         .filter(|band| band.length() > 0.0)
         .map(|band| (band.start, band.end));
     let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    let line = known.then(|| paste_line(window));
+    let line = known.then(|| crate::ui::cut_lane::paste_line());
     match fx_label::press(band, line) {
         fx_label::Pressed::Refused => {
             close_label_form(window);
@@ -214,7 +214,7 @@ pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
             return reason;
         }
     };
-    let mut cut_ = review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes

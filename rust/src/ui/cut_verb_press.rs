@@ -27,14 +27,14 @@ pub fn take_into_hand(band: Option<Selection>) {
 
 /// F2.7 ＋ Add's snap candidates, gathered from live state — the spec's `word edges, silences, line edges,
 /// visual cuts`.
-pub fn add_snap_points(window: &adw::ApplicationWindow, band: Option<&Selection>) -> Vec<f64> {
+pub fn add_snap_points(band: Option<&Selection>) -> Vec<f64> {
     let cut_ = ui::newest_review_cut();
     let mut points: Vec<f64> = Vec::new();
     for seg in &cut_.segs {
         points.push(seg.s);
         points.push(seg.e);
     }
-    points.push(ui::preview_playhead(window));
+    points.push(ui::preview_playhead());
     points.extend(wave_snap::snap_points(band));
     points.sort_by(f64::total_cmp);
     points.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
@@ -45,19 +45,19 @@ pub fn add_snap_points(window: &adw::ApplicationWindow, band: Option<&Selection>
 /// order, decided by [`cut_verbs::delete_verb`].
 pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
     let segs = ui::newest_review_cut().segs;
-    let band = ui::selection(window);
-    let scene = held_scene_under_line(window);
+    let band = ui::selection();
+    let scene = held_scene_under_line();
     let outcome = cut_verbs::delete_verb(
-        ui::held_effect().as_ref(),
-        ui::held_segment().as_ref(),
+        crate::ui::cut_hand::held_effect().as_ref(),
+        crate::ui::cut_hand::held_clip_or_edge().as_ref(),
         band.as_ref(),
         scene.as_ref(),
         &segs,
     );
     report_verb(window, &outcome);
     if matches!(outcome, cut_verbs::Outcome::Applied { .. })
-        && ui::held_effect().is_none()
-        && ui::held_segment().is_some()
+        && crate::ui::cut_hand::held_effect().is_none()
+        && crate::ui::cut_hand::held_clip_or_edge().is_some()
     {
         crate::ui::cut_hand::clear_all();
     }
@@ -66,9 +66,9 @@ pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
 
 /// F2.7 ＋ Add: keep the band as scenes, both ends snapped to [`add_snap_points`].
 pub fn press_add(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let band = ui::selection(window);
+    let band = ui::selection();
     let cut_ = ui::newest_review_cut();
-    let points = add_snap_points(window, band.as_ref());
+    let points = add_snap_points(band.as_ref());
     let outcome = cut_verbs::add(band.as_ref(), &cut_.segs, &points);
     report_verb(window, &outcome);
     outcome
@@ -77,9 +77,9 @@ pub fn press_add(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
 /// F2.7 | Split: a border at each end of the band, or one at the red line when there is none, in which
 /// case the right half of what was cut goes into the hand.
 pub fn press_split(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let band = ui::selection(window);
+    let band = ui::selection();
     let cut_ = ui::newest_review_cut();
-    let line = ui::preview_playhead(window);
+    let line = ui::preview_playhead();
     let outcome = cut_verbs::split(band.as_ref(), line, &cut_.segs);
     // The hand is filled from the answer's OWN segment list, before `report_verb` clears the band: the
     // right half is the scene that now starts at the line, and after a clear there is nothing left to ask.
@@ -115,16 +115,16 @@ fn right_half_at_line(segs: &[Seg], line: f64) -> Option<Selection> {
 
 /// F2.7 － Remove: drop exactly the band.
 pub fn press_remove(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
-    let band = ui::selection(window);
+    let band = ui::selection();
     let cut_ = ui::newest_review_cut();
     let outcome = cut_verbs::remove(band.as_ref(), &cut_.segs);
     report_verb(window, &outcome);
     outcome
 }
 
-fn held_scene_under_line(window: &adw::ApplicationWindow) -> Option<Seg> {
+fn held_scene_under_line() -> Option<Seg> {
     let cut_ = ui::newest_review_cut();
-    crate::cut_delete::scene_under(&cut_.segs, ui::preview_playhead(window)).cloned()
+    crate::cut_delete::scene_under(&cut_.segs, ui::preview_playhead()).cloned()
 }
 
 /// Print the verb's sentence and honour what the answer says about the band.
@@ -139,7 +139,7 @@ pub fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome
             ..
         } => {
             if *segs != ui::newest_review_cut().segs {
-                ui::set_review_segs(window, segs);
+                ui::set_review_segs(segs);
                 let now = ui::newest_review_cut();
                 ui::save_insert_cut(&now);
                 ui::record_edit(window, &now);

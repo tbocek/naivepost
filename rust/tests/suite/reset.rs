@@ -228,7 +228,7 @@ fn check_the_button(app: &adw::Application) {
     );
     assert!(words.exists(), "what Prepare made stayed");
     assert!(
-        ui::cut_view::band_scene_for(&window).segs.is_empty(),
+        ui::cut_view::band_scene_for().segs.is_empty(),
         "and the band no longer draws the cut"
     );
     let status = ui::find_status(window.upcast_ref())

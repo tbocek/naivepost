@@ -1,6 +1,6 @@
 //! §07-narrate#1-screen, the take band's arithmetic (§1's number **10**, inventory §A.7).
 
-use crate::narrate_screen::{self as screen, TakePress, BAND_MAX_PPS, TAKE_LABEL_MIN_PX};
+use crate::narrate_screen::{self as screen, BAND_MAX_PPS, TAKE_LABEL_MIN_PX};
 
 /// Zoom 1 is "the whole recording fits": fit px/s × this factor.
 pub const ZOOM_NOTCH: f64 = 1.25;
@@ -59,11 +59,6 @@ pub fn x_to_second(x: f64, offset: f64, pps: f64) -> f64 {
 /// A second of the recording → the px it is drawn at, never left of the lane's start.
 pub fn second_to_px(t: f64, offset: f64, pps: f64) -> f64 {
     (t * pps - offset).max(0.0)
-}
-
-/// What one press-release on the band means.
-pub fn drag_or_click(pressed_x: f64, released_x: f64, start: f64) -> TakePress {
-    screen::take_press(pressed_x, released_x, start)
 }
 
 /// Is a take wide enough to carry its duration?

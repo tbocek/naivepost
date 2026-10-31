@@ -40,37 +40,24 @@ pub fn review_cuts_button(window: &adw::ApplicationWindow) -> Option<gtk::Button
         .ok()
 }
 
-pub fn review_cut_segs(window: &adw::ApplicationWindow) -> Vec<cut::Seg> {
-    let _ = window;
+pub fn review_cut_segs() -> Vec<cut::Seg> {
     newest_review_cut().segs
 }
 
-pub fn review_cut_segs_count(window: &adw::ApplicationWindow) -> usize {
-    let _ = window;
+pub fn review_cut_segs_count() -> usize {
     newest_review_cut().segs.len()
 }
 
 /// This window's shift correction (F2.8 S2), so a test can assert WHICH sources moved and by how much.
-pub fn review_cut_shift(
-    window: &adw::ApplicationWindow,
-) -> std::collections::BTreeMap<String, f64> {
-    let _ = window;
+pub fn review_cut_shift() -> std::collections::BTreeMap<String, f64> {
     newest_review_cut().shift.clone()
 }
 
-pub fn review_lanes(window: &adw::ApplicationWindow) -> Vec<cut::Lane> {
-    let _ = window;
+pub fn review_lanes() -> Vec<cut::Lane> {
     newest_review_cut().lanes
 }
 
-/// F2.13 S3: the whole cut as a read seam; Clear keeps recording-side data, so `fx`, `rows` and `nrows` must be read too.
-pub fn review_cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
-    let _ = window;
-    newest_review_cut()
-}
-
-pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
-    let _ = window;
+pub fn preview_player() -> Player {
     PREVIEW_PLAYERS.with(|slots| {
         slots
             .borrow()
@@ -81,8 +68,7 @@ pub fn preview_player(window: &adw::ApplicationWindow) -> Player {
 }
 
 /// This window's live preview handle, the newest registered player; shared by every accessor below.
-pub(crate) fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<Player>>> {
-    let _ = window;
+pub(crate) fn live_player() -> Option<Rc<RefCell<Player>>> {
     PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned())
 }
 
@@ -96,15 +82,15 @@ pub fn register_preview_player_slot() {
 }
 
 /// Publish what the run bar draws for this window's preview ([`crate::run::controls`] reads the transport off the player). No-op with no slot.
-pub fn publish_preview_transport(window: &adw::ApplicationWindow, transport: run::Transport) {
-    if let Some(player) = live_player(window) {
+pub fn publish_preview_transport(transport: run::Transport) {
+    if let Some(player) = live_player() {
         player.borrow_mut().transport = transport;
     }
 }
 
 /// Put the red line somewhere before a press; F2.1 S2 plays from here.
 pub fn set_playhead(window: &adw::ApplicationWindow, at: f64) {
-    if let Some(player) = live_player(window) {
+    if let Some(player) = live_player() {
         player.borrow_mut().playhead = Some(at);
     }
     // §1 has ONE red line kept in two slots (the player's, read by ▶ and the band; the line's, read by picture, steps and save), so a move writes both.
@@ -126,13 +112,8 @@ pub(crate) fn show_playhead_reading(window: &adw::ApplicationWindow, at: f64) {
     }
 }
 
-pub fn set_preview_state(
-    window: &adw::ApplicationWindow,
-    cut_only: bool,
-    reviewing: bool,
-    transport: run::Transport,
-) {
-    if let Some(player) = live_player(window) {
+pub fn set_preview_state(cut_only: bool, reviewing: bool, transport: run::Transport) {
+    if let Some(player) = live_player() {
         let mut held = player.borrow_mut();
         held.cut_only = cut_only;
         held.reviewing = reviewing;
@@ -174,7 +155,7 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
     let Some(status) = find_status(window.upcast_ref()) else {
         panic!("the window has no status line");
     };
-    let Some(player) = live_player(window) else {
+    let Some(player) = live_player() else {
         panic!("the window has no preview player");
     };
     let pressed = cut_play::pressed(&mut player.borrow_mut(), cut);
@@ -186,13 +167,13 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
     match &pressed {
         // S2/S3: both change what the clock means or what is playing, so both get a sentence, and ▶✂ owns the sound player, so the press starts it (`cut_play_back::cue_clips` has no other door).
         cut_play::Pressed::SwitchedToCut { status: line, .. } => {
-            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
+            crate::ui::cut_cut_play::cue_running(window, preview_playhead());
             if released.is_none() {
                 status.set_text(line)
             }
         }
         cut_play::Pressed::ReviewEnded { status: ended } => {
-            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
+            crate::ui::cut_cut_play::cue_running(window, preview_playhead());
             if released.is_none() {
                 status.set_text(ended)
             }
@@ -210,8 +191,7 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
 }
 
 /// Put this window's cut where ▶✂✂ can read it; until then `build_window` seeds an empty one and a press answers S1's refusal.
-pub fn seed_review_cut(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
-    let _ = window;
+pub fn seed_review_cut(cut_: &cut::Cut) {
     REVIEW_CUTS.with(|slots| {
         if let Some(slot) = slots.borrow().last() {
             *slot.borrow_mut() = cut_.clone();
@@ -225,7 +205,7 @@ pub fn seed_review_cut(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     }
 }
 
-pub(crate) fn newest_review_cut() -> cut::Cut {
+pub fn newest_review_cut() -> cut::Cut {
     REVIEW_CUTS
         .with(|slots| slots.borrow().last().map(|slot| slot.borrow().clone()))
         .unwrap_or_default()
@@ -236,7 +216,7 @@ pub fn press_review_cuts(window: &adw::ApplicationWindow, cut_: &cut::Cut) -> cu
     let Some(status_line) = find_status(window.upcast_ref()) else {
         panic!("the window has no status line");
     };
-    let Some(player) = live_player(window) else {
+    let Some(player) = live_player() else {
         panic!("the window has no preview player");
     };
     let pressed = cut_review::pressed(&mut player.borrow_mut(), cut_);

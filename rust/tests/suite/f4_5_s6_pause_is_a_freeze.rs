@@ -13,8 +13,6 @@ use naivepost::narrate_preview_leg::{self as leg, Spawn};
 
 use crate::common;
 
-use common::entry_at_mid as entry;
-
 /// A session folder under /tmp: enough for `Tree::new` and for the footage check to answer "no recording",
 /// which is what makes the picture's spawn the ONLY child this scenario has to keep alive.
 struct Session {
@@ -115,7 +113,6 @@ fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
         ],
         vec![],
     );
-    let entries = vec![entry(0.0, 10.0, "first line")];
     let spawned: Pids = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let mut spawn_fn = {
         let recorded = spawned.clone();
@@ -154,8 +151,8 @@ fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
     naivepost::project::save(&project, session.tree.dir()).expect("project written");
 
     // Start through the door the page's own ▶ uses.
-    let said = leg::start_running(&session.tree, &cut, &entries, 0.0, 0.5, 1.0, spawn)
-        .expect("the preview started");
+    let said =
+        leg::start_running(&session.tree, &cut, 0.0, 0.5, 1.0, spawn).expect("the preview started");
     assert!(
         said.contains("playing the cut from"),
         "started with: {said}"

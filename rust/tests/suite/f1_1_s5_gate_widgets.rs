@@ -147,7 +147,7 @@ fn check_the_press_is_refused_at_the_screen(app: &adw::Application, dead: &str) 
         "the press opened the bar before the preflight was asked"
     );
     assert_eq!(
-        ui::running_step(&window),
+        ui::running_step(),
         None,
         "and the refused preflight closed it again"
     );

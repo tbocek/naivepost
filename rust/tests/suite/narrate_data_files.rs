@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use naivepost::layout::Tree;
 use naivepost::narrate_data::{
-    self, base_reference, clean_takes, drop_reference, keep_previous, load_takes, previous,
-    read_pitch, read_voice, reference_needs_shift, sample_hex, sample_path, sanitize_voice_id,
-    save_takes, served_reference, take_base, write_pitch, write_voice, Take, DATA_FILES, OWN_VOICE,
+    self, clean_takes, drop_reference, keep_previous, load_takes, previous, read_pitch, read_voice,
+    reference_needs_shift, sample_hex, sample_path, sanitize_voice_id, save_takes, take_base,
+    write_pitch, write_voice, Take, DATA_FILES, OWN_VOICE,
 };
 use naivepost::narrate_screen::{self, CAPTIONS};
 use naivepost::narration::{self, Entry, Narration};
@@ -291,23 +291,23 @@ fn sec_07_narrate_3_data_s6_takes_are_keyed_by_the_recording_and_cleaned_on_the_
 #[test]
 fn sec_07_narrate_3_data_s7_the_reference_the_server_reads_is_the_one_that_goes() {
     let (root, tree) = tree("s7");
-    assert_eq!(name(&served_reference(&tree)), "voice_ref.wav");
-    assert_eq!(name(&base_reference(&tree)), "voice_ref_base.wav");
+    assert_eq!(name(&tree.voice_ref_wav()), "voice_ref.wav");
+    assert_eq!(name(&tree.voice_ref_base_wav()), "voice_ref_base.wav");
 
     std::fs::create_dir_all(tree.dir().join("narrate")).unwrap();
     let seed = |tree: &Tree| {
-        std::fs::write(base_reference(tree), b"RIFFbase").unwrap();
-        std::fs::write(served_reference(tree), b"RIFFshifted").unwrap();
+        std::fs::write(tree.voice_ref_base_wav(), b"RIFFbase").unwrap();
+        std::fs::write(tree.voice_ref_wav(), b"RIFFshifted").unwrap();
     };
 
     // The pitch slider's move: the shifted copy is stale, the base is still the person.
     seed(&tree);
     assert_eq!(drop_reference(&tree, true), 1);
-    assert!(!served_reference(&tree).exists());
-    assert!(base_reference(&tree).exists());
+    assert!(!tree.voice_ref_wav().exists());
+    assert!(tree.voice_ref_base_wav().exists());
     assert!(reference_needs_shift(
-        &base_reference(&tree),
-        &served_reference(&tree)
+        &tree.voice_ref_base_wav(),
+        &tree.voice_ref_wav()
     ));
 
     // Nothing there to drop is not a failure and counts as nothing dropped.
@@ -315,17 +315,17 @@ fn sec_07_narrate_3_data_s7_the_reference_the_server_reads_is_the_one_that_goes(
 
     // A take set or a slot voice makes the base itself wrong.
     assert_eq!(drop_reference(&tree, false), 1);
-    assert!(!base_reference(&tree).exists());
+    assert!(!tree.voice_ref_base_wav().exists());
     assert!(!reference_needs_shift(
-        &base_reference(&tree),
-        &served_reference(&tree)
+        &tree.voice_ref_base_wav(),
+        &tree.voice_ref_wav()
     ));
 
     // With both files present the server is already reading the copy it wants.
     seed(&tree);
     assert!(!reference_needs_shift(
-        &base_reference(&tree),
-        &served_reference(&tree)
+        &tree.voice_ref_base_wav(),
+        &tree.voice_ref_wav()
     ));
 
     let _ = std::fs::remove_dir_all(&root);
@@ -410,8 +410,8 @@ fn sec_07_narrate_3_data_s10_the_module_adds_no_path_of_its_own() {
     let (root, tree) = tree("s10");
     let dir = tree.dir();
     for path in [
-        base_reference(&tree),
-        served_reference(&tree),
+        tree.voice_ref_base_wav(),
+        tree.voice_ref_wav(),
         sample_path(&tree, "aria", "hello"),
         tree.takes_json(),
         tree.voice_txt(),

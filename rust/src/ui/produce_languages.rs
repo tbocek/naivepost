@@ -512,7 +512,7 @@ fn nearest_frame(
     run: &crate::produce_flow::Run,
     at: f64,
 ) -> Option<f64> {
-    crate::produce_upload_frames::frame_at(&extracted_frames(tree, run), at)
+    crate::produce_upload::nearest(&extracted_frames(tree, run), at)
 }
 
 pub fn save_publish(

@@ -122,7 +122,6 @@ fn stops_the_playing_cut_preview_through_the_button() {
 
     // Put the player in ✂ cut mode and playing, through the same setter the other Cut tests use.
     ui::set_preview_state(
-        &window,
         true,
         false,
         naivepost::run::Transport {
@@ -131,7 +130,7 @@ fn stops_the_playing_cut_preview_through_the_button() {
         },
     );
     assert!(
-        ui::preview_player(&window).transport.playing,
+        ui::preview_player().transport.playing,
         "the fixture really has the preview playing"
     );
 
@@ -140,9 +139,9 @@ fn stops_the_playing_cut_preview_through_the_button() {
 
     // The player itself stopped — the check that proves S1's transport half is wired.
     assert!(
-        !ui::preview_player(&window).transport.playing,
+        !ui::preview_player().transport.playing,
         "⏹ stopped the player, not just the sentence: {:?}",
-        ui::preview_player(&window).transport
+        ui::preview_player().transport
     );
     // And the press said what S1 says when only the preview was going: this window has no run behind
     // the player, so there is nothing to fall through to and the line reads "playback stopped".
@@ -186,7 +185,7 @@ fn stops_a_run(app: &adw::Application) {
     // until the window takes the worker's answer, which it cannot before this check turns the main loop.
     play.emit_clicked();
     assert_eq!(
-        ui::running_step(&window),
+        ui::running_step(),
         Some(run::Step::Prepare),
         "the press opened Prepare's run"
     );
@@ -204,7 +203,7 @@ fn stops_a_run(app: &adw::Application) {
     // ⏹ only marks the run stopped (and cancels its calls, kills its children); the walk ends at its next
     // checkpoint and the run is closed by the press's own ending when the worker answers (F0.5 S4).
     assert_eq!(
-        ui::running_step(&window),
+        ui::running_step(),
         Some(run::Step::Prepare),
         "the stop is said at once; the run unwinds on the worker"
     );
@@ -213,7 +212,7 @@ fn stops_a_run(app: &adw::Application) {
         "the press's worker answered"
     );
     assert_eq!(
-        ui::running_step(&window),
+        ui::running_step(),
         None,
         "the run closed once its walk had unwound"
     );

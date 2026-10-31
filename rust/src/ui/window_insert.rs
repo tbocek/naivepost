@@ -58,8 +58,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-pub fn insert_open(window: &adw::ApplicationWindow) -> Option<(String, f64, f64)> {
-    let _ = window;
+pub fn insert_open() -> Option<(String, f64, f64)> {
     INSERT_OPEN.with(|cell| {
         cell.borrow()
             .as_ref()
@@ -82,7 +81,9 @@ pub(crate) fn show_insert_form(
 
     let heading = gtk::Label::new(Some(&format!(
         "{} \u{2014} {}",
-        cut_insert::edit_verb(cut_insert::hold(ui::held_segment().as_ref())),
+        cut_insert::edit_verb(cut_insert::hold(
+            crate::ui::cut_hand::held_clip_or_edge().as_ref()
+        )),
         cut_insert::base_name(path)
     )));
     heading.set_widget_name("insert-heading");
@@ -167,11 +168,13 @@ pub(crate) fn show_insert_form(
     holder.append(&sec_row);
 
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let apply = gtk::Button::with_label(if cut_insert::hold(ui::held_segment().as_ref()) {
-        "Apply"
-    } else {
-        "Insert it"
-    });
+    let apply = gtk::Button::with_label(
+        if cut_insert::hold(crate::ui::cut_hand::held_clip_or_edge().as_ref()) {
+            "Apply"
+        } else {
+            "Insert it"
+        },
+    );
     apply.set_widget_name("insert-apply-button");
     let cancel = gtk::Button::with_label("Cancel");
     cancel.set_widget_name("insert-cancel-button");
@@ -343,34 +346,29 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-pub(crate) fn save_insert_cut(cut_: &Cut) {
+pub fn save_insert_cut(cut_: &Cut) {
     // §7's one writer: the session resolution and the call to `cut::save` are `cut_save`'s, not
     // this door's.
     crate::ui::window_logs::save_cut_or_say(cut_);
 }
 
-pub fn save_seed_for_test(window: &adw::ApplicationWindow, cut_: &Cut) {
-    let _ = window;
-    save_insert_cut(cut_);
-}
-
 /// F2.12 S1 + S2: ⧉ Insert.
 pub fn press_insert(window: &adw::ApplicationWindow) -> String {
-    if let Some(held) = ui::held_segment() {
+    if let Some(held) = crate::ui::cut_hand::held_clip_or_edge() {
         let cut_ = ui::newest_review_cut();
         if held.is_insert() && cut_insert::find_card(&cut_, &held.ins, held.s).is_none() {
             return cut_insert::GONE.to_string();
         }
     }
     // S1: the placement question is answered BEFORE any chooser opens.
-    let band = ui::selection(window);
-    let placed = place_known().then(|| ui::line_position(window).t);
+    let band = ui::selection();
+    let placed = place_known().then(|| ui::line_position().t);
     let at = match cut_insert::needs_place(placed, band.as_ref()) {
         Ok(at) => at,
         Err(refusal) => return refusal.to_string(),
     };
     let dir = startup::open_dir();
-    let assets = cut_insert::chooser_dir(&dir);
+    let assets = crate::layout::assets_dir(&dir);
     cut_insert::seed_cards(&assets, &cut_cards::seeds());
     let title = cut_insert::chooser_title(band.as_ref());
     let sound_only = matches!(
@@ -407,7 +405,7 @@ fn open_logo_chooser(window: &adw::ApplicationWindow, key: &str) {
         .action(gtk::FileChooserAction::Open)
         .select_multiple(true)
         .build();
-    let _ = chooser.set_current_folder(Some(&gio::File::for_path(cut_insert::chooser_dir(
+    let _ = chooser.set_current_folder(Some(&gio::File::for_path(crate::layout::assets_dir(
         &startup::open_dir(),
     ))));
     let filter = gtk::FileFilter::new();
@@ -535,8 +533,7 @@ fn insert_with_probes(
     (probed, file_has_sound): (Option<f64>, bool),
 ) -> String {
     let raw = file.to_string_lossy().to_string();
-    let band = ui::selection(window);
-    let animated = svg_is_animated(file);
+    let band = ui::selection();
     // §S4's tick is a question about SOUND, and an audio file IS all sound: `sound_open` reads the two flags as
     // "does anything have to be answered for", so a bare WAV must arrive with its own flag set or the door
     // answers nothing (which is what `Kind::Audio` alone cannot say on its own).
@@ -549,7 +546,6 @@ fn insert_with_probes(
         &raw,
         band.as_ref(),
         file_seconds,
-        animated,
         false,
         carries_sound,
         false,
@@ -569,7 +565,7 @@ fn insert_with_probes(
         }
     }
     show_insert_form(window, &plan, &raw, at, fields);
-    cut_form_frame::set_pinned(window, cut_form_frame::open_form_title(window).as_deref());
+    cut_form_frame::set_pinned(window, cut_form_frame::open_form_title().as_deref());
     format!(
         "{} \u{2014} {:.1} s, {} \u{2014} the form is open",
         cut_insert::base_name(&raw),
@@ -597,10 +593,6 @@ fn file_has_sound(path: &str) -> bool {
     !answer.trim().is_empty()
 }
 
-pub(crate) fn svg_is_animated(file: &std::path::Path) -> bool {
-    crate::ui::cut_card_preview::svg_is_animated(file)
-}
-
 pub(crate) fn mode_word(mode: cut_insert::Mode) -> &'static str {
     match mode {
         cut_insert::Mode::Between => "spliced between the footage",
@@ -612,8 +604,8 @@ pub(crate) fn mode_word(mode: cut_insert::Mode) -> &'static str {
 /// F2.12 S6: set Insert's sensitivity and its word.
 pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
     if let Some(button) = ui::line_step_button(window, "insert-button") {
-        let has_target = place_known() || ui::selection(window).is_some();
-        let live = match ui::selection(window) {
+        let has_target = place_known() || ui::selection().is_some();
+        let live = match ui::selection() {
             Some(band) => band.length() >= cut_select::MIN_SCENE_SECONDS,
             None => has_target,
         };
@@ -621,7 +613,8 @@ pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
         // F3.8 S1: `Insert becomes ✎ Edit` when an EFFECT is held too, not only a card. §A.9 says it in the
         // same breath as "band → hold", so the held-effect case joins the held-card one here rather than being
         // a second rule somewhere else. The word still comes from `cut_insert::edit_verb`, never retyped.
-        let editing = cut_insert::hold(ui::held_segment().as_ref()) || ui::held_effect().is_some();
+        let editing = cut_insert::hold(crate::ui::cut_hand::held_clip_or_edge().as_ref())
+            || crate::ui::cut_hand::held_effect().is_some();
         button.set_label(cut_insert::edit_verb(editing));
     }
 }
@@ -633,7 +626,7 @@ pub fn place_known() -> bool {
 }
 
 pub(crate) fn press_insert_from_button(window: &adw::ApplicationWindow) -> String {
-    if ui::held_effect().is_some() {
+    if crate::ui::cut_hand::held_effect().is_some() {
         return ui::press_edit_effect(window);
     }
     press_insert(window)

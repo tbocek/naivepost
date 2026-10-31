@@ -16,8 +16,8 @@ pub fn paint(window: &adw::ApplicationWindow) {
     let Some(button) = ui::play_cut_button(window) else {
         return;
     };
-    button.set_sensitive(!cut_play::empty(&ui::review_cut_of(window)));
-    let player = ui::preview_player(window);
+    button.set_sensitive(!cut_play::empty(&ui::window_preview::newest_review_cut()));
+    let player = ui::preview_player();
     // §2's "one lit" from [`crate::tab_states::preview_lits`], the same decision the other two buttons
     // read; ⏸ only while this mode is the lit one AND the transport is actually playing.
     let [_recording_lit, ours_lit, _review_lit] =
@@ -46,28 +46,22 @@ pub fn paint_both_skipping_buttons(window: &adw::ApplicationWindow) {
 }
 
 /// Preroll the spare at `at`.
-pub fn preroll_spare(window: &adw::ApplicationWindow, at: f64) -> bool {
+pub fn preroll_spare(at: f64) -> bool {
     // The built-in player seeks within its pipeline instead of holding a second process at the join.
     if crate::play_built_in::in_use() {
         return false;
     }
-    let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
+    let files = ui::cut_record_play::files_for(&ui::cut_record_play::runs_now());
     crate::cut_play_back::preroll(&files, at, &|line| log_line(line)).is_ok()
 }
 
 /// The join arrived and the spare was sitting on it: swap it in. Answers whether one was there to swap.
-pub fn swap_spare(window: &adw::ApplicationWindow) -> bool {
-    let _ = window;
+pub fn swap_spare() -> bool {
     // No spare with the built-in player: the line's jump is followed by a seek (`cut_picture::refresh`).
     if crate::play_built_in::in_use() {
         return false;
     }
     crate::cut_play_back::swap_spare_in(&|line| log_line(line)).is_some()
-}
-
-/// Release the spare: pausing, or the cut changing under it, takes the waiting process back with it.
-pub fn release_spare() {
-    crate::cut_play_back::drop_spare();
 }
 
 /// S5 "stops show their still": freeze the running player's frame, or release it.
@@ -91,17 +85,17 @@ pub fn pause_media() {
 
 /// S5 "speed effects at their flat rate", handed to the player at the head. What the player's argv can and
 /// cannot do about a rate is [`crate::cut_play_back::set_rate`]'s honest answer, not this door's.
-pub fn hand_rate(window: &adw::ApplicationWindow, rate: f64, at: f64) -> bool {
+pub fn hand_rate(rate: f64, at: f64) -> bool {
     // The built-in player takes a rate as it plays (a flushing seek that carries it).
     if crate::play_built_in::in_use() && crate::play_built_in::file().is_some() {
         return crate::play_built_in::set_rate(rate);
     }
-    let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
+    let files = ui::cut_record_play::files_for(&ui::cut_record_play::runs_now());
     crate::cut_play_back::set_rate(&files, rate, at, &|line| log_line(line))
 }
 
-pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64, at_secs: f64) {
-    if let Some(player) = live_player(window) {
+pub fn hand_gain(gain: f64, at_secs: f64) {
+    if let Some(player) = live_player() {
         player.borrow_mut().volume = Some(gain);
     }
     if crate::play_back::running() {
@@ -117,7 +111,7 @@ pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
         ui::cut_record_play::play_in_preview(window, at, true)
     } else {
         cue_files(
-            &ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()),
+            &ui::cut_record_play::files_for(&ui::cut_record_play::runs_now()),
             at,
         )
     };

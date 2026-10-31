@@ -489,12 +489,7 @@ pub(crate) fn marking_policy_fields() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// The §3.4 read from outside the crate: the same `lines_answer` the live loop calls.
-pub fn lines_answer_for_test(marks: &Marks, from: u32, to: u32) -> String {
-    lines_answer(marks, from, to)
-}
-
-pub(crate) fn lines_answer(marks: &Marks, from: u32, to: u32) -> String {
+pub fn lines_answer(marks: &Marks, from: u32, to: u32) -> String {
     let rows: Vec<String> = marks
         .lines_with_pause(from, to)
         .into_iter()
@@ -669,7 +664,7 @@ pub fn system_message(paths: &Paths, context: &str) -> String {
 }
 
 fn wording(paths: &Paths, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
 }
 

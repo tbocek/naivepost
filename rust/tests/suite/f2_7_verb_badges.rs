@@ -50,8 +50,8 @@ fn cut_window(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     ui::refresh_camera_rows(&window);
     ui::refresh_effects_lane(&window);
     settle();
@@ -88,11 +88,7 @@ fn f2_7_badges_the_green_bar_cross_drops_that_scene(app: &adw::Application) {
         ..Default::default()
     };
     let window = cut_window(app, &seeded);
-    assert_eq!(
-        ui::review_cut_segs_count(&window),
-        2,
-        "two scenes to choose from"
-    );
+    assert_eq!(ui::review_cut_segs_count(), 2, "two scenes to choose from");
 
     let cross = button(&window, "scene-cross-0").expect("row 1 carries the first scene's ✕");
     assert!(
@@ -112,11 +108,7 @@ fn f2_7_badges_the_green_bar_cross_drops_that_scene(app: &adw::Application) {
 
     cross.emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(
-        ui::review_cut_segs_count(&window),
-        1,
-        "exactly that scene went"
-    );
+    assert_eq!(ui::review_cut_segs_count(), 1, "exactly that scene went");
     let said = status_text(&window);
     println!("SCENE CROSS: {said}");
     assert!(
@@ -124,7 +116,7 @@ fn f2_7_badges_the_green_bar_cross_drops_that_scene(app: &adw::Application) {
         "the sentence names what went and what it was: {said}"
     );
     assert_eq!(
-        ui::review_cut_of(&window).segs[0].s,
+        ui::window_preview::newest_review_cut().segs[0].s,
         40.0,
         "the survivor is the OTHER scene"
     );
@@ -135,11 +127,7 @@ fn f2_7_badges_the_green_bar_cross_drops_that_scene(app: &adw::Application) {
         .expect("the toolbar drew its undo-button")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(
-        ui::review_cut_segs_count(&window),
-        2,
-        "one ↶ restores the scene"
-    );
+    assert_eq!(ui::review_cut_segs_count(), 2, "one ↶ restores the scene");
     window.close();
 }
 
@@ -179,14 +167,14 @@ fn f2_7_badges_each_other_cross_still_does_its_own_thing(app: &adw::Application)
         20.0,
     );
     settle();
-    assert!(ui::selection(&window).is_some(), "a band is up");
+    assert!(ui::selection().is_some(), "a band is up");
     let clear = ui::clear_selection_button(&window).expect("the page carries clear-selection");
     assert!(clear.is_sensitive(), "with a band the cross is live");
     clear.emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(ui::selection(&window).is_none(), "and it cleared");
+    assert!(ui::selection().is_none(), "and it cleared");
     assert_eq!(
-        ui::review_cut_segs_count(&window),
+        ui::review_cut_segs_count(),
         1,
         "clearing removed no footage"
     );
@@ -198,7 +186,11 @@ fn f2_7_badges_each_other_cross_still_does_its_own_thing(app: &adw::Application)
     let fx_cross = button(&window, "fx-remove-0").expect("a wide effect bar carries its own ✕");
     fx_cross.emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "the effect went");
+    assert_eq!(
+        ui::window_preview::newest_review_cut().fx.len(),
+        0,
+        "the effect went"
+    );
     // And the door says so when the slot it was aimed at has already been spent — which is what a stale ✕
     // would otherwise hide.
     let said =
@@ -214,7 +206,7 @@ fn f2_7_badges_each_other_cross_still_does_its_own_thing(app: &adw::Application)
     lane_cross.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        ui::review_cut_of(&window).lanes.is_empty(),
+        ui::window_preview::newest_review_cut().lanes.is_empty(),
         "the lane was taken away"
     );
     assert!(
@@ -232,7 +224,7 @@ fn f2_7_badges_each_other_cross_still_does_its_own_thing(app: &adw::Application)
     row_cross.emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(
-        ui::review_fold_rows(&window).nrows,
+        ui::window::newest_review_cut().nrows,
         1,
         "the row floor was spent"
     );

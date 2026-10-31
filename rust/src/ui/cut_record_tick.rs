@@ -146,13 +146,10 @@ pub fn start(window: Rc<adw::ApplicationWindow>) {
         // The built-in player ran out of its file and nothing took over: pause there.
         if crate::play_built_in::ended() {
             play_back::halt();
-            ui::publish_preview_transport(
-                &page.0,
-                crate::run::Transport {
-                    playing: false,
-                    started: true,
-                },
-            );
+            ui::publish_preview_transport(crate::run::Transport {
+                playing: false,
+                started: true,
+            });
             cut_record_play::paint_transport(&page.0);
         }
         if let Some(head) = page.playhead() {
@@ -183,18 +180,18 @@ impl RecordingPreviewPage for WindowPage {
     fn is_recording_playing(&self) -> bool {
         // S4: the line follows the player; a failed cue moves no line.
         play_back::running() && {
-            let player = ui::preview_player(&self.0);
+            let player = ui::preview_player();
             player.transport.playing && !player.cut_only && !player.reviewing
         }
     }
     fn playhead(&self) -> Option<f64> {
-        ui::preview_player(&self.0).playhead
+        ui::preview_player().playhead
     }
     fn set_playhead(&self, at: f64) {
         ui::set_playhead(&self.0, at);
     }
     fn cut(&self) -> Cut {
-        ui::review_cut_of(&self.0)
+        crate::ui::window_preview::newest_review_cut()
     }
     fn unfold_at(&self, at: f64) -> Option<String> {
         let index = self
@@ -211,10 +208,10 @@ impl RecordingPreviewPage for WindowPage {
     }
     fn mix_now(&self, at: f64) -> Option<crate::cut_hear::Mix> {
         let cut = self.cut();
-        Some(ui::apply_mix(&self.0, &cut.segs, &cut.lanes, &cut.fx, at))
+        Some(ui::apply_mix(&cut.segs, &cut.lanes, &cut.fx, at))
     }
     fn root(&self) -> Option<std::path::PathBuf> {
-        ui::line_root(&self.0)
+        ui::line_root()
     }
     fn player_second(&self) -> Option<f64> {
         cut_record_play::playing_second()

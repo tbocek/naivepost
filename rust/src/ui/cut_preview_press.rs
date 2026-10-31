@@ -77,7 +77,7 @@ pub fn box_edit_on_release(
     if window::zoom_armed() || cut_text_hand::text_armed() || cut_svg::svg_armed() {
         return None;
     }
-    if window::held_effect().is_some() {
+    if crate::ui::cut_hand::held_effect().is_some() {
         return None;
     }
     // The travel floor `fx_zoom::DRAG_MIN_PX` (§F3.1) is asked on EACH axis, as that flow does: a caption edit
@@ -87,7 +87,7 @@ pub fn box_edit_on_release(
     if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
         return None;
     }
-    let cut_ = window::review_cut_of(win);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let (index, box_) = text_box_under(&cut_, at, fit, from)?;
     match fx_text::grab_edge(box_, from) {
         Some(edge) => Some(match edge {
@@ -106,7 +106,6 @@ pub fn box_edit_on_release(
 /// Where the same gesture would land the box, without writing anything: what the drag-update shows (snapped,
 /// with snap lines, see [`crate::ui::cut_preview_frame::note_edit`]). Same three refusals as [`box_edit_on_release`].
 pub fn box_edit_preview(
-    win: &adw::ApplicationWindow,
     at: f64,
     fit: (f64, f64),
     from: (f64, f64),
@@ -115,7 +114,7 @@ pub fn box_edit_preview(
     if window::zoom_armed() || cut_text_hand::text_armed() || cut_svg::svg_armed() {
         return None;
     }
-    if window::held_effect().is_some() {
+    if crate::ui::cut_hand::held_effect().is_some() {
         return None;
     }
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
@@ -123,7 +122,7 @@ pub fn box_edit_preview(
     if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
         return None;
     }
-    let cut_ = window::review_cut_of(win);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let (_, box_) = text_box_under(&cut_, at, fit, from)?;
     // Measured against the FITTED picture, which every overlay on this panel is (`set_measure_overlay` in `cut_preview_panel`).
     let box_ = fx_text::Box_::from_px(box_.0, box_.1, box_.2, box_.3, fit.0, fit.1);
@@ -141,12 +140,6 @@ pub fn box_edit_preview(
         None => fx_text::move_box(box_, (dx, dy), fit),
     };
     Some(moved.to_px(fit.0, fit.1))
-}
-
-/// Test-only window onto the thread-local behind the §S5 snap lines: the painter reads
-/// [`crate::ui::cut_preview_frame::edit_snap_on`] directly and the drag's update writes it through `note_edit`.
-pub fn snap_lines_are_on_for_test() -> bool {
-    crate::ui::cut_preview_frame::edit_snap_on()
 }
 
 /// An overlay's box in the fitted picture's px: a caption's is `cut_preview_caption`'s (where its words were
@@ -177,7 +170,7 @@ pub fn play_toggle_on_click(win: &adw::ApplicationWindow) -> Option<String> {
     if window::zoom_armed() || cut_text_hand::text_armed() || cut_svg::svg_armed() {
         return None;
     }
-    if window::held_effect().is_some() {
+    if crate::ui::cut_hand::held_effect().is_some() {
         return None;
     }
     // The picture's own button's door, with the page's filmed runs.
@@ -188,8 +181,8 @@ pub fn play_toggle_on_click(win: &adw::ApplicationWindow) -> Option<String> {
     let _said = window::press_play_recording(win, &runs);
     crate::ui::cut_picture::refresh(win);
     // Which way it went comes from the transport AFTER the press, the playhead's own reading (§D).
-    let playing = window::preview_player(win).transport.playing;
-    let shown = crate::preview::clock(window::preview_player(win).playhead);
+    let playing = window::preview_player().transport.playing;
+    let shown = crate::preview::clock(window::preview_player().playhead);
     Some(if playing {
         format!(
             "{shown} \u{b7} the red line, session time \u{2014} a click on the picture plays it"

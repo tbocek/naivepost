@@ -17,7 +17,7 @@ fn shell_now() -> Option<std::rc::Rc<std::cell::RefCell<Shell>>> {
 
 /// The folder the button should open now; `None` when no session folder is held.
 pub fn folder_now() -> Option<std::path::PathBuf> {
-    folder_in(&crate::ui::save_apply::open_dir()?)
+    folder_in(&crate::startup::open_dir_if_set()?)
 }
 
 /// The shown page's output directory inside `dir`, or `None` when `dir` is not a project folder.
@@ -26,18 +26,6 @@ fn folder_in(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     let page = shell_now()
         .map(|shell| shell.borrow().page)
         .unwrap_or(Page::START);
-    Some(
-        Shell {
-            page,
-            ..Shell::default()
-        }
-        .output_dir(&tree),
-    )
-}
-
-/// Same ladder as `window_bench::paint_readouts`, so press and tooltip agree.
-pub fn folder_for(dir: &std::path::Path, page: Page) -> Option<std::path::PathBuf> {
-    let tree = Tree::new(dir).ok()?;
     Some(
         Shell {
             page,

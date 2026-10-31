@@ -69,8 +69,8 @@ fn wait_for(mut done: impl FnMut() -> bool, limit: Duration) -> bool {
     done()
 }
 
-fn line(window: &adw::ApplicationWindow) -> f64 {
-    ui::line_position(window).t
+fn line() -> f64 {
+    ui::line_position().t
 }
 
 #[test]
@@ -88,14 +88,14 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
             naivepost::play_built_in::in_use(),
             "this box has GStreamer with playbin and gtk4paintablesink, so \u{25b6} plays in the preview"
         );
-        assert_eq!(line(&window), 1.0, "the line was restored at 1 s");
+        assert_eq!(line(), 1.0, "the line was restored at 1 s");
 
         let play = ui::play_recording_button(&window).expect("\u{25b6} is on the page");
         play.emit_clicked();
         assert!(
-            wait_for(|| line(&window) > 1.6, Duration::from_secs(5)),
+            wait_for(|| line() > 1.6, Duration::from_secs(5)),
             "the line follows the playing recording: still at {}",
-            line(&window)
+            line()
         );
         assert!(naivepost::play_back::running(), "the built-in player runs");
         assert!(
@@ -112,12 +112,12 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
         play.emit_clicked();
         common::settle();
         assert!(!naivepost::play_back::running(), "\u{25b6} again paused it");
-        let held = line(&window);
+        let held = line();
         wait_for(|| false, Duration::from_millis(400));
         assert!(
-            (line(&window) - held).abs() < 0.05,
+            (line() - held).abs() < 0.05,
             "a paused preview's line stands still: {held} -> {}",
-            line(&window)
+            line()
         );
         assert!(
             ui::cut_picture::video_shown(),
@@ -135,7 +135,7 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
         let (mut at_join, mut past_join) = (None, None);
         let crossed = wait_for(
             || {
-                let at = line(&window);
+                let at = line();
                 if at > 1.6 && at < 2.4 {
                     in_gap.push(at);
                 }
@@ -152,7 +152,7 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
         assert!(
             crossed,
             "\u{25b6}\u{2702} played on past the join: line {}",
-            line(&window)
+            line()
         );
         assert!(
             in_gap.is_empty(),
@@ -167,9 +167,9 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
         );
         let player = ui::cut_record_play::video_second().expect("the player says where it is");
         assert!(
-            (player - line(&window)).abs() < 0.35,
+            (player - line()).abs() < 0.35,
             "the player stands where the line does: player {player}, line {}",
-            line(&window)
+            line()
         );
         play_cut.emit_clicked();
         common::settle();
@@ -178,12 +178,12 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
             "\u{25b6}\u{2702} again paused it"
         );
         // F2.2 S4: a paused cut holds its line, and with it the picture: the ▶✂ tick moves nothing.
-        let held = line(&window);
+        let held = line();
         wait_for(|| false, Duration::from_millis(400));
         assert!(
-            (line(&window) - held).abs() < 0.05,
+            (line() - held).abs() < 0.05,
             "a paused \u{25b6}\u{2702} holds its line: {held} -> {}",
-            line(&window)
+            line()
         );
         ui::play_recording_button(&window)
             .expect("\u{25b6}")
@@ -201,17 +201,13 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
         play.emit_clicked();
         assert!(
             wait_for(
-                || !ui::preview_player(&window).transport.playing,
+                || !ui::preview_player().transport.playing,
                 Duration::from_secs(5)
             ),
             "at the recording's end the preview pauses (line {})",
-            line(&window)
+            line()
         );
-        assert!(
-            line(&window) >= 3.9,
-            "the line reached the end: {}",
-            line(&window)
-        );
+        assert!(line() >= 3.9, "the line reached the end: {}", line());
         window.close();
         RAN.store(true, Ordering::SeqCst);
     });

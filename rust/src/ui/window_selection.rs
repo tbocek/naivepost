@@ -84,13 +84,11 @@ pub fn draw_selection(
 }
 
 /// This window's band, or `None`; the one value all selection readers use.
-pub fn selection(window: &adw::ApplicationWindow) -> Option<cut_select::Selection> {
-    let _ = window;
+pub fn selection() -> Option<cut_select::Selection> {
     SELECTED.with(|slots| slots.borrow().last().and_then(|s| s.borrow().clone()))
 }
 
-pub fn selection_surface(window: &adw::ApplicationWindow) -> cut_select::Surface {
-    let _ = window;
+pub fn selection_surface() -> cut_select::Surface {
     SELECT_SURFACES
         .with(|slots| slots.borrow().last().and_then(|s| *s.borrow()))
         .unwrap_or(cut_select::Surface::Ruler)
@@ -98,10 +96,10 @@ pub fn selection_surface(window: &adw::ApplicationWindow) -> cut_select::Surface
 
 /// F2.6 S2: the cross; routes through [`cut_select::clear`] and returns whether anything was cleared (which also greys the button).
 pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
-    let had = selection(window).is_some();
+    let had = selection().is_some();
     SELECTED.with(|slots| {
         if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = cut_select::clear(selection(window));
+            *slot.borrow_mut() = cut_select::clear(selection());
         }
     });
     refresh_selection_readout(window);
@@ -110,11 +108,11 @@ pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
 
 /// F2.6 S2: drag one part of the band to `to` (session seconds) at `pps`. Snap marks are rebuilt each call from the cut, lanes and playhead. `Part::Outside` moves nothing (a new selection is S1's job).
 pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, to: f64, pps: f64) {
-    let Some(band) = selection(window) else {
+    let Some(band) = selection() else {
         return;
     };
     let (cut_, lanes) = selection_snap_inputs(window);
-    let marks = cut_select::snap_marks(&cut_, &lanes, preview_playhead(window));
+    let marks = cut_select::snap_marks(&cut_, &lanes, preview_playhead());
     let moved = match part {
         cut_select::Part::Start => cut_select::resize(&band, false, to, &marks, pps),
         cut_select::Part::End => cut_select::resize(&band, true, to, &marks, pps),
@@ -134,7 +132,7 @@ pub fn selection_verbs(window: &adw::ApplicationWindow) -> cut_select::Verbs {
     let (cut_, _) = selection_snap_inputs(window);
     // "is there a recording to cut": a cut with no segment has nothing to split.
     let has_footage = !cut_.segs.is_empty();
-    cut_select::verbs(selection(window).as_ref(), has_footage)
+    cut_select::verbs(selection().as_ref(), has_footage)
 }
 
 /// What this window can offer the snap-mark builder: the review-cut slot until the cut model round supplies a real `Cut`.
@@ -153,7 +151,7 @@ fn selection_snap_inputs(_window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut
 /// F2.7: which of the three buttons is live, as (add, split, remove). Split stays live with no band (F2.6's `verbs()` says false): one border at the red line, right half in hand. With a band up, `verbs()` decides all three.
 pub fn verb_buttons_state(window: &adw::ApplicationWindow) -> (bool, bool, bool) {
     let verbs = selection_verbs(window);
-    let split_live = match selection(window) {
+    let split_live = match selection() {
         Some(_) => verbs.split,
         None => true,
     };
@@ -170,7 +168,7 @@ pub(crate) fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
         }
     }
     if let Some(button) = ui::line_step_button(window, "add-button") {
-        let tip = cut_verbs::add_tip_now(selection(window).as_ref())
+        let tip = cut_verbs::add_tip_now(selection().as_ref())
             .unwrap_or_else(|| cut_verbs::BUTTONS[0].2.to_string());
         button.set_tooltip_text(Some(&tip));
     }
@@ -180,7 +178,7 @@ pub(crate) fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
 
 /// F2.7 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's marks (`cut_select::marks`); the form comes from `preview::clock`.
 pub(crate) fn refresh_selection_readout(window: &adw::ApplicationWindow) {
-    let band = selection(window);
+    let band = selection();
     let text = match cut_select::marks(band.as_ref()) {
         Some((start, end)) => format!(
             "{} {} \u{2013} {}",
@@ -217,14 +215,13 @@ pub(crate) fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     refresh_effects_lane(window);
 }
 
-pub fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
-    ui::live_player(window)
+pub fn preview_playhead() -> f64 {
+    ui::live_player()
         .map(|player| player.borrow().playhead.unwrap_or(0.0))
         .unwrap_or(0.0)
 }
 
-pub fn selection_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    let _ = window;
+pub fn selection_gesture() -> Option<gtk::GestureDrag> {
     SELECT_GESTURES.with(|cell| cell.borrow().clone())
 }
 thread_local! {
@@ -232,8 +229,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-pub fn pressed_surface(window: &adw::ApplicationWindow) -> Option<cut_select::Surface> {
-    let _ = window;
+pub fn pressed_surface() -> Option<cut_select::Surface> {
     SELECT_SURFACES.with(|slots| slots.borrow().last().and_then(|s| *s.borrow()))
 }
 
@@ -327,7 +323,7 @@ pub fn press_effect_bar(
     travel_px: f64,
     over_kill: bool,
 ) -> fx_band::Press {
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let Some(fx) = cut_.fx.get(index).cloned() else {
         return fx_band::Press::Dropped;
     };
@@ -376,7 +372,7 @@ pub fn press_effect_bar(
 
 /// F3.8 S3: take ONE record out by index via `ui::record_edit`, NEVER `ui::seed_review_cut`, so F2.13's ↶ restores it.
 pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String {
-    let mut cut_ = ui::review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     if index >= cut_.fx.len() {
         return fx_band::GONE.to_string();
     }
@@ -384,7 +380,9 @@ pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String
     ui::save_insert_cut(&cut_);
     ui::record_edit(window, &cut_);
     // The held thing was this record; holding a removed effect would leave an overlay of nothing.
-    if ui::held_effect().is_some_and(|held| held.kind == taken.kind && held.t == taken.t) {
+    if crate::ui::cut_hand::held_effect()
+        .is_some_and(|held| held.kind == taken.kind && held.t == taken.t)
+    {
         ui::set_held_effect(None);
     }
     refresh_effects_lane(window);
@@ -397,11 +395,11 @@ pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String
 
 /// F3.8 S3 (`⌦ with an effect held removes it`): the held record is found in the LIVE cut by kind + start, never by a remembered index.
 pub fn remove_held_effect(window: &adw::ApplicationWindow) -> String {
-    let Some(held) = ui::held_effect() else {
+    let Some(held) = crate::ui::cut_hand::held_effect() else {
         return fx_band::GONE.to_string();
     };
-    let cut_ = ui::review_cut_of(window);
-    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+    let cut_ = crate::ui::window_preview::newest_review_cut();
+    let Some(index) = crate::effect_rules::find_by_value(&cut_.fx, &held.kind, held.t) else {
         return fx_band::GONE.to_string();
     };
     remove_effect_at(window, index)
@@ -409,11 +407,11 @@ pub fn remove_held_effect(window: &adw::ApplicationWindow) -> String {
 
 /// F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): `fx_band::nudged` IS `effect_rules::nudge`, so no snap; the band moves, never stretches.
 pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String {
-    let Some(held) = ui::held_effect() else {
+    let Some(held) = crate::ui::cut_hand::held_effect() else {
         return fx_band::GONE.to_string();
     };
-    let mut cut_ = ui::review_cut_of(window);
-    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
+    let Some(index) = crate::effect_rules::find_by_value(&cut_.fx, &held.kind, held.t) else {
         return fx_band::GONE.to_string();
     };
     let (t, dur) = fx_band::nudged(&held, delta);
@@ -445,11 +443,11 @@ pub fn drag_held_band(
     session_end: f64,
     from_end: Option<bool>,
 ) -> String {
-    let Some(held) = ui::held_effect() else {
+    let Some(held) = crate::ui::cut_hand::held_effect() else {
         return fx_band::GONE.to_string();
     };
-    let mut cut_ = ui::review_cut_of(window);
-    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
+    let Some(index) = crate::effect_rules::find_by_value(&cut_.fx, &held.kind, held.t) else {
         return fx_band::GONE.to_string();
     };
     let (t, dur) = match from_end {
@@ -486,11 +484,11 @@ pub fn drag_held_band(
 
 /// F3.8 S4 (`✎ Edit: found by kind and start · the box from the live effect`): reopen the form of the record in hand. A miss says so and changes NOTHING. The box goes through [`fx_band::live_box`] so a stale form copy cannot overwrite a moved box.
 pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
-    let Some(held) = ui::held_effect() else {
+    let Some(held) = crate::ui::cut_hand::held_effect() else {
         return fx_band::GONE.to_string();
     };
-    let cut_ = ui::review_cut_of(window);
-    let Some(index) = fx_band::refind(&cut_.fx, &held.kind, held.t) else {
+    let cut_ = crate::ui::window_preview::newest_review_cut();
+    let Some(index) = crate::effect_rules::find_by_value(&cut_.fx, &held.kind, held.t) else {
         ui::log_line(fx_band::GONE);
         return fx_band::GONE.to_string();
     };
@@ -533,7 +531,7 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
 
 /// F3.8 S3 (`Esc drops the hold and disarms ("cancelled" for a bare disarm)`): `None` when nothing is held, so the key travels on to the per-kind controllers (this one is wired FIRST among the Esc controllers). Claiming the key drops the hold and every hand-armed drag; `fx_band::CANCELLED` is the one sentence (§A.9).
 pub fn press_band_esc(window: &adw::ApplicationWindow) -> Option<String> {
-    let _ = ui::held_effect()?;
+    let _ = crate::ui::cut_hand::held_effect()?;
     // The arms come down BEFORE the hold clears, so a refusing door leaves nothing half-done.
     if ui::zoom_armed() {
         let _ = ui::press_zoom_esc(window);
@@ -570,8 +568,7 @@ pub fn live_form_refused() {
 
 /// F2.6 S1: a press on the effects lane, the only ground that refuses a selection. With an effect in hand it PUTS IT DOWN; otherwise nothing. No band is drawn, so the selection stays.
 pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress {
-    let _ = window;
-    let answer = cut_select::fx_lane_press(ui::held_effect().is_some());
+    let answer = cut_select::fx_lane_press(crate::ui::cut_hand::held_effect().is_some());
     match answer {
         cut_select::FxLanePress::PutsHeldEffectDown => {
             ui::set_held_effect(None);
@@ -611,8 +608,7 @@ pub fn select_surface(window: &adw::ApplicationWindow) -> Option<gtk::DrawingAre
 }
 
 /// F2.5 S6: set this window's one preview volume from a slider percent (0..100) and push it to the live player. Returns the gain written (`0..=1`); the clamp is [`cut_hear::clamp_volume`].
-pub fn set_preview_volume(window: &adw::ApplicationWindow, percent: f64) -> f64 {
-    let _ = window;
+pub fn set_preview_volume(percent: f64) -> f64 {
     let volume = PREVIEW_VOLUMES.with(|slots| {
         slots
             .borrow()
@@ -622,15 +618,14 @@ pub fn set_preview_volume(window: &adw::ApplicationWindow, percent: f64) -> f64 
     });
     volume.borrow_mut().set_percent(percent);
     let gain = volume.borrow().value();
-    if let Some(player) = ui::live_player(window) {
+    if let Some(player) = ui::live_player() {
         player.borrow_mut().volume = Some(gain);
     }
     gain
 }
 
 /// F2.5 S6: the one number as a gain, which [`cut_hear::mix_at`] is handed; default full if no slider was shown.
-pub fn preview_volume(window: &adw::ApplicationWindow) -> f64 {
-    let _ = window;
+pub fn preview_volume() -> f64 {
     PREVIEW_VOLUMES.with(|slots| {
         slots
             .borrow()
@@ -641,14 +636,8 @@ pub fn preview_volume(window: &adw::ApplicationWindow) -> f64 {
 }
 
 /// F2.5: ask the hearing rules what this tick means and store it on this window's player. `cut_hear::mix_at` decides lanes, footage mute, loudness and speed; this lands `footage_muted` for the pipeline.
-pub fn apply_mix(
-    window: &adw::ApplicationWindow,
-    segs: &[cut::Seg],
-    lanes: &[cut::Lane],
-    fx: &[cut::Fx],
-    t: f64,
-) -> cut_hear::Mix {
-    let mut mix = cut_hear::mix_at(segs, lanes, fx, t, preview_volume(window));
+pub fn apply_mix(segs: &[cut::Seg], lanes: &[cut::Lane], fx: &[cut::Fx], t: f64) -> cut_hear::Mix {
+    let mut mix = cut_hear::mix_at(segs, lanes, fx, t, preview_volume());
     // F2.12 S7 (`card sound is its own pipeline`): while a SPLICED card plays the footage is held on the wall clock (`card_hold_advance`), so the footage is muted here, never the card.
     let held_by_card = crate::ui::cut_card_preview::card_hearing(
         &cut::Cut {
@@ -663,7 +652,7 @@ pub fn apply_mix(
     }
     // §05-cut#8 bullet 2: ONE line per CHANGE of the footage mute, naming the reason (wording `preview::sound_change`'s); asked before the answer is overwritten so a 100 ms tick does not repeat it.
     crate::ui::preview_sound::report_mute_change(
-        crate::ui::preview_sound::heard_before(window),
+        crate::ui::preview_sound::heard_before(),
         crate::ui::preview_sound::heard_now(&mix),
         held_by_card,
         &|line| ui::log_line(line),
@@ -675,7 +664,7 @@ pub fn apply_mix(
         crate::ui::preview_sound::unpreviewable_snd_under(fx, t).unwrap_or(""),
         &|line| ui::log_line(line),
     );
-    if let Some(player) = ui::live_player(window) {
+    if let Some(player) = ui::live_player() {
         player.borrow_mut().footage_muted = mix.footage_muted;
     }
     mix

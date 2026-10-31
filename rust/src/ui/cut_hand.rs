@@ -1,7 +1,7 @@
 //! §05-cut#7-rules bullet 1 — the page's ONE hand.
 //!
 //! §7's `One thing held at a time` ([`crate::cut_rules::pick_up`]) only binds if there is one place things are
-//! put in hand; before this the page kept three slots (edge, clip, effect) and `held_now()`'s if-ladder
+//! put in hand; before this the page kept three slots (edge, clip, effect) and `cut_hand::held_kind()`'s if-ladder
 //! silently picked a winner. Holding edits nothing ([`crate::cut_rules::picking_up_edits`]), so no door here
 //! touches the history or cut.json.
 
@@ -40,9 +40,8 @@ thread_local! {
 /// second pickup cannot join the first. Returns what the hand holds afterwards, always `Some(next)`.
 pub fn pick_up(next: Hand) -> Option<Hand> {
     HELD.with(|cell| {
-        let previous = cell.borrow().as_ref().map(Hand::kind);
         // The rule answers WHICH kind the hand ends on; the payload follows that answer.
-        let kind = cut_rules::pick_up(previous, next.kind()).unwrap_or_else(|| next.kind());
+        let kind = cut_rules::pick_up(next.kind()).unwrap_or_else(|| next.kind());
         *cell.borrow_mut() = Some(match kind {
             Held::Edge => Hand::Edge(seg_of(&next)),
             Held::Clip => Hand::Clip(seg_of(&next)),
@@ -102,12 +101,6 @@ pub fn held_effect() -> Option<Fx> {
             _ => None,
         })
     })
-}
-
-/// §7 (`picking up is not an edit`): whether a gesture that started by picking something up owes an undo
-/// step, only if it moved ([`cut_rules::picking_up_edits`]).
-pub fn picking_up(moved: bool) -> bool {
-    cut_rules::picking_up_edits(moved)
 }
 
 fn seg_of(hand: &Hand) -> Seg {

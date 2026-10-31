@@ -66,7 +66,7 @@ fn cut_page(
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(tape);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     ui::set_held_clip(None);
     ui::clear_selection(&window);
     settle();
@@ -81,16 +81,16 @@ fn cut_page(
 /// `button`, which a `set_button(0)` gesture answers as 0. The LEFT half is therefore emitted on the page's
 /// own gesture (that is a real press reaching a real handler); the right-button half goes through the same
 /// `press` the handler forwards to and the gate it gates on, which is the honest limit of a headless test.
-fn press_left(window: &adw::ApplicationWindow, x: f64, n_press: i32) {
-    let gesture = ui::cut_card_hold::card_hold_gesture_for_test(window)
+fn press_left(x: f64, n_press: i32) {
+    let gesture = ui::cut_card_hold::card_hold_gesture_for_test()
         .expect("the page wired a card-hold press onto the painted band");
     gesture.emit_by_name::<()>("released", &[&n_press, &x, &0f64]);
     settle();
 }
 
 /// The x of a second, through the span the band paints its bars with — so the press lands where the ink is.
-fn x_of(window: &adw::ApplicationWindow, t: f64) -> f64 {
-    ui::cut_card_hold::span_of_for_test(window).x_of(t)
+fn x_of(t: f64) -> f64 {
+    ui::cut_card_hold::span_of_for_test().x_of(t)
 }
 
 /// S6: a double left click on a card holds it, and `insert-button` says `Edit` under the hand.
@@ -101,16 +101,16 @@ fn f2_12_s6_a_double_click_on_a_card_holds_it(app: &adw::Application) {
     };
     let window = cut_page(app, &tape(), &seeded);
     assert_eq!(
-        ui::held_clip(),
+        ui::cut_hand::held_clip(),
         None,
         "the page opened with nothing in hand"
     );
     assert_eq!(word(&window, "insert-button"), "Insert");
 
     // 31 s is one second into the card, which runs 30..34 (`s == e`, so its seconds are `s .. s + dur`).
-    press_left(&window, x_of(&window, 31.0), 2);
+    press_left(x_of(31.0), 2);
 
-    let held = ui::held_clip().expect("the double click took the card up");
+    let held = ui::cut_hand::held_clip().expect("the double click took the card up");
     assert_eq!(
         held.ins, "assets/tier.svg",
         "the card under the ink came into the hand"
@@ -130,7 +130,7 @@ fn f2_12_s6_a_double_click_on_a_card_holds_it(app: &adw::Application) {
         "{}",
         status_text(&window)
     );
-    let held_now = ui::held_clip().expect("the gesture left the card in hand");
+    let held_now = ui::cut_hand::held_clip().expect("the gesture left the card in hand");
     assert!(
         naivepost::cut_insert::hold(Some(&held_now)),
         "a card held by the double click is a card to the button's own predicate: {held_now:?}"
@@ -154,11 +154,8 @@ fn f2_12_s6_a_right_click_holds_a_card_too(app: &adw::Application) {
     let window = cut_page(app, &tape(), &seeded);
     assert!(hold::holds_card(3, 1), "one right press is a hold");
     // Same second, same span, same `press` the gesture forwards to: a first press is a hold, so it holds.
-    let said = hold::press(
-        &window,
-        ui::cut_card_hold::seconds_at_for_test(&window, x_of(&window, 32.0)),
-    );
-    let held = ui::held_clip().expect("a first right press takes the card up");
+    let said = hold::press(&window, hold::second_at(x_of(32.0)));
+    let held = ui::cut_hand::held_clip().expect("a first right press takes the card up");
     assert_eq!(held.ins, "assets/tier.svg");
     assert!(
         said.contains("Edit"),
@@ -182,17 +179,17 @@ fn f2_12_s6_a_press_on_footage_holds_nothing(app: &adw::Application) {
     };
     let window = cut_page(app, &tape(), &seeded);
     // Take a card up first: the refusal must leave THAT hand alone, not merely hold nothing new.
-    press_left(&window, x_of(&window, 31.0), 2);
-    let before = ui::held_clip().expect("the card is in hand before the miss");
+    press_left(x_of(31.0), 2);
+    let before = ui::cut_hand::held_clip().expect("the card is in hand before the miss");
 
-    press_left(&window, x_of(&window, 10.0), 2);
+    press_left(x_of(10.0), 2);
 
     assert_eq!(
-        ui::held_clip().map(|seg| seg.ins).as_deref(),
+        ui::cut_hand::held_clip().map(|seg| seg.ins).as_deref(),
         Some("assets/tier.svg"),
         "a miss keeps the hand"
     );
-    assert_eq!(ui::held_clip().unwrap().s, before.s);
+    assert_eq!(ui::cut_hand::held_clip().unwrap().s, before.s);
     assert_eq!(
         status_text(&window),
         hold::NOTHING,
@@ -215,8 +212,8 @@ fn f2_12_s6_a_held_card_presses_as_edit(app: &adw::Application) {
         ..Default::default()
     };
     let window = cut_page(app, &tape(), &seeded);
-    press_left(&window, x_of(&window, 31.0), 2);
-    let held = ui::held_clip().expect("the double click held the card");
+    press_left(x_of(31.0), 2);
+    let held = ui::cut_hand::held_clip().expect("the double click held the card");
     assert!(
         naivepost::cut_insert::hold(Some(&held)),
         "the press's own predicate must call a card held by the gesture a card: {held:?}"
@@ -237,7 +234,7 @@ fn f2_12_s6_a_held_card_presses_as_edit(app: &adw::Application) {
     ui::set_held_clip(None);
     ui::refresh_insert_button(&window);
     assert!(
-        !naivepost::cut_insert::hold(ui::held_clip().as_ref()),
+        !naivepost::cut_insert::hold(ui::cut_hand::held_clip().as_ref()),
         "no hand, no card"
     );
     assert_eq!(

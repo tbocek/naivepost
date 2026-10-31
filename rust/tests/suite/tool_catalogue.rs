@@ -140,11 +140,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_a_refusal_quotes_the_
 
     // Past an hour the minutes keep counting rather than rolling into a clock face: 62:05 says where the
     // second hour is, 02:05 would not.
-    assert_eq!(cutpass::clock(3725.0), "62:05");
+    assert_eq!(naivepost::tools::mm_ss(3725.0), "62:05");
     let problem = error(&Plan::new(100.0, 0.0).add_segment(400.0, 500.0, "past the end"));
     assert!(problem.contains("08:20 is past the end"), "{problem}");
     // A negative number has no reading on a timeline; it clamps to 00:00 rather than printing "-00:03".
-    assert_eq!(cutpass::clock(-3.0), "00:00");
+    assert_eq!(naivepost::tools::mm_ss(-3.0), "00:00");
 }
 
 #[test]

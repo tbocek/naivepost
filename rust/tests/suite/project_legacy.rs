@@ -307,9 +307,9 @@ fn sec_01_project_and_files_2_naivepostjson_autosave_writes_only_when_the_bytes_
 
     // Window close: same rule, and it must not be skippable when something changed.
     model.context = "written on close".to_string();
-    assert!(autosave.flush(&model, &dir).unwrap());
+    assert!(autosave.save_if_changed(&model, &dir).unwrap());
     assert!(read_in(&file).contains("written on close"));
-    assert!(!autosave.flush(&model, &dir).unwrap());
+    assert!(!autosave.save_if_changed(&model, &dir).unwrap());
 
     // Seeded from what a load just read, so the first tick after opening a project
     // writes nothing even though this Autosave never saw a write of its own.

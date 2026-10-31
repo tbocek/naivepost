@@ -163,16 +163,11 @@ pub fn volume_ask(files: &[String], gain: f64, at_secs: f64) -> Option<Vec<Strin
 }
 
 /// Record an ask as made WITHOUT spawning: the write half of [`volume_ask`]'s stamp.
-fn note_ask(gain: f64, at_secs: f64) {
+pub fn note_ask(gain: f64, at_secs: f64) {
     let asked = round_gain(gain);
     if let Ok(mut stamp) = applied_volume().lock() {
         *stamp = Some((asked, at_secs));
     }
-}
-
-/// [`note_ask`] for a test that must settle "already asked" without spawning; nothing in the live path calls it.
-pub fn note_ask_for_test(gain: f64, at_secs: f64) {
-    note_ask(gain, at_secs);
 }
 
 /// The gain rounded to thousandths, which is the precision a volume property is asked in.

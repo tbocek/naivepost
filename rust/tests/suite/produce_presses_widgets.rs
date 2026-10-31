@@ -332,17 +332,14 @@ fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// Seed the live cut the presses read through `review_cut_of`, and the row they read their settings from.
+/// Seed the live cut the presses read through `window_preview::newest_review_cut`, and the row they read their settings from.
 /// Must run on the window's own thread — both write thread-local slots.
 fn seed_live_cut(window: &adw::ApplicationWindow) {
-    ui::seed_review_cut(
-        window,
-        &Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
     let row = naivepost::produce_screen::defaults();
     let mut page = ui::produce_page::read_state();
     page.container = row[0].1.to_string();

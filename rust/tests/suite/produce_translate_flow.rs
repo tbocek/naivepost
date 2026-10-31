@@ -624,14 +624,11 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     trans::set_spawn_for_test(scripted_spawn());
 
     let window = produce_window(&app_in_round());
-    ui::seed_review_cut(
-        &window,
-        &naivepost::cut::Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
     seed_page(&window);
     tick_language(&window, "German");
 
@@ -742,7 +739,7 @@ fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
     trans::set_spawn_for_test(scripted_spawn());
 
     let window = produce_window(&app_in_round());
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     seed_page(&window);
     // Voice "captions only" (§1's dropdown id) plus Subtitles "none in the video": the one combination where
     // the words are in the sidecar alone, which is exactly what S2 promises to warn about. Both are rows the

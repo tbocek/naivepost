@@ -65,17 +65,14 @@ fn round(app: &adw::Application) {
         start: 0.0,
         end: 120.0,
     }]);
-    ui::seed_review_cut(
-        &window,
-        &cut::Cut {
-            segs: vec![Seg {
-                s: 0.0,
-                e: 60.0,
-                ..Default::default()
-            }],
+    ui::seed_review_cut(&cut::Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
             ..Default::default()
-        },
-    );
+        }],
+        ..Default::default()
+    });
     // A frame's name is an instant on its file's clock and the folder's first frame is second 0 of the file.
     write_frame(&tree, "lecture", 0.0);
     let ten = write_frame(&tree, "lecture", 10.0);

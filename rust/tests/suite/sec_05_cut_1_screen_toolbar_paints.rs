@@ -81,7 +81,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         }],
         ..Default::default()
     };
-    naivepost::ui::seed_review_cut(&window, &seeded);
+    naivepost::ui::seed_review_cut(&seeded);
     naivepost::ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 10.0 });
     settle();
     window
@@ -272,7 +272,7 @@ fn check_the_row_list_is_painted(app: &adw::Application) {
     settle();
     let band = common::find_named(&window, "track-band").expect("the band is on the page");
     assert!(band.is_mapped(), "the band is on the page and mapped");
-    let switch = naivepost::ui::cut_band_marks::placed_on(&window)
+    let switch = naivepost::ui::cut_band_marks::placed_on()
         .into_iter()
         .find(|placed| {
             matches!(
@@ -290,7 +290,7 @@ fn check_the_row_list_is_painted(app: &adw::Application) {
         "and inside the pixels the pane gave the band ({} px): {switch:?}",
         band.height()
     );
-    let scene = naivepost::ui::cut_view::band_scene_for(&window);
+    let scene = naivepost::ui::cut_view::band_scene_for();
     let first = scene
         .recordings
         .first()
@@ -359,7 +359,7 @@ fn cut_page_as_shot(app: &adw::Application) -> adw::ApplicationWindow {
         }],
         ..Default::default()
     };
-    naivepost::ui::seed_review_cut(&window, &folded);
+    naivepost::ui::seed_review_cut(&folded);
     naivepost::ui::refresh_fold_badges(&window);
     naivepost::ui::press_fold_gap(&window, 1);
     naivepost::ui::refresh_camera_rows(&window);

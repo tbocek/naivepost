@@ -22,7 +22,7 @@ static ANY_STOPPED: AtomicBool = AtomicBool::new(false);
 static CURRENT_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Force the current generation to a known number, so the switch and `RunBar::run_epoch` stay one counter.
-/// Called by `runqueue::cancel_switch` right after the bar bumps its own.
+/// Called by `cancel_leg::reset_to` right after the bar bumps its own.
 pub fn reset_to(epoch: u64) {
     ANY_STOPPED.store(false, Ordering::SeqCst);
     CURRENT_GEN.store(epoch, Ordering::SeqCst);

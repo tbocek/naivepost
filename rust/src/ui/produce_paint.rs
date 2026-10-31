@@ -62,7 +62,7 @@ pub fn place_overlay_box(box_on_picture: gtk::Box, mark: &TextMark) {
     ) else {
         return;
     };
-    overlay_over_plate(&plate, &holder);
+    overlay_over_plate(&plate);
     let holder = holder_fixed(&holder);
     let (x, y, w, h) = box_px(mark);
     box_on_picture.set_size_request(w, h);
@@ -154,7 +154,7 @@ fn holder_fixed(holder: &gtk::Widget) -> gtk::Fixed {
 }
 
 /// The overlay the word boxes float in; `build_left_column` already made it, so this only finds it again.
-fn overlay_over_plate(plate: &gtk::Widget, holder: &gtk::Widget) -> gtk::Overlay {
+fn overlay_over_plate(plate: &gtk::Widget) -> gtk::Overlay {
     if let Some(existing) = plate
         .parent()
         .and_then(|p| p.downcast::<gtk::Overlay>().ok())
@@ -162,7 +162,6 @@ fn overlay_over_plate(plate: &gtk::Widget, holder: &gtk::Widget) -> gtk::Overlay
         return existing;
     }
     // No overlay means the page was built without one, a build bug: the dashed box would land under the picture.
-    let _ = holder;
     panic!("the thumbnail plate is not inside its overlay - build_left_column must wrap it")
 }
 
@@ -699,7 +698,7 @@ pub fn repaint_plates() {
 /// The session folder this page's pictures live in: the opened project, else the launch's working copy beside cwd.
 fn session_dir() -> std::path::PathBuf {
     open_project()
-        .or_else(crate::ui::save_apply::open_dir)
+        .or_else(crate::startup::open_dir_if_set)
         .unwrap_or_else(crate::startup::open_dir)
 }
 

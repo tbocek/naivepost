@@ -348,17 +348,17 @@ fn check_the_sound_strip_grip_sizes_the_strip(app: &adw::Application) {
     window.present();
     common::wait_for_stable_layout(&window);
 
-    let scene = cut_view::band_scene_for(&window);
+    let scene = cut_view::band_scene_for();
     let rows = cut_tracks::rows_for_press(&scene);
     let x = 600.0;
     let line = rows.wave_top(0);
     assert_eq!(
-        ui::band_cursor_at(&window, x, line),
+        ui::band_cursor_at(x, line),
         Some("row-resize"),
         "the line offers the grip"
     );
     assert_ne!(
-        ui::band_cursor_at(&window, x, line - 10.0),
+        ui::band_cursor_at(x, line - 10.0),
         Some("row-resize"),
         "the pictures do not"
     );
@@ -373,7 +373,7 @@ fn check_the_sound_strip_grip_sizes_the_strip(app: &adw::Application) {
     let now = window::press_wave(&window, was + 10.0);
     assert_eq!(now, was + 10.0, "the drag's height is the strip's");
     assert_eq!(
-        cut_tracks::row_wave_top(&window, 0),
+        cut_tracks::row_wave_top(0),
         line - 10.0,
         "and the line moved with the hand"
     );

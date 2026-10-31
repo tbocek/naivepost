@@ -46,7 +46,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
     let mut seeded = cut::Cut::default();
     seeded.segs = vec![seg(0.0, 30.0), seg(30.0, 60.0), seg(70.0, 90.0)];
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     window
 }
 

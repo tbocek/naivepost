@@ -69,7 +69,7 @@ fn cut_page_taped(
     // The tape first, then the cut: the badge list is built from the tape's runs, so ordering the two
     // the other way round would draw the previous check's gaps for one frame.
     ui::set_session_recordings(tape);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     ui::set_watched_row(None);
     ui::refresh_camera_rows(&window);
     ui::refresh_fold_badges(&window);
@@ -154,22 +154,22 @@ fn tape_for(_cut_: &cut::Cut) -> Vec<Recording> {
 /// The gap index whose stretch is `gap`, read off the WINDOW's own badge list — which is what
 /// `refresh_fold_badges` stored when it drew them, so the position IS the button number minus one and
 /// no check hard-codes a number that could drift with the cut.
-fn gap_index(window: &adw::ApplicationWindow, gap: (f64, f64)) -> usize {
-    ui::fold_gaps(window)
+fn gap_index(gap: (f64, f64)) -> usize {
+    ui::fold_gaps()
         .iter()
         .position(|held| *held == gap)
-        .unwrap_or_else(|| panic!("no badge over {gap:?}: {:?}", ui::fold_gaps(window)))
+        .unwrap_or_else(|| panic!("no badge over {gap:?}: {:?}", ui::fold_gaps()))
 }
 
 /// S1: clicking the − on the 10 s hole folds it to a seam, stores the fold, takes the stretch's width
 /// away, and prints the rule's own sentence into the status line.
 fn f2_11_s1_a_click_on_the_minus_folds_the_hole(app: &adw::Application) {
     let window = cut_page(app, &dropped());
-    let index = gap_index(&window, (30.0, 40.0));
+    let index = gap_index((30.0, 40.0));
     button(&window, &format!("fold-button-{}", index + 1)).emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let held = ui::review_fold_rows(&window);
+    let held = ui::window::newest_review_cut();
     assert_eq!(
         held.folds,
         vec![[30.0, 40.0]],
@@ -217,16 +217,16 @@ fn f2_11_s1_a_click_on_the_minus_folds_the_hole(app: &adw::Application) {
 /// status says the other half of the same sentence.
 fn f2_11_s1_a_second_click_unfolds_it_again(app: &adw::Application) {
     let window = cut_page(app, &dropped());
-    let index = gap_index(&window, (30.0, 40.0));
+    let index = gap_index((30.0, 40.0));
     let name = format!("fold-button-{}", index + 1);
     button(&window, &name).emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(ui::review_fold_rows(&window).folds.len(), 1);
+    assert_eq!(ui::window::newest_review_cut().folds.len(), 1);
 
     button(&window, &name).emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let held = ui::review_fold_rows(&window);
+    let held = ui::window::newest_review_cut();
     assert!(
         held.folds.is_empty(),
         "nothing left folded: {:?}",
@@ -249,7 +249,7 @@ fn f2_11_s1_a_second_click_unfolds_it_again(app: &adw::Application) {
 /// including the head and tail, which fold like any other dropped stretch.
 fn f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app: &adw::Application) {
     let window = cut_page(app, &dropped());
-    let gaps = ui::fold_gaps(&window);
+    let gaps = ui::fold_gaps();
     assert_eq!(
         gaps.len(),
         3,
@@ -258,7 +258,7 @@ fn f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app: &adw::Application) {
 
     button(&window, "fold-all-button").emit_by_name::<()>("clicked", &[]);
     settle();
-    let held = ui::review_fold_rows(&window);
+    let held = ui::window::newest_review_cut();
     assert_eq!(
         held.folds.len(),
         3,
@@ -277,7 +277,7 @@ fn f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app: &adw::Application) {
     button(&window, "fold-all-button").emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        ui::review_fold_rows(&window).folds.is_empty(),
+        ui::window::newest_review_cut().folds.is_empty(),
         "and opened again"
     );
     assert!(
@@ -293,7 +293,7 @@ fn f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app: &adw::Application) {
 /// edited fields while the fold stays exactly where the person left it.
 fn f2_11_s1_a_fold_is_saved_and_never_undone(app: &adw::Application) {
     let window = cut_page(app, &dropped());
-    let index = gap_index(&window, (30.0, 40.0));
+    let index = gap_index((30.0, 40.0));
     button(&window, &format!("fold-button-{}", index + 1)).emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -309,11 +309,11 @@ fn f2_11_s1_a_fold_is_saved_and_never_undone(app: &adw::Application) {
 
     // An edit that DOES belong to the undo stack, then Undo: the segments go back, the fold stays.
     ui::note_edit(&window);
-    let before_segs = ui::review_fold_rows(&window).segs.clone();
+    let before_segs = ui::window::newest_review_cut().segs.clone();
     assert_eq!(before_segs.len(), 2);
     button(&window, "undo-button").emit_by_name::<()>("clicked", &[]);
     settle();
-    let after = ui::review_fold_rows(&window);
+    let after = ui::window::newest_review_cut();
     assert_eq!(
         after.folds,
         vec![[30.0, 40.0]],
@@ -334,7 +334,7 @@ fn f2_11_s1_a_tiny_gap_gets_no_widget(app: &adw::Application) {
     // 0.5 s of head at 4 px/s is 2 px: under the 20 px floor.
     tight.segs = vec![clip(0.5, 30.0), clip(40.0, 60.0)];
     let window = cut_page(app, &tight);
-    let gaps = ui::fold_gaps(&window);
+    let gaps = ui::fold_gaps();
     assert!(
         !gaps.contains(&(0.0, 0.5)),
         "the 2 px head wore no badge: {gaps:?}"
@@ -346,13 +346,13 @@ fn f2_11_s1_a_tiny_gap_gets_no_widget(app: &adw::Application) {
     // No numbered button anywhere stands for the too-narrow gap.
     for i in 1..=gaps.len() {
         assert_ne!(
-            ui::folded_gap_at(&window, i - 1),
+            ui::folded_gap_at(i - 1),
             Some((0.0, 0.5)),
             "no `fold-button-{i}` folds a gap with no room"
         );
     }
     assert!(
-        ui::folded_gap_at(&window, gaps.len()).is_none(),
+        ui::folded_gap_at(gaps.len()).is_none(),
         "and nothing past the list answers"
     );
     window.close();
@@ -365,7 +365,7 @@ fn f2_11_s2_the_row_cross_removes_an_emptied_bottom_row(app: &adw::Application) 
     // Hold row 1 open with the floor so there IS an empty bottom row to take away.
     seeded.nrows = 2;
     let window = cut_page(app, &seeded);
-    assert_eq!(ui::review_fold_rows(&window).nrows, 2);
+    assert_eq!(ui::window::newest_review_cut().nrows, 2);
 
     // Row 0 holds footage: its cross is dead.
     assert!(
@@ -380,7 +380,7 @@ fn f2_11_s2_the_row_cross_removes_an_emptied_bottom_row(app: &adw::Application) 
 
     button(&window, "row-cross-2").emit_by_name::<()>("clicked", &[]);
     settle();
-    let after = ui::review_fold_rows(&window);
+    let after = ui::window::newest_review_cut();
     assert_eq!(after.nrows, 1, "the floor that held the row is spent");
     let recordings = timeline::kept_footage_recordings(&after);
     assert_eq!(
@@ -443,7 +443,7 @@ fn f2_11_s2_the_lane_cross_takes_pin_shift_pictures_and_sound(app: &adw::Applica
 
     button(&window, &format!("lane-cross-{LANE}")).emit_by_name::<()>("clicked", &[]);
     settle();
-    let after = ui::review_fold_rows(&window);
+    let after = ui::window::newest_review_cut();
 
     // 1. the lane entry
     assert!(

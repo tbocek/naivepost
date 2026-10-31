@@ -349,15 +349,7 @@ fn check_the_close_hands_the_unload_over(app: &adw::Application) {
     let log = ui::log_expander(&window).expect("the window carries the log expander");
     // The view is the shell's own log door (`close_step_run` repaints exactly that text view).
     let view: gtk4::TextView = ui::log_view(&window).expect("the log expander holds its text view");
-    naivepost::ui::run_close::close_step_run(
-        &bar,
-        &queue,
-        &std::rc::Rc::new(std::cell::RefCell::new(exchange)),
-        &status,
-        &progress,
-        &log,
-        &view,
-    );
+    naivepost::ui::run_close::close_step_run(&bar, &queue, &status, &progress, &log, &view);
     // The unload is off-thread by design (20 s ceiling, never fails the run), so wait for its report
     // rather than assuming it already landed.
     naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));

@@ -275,7 +275,7 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s2_s3_the_retake_read_and_mark() {
     );
 
     // s2: the read. §3.4 wants every pause, including the ones under the threshold.
-    let read = naivepost::retakes_ask::lines_answer_for_test(&marks, 1, 4);
+    let read = naivepost::retakes_ask::lines_answer(&marks, 1, 4);
     assert!(
         read.contains("pause"),
         "the read names the pause before each line: {read}"

@@ -5,7 +5,7 @@
 //!
 //! The row is a DIAL, not a spawned process: its marker program ([`FRAMES_TASK`]) tells [`crate::run_stages::drive_walk`] to call rather than fork, since one row is many ffmpeg calls whose output has to be read.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::layout::Tree;
 use crate::project::Project;
@@ -116,7 +116,7 @@ pub fn stage_pass(
 
     // S2: the sweep over the WHOLE video. `metadata=print:file=-` puts every frame's score on stdout, which `subprocess::run` hands back; `-f null` throws the pixels away.
     let mut sweep: Vec<String> = vec!["-i".to_string(), source_path.display().to_string()];
-    sweep.extend(frames::scene_pass_plan(frames::SCENE_THRESHOLD));
+    sweep.extend(frames::scene_pass_plan());
     let owned: Vec<&str> = sweep.iter().map(String::as_str).collect();
     let scores = subprocess::run(&ffmpeg, &owned, &mut *log)?;
     // The grid runs to the last picture the sweep saw, not to the end of the sound.
@@ -145,7 +145,7 @@ pub fn stage_pass(
         std::sync::atomic::Ordering::SeqCst,
     );
 
-    let dir = frames_dir(tree, lane);
+    let dir = tree.frames_dir(lane);
     let input = source_path.display().to_string();
     let outcome = frames::run(
         tree,
@@ -362,11 +362,6 @@ fn extract_chunk(
         log(note);
     }
     Ok(written)
-}
-
-/// The folder one source's frames live in ([`Tree::frames_dir`]), beside `.frames` and `scenes.tsv`.
-pub fn frames_dir(tree: &Tree, lane: &str) -> PathBuf {
-    tree.frames_dir(lane)
 }
 
 /// Whether this extraction asks for a second within the last second of the take (`-ss <s>` against `end`, the take's picture end): the only place a missing picture is the video's short end.

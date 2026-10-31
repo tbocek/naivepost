@@ -195,10 +195,10 @@ fn widget_check(app: &adw::Application) {
         .expect("the shell has a Cut tab")
         .emit_clicked();
     settle();
-    ui::seed_review_cut(&window, &one_cam_cut());
-    let gesture = ui::band_selection_gesture_for_test(&window)
-        .expect("the painted band carries a selection drag");
-    let geo = Geometry::of(&window);
+    ui::seed_review_cut(&one_cam_cut());
+    let gesture =
+        ui::band_selection_gesture_for_test().expect("the painted band carries a selection drag");
+    let geo = Geometry::of();
     println!(
         "GRIP pps={} origin={} gutter={} first_picture={} row_height={} wave={} rows={}",
         geo.pps,
@@ -221,7 +221,7 @@ fn widget_check(app: &adw::Application) {
     gesture.emit_by_name::<()>("drag-update", &[&travel, &0.0f64]);
     gesture.emit_by_name::<()>("drag-end", &[&travel, &0.0f64]);
     settle();
-    let laid = ui::selection(&window).expect("the drag drew a band");
+    let laid = ui::selection().expect("the drag drew a band");
     println!("GRIP laid = {}..{}", laid.start, laid.end);
 
     // Press 8 px INSIDE the band's drawn end, ON THE PICTURE ROW, and move. At the old 6 px grip this
@@ -232,7 +232,7 @@ fn widget_check(app: &adw::Application) {
     gesture.emit_by_name::<()>("drag-begin", &[&(end_px - 8.0), &row_y]);
     gesture.emit_by_name::<()>("drag-update", &[&(-6.0 * geo.pps), &0.0f64]);
     settle();
-    let resized = ui::selection(&window).expect("the band is still there after the end grab");
+    let resized = ui::selection().expect("the band is still there after the end grab");
     println!(
         "GRIP resized = {}..{} (was {}..{})",
         resized.start, resized.end, laid.start, laid.end
@@ -265,13 +265,13 @@ fn widget_check(app: &adw::Application) {
     gesture.emit_by_name::<()>("drag-update", &[&travel, &0.0f64]);
     gesture.emit_by_name::<()>("drag-end", &[&travel, &0.0f64]);
     settle();
-    let again = ui::selection(&window).expect("a second band laid down");
+    let again = ui::selection().expect("a second band laid down");
     let sel_y = (geo.bands.selection.0 + geo.bands.selection.1) / 2.0;
     let right_edge = geo.px_of(again.end);
     gesture.emit_by_name::<()>("drag-begin", &[&(right_edge - 8.0), &sel_y]);
     gesture.emit_by_name::<()>("drag-update", &[&(3.0 * geo.pps), &0.0f64]);
     settle();
-    let redrawn = ui::selection(&window).expect("the press left a band on screen");
+    let redrawn = ui::selection().expect("the press left a band on screen");
     println!(
         "GRIP selection-band press: band {}..{} -> {}..{} (press x {})",
         again.start,

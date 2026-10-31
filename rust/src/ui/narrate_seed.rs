@@ -24,7 +24,7 @@ pub fn note_takes_for_session(takes: &[(f64, f64)]) -> Option<String> {
     // With its recording gone the picks have nowhere to go, and the reference is all that is left of the voice.
     let project = crate::project::load(tree.dir()).ok()?;
     if crate::narrate_band_face::tape(&tree, &project, &voice).is_empty()
-        && narrate_data::base_reference(&tree).exists()
+        && tree.voice_ref_base_wav().exists()
     {
         return Some("the recording behind this voice is gone".to_string());
     }
@@ -67,7 +67,7 @@ pub fn load_page(tree: &Tree, line: f64) -> NarrateState {
             .unwrap_or_default(),
         session,
         cut_at: crate::cut_play::cut_time(&clips, session).unwrap_or(0.0),
-        length: crate::shell::cut_seconds(&cut),
+        length: crate::cut_screen::cut_seconds(&cut),
         clips: clips.len(),
         has_cut: !clips.is_empty(),
         narrators: project

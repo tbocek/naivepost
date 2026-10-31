@@ -204,7 +204,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s0_the_item_under_test_is_nam
 /// §9's listing + §10's rule: Fetch models is a request the app sent outside, so it leaves a row.
 ///
 /// The door under test is [`naivepost::settings_probe::fetch_models`] — the live provider's answer to the
-/// Fetch models key — not [`model_list_fetch::models_at`] directly, so a press on the button and this check
+/// Fetch models key — not [`model_list_fetch::models_ask`] directly, so a press on the button and this check
 /// run the same code.
 #[test]
 fn sec_09_llm_and_tools_10_every_request_timed_new_s1_the_model_listing_lands_in_requests_tsv() {
@@ -313,7 +313,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s3_the_listing_keeps_its_fift
         }
     });
     let began = std::time::Instant::now();
-    let answer = model_list_fetch::models_at(
+    let answer = model_list_fetch::models_ask(
         &endpoint_at(&format!("http://127.0.0.1:{port}")),
         &Some(tree.clone()),
     );

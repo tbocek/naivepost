@@ -294,11 +294,11 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
                 .emit_clicked();
             settle();
             // A cut the band can be measured against: rows exist, so presses land on ground.
-            ui::seed_review_cut(&window, &one_cam_cut());
+            ui::seed_review_cut(&one_cam_cut());
 
-            let gesture = ui::band_selection_gesture_for_test(&window)
+            let gesture = ui::band_selection_gesture_for_test()
                 .expect("the painted band carries a selection drag");
-            let geo = Geometry::of(&window);
+            let geo = Geometry::of();
             println!(
                 "BAND pps={} origin={} gutter={} first_picture={} row_height={} rows={}",
                 geo.pps,
@@ -321,7 +321,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             gesture.emit_by_name::<()>("drag-end", &[&(x_to - x_from), &0.0f64]);
             settle();
 
-            let band = ui::selection(&window).expect("the drag drew a band");
+            let band = ui::selection().expect("the drag drew a band");
             println!(
                 "BAND band = {}..{} scope {:?}",
                 band.start, band.end, band.scope
@@ -362,7 +362,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             gesture.emit_by_name::<()>("drag-begin", &[&mid, &row_y]);
             gesture.emit_by_name::<()>("drag-update", &[&(moved_to - mid), &0.0f64]);
             settle();
-            let moved = ui::selection(&window).expect("the band is still there");
+            let moved = ui::selection().expect("the band is still there");
             println!("BAND moved = {}..{}", moved.start, moved.end);
             assert!(
                 (moved.length() - len).abs() < 0.5,
@@ -376,7 +376,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             );
 
             // S2: grab the END and drag it in: the start does not move.
-            let before = ui::selection(&window).expect("band");
+            let before = ui::selection().expect("band");
             gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(before.end - 1.0), &row_y]);
             gesture.emit_by_name::<()>(
                 "drag-update",
@@ -386,7 +386,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
                 ],
             );
             settle();
-            let resized = ui::selection(&window).expect("band");
+            let resized = ui::selection().expect("band");
             println!("BAND resized = {}..{}", resized.start, resized.end);
             assert!(
                 (resized.start - before.start).abs() < 1.0,
@@ -399,10 +399,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             // S2: the cross clears it, and the cross goes insensitive again.
             cross.emit_by_name::<()>("clicked", &[]);
             settle();
-            assert!(
-                ui::selection(&window).is_none(),
-                "the cross cleared the band"
-            );
+            assert!(ui::selection().is_none(), "the cross cleared the band");
             assert!(!cross.is_sensitive(), "and nothing is left to clear");
 
             // A press under the drag slop draws NOTHING at all: F2.4's line press owns a click, and two
@@ -412,7 +409,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             gesture.emit_by_name::<()>("drag-end", &[&1.0f64, &0.0f64]);
             settle();
             assert!(
-                ui::selection(&window).is_none(),
+                ui::selection().is_none(),
                 "a 1 px drag is a click, and a click selects nothing"
             );
             window.close();
@@ -520,12 +517,12 @@ fn s4_a_sound_selection_reaches_the_buttons_through_the_drag() {
                 off: 0.0,
                 dur: 40.0,
             }];
-            ui::seed_review_cut(&window, &cut_);
+            ui::seed_review_cut(&cut_);
             // The band is scoped through the door the program itself uses -- `sound_scope`, the same call
             // `update` makes on every drag -- with the name read off live state: no lane in the cut means no
             // name and so no sound band at all, which is why the recording never appears as a literal. A y
             // inside the first lane row answers that row (`lane_row_at` counts from `bands.fx.0`).
-            let geo = Geometry::of(&window);
+            let geo = Geometry::of();
             let named =
                 cut_select_press::sound_scope(&geo, Surface::Lane, &cut_, geo.bands.fx.0 + 1.0);
             assert_eq!(
@@ -592,7 +589,7 @@ fn s3_the_marks_are_painted_from_the_band_they_stand_for() {
                 .expect("Cut tab")
                 .emit_clicked();
             settle();
-            ui::seed_review_cut(&window, &one_cam_cut());
+            ui::seed_review_cut(&one_cam_cut());
 
             // No band: no marks, in either door. The readout wears its own unclicked face.
             assert_eq!(cut_select::marks(None), None, "no band, no marks");
@@ -605,14 +602,14 @@ fn s3_the_marks_are_painted_from_the_band_they_stand_for() {
                 "the empty readout is the module's own unclicked text"
             );
             assert!(
-                ui::cut_view::band_scene_for(&window).selection.is_none(),
+                ui::cut_view::band_scene_for().selection.is_none(),
                 "and the painter is handed no selection, so it draws no in/out flags"
             );
 
             // Draw a band: the readout shows its seconds and the painter is handed the same pair.
             ui::draw_selection(&window, Surface::Ruler, None, 10.0, 40.0);
             settle();
-            let band = ui::selection(&window).expect("a band");
+            let band = ui::selection().expect("a band");
             let (from, to) = cut_select::marks(Some(&band)).expect("a band answers its marks");
             assert_eq!(
                 (from, to),
@@ -632,7 +629,7 @@ fn s3_the_marks_are_painted_from_the_band_they_stand_for() {
                     && readout.contains(&naivepost::cut_hear::scene_clock(band.end)),
                 "the readout carries the band's own pair, got {readout}"
             );
-            let painted = ui::cut_view::band_scene_for(&window)
+            let painted = ui::cut_view::band_scene_for()
                 .selection
                 .expect("the painter got one");
             assert_eq!(
@@ -644,13 +641,9 @@ fn s3_the_marks_are_painted_from_the_band_they_stand_for() {
             // Clear: both doors go empty again, together.
             assert!(ui::clear_selection(&window), "there was something to clear");
             settle();
-            assert_eq!(
-                cut_select::marks(ui::selection(&window).as_ref()),
-                None,
-                "cleared"
-            );
+            assert_eq!(cut_select::marks(ui::selection().as_ref()), None, "cleared");
             assert!(
-                ui::cut_view::band_scene_for(&window).selection.is_none(),
+                ui::cut_view::band_scene_for().selection.is_none(),
                 "and the flags left the band with it"
             );
             assert_eq!(

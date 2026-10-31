@@ -195,7 +195,7 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn(seen.clone()));
 
     let window = produce_window(&app_in_round());
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     seed_page(&window);
     let button =
         ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
@@ -224,10 +224,7 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
         "the run wrote the video at {}",
         video.display()
     );
-    assert!(
-        naivepost::produce_stamp::stamp_path(&tree).is_file(),
-        "and the stamp beside it"
-    );
+    assert!(tree.final_stamp().is_file(), "and the stamp beside it");
     assert!(
         tree.final_srt(None).is_file(),
         "§3's `final.srt` for the cues it spoke"

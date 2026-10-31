@@ -20,8 +20,7 @@ struct TrimDrag {
     pushed: bool,
 }
 
-pub fn delete_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
-    let _ = window;
+pub fn delete_key_controller() -> Option<gtk::EventControllerKey> {
     DELETE_KEYS.with(|cell| cell.borrow().clone())
 }
 
@@ -34,12 +33,10 @@ pub fn track_strip(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> 
         .downcast()
         .ok()
 }
-pub fn trim_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    let _ = window;
+pub fn trim_gesture() -> Option<gtk::GestureDrag> {
     TRIM_GESTURES.with(|cell| cell.borrow().clone())
 }
-pub fn move_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    let _ = window;
+pub fn move_gesture() -> Option<gtk::GestureDrag> {
     MOVE_GESTURES.with(|cell| cell.borrow().clone())
 }
 type MovePressed = std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>>;
@@ -251,15 +248,14 @@ thread_local! {
 pub fn copy_hand() -> Option<cut_copy::Hand> {
     COPY_HAND.with(|cell| cell.borrow().clone())
 }
-pub fn copy_esc_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
-    let _ = window;
+pub fn copy_esc_controller() -> Option<gtk::EventControllerKey> {
     COPY_ESC_KEYS.with(|cell| cell.borrow().clone())
 }
 /// F2.9 S1: ⧉ Copy. [`cut_copy::copy`] decides everything; this keeps the answer if it took one and returns
 /// the sentence. A refusal leaves no hand, so ⧉ Paste stays greyed.
-pub fn press_copy(window: &adw::ApplicationWindow) -> String {
+pub fn press_copy(_window: &adw::ApplicationWindow) -> String {
     // F2.7 S2: with no band up, ⧉ Copy takes the half a | Split at the red line put in the verb hand.
-    if ui::selection(window).is_none() {
+    if ui::selection().is_none() {
         if let Some(half) = crate::ui::cut_verb_press::verb_hand() {
             let taken = cut_copy::copy(Some(&half));
             if let cut_copy::Take::Taken(hand) = &taken {
@@ -270,7 +266,7 @@ pub fn press_copy(window: &adw::ApplicationWindow) -> String {
             }
         }
     }
-    let taken = cut_copy::copy(ui::selection(window).as_ref());
+    let taken = cut_copy::copy(ui::selection().as_ref());
     match &taken {
         cut_copy::Take::Taken(hand) => {
             COPY_HAND.with(|cell| *cell.borrow_mut() = Some(hand.clone()));
@@ -280,9 +276,6 @@ pub fn press_copy(window: &adw::ApplicationWindow) -> String {
         cut_copy::Take::NothingSelected(say) => (*say).to_string(),
     }
 }
-pub fn paste_line(window: &adw::ApplicationWindow) -> f64 {
-    crate::ui::cut_lane::paste_line(window)
-}
 fn hand_file(hand: &cut_copy::Hand, sources: &[String]) -> Option<String> {
     let stem_of = |path: &str| crate::narrate_data::take_base(std::path::Path::new(path));
     let named = |name: &str| {
@@ -291,7 +284,7 @@ fn hand_file(hand: &cut_copy::Hand, sources: &[String]) -> Option<String> {
             .find(|source| stem_of(source) == stem_of(name))
             .cloned()
     };
-    if let Some(recording) = hand.recording_public() {
+    if let Some(recording) = hand.recording() {
         let lane = ui::newest_review_cut()
             .lanes
             .iter()
@@ -312,15 +305,15 @@ fn hand_file(hand: &cut_copy::Hand, sources: &[String]) -> Option<String> {
 /// mirrors the hand so a refusal keeps the copy.
 pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     let mut hand = copy_hand();
-    let sources = ui::session_sources(window);
+    let sources = ui::session_sources();
     let path = hand
         .as_ref()
-        .filter(|h| h.recording_public().is_some())
+        .filter(|h| h.recording().is_some())
         .and_then(|h| hand_file(h, &sources))
         .unwrap_or_default();
     let session: Vec<String> = hand
         .as_ref()
-        .and_then(|h| h.recording_public())
+        .and_then(|h| h.recording())
         .filter(|_| !path.is_empty())
         .map(|recording| vec![recording.to_string()])
         .unwrap_or_else(|| sources.clone());
@@ -338,7 +331,7 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     let outcome = cut_copy::paste(
         &mut cut_,
         &mut hand,
-        crate::ui::cut_lane::paste_line_opt(window),
+        crate::ui::cut_lane::paste_line_opt(),
         &path,
         file_seconds,
         &session,
@@ -371,7 +364,7 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
         // §B's other half: nothing in hand, so a footage FILE gets the row.
         return crate::ui::cut_lane::lane_for_footage_file(window);
     };
-    let at = paste_line(window);
+    let at = crate::ui::cut_lane::paste_line();
     let mut cut_ = ui::newest_review_cut();
     // The session's FILMED runs, as `lane_start`'s "nothing is rolling at m:ss" asks. Where no session was
     // resolved the page's list is the kept clips' spans, so this only adds a real project's tape.
@@ -383,8 +376,8 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
         cut_copy::LaneStart::Start(at) => {
             let taken: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
             let name = cut_copy::lane_name("Copied", &taken);
-            let source = hand_file(&hand, &ui::session_sources(window))
-                .or_else(|| hand.source_public().map(str::to_string))
+            let source = hand_file(&hand, &ui::session_sources())
+                .or_else(|| hand.recording().map(str::to_string))
                 .unwrap_or_default();
             let file_seconds =
                 cut_copy::file_seconds(&cut_, &crate::ui::cut_folds::page_recordings(), &hand);
@@ -431,9 +424,9 @@ pub(crate) fn wire_copy_esc(window: &adw::ApplicationWindow) {
 }
 /// Whether another Esc owner has something to drop: a copy, a held effect, an arm or an open form.
 /// The hand's layer stands back for them, whichever order GTK asks the controllers in.
-fn esc_belongs_elsewhere(window: &adw::ApplicationWindow) -> bool {
+fn esc_belongs_elsewhere() -> bool {
     copy_hand().is_some()
-        || ui::held_effect().is_some()
+        || crate::ui::cut_hand::held_effect().is_some()
         || ui::zoom_armed()
         || ui::zoom_form_open().is_some()
         || crate::ui::cut_text_hand::text_armed()
@@ -443,7 +436,7 @@ fn esc_belongs_elsewhere(window: &adw::ApplicationWindow) -> bool {
         || crate::ui::cut_speed_hand::speed_form_open().is_some()
         || crate::ui::cut_volume_hand::volume_form_open().is_some()
         || crate::ui::cut_label_hand::label_form_open().is_some()
-        || crate::ui::window_insert::insert_open(window).is_some()
+        || crate::ui::window_insert::insert_open().is_some()
 }
 
 /// The last Esc layer: with nothing else to drop, Esc puts down the clip or edge in hand, and with
@@ -453,10 +446,10 @@ pub(crate) fn wire_hand_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
     controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape || esc_belongs_elsewhere(&win) {
+        if key != gtk::gdk::Key::Escape || esc_belongs_elsewhere() {
             return glib::Propagation::Proceed;
         }
-        let said = match ui::held_now() {
+        let said = match crate::ui::cut_hand::held_kind() {
             Some(cut_line::Held::Edge) => HAND_EDGE_DOWN,
             Some(cut_line::Held::Clip) => HAND_CLIP_DOWN,
             _ if ui::clear_selection(&win) => SELECTION_DROPPED,
@@ -478,7 +471,7 @@ pub const SELECTION_DROPPED: &str = "the selection is cleared";
 /// F2.9: set the three copy buttons from live ui::state. Copy is live with a band a second or longer; Paste
 /// and Lane only while a hand is held.
 pub(crate) fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
-    let copy_live = ui::selection(window)
+    let copy_live = ui::selection()
         .map(|band| band.length() >= cut_select::MIN_SCENE_SECONDS)
         .unwrap_or(false);
     let held = copy_hand().is_some();
@@ -486,9 +479,8 @@ pub(crate) fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
         button.set_sensitive(copy_live);
     }
     for name in ["paste-button", "lane-button"] {
-        let live = held
-            || (name == "lane-button"
-                && crate::ui::cut_lane::footage_source_path(window).is_some());
+        let live =
+            held || (name == "lane-button" && crate::ui::cut_lane::footage_source_path().is_some());
         if let Some(button) = ui::line_step_button(window, name) {
             button.set_sensitive(live);
         }
@@ -553,7 +545,7 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
                 first,
             );
             let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
-            crate::ui::cut_trim_press::scrub_picture(&win_upd, landed);
+            crate::ui::cut_trim_press::scrub_picture(landed);
             *cell.borrow_mut() = Some(drag);
         });
         strip_upd.queue_draw();
@@ -566,10 +558,10 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
             press_trim_border(&win_end, drag.index, drag.border, x / strip_pps());
             // The LAST edge always reaches the picture, even when the throttle swallowed the updates before it.
             let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
-            crate::ui::cut_trim_press::scrub_picture(&win_end, landed);
+            crate::ui::cut_trim_press::scrub_picture(landed);
         } else {
             // A release with no drag in hand is S3's unmoved right press: the picture goes to the released pixel.
-            crate::ui::cut_trim_press::scrub_picture(&win_end, x / strip_pps());
+            crate::ui::cut_trim_press::scrub_picture(x / strip_pps());
         }
         TRIM_DRAGS.with(|cell| *cell.borrow_mut() = None);
         strip_end.queue_draw();
@@ -633,7 +625,7 @@ pub(crate) fn wire_delete_keys(window: &adw::ApplicationWindow) {
     controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
         if matches!(key, gtk::gdk::Key::Delete | gtk::gdk::Key::BackSpace) {
             // F3.8 S3: `⌦ with an effect held removes it`; the effect comes first, as `cut_verbs::delete_verb` does.
-            if ui::held_effect().is_some() {
+            if crate::ui::cut_hand::held_effect().is_some() {
                 let said = ui::remove_held_effect(&win);
                 if let Some(status_line) = ui::find_status(win.upcast_ref()) {
                     status_line.set_text(&said);

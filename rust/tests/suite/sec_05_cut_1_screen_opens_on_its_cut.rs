@@ -135,7 +135,7 @@ fn sec_05_cut_1_screen_a_project_opens_on_its_cut() {
         // §1's ONE red line: the restored second is the preview's playhead too, so ▶ plays from it and the band
         // paints the line where the picture is.
         assert_eq!(
-            ui::preview_player(&window).playhead,
+            ui::preview_player().playhead,
             Some(56.6),
             "the restored line is the preview's playhead"
         );
@@ -150,17 +150,13 @@ fn sec_05_cut_1_screen_a_project_opens_on_its_cut() {
             "A's frame at 1.4 s into it, under its whole-second name"
         );
         assert_eq!(
-            ui::preview_player(&window).playhead,
+            ui::preview_player().playhead,
             Some(1.4),
             "a line moved by a press moves the playhead with it"
         );
         // And the other way: what ▶'s tick writes (`set_playhead`) is the line, and the picture follows it.
         ui::set_playhead(&window, 56.6);
-        assert_eq!(
-            ui::line_position(&window).t,
-            56.6,
-            "the tick moved the line"
-        );
+        assert_eq!(ui::line_position().t, 56.6, "the tick moved the line");
         assert_eq!(
             shown_name(),
             "2026-10-18_19-22-48.500.jpg",

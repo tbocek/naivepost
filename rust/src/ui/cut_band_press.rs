@@ -80,7 +80,7 @@ pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget
         if !ACTIVE.with(|cell| cell.borrow().as_ref().is_some_and(|live| live == &done)) {
             return;
         }
-        end(&done);
+        end();
     });
     bar.add_controller(gesture.clone());
     GESTURES.with(|cell| cell.borrow_mut().push((tagged, gesture)));
@@ -123,7 +123,7 @@ fn update(window: &adw::ApplicationWindow, dx: f64, dy: f64) {
 
 /// S2: carry the held band along with the pointer. Middle → the whole band slides (snapped); an end grip → that end moves. Both go through `ui::drag_held_band`.
 fn move_held(window: &adw::ApplicationWindow, dx: f64, drag: BarDrag) {
-    let Some(held) = ui::held_effect() else {
+    let Some(held) = crate::ui::cut_hand::held_effect() else {
         return;
     };
     let pps = ui::SELECT_SURFACE_PPS;
@@ -131,7 +131,7 @@ fn move_held(window: &adw::ApplicationWindow, dx: f64, drag: BarDrag) {
         return;
     }
     let from_end = fx_band::grab_at(drag.bar_x_px, drag.width_px);
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     // The second under the pointer: where the band started plus the hand's travel at the lane's rate. The bar's pixels are `t * pps` with NO gutter and NO scroll (the effects lane is a box of its own, as `cut_strip_view`), unlike the painted band.
     let to = match from_end {
         // A middle grab slides: the band follows the pointer's travel from where it was at the pick-up.
@@ -144,20 +144,20 @@ fn move_held(window: &adw::ApplicationWindow, dx: f64, drag: BarDrag) {
         .iter()
         .map(|seg| seg.e)
         .fold(held.t + held.dur, f64::max);
-    let marks = band_snap_marks(window, &held);
+    let marks = band_snap_marks(&held);
     ui::drag_held_band(window, to, &marks, pps, session_end, from_end);
 }
 
 /// The release: the file gets its ONE write (§7's one writer; mid-drag ticks were refused), the gesture ends, and the hand keeps its hold (S2: it drops only when the line walks off the band or Esc).
-fn end(window: &adw::ApplicationWindow) {
+fn end() {
     DRAGS.with(|cell| *cell.borrow_mut() = None);
-    end_in_flight(window);
+    end_in_flight();
 }
 
 /// F3.8 S2 (`both ends offered to snap marks ... 8 px`): the landmarks a slid band lands on, from the selection drag's builder, minus the HELD effect's own two ends (a band snapping to itself cannot be dragged; `fx_band::move_whole`).
-fn band_snap_marks(window: &adw::ApplicationWindow, held: &crate::cut::Fx) -> Vec<f64> {
-    let cut_ = ui::review_cut_of(window);
-    let playhead = ui::preview_playhead(window);
+fn band_snap_marks(held: &crate::cut::Fx) -> Vec<f64> {
+    let cut_ = crate::ui::window_preview::newest_review_cut();
+    let playhead = ui::preview_playhead();
     cut_select::snap_marks(&cut_, &cut_.lanes, playhead)
         .into_iter()
         .filter(|mark| (*mark - held.t).abs() > 1e-9 && (*mark - (held.t + held.dur)).abs() > 1e-9)
@@ -191,10 +191,9 @@ fn begin_in_flight() {
 }
 
 /// Release: allow writes again and let the file have the state the hand LEFT, via the trim release's door (`end_release` = `cut_save::end_gesture()` + one `save_insert_cut`).
-fn end_in_flight(window: &adw::ApplicationWindow) {
+fn end_in_flight() {
     IN_FLIGHT.with(|cell| cell.set(false));
     HISTORY_SPENT.with(|cell| cell.set(false));
-    let _ = window;
     cut_trim_press::end_release();
 }
 

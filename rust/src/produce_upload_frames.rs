@@ -46,11 +46,6 @@ pub fn spread_moments(segs: &[Seg]) -> Vec<f64> {
     out
 }
 
-/// The nearest extracted moment to `at`, by the ONE nearest rule (§3.9/decision 32), so a spread frame and a picked frame resolve alike.
-pub fn frame_at(moments: &[f64], at: f64) -> Option<f64> {
-    crate::produce_upload::nearest(moments, at)
-}
-
 /// §3.9's `get_frames(clip, at?)`: the candidate frames inside one clip, so the picture is chosen by LOOKING. With `at` the answer narrows to a window of the PROJECT's `P.project.frameInterval` (`interval`, from the caller),
 /// which always holds a neighbour; a fixed stop would name frames wider or nearer than the session extracted. An unknown span answers everything: no frames would read as an empty video.
 pub fn get_frames(moments: &[f64], from: f64, to: f64, at: Option<f64>, interval: f64) -> Vec<f64> {

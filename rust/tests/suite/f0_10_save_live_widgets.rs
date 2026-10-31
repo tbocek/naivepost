@@ -75,7 +75,7 @@ fn status(window: &adw::ApplicationWindow) -> gtk::Label {
 /// per process and the checks share one application: read after a later window was built, it would
 /// name that window's folder instead.
 fn opened_now() -> Option<PathBuf> {
-    ui::save_apply::open_dir()
+    naivepost::startup::open_dir_if_set()
 }
 
 /// A window whose launch folder IS `root`: everything the shell computes from the working directory
@@ -105,7 +105,7 @@ fn check_live_session_is_what_gets_saved(app: &adw::Application) {
     // An edit made in the window, through the handle every page reads: the User Context is the simplest
     // thing a person can change after the window opened, and the build-time clone used to lose it however
     // many times Save was pressed.
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     session.borrow_mut().context = "edited after the window opened".to_string();
 
     // The save renames the working copy to `jan.naivepost` -- the planted folder has only its project
@@ -133,7 +133,7 @@ fn check_rename_moves_the_window_too(app: &adw::Application) {
     let jan = plant(&naivepost::startup::session_dir(&root));
     std::fs::write(jan.join("render.mp4"), b"the whole video").expect("an output to move");
     let (window, _open) = window_at(app, &root);
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     // The folder the window believes is open at its build; the rename has to move THIS memory.
     let was_open = opened_now().expect("a window always names a folder");
     assert_eq!(was_open, jan);
@@ -149,13 +149,13 @@ fn check_rename_moves_the_window_too(app: &adw::Application) {
         "the outputs followed the name"
     );
     assert_eq!(
-        ui::save_apply::open_dir().as_deref(),
+        naivepost::startup::open_dir_if_set().as_deref(),
         Some(feb.as_path()),
         "the window now believes the renamed folder is the one it has open"
     );
     // So do the window's own folders: the red line's root, and the session the pages and the close flush use.
     assert_eq!(
-        ui::line_root(&window).as_deref(),
+        ui::line_root().as_deref(),
         Some(feb.as_path()),
         "the red line is saved under the renamed folder"
     );
@@ -213,7 +213,7 @@ fn check_refused_move_leaves_the_folder_alone(app: &adw::Application) {
     std::fs::create_dir_all(&taken).expect("the taken folder");
     std::fs::write(taken.join("somebody-elses.mp4"), b"not ours").expect("work in the way");
     let (window, _open) = window_at(app, &root);
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     // What this window believes is open at its build; the refusal must leave exactly this standing.
     let before_refusal = opened_now();
     let was_open = before_refusal
@@ -264,7 +264,7 @@ fn check_button_refused_during_a_run(app: &adw::Application) {
     let (window, seeded) = window_at(app, &root);
     // The refusal must leave the memory where THIS window's build put it, whatever earlier checks did.
     assert_eq!(
-        ui::save_apply::open_dir().as_deref(),
+        naivepost::startup::open_dir_if_set().as_deref(),
         Some(seeded.as_path())
     );
 
@@ -297,7 +297,7 @@ fn check_button_refused_during_a_run(app: &adw::Application) {
     // folder this window was built on. Read back from the build rather than recomputed, because the
     // slot is one per process and earlier checks in this binary moved it.
     assert_eq!(
-        ui::save_apply::open_dir().as_deref(),
+        naivepost::startup::open_dir_if_set().as_deref(),
         Some(seeded.as_path()),
         "a refused save does not move the window's folder"
     );

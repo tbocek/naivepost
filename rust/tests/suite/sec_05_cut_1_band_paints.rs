@@ -641,7 +641,7 @@ fn page_band_grows_for_a_lane(app: &adw::Application) {
         ],
         ..Default::default()
     };
-    naivepost::ui::seed_review_cut(&window, &with_lane);
+    naivepost::ui::seed_review_cut(&with_lane);
     naivepost::ui::set_session_recordings(&[naivepost::timeline::Recording {
         base: "take-a".to_string(),
         start: 0.0,
@@ -649,7 +649,7 @@ fn page_band_grows_for_a_lane(app: &adw::Application) {
     }]);
     // What the band's surfaces were sized to when the page opened, and what the two new lanes make it need.
     let opened = band.size_request().1;
-    let need = tracks::band_height_for(&naivepost::ui::cut_view::band_scene_for(&window));
+    let need = tracks::band_height_for(&naivepost::ui::cut_view::band_scene_for());
     assert!(
         need > opened,
         "two lanes must cost rows the page did not open with: sized {opened} px, scene needs {need} px"

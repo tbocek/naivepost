@@ -139,7 +139,7 @@ pub fn values_from(section: Section, conf: &Conf) -> Entry {
 pub fn apply(section: Section, entry: &Entry, conf: &mut Conf) {
     for key in section.conf_keys() {
         let value = entry.get(*key).map(String::as_str).unwrap_or_default();
-        settings::set_named(conf, key, value);
+        settings::set_key(conf, key, value);
     }
 }
 

@@ -42,8 +42,8 @@ static RAN_OFF_GATE: AtomicBool = AtomicBool::new(false);
 /// writes down is checkable by hand.
 /// The pass's effects on the review cut, by §06 kind. Reading the cut rather than the status line is the point:
 /// this is the state `cut_suggest_passes::run_after_cut` counts, and it is what the render will read.
-fn placed_of_kind(window: &adw::ApplicationWindow, kind: &str) -> Vec<Fx> {
-    ui::review_cut_of(window)
+fn placed_of_kind(kind: &str) -> Vec<Fx> {
+    ui::window_preview::newest_review_cut()
         .fx
         .iter()
         .filter(|fx| fx.kind == kind)
@@ -72,7 +72,7 @@ fn wait_for_kind(window: &adw::ApplicationWindow, run: RunPass, kind: &str) -> V
     wait_until(
         &format!("a {kind} effect placed by the {kind} pass"),
         || {
-            landed = placed_of_kind(window, kind);
+            landed = placed_of_kind(kind);
             !landed.is_empty()
         },
     );
@@ -90,7 +90,7 @@ fn round(app: &adw::Application) {
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
     assert!(
-        placed_of_kind(&window, "text").is_empty(),
+        placed_of_kind("text").is_empty(),
         "the seeded cut holds no caption to confuse the count"
     );
     let captions = wait_for_kind(&window, ui::run_captions_pass, "text");
@@ -194,7 +194,7 @@ fn round(app: &adw::Application) {
     // Three windows, one per switch, because each pass reads its own field: the refusal and the order filter
     // are the SAME predicate (`policy::pass_runs`), so an off switch means the job is not called at all.
     struct Gate {
-        set: fn(&adw::ApplicationWindow, bool),
+        set: fn(bool),
         run: fn(&adw::ApplicationWindow) -> String,
         kind: &'static str,
         says: &'static str,
@@ -229,9 +229,9 @@ fn round(app: &adw::Application) {
         }]);
         point_at(&llm.url());
         let window = cut_page(app, &common::three_clips_cut());
-        (gate.set)(&window, false);
+        (gate.set)(false);
         assert_eq!(
-            ui::review_cut_of(&window).fx.len(),
+            ui::window_preview::newest_review_cut().fx.len(),
             0,
             "the seeded cut holds nothing to begin with"
         );
@@ -244,12 +244,12 @@ fn round(app: &adw::Application) {
             gate.says
         );
         assert_eq!(
-            ui::review_cut_of(&window).fx.len(),
+            ui::window_preview::newest_review_cut().fx.len(),
             0,
             "and a pass that is off places nothing"
         );
         assert!(
-            placed_of_kind(&window, gate.kind).is_empty(),
+            placed_of_kind(gate.kind).is_empty(),
             "no {} landed while off",
             gate.kind
         );
@@ -261,7 +261,7 @@ fn round(app: &adw::Application) {
             "an off pass never dials the model -- it is not called and told to return nothing"
         );
         // Back on: the refusal is never sticky, so the switch tracks the field the pass reads.
-        (gate.set)(&window, true);
+        (gate.set)(true);
         let reopened = (gate.run)(&window);
         assert!(
             !reopened.contains("off"),

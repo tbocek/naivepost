@@ -95,12 +95,12 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
 
     // Untouched means full: an unset control is audible, not mute.
     assert_eq!(
-        ui::preview_volume(&window),
+        ui::preview_volume(),
         cut_hear::VOLUME_DEFAULT,
         "an untouched slider reads full"
     );
     assert_eq!(
-        ui::preview_player(&window).volume,
+        ui::preview_player().volume,
         Some(cut_hear::VOLUME_DEFAULT),
         "and the player starts at that same one number"
     );
@@ -110,38 +110,38 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
     scale.set_value(40.0);
     settle();
     assert_eq!(
-        ui::preview_volume(&window),
+        ui::preview_volume(),
         cut_hear::mix_gain(0.4, 1.0),
         "40% lands as the gain the mix rule gives, 0.4 — not 40, not 0.004"
     );
     assert!(
-        (ui::preview_volume(&window) - 0.4).abs() < 1e-9 && cut_hear::clamp_volume(0.4) == 0.4,
+        (ui::preview_volume() - 0.4).abs() < 1e-9 && cut_hear::clamp_volume(0.4) == 0.4,
         "inside the clamp, unchanged"
     );
     assert_eq!(
-        ui::preview_player(&window).volume,
-        Some(ui::preview_volume(&window)),
+        ui::preview_player().volume,
+        Some(ui::preview_volume()),
         "the live player carries the identical number — one volume, every preview"
     );
 
     // A second move proves it is not a one-shot and that both ends of the clamp hold.
     scale.set_value(100.0);
     settle();
-    assert_eq!(ui::preview_volume(&window), 1.0, "full travel is full gain");
+    assert_eq!(ui::preview_volume(), 1.0, "full travel is full gain");
     assert_eq!(
-        ui::preview_player(&window).volume,
+        ui::preview_player().volume,
         Some(1.0),
         "and the player follows again"
     );
     scale.set_value(-5.0);
     settle();
     assert_eq!(
-        ui::preview_volume(&window),
+        ui::preview_volume(),
         cut_hear::clamp_volume(-0.05),
         "below nought clamps to silence, never a phase flip"
     );
     assert_eq!(
-        ui::preview_player(&window).volume,
+        ui::preview_player().volume,
         Some(0.0),
         "silence reaches the player too"
     );
@@ -174,8 +174,8 @@ fn check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app: &adw::Appl
     let fx: [Fx; 0] = [];
 
     // Loud on purpose: turning the room up must not buy back a lane the scene silenced.
-    ui::set_preview_volume(&window, 100.0);
-    let loud = ui::apply_mix(&window, &cut.segs, &lanes, &fx, 40.0);
+    ui::set_preview_volume(100.0);
+    let loud = ui::apply_mix(&cut.segs, &lanes, &fx, 40.0);
     assert_eq!(loud.gain, 1.0, "the slider is at full, so the gain is full");
     assert_eq!(
         loud.lane_starts.as_slice(),
@@ -190,7 +190,7 @@ fn check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app: &adw::Appl
     // Same call, same second, scene mutes its own sound instead: only that flag moves.
     cut.segs[0].quiet.clear();
     cut.segs[0].mute = true;
-    let muted = ui::apply_mix(&window, &cut.segs, &lanes, &fx, 40.0);
+    let muted = ui::apply_mix(&cut.segs, &lanes, &fx, 40.0);
     assert!(
         muted.footage_muted,
         "S2: the footage's own sound is muted here"
@@ -200,13 +200,13 @@ fn check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app: &adw::Appl
         "and the lane, no longer silenced, is asked to play"
     );
     assert_eq!(
-        ui::preview_player(&window).footage_muted,
+        ui::preview_player().footage_muted,
         muted.footage_muted,
         "the answer lands on the player, which is where the pipeline will read it"
     );
 
     // A second outside every scene answers with no new say rather than inventing a silence.
-    let nowhere = ui::apply_mix(&window, &cut.segs, &lanes, &fx, 5.0);
+    let nowhere = ui::apply_mix(&cut.segs, &lanes, &fx, 5.0);
     assert!(
         nowhere.lane_starts.is_empty(),
         "no scene decides, so no lane is answered for"

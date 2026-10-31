@@ -91,8 +91,8 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     let _ = tape;
     window
@@ -105,8 +105,8 @@ thread_local! {
 /// Fire the preview panel's own drag the way the toolkit does: begin at the press position, then release with
 /// the OFFSET that signal carries (F2.8's rule about these two signals), so the corners the seam sees are the
 /// ones a hand would have drawn.
-fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
-    let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+fn drag_panel(from: (f64, f64), to: (f64, f64)) {
+    let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
@@ -164,7 +164,7 @@ fn f3_1_s1_the_arm_lowers_the_camera_layer_and_shows_the_whole_source(app: &adw:
         "⊕ Zoom armed the drag instead of recording an effect"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "arming added NO record -- the box someone draws is the effect"
     );
@@ -239,7 +239,7 @@ fn f3_1_s2_a_drag_under_the_minimum_is_ignored(app: &adw::Application) {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 42.0 });
     click(&window, "effect-item-zoom");
     assert!(ui::zoom_armed(), "armed before testing the floor");
-    drag_panel(&window, (10.0, 10.0), (16.0, 15.0));
+    drag_panel((10.0, 10.0), (16.0, 15.0));
     assert!(
         ui::zoom_form_open().is_none(),
         "a 6 x 5 px swipe is a click at the preview, not a framing -- no form opened"
@@ -249,7 +249,7 @@ fn f3_1_s2_a_drag_under_the_minimum_is_ignored(app: &adw::Application) {
         "and the arm went with it, so the next stray click cannot draw a box nobody asked for"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "nothing was recorded either"
     );
@@ -268,7 +268,7 @@ fn f3_1_s2_a_free_rectangle_drag_lands_a_form_at_the_red_line(app: &adw::Applica
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 42.0 });
     click(&window, "effect-item-zoom");
     // Dragged right-to-left on purpose: the box must come out the same shape whichever way the hand went.
-    drag_panel(&window, (90.0, 70.0), (40.0, 30.0));
+    drag_panel((90.0, 70.0), (40.0, 30.0));
     let form = ui::zoom_form_open().expect("a finished drag leaves a form to settle");
     assert_eq!(
         form.at, 42.0,
@@ -339,7 +339,7 @@ fn open_zoom_form(app: &adw::Application, at: f64) -> adw::ApplicationWindow {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: at });
     click(&window, "effect-item-zoom");
     assert!(ui::zoom_armed(), "armed so the drag has something to land");
-    drag_panel(&window, (90.0, 70.0), (40.0, 30.0));
+    drag_panel((90.0, 70.0), (40.0, 30.0));
     assert!(ui::zoom_form_open().is_some(), "the drag landed a form");
     window
 }
@@ -561,7 +561,7 @@ fn f3_1_s4_staying_greys_the_fade_out(app: &adw::Application) {
 /// S4: below the floor Apply refuses with the module's own sentence and leaves the form open to correct.
 fn f3_1_s4_apply_under_the_floor_refuses_and_keeps_the_form_open(app: &adw::Application) {
     let window = open_zoom_form(app, 42.0);
-    let before = ui::review_cut_of(&window).fx.clone();
+    let before = ui::window_preview::newest_review_cut().fx.clone();
     set_entry(&window, "zoom-field-length", "0.1");
     click(&window, "zoom-apply-button");
     let said = status_text(&window);
@@ -571,7 +571,7 @@ fn f3_1_s4_apply_under_the_floor_refuses_and_keeps_the_form_open(app: &adw::Appl
         "the refusal is `fx_zoom::apply`'s own text, unedited"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before.len(),
         "a refused Apply placed nothing"
     );
@@ -613,7 +613,7 @@ fn f3_1_s5_apply_places_the_zoom_and_says_so(app: &adw::Application) {
     set_entry(&window, "zoom-field-fade-in", "1");
     set_entry(&window, "zoom-field-fade-out", "2");
     click(&window, "zoom-apply-button");
-    let cut_ = ui::review_cut_of(&window);
+    let cut_ = ui::window_preview::newest_review_cut();
     assert_eq!(cut_.fx.len(), 1, "one Apply, one record");
     let placed = &cut_.fx[0];
     assert_eq!(placed.kind, "zoom", "the record is a zoom");
@@ -658,10 +658,14 @@ fn f3_1_s5_apply_places_the_zoom_and_says_so(app: &adw::Application) {
 fn f3_1_s5_one_undo_takes_the_zoom_back(app: &adw::Application) {
     let window = open_zoom_form(app, 42.0);
     click(&window, "zoom-apply-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "applied first");
+    assert_eq!(
+        ui::window_preview::newest_review_cut().fx.len(),
+        1,
+        "applied first"
+    );
     click(&window, "undo-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "Undo took the zoom back -- Apply went through record_edit, not seed_review_cut"
     );
@@ -673,10 +677,10 @@ fn f3_1_s5_one_undo_takes_the_zoom_back(app: &adw::Application) {
 /// S5: Cancel leaves the cut byte-identical and drops the form.
 fn f3_1_s5_cancel_changes_nothing(app: &adw::Application) {
     let window = open_zoom_form(app, 42.0);
-    let before = ui::review_cut_of(&window).fx.clone();
+    let before = ui::window_preview::newest_review_cut().fx.clone();
     set_entry(&window, "zoom-field-length", "9");
     click(&window, "zoom-cancel-button");
-    let after = ui::review_cut_of(&window).fx.clone();
+    let after = ui::window_preview::newest_review_cut().fx.clone();
     assert_eq!(
         after.len(),
         before.len(),

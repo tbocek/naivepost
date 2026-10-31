@@ -8,7 +8,6 @@
 
 use serde::Deserialize;
 
-use crate::degraded;
 use crate::tool_loop;
 use crate::tools::{self, Tool};
 
@@ -271,12 +270,6 @@ pub fn read(url: &str, fetch: &ReadPage) -> String {
 }
 
 // ---- Whether the tools exist at all ---------------------------------------------------
-
-/// Whether a step has web tools at all: Flatpak never does, `off` is the setting's own word for it, and an
-/// empty setting names nothing.
-pub fn offered(firefox: &str, flatpak: bool) -> bool {
-    degraded::web_available(firefox, flatpak)
-}
 
 /// The reason a step got no web tools, once, as §2 logs it; `None` when it does. Flatpak first: it decides before any setting, and naming firefox inside a sandbox sends someone hunting a binary it cannot reach.
 ///

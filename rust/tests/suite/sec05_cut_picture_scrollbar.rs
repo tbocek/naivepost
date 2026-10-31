@@ -54,7 +54,7 @@ fn cut_page_taped(
     // The tape first, then the cut: the view's length comes from the tape, so the other order would size
     // the first frame of this window against the previous check's session.
     ui::set_session_recordings(tape);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -211,7 +211,7 @@ fn check_a_drag_scrolls_and_holds_the_selection(app: &adw::Application) {
         40.0,
     )
     .expect("a drag on a picture row selects that row's footage");
-    let before = ui::selection(&window).expect("the band is on the page");
+    let before = ui::selection().expect("the band is on the page");
     assert_eq!(before.start, band.start);
 
     let (total, view) = extents(&window);
@@ -229,7 +229,7 @@ fn check_a_drag_scrolls_and_holds_the_selection(app: &adw::Application) {
     );
     settle();
 
-    let after = ui::selection(&window).expect("the selection survives the scroll");
+    let after = ui::selection().expect("the selection survives the scroll");
     assert_eq!(
         (after.start, after.end),
         (before.start, before.end),
@@ -237,11 +237,11 @@ fn check_a_drag_scrolls_and_holds_the_selection(app: &adw::Application) {
     );
     // The red line keeps its own time: `follow_playhead` moves the VIEW to it, never the other way round,
     // so a pixel scroll cannot change what second the line sits on.
-    let before_line = ui::line_position(&window);
+    let before_line = ui::line_position();
     ui::cut_view::follow_playhead(&window, 20.0);
     settle();
     assert_eq!(
-        ui::line_position(&window),
+        ui::line_position(),
         before_line,
         "following the line scrolls the view, it does not move the line"
     );

@@ -646,7 +646,7 @@ fn run_round(app: &adw::Application) {
             "▶ came back before the model answered its first clip, took {took:?}"
         );
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             Some(naivepost::run::Step::Narrate),
             "the run is open while its worker writes"
         );
@@ -667,7 +667,7 @@ fn run_round(app: &adw::Application) {
             "a run stopped before its first line wrote nothing to narration.json"
         );
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             None,
             "and the run closed when its worker answered"
         );

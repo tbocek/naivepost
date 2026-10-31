@@ -63,7 +63,7 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
 
     // Tick 1: the line moves under the silent scene. That is a CHANGE — the player started unmuted — so
     // exactly one line, and it names the scene as the cause.
-    let first = ui::apply_mix(&window, &silent, &[], &[], 1.0);
+    let first = ui::apply_mix(&silent, &[], &[], 1.0);
     assert!(
         first.footage_muted,
         "the mix says the footage is silent here"
@@ -86,7 +86,7 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
     // Ticks 2..6 under the SAME answer: nothing changed, so the log must not grow. This is the half that
     // makes it "one line per change" rather than one per 100 ms tick.
     for tick in 2..=6 {
-        ui::apply_mix(&window, &silent, &[], &[], tick as f64);
+        ui::apply_mix(&silent, &[], &[], tick as f64);
     }
     let after_steady: Vec<String> = log()
         .into_iter()
@@ -124,9 +124,9 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
         !naivepost::ui::preview_sound::card_holds_for_test(&window, &heard, 3.0),
         "no card, so a silence there can only be the scene's own"
     );
-    ui::apply_mix(&window, &heard, &[], &[], 1.0);
+    ui::apply_mix(&heard, &[], &[], 1.0);
     assert!(
-        !ui::preview_player(&window).footage_muted,
+        !ui::preview_player().footage_muted,
         "a plain scene hears the footage, so the next mute has to name a cause"
     );
     // The card line must be counted on its own: the log already holds the scene line from further up.
@@ -143,9 +143,9 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
         heard_before_card, 1,
         "the step back to a hearing scene was itself the un-mute, and said so once"
     );
-    ui::apply_mix(&window, &card, &[], &[], 2.0);
+    ui::apply_mix(&card, &[], &[], 2.0);
     assert!(
-        ui::preview_player(&window).footage_muted,
+        ui::preview_player().footage_muted,
         "the card's mute reached the player the rest of the app reads"
     );
     let by_card: Vec<String> = log()
@@ -159,7 +159,7 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
     );
     // Back to a plain heard scene with no card: that un-mute is announced too, and once only — the same
     // rule that kept five steady ticks silent, read from the other side.
-    ui::apply_mix(&window, &heard, &[], &[], 3.0);
+    ui::apply_mix(&heard, &[], &[], 3.0);
     let heard_again: Vec<String> = log()
         .into_iter()
         .filter(|line| line.contains("is heard again"))
@@ -185,7 +185,7 @@ fn check_the_build_reset_the_stream_volume(app: &adw::Application) {
         "§8's premise: gain and mute go to an app-owned element"
     );
     assert_eq!(
-        naivepost::ui::preview_sound::stream_gain_for_test(&window),
+        naivepost::ui::preview_sound::stream_gain_for_test(),
         Some(preview::STREAM_VOLUME),
         "the reset landed on the app's own gain slot, at full"
     );
@@ -193,7 +193,7 @@ fn check_the_build_reset_the_stream_volume(app: &adw::Application) {
     // per play — a preview that set it every ▶ would leave last session's loudness behind for the desktop).
     let second = cut_window(app);
     assert_eq!(
-        naivepost::ui::preview_sound::stream_gain_for_test(&second),
+        naivepost::ui::preview_sound::stream_gain_for_test(),
         Some(preview::STREAM_VOLUME),
         "a later window still reads full"
     );

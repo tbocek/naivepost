@@ -36,12 +36,12 @@ pub struct PassInputs {
 }
 
 /// Read [`PassInputs`] off the window, on the window thread.
-pub fn pass_inputs(window: &adw::ApplicationWindow) -> PassInputs {
+pub fn pass_inputs() -> PassInputs {
     PassInputs {
-        policy: ui::session_policy(window),
-        context: ui::user_context(window),
+        policy: crate::ui::window_policy::live_session_policy(),
+        context: ui::user_context(),
         tree: ui::narrate_session_tree(),
-        sources: ui::session_sources(window),
+        sources: ui::session_sources(),
     }
 }
 
@@ -67,7 +67,7 @@ pub fn land_pass(window: &adw::ApplicationWindow, out: &PassOut) {
 
 /// F3.9 S1–S6: run the captions pass over this window's newest cut and say what happened.
 pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
-    let inputs = pass_inputs(window);
+    let inputs = pass_inputs();
     let out = walk_captions(&inputs, &ui::newest_review_cut());
     land_pass(window, &out);
     out.said
@@ -178,7 +178,10 @@ pub fn run_captions_pass_with_reply(
     window: &adw::ApplicationWindow,
     batches: &[CaptionBatch],
 ) -> String {
-    if !policy::pass_runs(&ui::session_policy(window), policy::Pass::Captions) {
+    if !policy::pass_runs(
+        &crate::ui::window_policy::live_session_policy(),
+        policy::Pass::Captions,
+    ) {
         return "captions are off \u{2014} the context ruled them out".to_string();
     }
     let mut placed_total = 0usize;
@@ -230,22 +233,19 @@ pub fn run_captions_pass_with_reply(
     said
 }
 /// F3.9: set this session's captions gate directly, the same way `set_marking_pass` sets its switch.
-pub fn set_captions_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
-    let _ = window;
+pub fn set_captions_pass_for_test(on: bool) {
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.captions_pass.value = on;
     }
 }
 /// F3.10: move this session's speeds gate directly, the way [`set_captions_pass_for_test`] moves its own.
-pub fn set_speeds_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
-    let _ = window;
+pub fn set_speeds_pass_for_test(on: bool) {
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.speed_pass.value = on;
     }
 }
 /// F3.11: move this session's decorations gate directly, the way [`set_captions_pass_for_test`] moves its own.
-pub fn set_decorations_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
-    let _ = window;
+pub fn set_decorations_pass_for_test(on: bool) {
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.decorations_pass.value = on;
     }

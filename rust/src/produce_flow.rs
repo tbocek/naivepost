@@ -337,11 +337,6 @@ pub fn ending_for(file: &str, halves: &Halves) -> Ending {
     ending
 }
 
-/// Whether the run lays down its stamp: only an encode that returned without error writes one (F5.3).
-pub fn stamp_written(encoded: bool, failed: bool) -> bool {
-    render::stamp_written(encoded, failed)
-}
-
 /// S4/S5: run both halves and join them.
 ///
 /// `words` performs F5.6 and reports `(ok, reason)`; `render_half` performs F5.2 and reports

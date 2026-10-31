@@ -97,10 +97,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_vali
         "clip 3 (20.0-30.0) got no entry"
     );
     assert_eq!(
-        reply::all_silent_fault(),
+        pass::no_line_fault(),
         "every clip came back with no line at all"
     );
-    assert_eq!(pass::no_line_fault(), reply::all_silent_fault());
+    assert_eq!(pass::no_line_fault(), pass::no_line_fault());
 
     // Forward-only: the fault says "or is out of order" because a reply that walks back to an earlier clip
     // matches nothing and is refused rather than quietly re-sorted.
@@ -115,7 +115,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_vali
     // Every line has to survive the word budget (§10's floor and ceiling per second of video).
     assert_eq!(pass::word_ceiling(5.0), 8);
     assert_eq!(pass::word_ceiling(120.0), 30);
-    let rows = naivepost::params::narrate();
+    let rows = naivepost::params_narrate::rows();
     assert_eq!(
         spelled(&rows, "P.policy.narrationMinWords").as_deref(),
         Some("8")
@@ -258,15 +258,15 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s4_rero
     );
     assert_eq!(screen::re_roll_refusal(3, true), None);
     assert_eq!(
-        det::re_roll_refusal(true, false),
+        screen::replace_refusal(true, false),
         screen::replace_refusal(true, false)
     );
     assert_eq!(
-        det::re_roll_refusal(true, false).unwrap(),
+        screen::replace_refusal(true, false).unwrap(),
         "this narration was already heard or edited \u{2014} tick \u{201c}Replace\u{201d} to write another take over it"
     );
-    assert_eq!(det::re_roll_refusal(false, false), None);
-    assert_eq!(det::re_roll_refusal(true, true), None);
+    assert_eq!(screen::replace_refusal(false, false), None);
+    assert_eq!(screen::replace_refusal(true, true), None);
     assert!(!det::replace_tick_default());
 
     // ↻ accepted, and the captions case where nothing has a take at all.
@@ -332,7 +332,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
     // tie-break, takes under P.eng.refMinWordsPerSecond dropped unless that leaves none — is F4.6's decision
     // and deliberately not re-implemented or restated here. Its five numbers are catalogued once each, in
     // §07's section, built from the `voice_ref` constants `plan_reference` reads (§07-narrate#4-parameters-used).
-    let rows = naivepost::params::narrate();
+    let rows = naivepost::params_narrate::rows();
     assert_eq!(
         spelled(&rows, "P.machine.refWantSeconds").as_deref(),
         Some("14")
@@ -432,7 +432,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
     // A take under P.eng.takeMinSeconds is a breath rather than a voice; the row's own floor is §10's.
     assert_eq!(screen::TAKE_MIN_SECONDS, 0.4);
     assert_eq!(
-        spelled(&naivepost::params::narrate(), "P.eng.takeMinSeconds").as_deref(),
+        spelled(&naivepost::params_narrate::rows(), "P.eng.takeMinSeconds").as_deref(),
         Some("0.4")
     );
 

@@ -4,8 +4,8 @@
 //! button is proven separately in tests/suite/cut_play_the_cut_widgets.rs.
 
 use naivepost::cut::{Cut, Seg};
+use naivepost::cut_play;
 use naivepost::preview::Player;
-use naivepost::{cut_play, shell};
 
 /// Two kept clips with a removed stretch between them: 0-10 kept, 10-20 dropped, 20-30 kept.
 fn two_clips_with_a_hole() -> Cut {
@@ -337,10 +337,10 @@ fn f2_2_s5_the_clock_reads_the_cuts_own_time_not_the_sessions() {
     // Never past the finished video's length: both count only segs with e > s.
     let last = cut_play::cut_time(&cut.segs, 29.9).expect("inside the last clip");
     assert!(
-        last < shell::cut_seconds(&cut),
+        last < naivepost::cut_screen::cut_seconds(&cut),
         "the clock stays under the video's own length"
     );
-    assert_eq!(shell::cut_seconds(&cut), 20.0);
+    assert_eq!(naivepost::cut_screen::cut_seconds(&cut), 20.0);
     // mm_ss zero-pads the minutes, so 10 s of cut reads "00:10.0" -- never "1:00".
     assert_eq!(
         naivepost::preview::clock(cut_play::cut_time(&cut.segs, 20.0)),

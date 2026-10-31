@@ -146,9 +146,9 @@ fn rgb(px: &[u8], width: i32, x: i32, y: i32) -> (i32, i32, i32) {
 }
 
 /// Drag on the band the way GTK fires its own gesture, and hand back the seconds it stored.
-fn drag_on_band(window: &adw::ApplicationWindow, from_px: f64, to_px: f64) -> Option<(f64, f64)> {
+fn drag_on_band(from_px: f64, to_px: f64) -> Option<(f64, f64)> {
     let gesture =
-        ui::narrate_band::band_gesture_for_test(window).expect("the page wired the band's gesture");
+        ui::narrate_band::band_gesture_for_test().expect("the page wired the band's gesture");
     gesture.emit_by_name::<()>("drag-begin", &[&from_px, &20.0f64]);
     // GTK's drag signals carry the OFFSET from the press after `drag-begin`.
     gesture.emit_by_name::<()>("drag-update", &[&(to_px - from_px), &0.0f64]);
@@ -173,7 +173,7 @@ fn round(app: &adw::Application) {
         // press below: ＋ files the picks and then invalidates the reference cut (§F4.6 S4), which DELETES
         // `voice_ref_base.wav` — after that the band falls back to its 0.1 s floor and every take maps off the
         // edge of any image, so nothing is drawn or labelled.
-        write_wav(&narrate_data::base_reference(&tree), 16_000, 45 * 16_000);
+        write_wav(&tree.voice_ref_base_wav(), 16_000, 45 * 16_000);
         ui::refresh(&window);
         settle();
         let _ = common::widget(&window, "take-band");
@@ -193,8 +193,7 @@ fn round(app: &adw::Application) {
             to_px / pps < seconds,
             "the drag must land inside the recording: {to_px} px at {pps:.2} px/s over {seconds} s"
         );
-        let dragged =
-            drag_on_band(&window, from_px, to_px).expect("the drag left a live selection");
+        let dragged = drag_on_band(from_px, to_px).expect("the drag left a live selection");
         assert!(
             dragged.1 - dragged.0 >= narrate_screen::take_min(),
             "the dragged span reaches the floor: {:.2} s",
@@ -205,7 +204,7 @@ fn round(app: &adw::Application) {
         // because §F4.6 S4 has this very press delete it and the painted take below needs seconds to map by.
         common::widget(&window, "take-add").emit_by_name::<()>("clicked", &[]);
         settle();
-        write_wav(&narrate_data::base_reference(&tree), 16_000, 45 * 16_000);
+        write_wav(&tree.voice_ref_base_wav(), 16_000, 45 * 16_000);
         ui::refresh(&window);
         settle();
         let takes = ui::read_state().takes;
@@ -337,7 +336,7 @@ fn round(app: &adw::Application) {
         ui::narrate_band::clear_hand();
         let window = narrate_page(app, base_state());
         let tree = ui::window::narrate_session_tree().expect("a session folder");
-        write_wav(&narrate_data::base_reference(&tree), 16_000, 45 * 16_000);
+        write_wav(&tree.voice_ref_base_wav(), 16_000, 45 * 16_000);
         ui::refresh(&window);
         settle();
         // Shorter than P.eng.takeMinSeconds but still a DRAG (§1's slop: 3 px of travel or less is a click).
@@ -360,8 +359,7 @@ fn round(app: &adw::Application) {
             short_seconds < narrate_screen::take_min(),
             "and still be under the floor: {short_seconds:.3} s at {pps:.2} px/s"
         );
-        let dragged_short =
-            drag_on_band(&window, 60.0, 60.0 + short).expect("even a short drag selects");
+        let dragged_short = drag_on_band(60.0, 60.0 + short).expect("even a short drag selects");
         assert!(
             dragged_short.1 - dragged_short.0 < narrate_screen::take_min(),
             "the drag is under the floor: {:.3} s at {pps:.2} px/s",
@@ -384,7 +382,7 @@ fn round(app: &adw::Application) {
         );
         // A press with NOTHING dragged is a different sentence (§6 keeps the two apart, and it names the
         // gesture to use). A click — begin and end within 3 px — is exactly that.
-        let _ = drag_on_band(&window, 200.0, 202.0);
+        let _ = drag_on_band(200.0, 202.0);
         assert_eq!(
             ui::narrate_band::live_selection(),
             None,

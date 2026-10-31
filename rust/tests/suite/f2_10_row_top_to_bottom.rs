@@ -106,7 +106,7 @@ fn check_the_row_plates_run_row_one_at_the_top(app: &adw::Application) {
     // On the band itself (§1): each row's sound switch sits on that row's wave strip, so their y reads the row
     // order the band paints.
     let switch_y = |row: usize| {
-        naivepost::ui::cut_band_marks::placed_on(&window)
+        naivepost::ui::cut_band_marks::placed_on()
             .into_iter()
             .find(|placed| {
                 matches!(placed.mark, naivepost::ui::cut_band_marks::Mark::RowSound(r, _) if r == row)
@@ -147,7 +147,7 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
     // below is the thing that moves it, not the staging.
     ui::press_watch_row(&window, 0);
     settle();
-    assert_eq!(ui::preview_row(&window), 0, "starting point: row 1 watched");
+    assert_eq!(ui::preview_row(), 0, "starting point: row 1 watched");
 
     // The real click, on the row BELOW.
     ui::line_step_button(&window, "watch-row-2")
@@ -157,13 +157,9 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
     let line = status_text(&window);
     println!(
         "after clicking watch-row-2: watch={:?} status={line}",
-        ui::preview_row(&window)
+        ui::preview_row()
     );
-    assert_eq!(
-        ui::preview_row(&window),
-        1,
-        "the click watched the lower row"
-    );
+    assert_eq!(ui::preview_row(), 1, "the click watched the lower row");
     assert!(
         find_named_panic(&window, "camera-row-2").has_css_class("watched-row"),
         "and the dashed outline moved onto it"
@@ -188,12 +184,9 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
     let after = status_text(&window);
-    println!(
-        "after ▶: watch={:?} status={after}",
-        ui::preview_row(&window)
-    );
+    println!("after ▶: watch={:?} status={after}", ui::preview_row());
     assert_ne!(
-        ui::preview_row(&window),
+        ui::preview_row(),
         1,
         "▶ handed the watched row back to the cut (S3)"
     );

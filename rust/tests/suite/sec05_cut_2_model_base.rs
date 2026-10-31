@@ -125,8 +125,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(&tape());
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -159,7 +159,7 @@ fn check_revert_after_a_suggestion_keeps_the_suggestion(app: &adw::Application) 
     ui::cut_suggest_land::land(&window, &answer());
     settle();
     assert_eq!(
-        ui::review_cut_segs(&window).len(),
+        ui::review_cut_segs().len(),
         2,
         "the landed suggestion is what the page shows"
     );
@@ -173,14 +173,14 @@ fn check_revert_after_a_suggestion_keeps_the_suggestion(app: &adw::Application) 
 
     // A hand edit on top of it, through the same door every hand edit uses (a trim of the second clip).
     let hand = hand_trimmed();
-    ui::seed_review_cut(&window, &hand);
+    ui::seed_review_cut(&hand);
     ui::note_edit(&window);
     assert!(revert.is_sensitive(), "and live after one");
 
     revert.emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let on_screen = ui::review_cut_segs(&window);
+    let on_screen = ui::review_cut_segs();
     assert_eq!(
         on_screen,
         suggested_cut().segs,

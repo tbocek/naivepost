@@ -17,17 +17,12 @@ use crate::seam_retries::{self, Asking};
 use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
-use crate::word_list::{self, Word};
-
-/// The shipped wording of one prompt key: the fenced ``` block of `spec/prompts/<key>.md` (reader in [`crate::prompts::shipped_text`]).
-pub fn shipped_file(key: &str) -> Option<String> {
-    crate::prompts::shipped_text(key)
-}
+use crate::word_list::Word;
 
 /// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
 /// With no settings folder at all, the shipped wording is what goes out.
 fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     match paths {
         Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
         None => fallback,
@@ -36,11 +31,6 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
 
 /// Re-exported [`crate::prompts::fenced_block`] under the name callers learned first.
 pub use crate::prompts::fenced_block;
-
-/// The settings folder, read from the environment each time an ask is built, so a change mid-run is honoured (§02-services#1).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
-}
 
 /// What one seam's ask came to, and whether it is finished asking.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,7 +64,7 @@ pub fn ask(
     refused: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Answered {
-    let conf = match current_paths().as_ref().map(settings::read) {
+    let conf = match settings::from_environment().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         Some(Err(reason)) => {
             // An unreadable settings file is reported like a down server: the pass keeps the stumble rather than dialling a guessed address.
@@ -115,7 +105,7 @@ pub fn keep_for_good(
     before: &[String],
     after: &[String],
 ) {
-    let model = current_paths()
+    let model = settings::from_environment()
         .as_ref()
         .and_then(|paths| settings::read(paths).ok())
         .unwrap_or_default()
@@ -241,7 +231,7 @@ pub fn body_for_test(shown: &[String]) -> String {
 
 /// SYSTEM for a join call: house rules cut to textedit's sections, the job's wording, and the precedence rule only with a User Context (§09 §8).
 fn join_system(context: &str) -> String {
-    let paths = current_paths();
+    let paths = settings::from_environment();
     crate::prompt_assembly::system_message(
         &wording(paths.as_ref(), "system"),
         "textedit",
@@ -459,7 +449,7 @@ pub fn run_seams(
     let spoken: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
     let written: Vec<String> = words.iter().map(|word| word.written.clone()).collect();
     let sources: Vec<String> = words.iter().map(|word| word.source.clone()).collect();
-    for note in joins::dedupe_across(&written, times, &mut kept) {
+    for note in crate::tools::textedit::dedupe_joins(&written, times, &mut kept) {
         pass.logs
             .push(crate::tools::textedit::dedupe_log_head(&note));
     }
@@ -599,9 +589,4 @@ pub fn stretches(kept: &[bool]) -> usize {
         }
     }
     out
-}
-
-/// The bare form a window's words are matched on, exposed to check a window against the session list.
-pub fn bare(text: &str) -> String {
-    word_list::bare(text)
 }

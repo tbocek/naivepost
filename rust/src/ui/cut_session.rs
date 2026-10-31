@@ -10,7 +10,6 @@ use crate::layout;
 use crate::project::Project;
 use crate::settings;
 use crate::timeline::Recording;
-use crate::ui::save_apply;
 
 thread_local! {
     static LENGTHS: RefCell<HashMap<String, f64>> = RefCell::new(HashMap::new());
@@ -44,7 +43,6 @@ pub fn session_recordings(
         let Some(length) = length_of(
             &configured,
             &crate::layout::resolve(root, project_dir, &source.path),
-            &name,
         ) else {
             continue;
         };
@@ -77,7 +75,7 @@ pub fn lane_recordings(cut_: &Cut) -> Vec<Recording> {
 /// Where to resolve a stored path from: the application root (the process cwd, which is what every other
 /// door here uses) and the folder this window opened.
 pub fn open_roots() -> Option<(PathBuf, PathBuf)> {
-    let project_dir = save_apply::open_dir()?;
+    let project_dir = crate::startup::open_dir_if_set()?;
     Some((std::env::current_dir().unwrap_or_default(), project_dir))
 }
 
@@ -89,7 +87,7 @@ pub fn for_open_session(cut_: &Cut) -> Option<Vec<Recording>> {
 }
 
 fn open_tree() -> Option<layout::Tree> {
-    layout::Tree::new(&save_apply::open_dir()?).ok()
+    layout::Tree::new(&crate::startup::open_dir_if_set()?).ok()
 }
 
 /// The door an open or a Rescan calls: this window's session spans, asked of the OPEN PROJECT through
@@ -114,12 +112,11 @@ pub fn refresh_page_spans(cut_: &Cut) -> Option<Vec<Recording>> {
 }
 
 /// What ffprobe says this file runs for, remembered per path.
-fn length_of(configured: &str, path: &Path, name: &str) -> Option<f64> {
+fn length_of(configured: &str, path: &Path) -> Option<f64> {
     let key = path.display().to_string();
     if let Some(known) = LENGTHS.with(|cell| cell.borrow().get(&key).copied()) {
         return Some(known);
     }
-    let _ = name;
     if UNREADABLE.with(|cell| cell.borrow().contains(&key)) {
         return None;
     }

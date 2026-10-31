@@ -94,8 +94,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     ui::refresh_effects_lane(&window);
     settle();
     window
@@ -139,7 +139,7 @@ fn round(app: &adw::Application) {
         "and the held record's own form is on screen"
     );
     assert!(
-        ui::held_effect().is_some(),
+        ui::cut_hand::held_effect().is_some(),
         "Edit keeps the record in hand rather than dropping it"
     );
     RAN_EDIT_DOOR.store(true, Ordering::SeqCst);
@@ -151,7 +151,7 @@ fn round(app: &adw::Application) {
     let window = cut_page(app, &seeded);
     ui::remove_effect_at(&window, 0);
     settle();
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     ui::set_held_effect(Some(wide_zoom(20.0)));
     let said = click_insert(&window);
     assert_eq!(
@@ -160,7 +160,7 @@ fn round(app: &adw::Application) {
         "the miss sentence, whole, printed by the real button"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "the miss wrote nothing: \u{201c}nothing was changed\u{201d} has to be true of the cut"
     );
@@ -174,7 +174,7 @@ fn round(app: &adw::Application) {
     ui::set_held_effect(Some(wide_zoom(20.0)));
     ui::set_line_position(&window, LinePos { t: 20.0 });
     assert!(
-        ui::held_effect().is_some(),
+        ui::cut_hand::held_effect().is_some(),
         "a line moved to the band's own start keeps the hold \u{2014} pick-up depends on this"
     );
     ui::set_line_position(
@@ -184,7 +184,7 @@ fn round(app: &adw::Application) {
         },
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "a line a full second past the band's end must have dropped the hold"
     );
     // And the near miss: a frame outside keeps it, so a mid-drag crossing does not snatch the band away.
@@ -196,7 +196,7 @@ fn round(app: &adw::Application) {
         },
     );
     assert!(
-        ui::held_effect().is_some(),
+        ui::cut_hand::held_effect().is_some(),
         "half a frame past the end is inside the slack \u{2014} the hand still holds it"
     );
     RAN_HOLD_DROPS.store(true, Ordering::SeqCst);
@@ -205,7 +205,7 @@ fn round(app: &adw::Application) {
     // --- S3: a placed camera rect dragged on the picture MOVES, and one ↶ takes it back ----------------
     let window = cut_page(app, &one_zoom());
     let fit = (ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
-    let before = ui::review_cut_of(&window).fx[0].clone();
+    let before = ui::window_preview::newest_review_cut().fx[0].clone();
     let box_px = camera_box(&before, fit);
     // A press in the interior, dragged both axes: the centre travels, `hf` does not.
     let inside = (box_px.0 + box_px.2 / 2.0, box_px.1 + box_px.3 / 2.0);
@@ -218,7 +218,7 @@ fn round(app: &adw::Application) {
     )
     .expect("a press inside a placed zoom's box is a camera drag");
     assert_eq!(said, fx_band::moved("Zoom"), "§S3's move sentence, whole");
-    let moved_rec = ui::review_cut_of(&window).fx[0].clone();
+    let moved_rec = ui::window_preview::newest_review_cut().fx[0].clone();
     assert!(
         moved_rec.cx.unwrap() > before.cx.unwrap(),
         "the centre followed the hand: {:?} -> {:?}",
@@ -233,7 +233,7 @@ fn round(app: &adw::Application) {
     // One ↶ takes this gesture back alone, because the write went through `record_edit`.
     ui::press_undo(&window);
     settle();
-    let back = ui::review_cut_of(&window).fx[0].clone();
+    let back = ui::window_preview::newest_review_cut().fx[0].clone();
     assert_eq!(back.cx, before.cx, "one undo restores the centre");
     assert_eq!(back.hf, before.hf, "and the height, which never moved");
     RAN_ZOOM_MOVED.store(true, Ordering::SeqCst);
@@ -243,7 +243,7 @@ fn round(app: &adw::Application) {
     // --- S3: an edge drag RESIZES, and the other axis stays put ---------------------------------------
     let window = cut_page(app, &one_zoom());
     let fit = (ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
-    let before = ui::review_cut_of(&window).fx[0].clone();
+    let before = ui::window_preview::newest_review_cut().fx[0].clone();
     let box_px = camera_box(&before, fit);
     // Just inside the bottom edge -- within `fx_text::EDGE_GRIP_PX`, the reach this door uses.
     let on_edge = (box_px.0 + box_px.2 / 2.0, box_px.1 + box_px.3 - 2.0);
@@ -260,7 +260,7 @@ fn round(app: &adw::Application) {
         fx_band::resized("Zoom"),
         "§S3's resize sentence, whole"
     );
-    let sized = ui::review_cut_of(&window).fx[0].clone();
+    let sized = ui::window_preview::newest_review_cut().fx[0].clone();
     assert!(
         sized.hf.unwrap() < before.hf.unwrap(),
         "dragging the bottom up shrinks the slice: {:?} -> {:?}",
@@ -278,9 +278,9 @@ fn round(app: &adw::Application) {
     // --- S3: an armed or held press is not a camera drag at all ----------------------------------------
     let window = cut_page(app, &one_zoom());
     let fit = (ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
-    let box_px = camera_box(&ui::review_cut_of(&window).fx[0], fit);
+    let box_px = camera_box(&ui::window_preview::newest_review_cut().fx[0], fit);
     let inside = (box_px.0 + box_px.2 / 2.0, box_px.1 + box_px.3 / 2.0);
-    let before_cx = ui::review_cut_of(&window).fx[0].cx;
+    let before_cx = ui::window_preview::newest_review_cut().fx[0].cx;
     ui::set_zoom_armed(true);
     assert_eq!(
         naivepost::ui::cut_zoom_hand::zoom_box_edit_on_release(
@@ -294,7 +294,7 @@ fn round(app: &adw::Application) {
         "while the zoom arm is up the arm owns the press"
     );
     ui::set_zoom_armed(false);
-    ui::set_held_effect(Some(ui::review_cut_of(&window).fx[0].clone()));
+    ui::set_held_effect(Some(ui::window_preview::newest_review_cut().fx[0].clone()));
     assert_eq!(
         naivepost::ui::cut_zoom_hand::zoom_box_edit_on_release(
             &window,
@@ -314,7 +314,7 @@ fn round(app: &adw::Application) {
         "a press without travel is a click"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx[0].cx,
+        ui::window_preview::newest_review_cut().fx[0].cx,
         before_cx,
         "none of the three wrote anything"
     );
@@ -358,7 +358,7 @@ fn round(app: &adw::Application) {
     );
     // The cut is untouched: the form keeps the edit, Apply writes it (§S5's one-Undo-for-the-whole-edit).
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         2,
         "a keystroke never places a record \u{2014} Apply does"
     );

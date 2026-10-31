@@ -16,7 +16,7 @@ use crate::ui::window::{
 use crate::ui::{cut_form_buttons, cut_form_frame};
 
 pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
-    let line = cut_form_buttons::known_line(window);
+    let line = cut_form_buttons::known_line();
     match fx_svg::press(line) {
         fx_svg::Press::Refused(reason) => {
             close_svg_form(window);
@@ -25,7 +25,7 @@ pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
         }
         fx_svg::Press::OpenChooser => {
             let root = std::env::current_dir().unwrap_or_default();
-            let dir = fx_svg::chooser_dir(&root);
+            let dir = crate::layout::assets_dir(&root);
             open_svg_chooser(window, fx_svg::CHOOSE_TITLE, &dir, fx_svg::CHOOSE_FILTER);
             let said = format!("{} \u{2014} choose the drawing", fx_svg::CHOOSE_TITLE);
             log_line(&said);
@@ -102,7 +102,7 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
             // A raster that came back from disk (the file was seen before) is ready the instant the ask returns, so
             // a form already open gets its picture now rather than on the next redraw.
             paint_svg_raster(window, &name);
-            let marked = cut_form_buttons::marked_band(window);
+            let marked = cut_form_buttons::marked_band();
             let said = fx_svg::arm_words(&name, marked);
             log_line(&said);
             said
@@ -175,16 +175,6 @@ pub fn raster_dir() -> Option<std::path::PathBuf> {
     crate::ui::window::narrate_session_tree().map(|tree| tree.svg_raster_dir())
 }
 
-pub fn make_here(path: &str) -> Result<std::path::PathBuf, String> {
-    let paths = crate::settings::from_environment();
-    let program = match &paths {
-        Some(paths) => crate::audio_task::ffmpeg_program(paths),
-        None => crate::run_stages::FFMPEG.to_string(),
-    };
-    let dir = raster_dir().ok_or_else(|| "no project folder to keep the raster in".to_string())?;
-    crate::ui::cut_svg_raster::make(&program, path, &dir, &|line| log_line(line))
-}
-
 /// F3.5 S5: where this drawing's preview copy is, `None` when there is none yet (or its making failed). Read-only,
 /// so the form's picture and the preview's painter can ask without taking on a raster job themselves.
 pub fn raster_of(path: &str) -> Option<std::path::PathBuf> {
@@ -207,8 +197,8 @@ pub fn svg_drag_ended_with_source(
         log_line(fx_svg::NO_FILE);
         return fx_svg::NO_FILE.to_string();
     };
-    let line = cut_form_buttons::known_line(window);
-    let sel = cut_form_buttons::marked_band(window);
+    let line = cut_form_buttons::known_line();
+    let sel = cut_form_buttons::marked_band();
     match fx_svg::place(choice, &file, line, sel, source) {
         Some(fx) => {
             show_svg_form(window, &fx);
@@ -228,7 +218,7 @@ pub fn svg_drag_ended_with_source(
 
 /// The app-side door: same seam, source size read off the pinned preview frame.
 pub fn svg_drag_ended(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) -> String {
-    let source = preview_picture_px(window);
+    let source = preview_picture_px();
     svg_drag_ended_with_source(window, from, to, source)
 }
 
@@ -543,7 +533,7 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
 /// through, so "a file was picked" is one code path whether it came from the row or from the form.
 pub fn press_svg_choose(window: &adw::ApplicationWindow) -> String {
     let root = std::env::current_dir().unwrap_or_default();
-    let dir = fx_svg::chooser_dir(&root);
+    let dir = crate::layout::assets_dir(&root);
     open_svg_chooser(window, fx_svg::CHOOSE_TITLE, &dir, fx_svg::CHOOSE_FILTER);
     let said = format!(
         "{} \u{2014} the new drawing lands in the box already drawn",

@@ -4,14 +4,10 @@ use adw::prelude::*;
 
 use crate::{layout, prepare_run, project::Project, settings};
 
-fn paths() -> Option<settings::Paths> {
-    settings::from_environment()
-}
-
 /// Why ▶ Prepare must not start, or `None` when audio.cpp is ready for it. Why ▶ Prepare must not
 /// start, or `None` when audio.cpp is ready for it.
 pub fn why_not(project: &Project) -> Option<String> {
-    let paths = paths()?;
+    let paths = settings::from_environment()?;
     let dir = crate::startup::open_dir();
     let tree = layout::Tree::new(&dir).ok();
     prepare_run::preflight(&paths, &tree, project)
@@ -112,7 +108,7 @@ fn finish(
     crate::ui::window::paint_tabs_for(window, project);
     let (scan_tree, cut, _narration) = crate::ui::window::session_reads();
     if scan_tree.is_some() {
-        crate::ui::window::seed_review_cut(window, &cut);
+        crate::ui::window::seed_review_cut(&cut);
         crate::ui::cut_cameras::refresh_camera_rows(window);
         crate::ui::window::refresh_effects_lane(window);
     }

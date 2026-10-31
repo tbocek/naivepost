@@ -271,7 +271,7 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     );
     // And the door's own argv builder is what the sweep will run, unchanged (S2): four frames a second,
     // the throwaway 640-wide scale, and the detector reporting every score.
-    let sweep = naivepost::frames::scene_pass_plan(naivepost::frames::SCENE_THRESHOLD).join(" ");
+    let sweep = naivepost::frames::scene_pass_plan().join(" ");
     assert!(
         sweep.contains("fps=4") && sweep.contains("scdet"),
         "the planned sweep is the scene detector: {sweep}"

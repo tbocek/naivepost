@@ -6,8 +6,6 @@
 //!
 //! No model call happens here: runs arrive as answers handed in by the caller, so it is testable (spec/00-principles.md §5).
 
-use std::path::Path;
-
 use crate::edges::{self, AlignedWord};
 use crate::layout::Tree;
 use crate::project::{MarkingPass, Project, Source};
@@ -570,8 +568,4 @@ pub fn stage_marking(
         return vec![nothing_found_log()];
     }
     vec![written_log(marks.len(), speech_seconds)]
-}
-
-pub fn read_marks(path: &Path) -> Result<Vec<Retake>, String> {
-    textfmt::read_retakes(path)
 }

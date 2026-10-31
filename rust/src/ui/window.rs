@@ -33,7 +33,6 @@ use crate::ui::cut_speed_hand::{wire_band_esc, wire_speed_esc};
 use crate::ui::cut_svg::wire_svg_esc;
 use crate::ui::cut_text_hand::wire_text_esc;
 use crate::ui::cut_volume_hand::wire_volume_esc;
-use crate::ui::save_apply;
 
 pub(crate) const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 /// §1 badge **15**'s word, its own label before the folder button; the count carries no prefix.
@@ -47,8 +46,7 @@ pub use crate::ui::window_effect_item::press_effect_item;
 
 pub use crate::ui::cut_zoom_hand::{
     note_zoom_place, press_zoom_item, preview_picture_px, set_zoom_armed, zoom_armed,
-    zoom_drag_ended, zoom_drag_ended_with_source, zoom_entry, zoom_form_box, zoom_form_open,
-    PREVIEW_PANEL_H, PREVIEW_PANEL_W,
+    zoom_form_box, zoom_form_open, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
 };
 pub(crate) use crate::ui::cut_zoom_hand::{
     set_zoom_form, show_zoom_form, trim_seconds, zoom_field_row,
@@ -60,7 +58,7 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 pub(crate) use crate::ui::window_bench::{
     depth, has_label, paint_readouts, paint_tabs, paint_tabs_for, refresh_cut_readouts, tab_buttons,
 };
-pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
+pub use crate::ui::window_bench::{paint_progress, paint_run_bar, set_bench_open_row};
 /// Repaint the bottom bar for a folder: the door Open and Rescan go through.
 pub use crate::ui::window_bench::{paint_readouts_for, readouts_read_here_for_test};
 
@@ -69,10 +67,10 @@ pub(crate) use crate::ui::window_session::{holder_children_named, session_reads,
 pub use crate::ui::window_selection::{
     apply_mix, clear_selection, clear_selection_button, drag_held_band, draw_selection,
     live_form_answer_is_undo, live_form_refused, nudge_held_effect, nudge_selection,
-    open_effect_form, press_band_esc, press_edit_effect, press_effect_bar, press_fx_lane,
-    pressed_surface, preview_playhead, preview_volume, remove_effect_at, remove_held_effect,
-    select_surface, selection, selection_gesture, selection_readout, selection_surface,
-    selection_verbs, set_preview_volume,
+    press_band_esc, press_edit_effect, press_effect_bar, press_fx_lane, pressed_surface,
+    preview_playhead, preview_volume, remove_effect_at, remove_held_effect, select_surface,
+    selection, selection_gesture, selection_readout, selection_surface, selection_verbs,
+    set_preview_volume,
 };
 pub(crate) use crate::ui::window_selection::{
     held_narration, refresh_selection_readout, refresh_verb_buttons, HELD_NARRATION,
@@ -81,9 +79,9 @@ pub(crate) use crate::ui::window_selection::{
 
 pub use crate::ui::window_trim_strip::{
     copy_esc_controller, copy_hand, delete_key_controller, move_gesture, note_place, open_folds,
-    paste_line, press_band, press_copy, press_lane, press_move, press_move_at, press_paste,
-    press_position, press_row, press_scene, press_trim_border, right_press_took, set_press_band,
-    set_press_scene, set_press_x, track_strip, trim_gesture, TRACK_REC_END, TRACK_STRIP_PPS,
+    press_copy, press_lane, press_move, press_move_at, press_paste, press_row, press_scene,
+    press_trim_border, right_press_took, set_press_band, set_press_scene, set_press_x, track_strip,
+    trim_gesture, TRACK_REC_END, TRACK_STRIP_PPS,
 };
 pub(crate) use crate::ui::window_trim_strip::{
     refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
@@ -129,7 +127,7 @@ pub fn build_window_at(
     dir: &std::path::Path,
 ) -> adw::ApplicationWindow {
     // FIRST: everything below asks `startup::open_dir`, which still names the previous window's folder.
-    save_apply::set_open_dir(dir);
+    startup::set_open_dir(dir);
     let window = adw::ApplicationWindow::new(app);
     // §1: minimum size 1240×900. GTK 4 refuses to shrink under its size request, which makes it a floor
     // (`tests/suite/window_shrinks.rs`).
@@ -370,7 +368,6 @@ pub fn build_window_at(
         &log_view,
         &queue,
         &exchange_log,
-        &procs,
         project,
     );
     wire_stop(
@@ -434,7 +431,6 @@ the Produce settings",
     tab_info.set_tooltip_text(Some(&shell.borrow().info_tip()));
     INFO_BUTTON.with(|slots| slots.borrow_mut().push(tab_info.clone()));
     header.pack_end(&tab_info);
-    wire_policy(&tab_info, &window);
 
     // Handed over rather than found by name: `page_box` runs once per tab, so `find` would return an arbitrary page's button.
     if let Some((add_, copy_)) = prepare_add {
@@ -479,9 +475,9 @@ the Produce settings",
             )))
         });
         // §05-cut#8 bullet 2: stream volume to full ONCE, through this app's own element, not the sound server's remembered one.
-        crate::ui::preview_sound::reset_stream_volume_once(&window);
+        crate::ui::preview_sound::reset_stream_volume_once();
         if let Some(scale) = preview_volume_scale(&window) {
-            wire_preview_volume(&scale, &window);
+            wire_preview_volume(&scale);
         }
     }
     // F2.6: drag surface and cross, wired after `set_content`; the seam takes the drag's seconds so both paths meet in `draw_selection`.
@@ -510,7 +506,7 @@ the Produce settings",
         wire_play_cut(&cut_, &window);
     }
     // F2.2 S5/S6: the tick loop that skips removed stretches and arms the spare pipeline.
-    cut_play_leg::start_cut_preview_tick(&window, Rc::new(CutPreviewSlot(window.clone())));
+    cut_play_leg::start_cut_preview_tick(Rc::new(CutPreviewSlot(window.clone())));
     crate::ui::cut_record_tick::start(Rc::new(window.clone()));
     crate::ui::cut_review_play::start(Rc::new(window.clone()));
     // F2.3: this window's cut slot, seeded from the project's `cut/cut.json` (the file IS the cut, §3).
@@ -526,7 +522,7 @@ the Produce settings",
             .push(Rc::new(std::cell::RefCell::new(opened_cut.clone())))
     });
     // F2.13: the history opens on the SAME cut just published, so Revert returns to what this page opened with.
-    reopen_history_on(&window, &opened_cut);
+    reopen_history_on(&opened_cut);
     // F2.11/F2.10: SESSION recordings, pushed beside the cut. A dropped stretch only exists inside a run LONGER than
     // the kept clips, so the fold half reads these ([`crate::ui::cut_session`]); the cut's own spans are the fallback.
     push_session_recordings(crate::ui::cut_session::session_or_kept(&opened_cut));
@@ -570,10 +566,10 @@ the Produce settings",
             // One non-blocking main-loop beat first: `set_text` during a repaint fires `changed`, and a missed beat leaves the close nothing to flush.
             let pending = glib::MainContext::default();
             while pending.iteration(false) {}
-            flush_line_on_close(&closing);
+            flush_line_on_close();
             crate::ui::narrate_text::flush_owed(&closing);
             // Also flush the WINDOW'S OWN held record: `flush_owed` reads process-global page state of the last Narrate page refreshed.
-            flush_held_narration_on_close(&closing);
+            crate::ui::window_close::flush_held_narration();
             // §2 S6: resolved through this window's own folder, not the process cwd.
             flush_session_on_close();
             // §6/§5: a settings dialog is a separate top level, so its own close hook does not run.
@@ -648,7 +644,7 @@ the Produce settings",
     refresh_effects_lane(&window);
     wire_fold_all(&window);
     refresh_fold_badges(&window);
-    repaint_scrollbar(&window);
+    crate::ui::cut_view::refresh_page_scrollbar(&window);
     wire_wheel_gestures(&window);
     crate::ui::cut_view::attach_scrollbar(&window);
     crate::ui::window::wire_band_line_press(&window);
@@ -823,11 +819,10 @@ fn wire_switching(
 
 pub use crate::ui::window_policy::{
     built_window, derive_policy, live_session_policy, main_window, policy_is_current,
-    session_policy, set_policy_sender_for_tests, set_session_context, set_session_policy_field,
+    set_policy_sender_for_tests, set_session_context,
 };
 pub(crate) use crate::ui::window_policy::{
-    schedule_policy_derive, user_context, wire_policy, wire_settings, POLICY_TRACKERS,
-    POLICY_WATCH_WINDOW,
+    schedule_policy_derive, user_context, wire_settings, POLICY_TRACKERS, POLICY_WATCH_WINDOW,
 };
 
 thread_local! {
@@ -877,8 +872,8 @@ thread_local! {
 
 pub use crate::ui::window_line_step::{
     arrow_steps, flush_line_on_close, line_key_controller, line_position, line_root,
-    line_step_button, move_line_and_save, place_line_press, set_line_position, space_toggles,
-    step_frames_of, step_the_line, Step, NO_RECORDING_STATUS,
+    line_step_button, place_line_press, set_line_position, space_toggles, step_frames_of, Step,
+    NO_RECORDING_STATUS,
 };
 pub(crate) use crate::ui::window_line_step::{
     flush_session_on_close, wire_line_keys, wire_line_step, LINE_ROOTS, LINE_STEP_BUTTONS,
@@ -886,8 +881,7 @@ pub(crate) use crate::ui::window_line_step::{
 };
 
 pub use crate::ui::window_surfaces::{
-    band_line_gesture_for_test, line_click_gesture, line_now_ms, wire_band_line_press,
-    SELECT_SURFACE_PPS,
+    band_line_gesture_for_test, line_click_gesture, wire_band_line_press, SELECT_SURFACE_PPS,
 };
 pub(crate) use crate::ui::window_surfaces::{
     store_band_line_gesture, wire_clear_selection, wire_line_click_surface, wire_select_surface,
@@ -906,16 +900,11 @@ fn wire_verb_button(
 
 use crate::ui::cut_verb_press::{press_add, press_remove, press_split};
 
-fn flush_held_narration_on_close(window: &adw::ApplicationWindow) {
-    crate::ui::window_close::flush_held_narration(window)
-}
-
 pub use crate::ui::window_review::clamp_effects_to_cut;
 pub(crate) use crate::ui::window_review::set_review_segs;
 
 pub use crate::ui::window_holds::{
-    apply_pick, held_clip, held_edge, held_effect, held_now, held_segment, set_held_clip,
-    set_held_edge, set_held_effect, set_watched_row, watched_row,
+    apply_pick, set_held_clip, set_held_edge, set_held_effect, set_watched_row, watched_row,
 };
 
 thread_local! {
@@ -927,8 +916,8 @@ thread_local! {
 pub use crate::ui::cut_view::{band_clip_boxes_for_test, strip_clip_boxes_for_test, strip_pps};
 
 pub use crate::ui::window_insert::{
-    close_insert_form, insert_chosen, insert_chosen_with_length, insert_open, press_insert,
-    press_insert_apply, save_seed_for_test, visible_insert_form,
+    close_insert_form, insert_chosen_with_length, insert_open, press_insert, press_insert_apply,
+    visible_insert_form,
 };
 pub(crate) use crate::ui::window_insert::{
     press_insert_from_button, refresh_insert_button, save_insert_cut,
@@ -945,9 +934,8 @@ pub const STRIP_WIDTH: i32 = 480;
 pub(crate) use crate::ui::window_narrate::live_project;
 pub use crate::ui::window_narrate::{
     narrate_pulsed, narrate_script_loaded, narrate_session_tree, narrate_stage, narrate_stages,
-    narrate_wrote, press_narrate_run, pull_half_typed, refuse_narrate_run,
-    refuse_narrate_run_with_busy, set_narrate_script, set_narrate_script_slow, set_status_line,
-    show_narrate_progress, show_narrate_stage,
+    narrate_wrote, press_narrate_run, refuse_narrate_run, set_narrate_script,
+    set_narrate_script_slow, set_status_line,
 };
 
 fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
@@ -974,76 +962,75 @@ thread_local! {
 }
 
 pub(crate) use crate::ui::window_history_zoom::{
-    cut_history, publish_cut, record_edit, refresh_history_buttons, repaint_scrollbar,
-    wire_aspect_choice, wire_history_and_zoom, wire_history_keys, wire_wheel_gestures,
-    wire_zoom_drag, wire_zoom_esc, zoom_form_owner,
+    cut_history, publish_cut, record_edit, refresh_history_buttons, wire_aspect_choice,
+    wire_history_and_zoom, wire_history_keys, wire_wheel_gestures, wire_zoom_drag, wire_zoom_esc,
+    zoom_form_owner,
 };
 pub use crate::ui::window_history_zoom::{
-    history_key_controller, note_edit, press_clear_cut, press_redo, press_revert, press_thumb,
-    press_undo, press_wave, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc,
-    reopen_history_on, zoom_gesture,
+    history_key_controller, note_edit, press_clear_cut, press_revert, press_undo, press_wave,
+    press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc, reopen_history_on,
+    zoom_gesture,
 };
 
 struct CutPreviewSlot(adw::ApplicationWindow);
 
 impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     fn cut_only(&self) -> bool {
-        preview_player(&self.0).cut_only
+        preview_player().cut_only
     }
     fn player_second(&self) -> Option<f64> {
         crate::ui::cut_record_play::playing_second()
     }
     fn playing(&self) -> bool {
-        preview_player(&self.0).transport.playing
+        preview_player().transport.playing
     }
     fn playhead(&self) -> Option<f64> {
-        preview_player(&self.0).playhead
+        preview_player().playhead
     }
     fn set_playhead(&self, at: f64) {
         set_playhead(&self.0, at)
     }
     fn cut(&self) -> Cut {
-        review_cut_of(&self.0)
+        newest_review_cut()
     }
     fn volume(&self) -> f64 {
-        preview_volume(&self.0)
+        preview_volume()
     }
     fn arm_spare_at(&self, at: f64) -> bool {
-        crate::ui::cut_cut_play::preroll_spare(&self.0, at)
+        crate::ui::cut_cut_play::preroll_spare(at)
     }
     fn cross_into_spare(&self) -> bool {
-        crate::ui::cut_cut_play::swap_spare(&self.0)
+        crate::ui::cut_cut_play::swap_spare()
     }
     fn drop_spare(&self) {
-        crate::ui::cut_cut_play::release_spare();
+        crate::cut_play_back::drop_spare();
     }
     fn hold_still(&self, hold: bool) -> bool {
         crate::ui::cut_cut_play::freeze(hold)
     }
     fn play_rate(&self, rate: f64, at: f64) -> bool {
-        crate::ui::cut_cut_play::hand_rate(&self.0, rate, at)
+        crate::ui::cut_cut_play::hand_rate(rate, at)
     }
     fn apply_gain(&self, gain: f64, at_secs: f64) {
-        crate::ui::cut_cut_play::hand_gain(&self.0, gain, at_secs);
+        crate::ui::cut_cut_play::hand_gain(gain, at_secs);
     }
     fn say_clock(&self, clock: f64, ended: bool) {
         if let Some(status) = find_status(self.0.upcast_ref()) {
             status.set_text(&cut_play_leg::clock_line(clock, ended));
         }
         // §D: the ✂ clock carries its own explanation as a tooltip: cut time, total, session second.
-        let len = cut_play_leg::kept_length(&review_cut_of(&self.0));
-        crate::ui::cut_cut_play::set_clock_tooltip(&self.0, clock, len, preview_playhead(&self.0));
+        let len = cut_play_leg::kept_length(&newest_review_cut());
+        crate::ui::cut_cut_play::set_clock_tooltip(&self.0, clock, len, preview_playhead());
     }
 }
 
 pub use crate::ui::window_doors::{
     add_sources_button, copy_into_project, find_source_widget, find_status, inputs_readout,
-    log_expander, mark_narration_owed, marking_pass, new_button, new_tooltip, open_button,
-    open_tooltip, outputs_folder_button, outputs_label, outputs_readout, outputs_sentence,
-    paint_project_title, play_button, play_tooltip, progress_bar, progress_tooltip, project_title,
-    rescan_button, rescan_tooltip, run_queue, running_step, save_button, save_tooltip,
-    session_handle, session_sources, set_marking_pass, state, stop_button, tab_button, tab_dimmed,
-    tab_info_button, tab_info_parts, tab_tooltip,
+    log_expander, mark_narration_owed, new_button, new_tooltip, open_button, outputs_folder_button,
+    outputs_label, outputs_readout, outputs_sentence, paint_project_title, play_button,
+    play_tooltip, progress_bar, progress_tooltip, rescan_button, rescan_tooltip, run_queue,
+    running_step, save_button, save_tooltip, session_handle, session_sources, set_marking_pass,
+    state, stop_button, tab_button, tab_dimmed, tab_info_button, tab_info_parts, tab_tooltip,
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};
 pub use crate::ui::window_doors::{switch_latch, view_stack};
@@ -1058,11 +1045,11 @@ pub(crate) use crate::ui::window_project::{
     SAVE_TIP, SETTINGS_TIP,
 };
 
-pub(crate) use crate::ui::window_preview::{live_player, newest_review_cut};
+pub(crate) use crate::ui::window_preview::live_player;
+pub use crate::ui::window_preview::newest_review_cut;
 pub use crate::ui::window_preview::{
     play_cut_button, play_recording_button, press_play_cut, press_play_recording,
     press_review_cuts, preview_player, preview_volume_scale, publish_preview_transport,
-    register_preview_player_slot, review_cut_of, review_cut_segs, review_cut_segs_count,
-    review_cut_shift, review_cuts_button, review_lanes, seed_review_cut, set_playhead,
-    set_preview_state,
+    register_preview_player_slot, review_cut_segs, review_cut_segs_count, review_cut_shift,
+    review_cuts_button, review_lanes, seed_review_cut, set_playhead, set_preview_state,
 };

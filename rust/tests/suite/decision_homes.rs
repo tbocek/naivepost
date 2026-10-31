@@ -15,7 +15,7 @@ fn catalogued() -> Vec<&'static str> {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .map(|p| p.id)
         .collect();

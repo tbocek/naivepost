@@ -27,16 +27,10 @@ use crate::tools::Tool;
 /// exact request (§00-principles).
 pub const STEP: &str = "translate";
 
-/// The settings folder, read from the environment for EVERY batch so an address changed mid-render is
-/// honoured by the next request (§02-services#1).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
-}
-
 /// The wording to ask with, through the settings read path so an edit wins (§04-prepare#6); with no
 /// settings folder, the shipped `spec/prompts/translate.md`.
 fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     match paths {
         Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
         None => fallback,
@@ -203,7 +197,7 @@ pub fn ask(tree: &Tree, cancelled: &std::rc::Rc<dyn Fn() -> bool>) -> Box<Ask> {
     let tree = tree.clone();
     let cancelled = std::rc::Rc::clone(cancelled);
     Box::new(move |message: &str, numbers: &[usize]| {
-        let conf = match current_paths().as_ref().map(settings::read) {
+        let conf = match settings::from_environment().as_ref().map(settings::read) {
             Some(Ok(conf)) => conf,
             // An unreadable settings file is reported like a down server: the track keeps the original and says why.
             Some(Err(reason)) => return Err(format!("settings could not be read: {reason}")),
@@ -222,7 +216,7 @@ pub fn ask_at(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<BTreeMap<usize, String>, String> {
     let model = conf.model.clone();
-    let system = system(current_paths().as_ref());
+    let system = system(settings::from_environment().as_ref());
     let parts = cache_parts(&system, message, &model, numbers);
     if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
         // §09 §10: the cached answer writes its own `cache` line, with no time on the wire. Only a COMPLETE answer is stored.

@@ -35,8 +35,8 @@ pub fn holds_card(button: u32, clicks: u32) -> bool {
 
 /// The band's second under `x_px`, through the span the bars were painted from. [`timeline::Span`] already
 /// carries `cut_view::gutter_px()`, so only the scroll comes off, here rather than at each caller.
-fn second_at(window: &adw::ApplicationWindow, x_px: f64) -> f64 {
-    let scene = cut_view::band_scene_for(window);
+pub fn second_at(x_px: f64) -> f64 {
+    let scene = cut_view::band_scene_for();
     cut_tracks::band_t_at(&scene, x_px)
 }
 
@@ -71,8 +71,7 @@ thread_local! {
 }
 
 /// The band's card-hold gesture. Test-only reader (as `ui::zoom_gesture`).
-pub fn card_hold_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
-    let _ = window;
+pub fn card_hold_gesture_for_test() -> Option<gtk::GestureClick> {
     CARD_HOLD_CLICKS.with(|cell| cell.borrow().clone())
 }
 
@@ -88,19 +87,14 @@ pub fn wire(window: &adw::ApplicationWindow, surface: &gtk::DrawingArea) {
         if !holds_card(_g.current_button(), n_press.max(0) as u32) {
             return;
         }
-        let seconds = second_at(&win, x);
+        let seconds = second_at(x);
         press(&win, seconds);
     });
     surface.add_controller(gesture.clone());
     CARD_HOLD_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
 }
 
-/// Which second a press x is. Test-only reader of the private [`second_at`] (as `window::band_line_gesture_for_test`).
-pub fn seconds_at_for_test(window: &adw::ApplicationWindow, x_px: f64) -> f64 {
-    second_at(window, x_px)
-}
-
 /// The span a scene draws its bars through. Test-only reader: a check presses at the x the ink was painted at.
-pub fn span_of_for_test(window: &adw::ApplicationWindow) -> timeline::Span {
-    cut_tracks::band_span(&cut_view::band_scene_for(window))
+pub fn span_of_for_test() -> timeline::Span {
+    cut_tracks::band_span(&cut_view::band_scene_for())
 }

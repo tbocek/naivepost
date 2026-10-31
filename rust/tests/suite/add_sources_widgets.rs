@@ -167,7 +167,7 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
         "the copy landed"
     );
 
-    let rows = ui::session_sources(&window);
+    let rows = ui::session_sources();
     assert!(
         rows.contains(&"project:sources/cam.mkv".to_string()),
         "the video row: {rows:?}"
@@ -239,7 +239,7 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
     );
 
     // S5 again with nothing new: refused as a no-op, session untouched.
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
     assert!(
         ui::add_files(&window, &[cam.clone(), wav.clone()]),
         "the copy starts; that nothing was new is its landing's sentence"
@@ -253,11 +253,7 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
         ui::state(&window).status,
         "already in the session \u{2014} nothing added"
     );
-    assert_eq!(
-        ui::session_sources(&window),
-        before,
-        "a repeat pick adds nothing"
-    );
+    assert_eq!(ui::session_sources(), before, "a repeat pick adds nothing");
 
     // S0 on this same path: with a run on, the seam refuses before any byte moves. F0.5 S4 closes what
     // a single-step ▶ opens, so the busy state is stood up as an open run -- `start_run`, the call ▶
@@ -280,7 +276,7 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
     );
     assert_eq!(ui::state(&window).status, add_sources::RUN_REFUSAL);
     assert_eq!(
-        ui::session_sources(&window),
+        ui::session_sources(),
         before,
         "refused before touching the session"
     );

@@ -61,26 +61,23 @@ pub fn report_form_column(window: &adw::ApplicationWindow) {
 /// Put the Cut page transport in the state §1 draws it (badges **5**-**9** are greyed until a preview plays): seed a cut, stand the red line in the first clip, press ▶, then hand back with the run bar's ⏹ so the frame does not depend on wall-clock time.
 pub fn stage_cut_transport(window: &adw::ApplicationWindow) {
     use crate::{cut, cut_line, ui};
-    ui::seed_review_cut(
-        window,
-        &cut::Cut {
-            segs: vec![
-                cut::Seg {
-                    s: 10.0,
-                    e: 30.0,
-                    cam: 0,
-                    ..Default::default()
-                },
-                cut::Seg {
-                    s: 40.0,
-                    e: 60.0,
-                    cam: 0,
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&cut::Cut {
+        segs: vec![
+            cut::Seg {
+                s: 10.0,
+                e: 30.0,
+                cam: 0,
+                ..Default::default()
+            },
+            cut::Seg {
+                s: 40.0,
+                e: 60.0,
+                cam: 0,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
     ui::set_line_position(window, cut_line::LinePos { t: 15.0 });
     ui::set_playhead(window, 15.0);
     if let Some(play) = ui::play_recording_button(window) {

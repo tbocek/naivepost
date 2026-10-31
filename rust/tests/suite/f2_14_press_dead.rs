@@ -34,8 +34,8 @@ fn round(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &one_scene_cut());
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::seed_review_cut(&one_scene_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     settle();
     let before = std::fs::read(press_fixture::run_tree().cut_json()).ok();
     ui::play_button(&window)

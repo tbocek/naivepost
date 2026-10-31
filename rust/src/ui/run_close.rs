@@ -6,7 +6,6 @@ use std::rc::Rc;
 use gtk4 as gtk;
 use gtk4::prelude::*;
 
-use crate::exchanges;
 use crate::run::{self, RunBar};
 use crate::runqueue::{self, Queue};
 use crate::ui::{shell_beats, window};
@@ -63,10 +62,6 @@ static SHARED_LOG: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::ne
 /// on the main thread and goes straight into `window::log_line`'s own sink.
 pub(crate) fn log(line: &str) {
     SHARED_LOG.lock().unwrap().push(line.to_string());
-}
-
-pub fn close_last_narrate_run() {
-    close_window_run();
 }
 
 /// Close the run this window's bar holds, wherever its press left it: Narrate's and Produce's runs end on
@@ -176,22 +171,13 @@ pub fn close_window_run() {
         runqueue::end_run(&mut bar.borrow_mut());
         return;
     };
-    close_step_run(
-        &bar,
-        &queue,
-        &Rc::new(RefCell::new(exchanges::RunLog::new())),
-        &status,
-        &progress,
-        &log,
-        &view,
-    );
+    close_step_run(&bar, &queue, &status, &progress, &log, &view);
 }
 
 /// Close the bookkeeping of the run this window's ▶ opened (§S4).
 pub fn close_step_run(
     bar: &Rc<RefCell<RunBar>>,
     queue: &Rc<RefCell<Queue>>,
-    exchange_log: &Rc<RefCell<exchanges::RunLog>>,
     status: &gtk::Label,
     progress: &gtk::ProgressBar,
     log: &gtk::Expander,
@@ -207,7 +193,7 @@ pub fn close_step_run(
     let ended = runqueue::end_run(&mut bar.borrow_mut());
     // §1/§S4: every run ends with `unload_all_models`, quietly and off-thread, even one that used no
     // audio — weights left loaded are memory nothing is waiting on any more.
-    hand_over_unload(ended.audio_unload);
+    crate::settings_probe::fire_unload(ended.audio_unload);
     // The pulse belongs to the run (§2: it pulses while a model thinks with nothing countable), so a
     // closed run takes it down rather than leaving a timer ticking on an idle bar.
     if !shell_beats::stop_pulse() {}
@@ -216,12 +202,6 @@ pub fn close_step_run(
         status.set_text(&said);
     }
     queue.borrow_mut().reset();
-    let _ = exchange_log;
-}
-
-/// Hand the audio unload over -- the one door through which every run's housekeeping goes.
-pub(crate) fn hand_over_unload(kind: crate::services::Kind) {
-    crate::settings_probe::fire_unload(kind);
 }
 
 fn paint_closed(
@@ -240,7 +220,7 @@ fn paint_closed(
     // A closed run leaves `run::controls` to pick the idle face and grey ⏹ -- one rule, so this cannot
     // disagree with what ▶'s own handler paints. The transport is the player's real one, read the same
     // way both handlers read it, so a started preview keeps ⏸ up after the run ends.
-    let transport = window::preview_player(&main).transport;
+    let transport = window::preview_player().transport;
     window::paint_run_bar(
         &play,
         &stop_,

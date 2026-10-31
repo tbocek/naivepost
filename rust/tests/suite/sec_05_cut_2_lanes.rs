@@ -179,12 +179,12 @@ fn check_the_lane_button_places_a_probed_row(app: &adw::Application) {
         .expect("the shell has a Cut tab")
         .emit_clicked();
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(&window, &scenes());
+    ui::seed_review_cut(&scenes());
     // A line to start the row at: placed the way a click on the timeline places one.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 10.0 });
     settle();
     assert!(
-        ui::review_lanes(&window).is_empty(),
+        ui::review_lanes().is_empty(),
         "the page opened with no lane rows"
     );
 
@@ -197,7 +197,7 @@ fn check_the_lane_button_places_a_probed_row(app: &adw::Application) {
         "the workers answered"
     );
 
-    let lanes = ui::review_lanes(&window);
+    let lanes = ui::review_lanes();
     if lanes.is_empty() {
         // Honest branch: the probe refused (no ffprobe on PATH here), and NOTHING was placed. That is the
         // spec'd behaviour — failure is specific — not a silent empty row.

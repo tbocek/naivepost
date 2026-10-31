@@ -153,9 +153,8 @@ fn sec_08_produce_1_screen_every_setting_reaches_the_project_and_the_render() {
             "the German tick landed in naivepost.json"
         );
         let shown = ui::produce_page::row_settings();
-        ui::set_marking_pass(&window, naivepost::project::MarkingPass::Joins);
-        let wrote =
-            naivepost::project_autosave::tick(&naivepost::project_autosave::newest_slot_for_test());
+        ui::set_marking_pass(naivepost::project::MarkingPass::Joins);
+        let wrote = naivepost::project_autosave::tick(&naivepost::project_autosave::newest_slot());
         assert_eq!(
             wrote,
             naivepost::project_autosave::Tick::Wrote,

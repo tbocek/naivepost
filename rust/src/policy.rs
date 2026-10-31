@@ -43,11 +43,6 @@ impl Applied {
     }
 }
 
-/// S1: an empty User Context leaves every field at its default (the prototype's blank-project behaviour); the caller stops here.
-pub fn defaults() -> Policy {
-    Policy::default()
-}
-
 /// Is this context empty enough to skip the model? Whitespace counts as empty.
 pub fn is_empty(context: &str) -> bool {
     context.trim().is_empty()

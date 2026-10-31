@@ -6,11 +6,6 @@ use crate::settings::Conf;
 use crate::subprocess;
 
 const SUBPROCESS_WAIT: Duration = Duration::from_secs(60);
-/// One headless search rung: the same slice the pipeline's ladder gives a rung (§2's 45 s over
-/// three).
-fn search_slice() -> Duration {
-    crate::web_browser::ladder_slice()
-}
 
 /// What a row's dial looks like: hand it a body and the whole-call ceiling §9 gives that probe, get
 /// the reply back.
@@ -145,8 +140,10 @@ pub fn firefox_row(typed: &str) -> Result<String, String> {
     let program =
         crate::web_browser::firefox_path(typed).map_err(|why| format!("will not run: {why}"))?;
     let version = run(&program.display().to_string(), &["--version"])?;
-    let search =
-        crate::web_browser::query_for(&program.display().to_string(), search_slice())("naivepost");
+    let search = crate::web_browser::query_for(
+        &program.display().to_string(),
+        crate::web_browser::ladder_slice(),
+    )("naivepost");
     let hits = search.ok().map(|hits| hits.len());
     checks::firefox_verdict(typed, Some(&version), hits)
 }
@@ -219,8 +216,7 @@ pub fn llm_endpoint(conf: &Conf, typed: &str) -> Endpoint {
 
 /// audio.cpp's endpoint: the FILE's address, because §5 puts an id in this box and the address in
 /// the row above it.
-pub fn audio_endpoint(conf: &Conf, typed: &str) -> Endpoint {
-    let _ = typed;
+pub fn audio_endpoint(conf: &Conf) -> Endpoint {
     Endpoint {
         url: services::server_url(&conf.audio_server).unwrap_or_else(services::audio_default),
         key: conf.audio_key.clone(),
@@ -241,8 +237,8 @@ pub fn chat_ask(conf: &Conf) -> impl Fn(&str, Option<u64>) -> Result<String, Str
 
 /// The catalogue audio.cpp serves, for the four model rows and the aligner row: `GET /v1/models`,
 /// parsed by the same reader the run uses so a row cannot green-light a catalogue the run would fail.
-pub fn audio_catalogue(conf: &Conf, typed: &str) -> Result<Vec<services::AudioModel>, String> {
-    let endpoint = audio_endpoint(conf, typed);
+pub fn audio_catalogue(conf: &Conf) -> Result<Vec<services::AudioModel>, String> {
+    let endpoint = audio_endpoint(conf);
     let body = crate::settings_probe::get(
         &probe_tree(),
         Server::Audio,

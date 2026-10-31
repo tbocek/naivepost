@@ -9,7 +9,6 @@ use crate::common;
 use common::seg as clip;
 use naivepost::narrate_screen::{self as page, Audition, BoxRole, Fit, RowStatus, TakePress};
 use naivepost::narration::{self, Entry};
-use naivepost::params;
 use naivepost::tools;
 
 /// A line on the clip `s..e`, starting `at` seconds into it.
@@ -682,7 +681,7 @@ fn sec_07_narrate_1_screen_s13_the_tooltip_names_the_eight_in_order_and_the_tag(
 #[test]
 fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() {
     let row = |id: &str| {
-        params::narrate()
+        naivepost::params_narrate::rows()
             .into_iter()
             .find(|param| param.id == id)
             .unwrap_or_else(|| panic!("no catalogue row for {id}"))
@@ -744,7 +743,10 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
 
     // The one row §1 needs that §10 has no id for stays absent rather than invented: the ＋'s half-second gap is
     // F4.7's, so it does not pretend to be tuned here. F4.3's fitting trio now HAS ids and rows.
-    let ids: Vec<&str> = params::narrate().iter().map(|param| param.id).collect();
+    let ids: Vec<&str> = naivepost::params_narrate::rows()
+        .iter()
+        .map(|param| param.id)
+        .collect();
     assert!(!ids.contains(&"narrate.addGapSeconds"), "{ids:?}");
     for fitted in [
         "P.eng.narrationLeadSeconds",

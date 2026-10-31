@@ -32,7 +32,7 @@ pub fn run_after_cut(
         // Nothing to ask: not a refusal and not a zero-count line; "…and 0 effect(s)" would claim a pass ran.
         return Vec::new();
     }
-    let before = crate::ui::review_cut_of(window).fx.len();
+    let before = crate::ui::window_preview::newest_review_cut().fx.len();
     let mut lines: Vec<String> = Vec::new();
     for pass in passes {
         let said = match pass {
@@ -44,7 +44,7 @@ pub fn run_after_cut(
             log(&said);
         }
     }
-    let after = crate::ui::review_cut_of(window).fx.len();
+    let after = crate::ui::window_preview::newest_review_cut().fx.len();
     // Only ever a gain: a negative count would mean the cut changed for another reason.
     let landed = after.saturating_sub(before);
     // The §S3 line is printed only when it counts something this call placed; `press_model` already logged the walk-back's effect line for the clamped list.
@@ -88,11 +88,11 @@ pub fn land_after_cut(
     if outs.is_empty() {
         return Vec::new();
     }
-    let before = crate::ui::review_cut_of(window).fx.len();
+    let before = crate::ui::window_preview::newest_review_cut().fx.len();
     for out in outs {
         crate::ui::window::land_pass(window, out);
     }
-    let after = crate::ui::review_cut_of(window).fx.len();
+    let after = crate::ui::window_preview::newest_review_cut().fx.len();
     let landed = after.saturating_sub(before);
     if landed > 0 {
         vec![suggest::effects_line(landed)]

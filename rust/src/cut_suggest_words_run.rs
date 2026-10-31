@@ -180,7 +180,7 @@ pub fn press_words(window: &adw::ApplicationWindow) -> String {
     let Some(Some(tree)) = crate::ui::cut_suggest_land::session_tree() else {
         return String::new();
     };
-    let project = crate::ui::window::session_handle(window).borrow().clone();
+    let project = crate::ui::window::session_handle().borrow().clone();
     let made = run_words(window, &tree, &project);
     crate::ui::window::log_line(&made.log);
     made.status

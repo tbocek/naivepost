@@ -131,7 +131,7 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_flow_write_leaves_the_timer_not
     // that door has to put its session in one. `install` forgets the last write, which is what makes
     // the flow's own write the first thing that lands.
     autosave::install(Rc::clone(&session), dir.clone());
-    let slot = autosave::newest_slot_for_test();
+    let slot = autosave::newest_slot();
 
     assert!(
         autosave::write_session_now(&session.borrow(), &dir),
@@ -226,7 +226,7 @@ fn check_close_writes_the_session(app: &adw::Application) {
     );
 
     // An edit the live session holds and the model the window was built with does not: the User Context.
-    ui::window::set_session_context(&window, "recorded in German");
+    ui::window::set_session_context("recorded in German");
     settle();
 
     window.close();

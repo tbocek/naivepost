@@ -456,10 +456,7 @@ impl Page {
         // The meta line changes with the first fragment: `reply pending` was true while nothing had arrived,
         // and a page that still says it after words landed tells the reader the opposite of what is on disk.
         let head = mark_answered(head);
-        self.sections[open] = format!(
-            "{head}{STREAM_PRE}{}{CLOSE_PRE}\n{tail}",
-            esc_reply(&streamed)
-        );
+        self.sections[open] = format!("{head}{STREAM_PRE}{}{CLOSE_PRE}\n{tail}", esc(&streamed));
         self.write();
         Some(streamed)
     }
@@ -566,10 +563,6 @@ const CLOSE_PRE: &str = concat!("</", "pre>");
 
 fn mark_answered(section: String) -> String {
     section.replace(REPLY_PENDING, "arriving")
-}
-
-fn esc_reply(text: &str) -> String {
-    esc(text)
 }
 
 /// The whole page in one write: a half-written file would look like an exchange

@@ -42,8 +42,7 @@ pub fn paint(
             ui::zoom_armed(),
             "snapshot: 06-zoom could not arm -- {said}"
         );
-        let gesture =
-            ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+        let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
         gesture.emit_by_name::<()>("drag-begin", &[&120.0f64, &90.0f64]);
         gesture.emit_by_name::<()>("drag-end", &[&520.0f64, &330.0f64]);
         assert!(
@@ -91,7 +90,7 @@ pub fn paint(
             ],
             ..Default::default()
         };
-        ui::seed_review_cut(window, &two);
+        ui::seed_review_cut(&two);
         let captions = ui::run_captions_pass_with_reply(
             window,
             &[ui::CaptionBatch {
@@ -118,7 +117,7 @@ pub fn paint(
                 gain: None,
             }],
         );
-        let landed: Vec<String> = ui::review_cut_of(window)
+        let landed: Vec<String> = ui::window_preview::newest_review_cut()
             .fx
             .iter()
             .map(|fx| format!("{}@{:.0}", fx.kind, fx.t))
@@ -165,12 +164,12 @@ pub fn paint(
             ],
             ..Default::default()
         };
-        ui::seed_review_cut(window, &two);
+        ui::seed_review_cut(&two);
         let said = ui::run_speeds_pass_with_reply(
             window,
             &[crate::cut_speed_pass::Call { clip: 2, rate: 1.5 }],
         );
-        let landed = ui::review_cut_of(window)
+        let landed = ui::window_preview::newest_review_cut()
             .fx
             .iter()
             .filter(|fx| fx.kind == "speed")
@@ -202,7 +201,7 @@ pub fn paint(
             ],
             ..Default::default()
         };
-        ui::seed_review_cut(window, &two);
+        ui::seed_review_cut(&two);
         let said = ui::run_effects_pass_with_reply(
             window,
             &[
@@ -229,7 +228,7 @@ pub fn paint(
                 },
             ],
         );
-        let landed: Vec<String> = ui::review_cut_of(window)
+        let landed: Vec<String> = ui::window_preview::newest_review_cut()
             .fx
             .iter()
             .map(|fx| format!("{}@{:.0}", fx.kind, fx.t))
@@ -287,7 +286,7 @@ pub fn paint(
             }],
             ..Default::default()
         };
-        ui::seed_review_cut(window, &menu_cut);
+        ui::seed_review_cut(&menu_cut);
         ui::set_session_recordings(&[crate::timeline::Recording {
             base: "session-tape".to_string(),
             start: 0.0,
@@ -347,7 +346,7 @@ pub fn paint(
             off: 0.0,
             dur: 300.0,
         }];
-        ui::seed_review_cut(window, &lane);
+        ui::seed_review_cut(&lane);
         ui::set_line_position(window, cut_line::LinePos { t: 140.0 });
         ui::press_effect_bar(window, 0, 100.0, 200.0, 20.0, false);
         crate::snapshot_face::seed_snapshot_frame(dir, "session-tape", 5.0);
@@ -375,7 +374,7 @@ pub fn paint(
         let painted = ui::cut_picture::refresh(window);
         println!(
             "snapshot: 06-lane | held zoom: {} | frame painted: {painted}",
-            ui::held_effect().is_some()
+            ui::cut_hand::held_effect().is_some()
         );
         return true;
     }

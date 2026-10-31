@@ -66,30 +66,26 @@ fn check_the_run_button_toggles_a_started_preview(app: &adw::Application) {
         naivepost::shell::Page::Cut,
         "the Cut tab bounced"
     );
-    ui::seed_review_cut(
-        &window,
-        &naivepost::cut::Cut {
-            segs: vec![
-                naivepost::cut::Seg {
-                    s: 0.0,
-                    e: 10.0,
-                    ..Default::default()
-                },
-                naivepost::cut::Seg {
-                    s: 20.0,
-                    e: 30.0,
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&naivepost::cut::Cut {
+        segs: vec![
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 20.0,
+                e: 30.0,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
 
     // ▶✂ is the program's own way in, and `cut_play::pressed`'s S2 SWITCHES from the recording preview
     // (it keeps `playing`, it does not start one), so the page starts cued -- what
     // tests/suite/cut_play_the_cut_widgets.rs seeds for the same reason. The press itself is the wire.
     ui::set_preview_state(
-        &window,
         false,
         false,
         naivepost::run::Transport {
@@ -100,19 +96,19 @@ fn check_the_run_button_toggles_a_started_preview(app: &adw::Application) {
     ui::play_cut_button(&window)
         .expect("the Cut page carries play-cut-button")
         .emit_by_name::<()>("clicked", &[]);
-    let started = ui::preview_player(&window).transport;
+    let started = ui::preview_player().transport;
     assert!(
         started.playing && started.started,
         "▶✂ carries a playing preview onto the cut: {started:?}"
     );
     assert!(
-        ui::preview_player(&window).cut_only,
+        ui::preview_player().cut_only,
         "and the preview is now the plain cut"
     );
 
     let play = ui::play_button(&window).expect("the run bar has a ▶");
     play.emit_by_name::<()>("clicked", &[]);
-    let paused = ui::preview_player(&window).transport;
+    let paused = ui::preview_player().transport;
     assert!(
         !paused.playing && paused.started,
         "S2 paused the preview instead of starting a run: {paused:?}"
@@ -127,7 +123,7 @@ fn check_the_run_button_toggles_a_started_preview(app: &adw::Application) {
     );
 
     play.emit_by_name::<()>("clicked", &[]);
-    let resumed = ui::preview_player(&window).transport;
+    let resumed = ui::preview_player().transport;
     assert!(
         resumed.playing,
         "a second press resumes the parked preview: {resumed:?}"
@@ -143,7 +139,7 @@ fn check_the_run_button_toggles_a_started_preview(app: &adw::Application) {
         .expect("the run bar has a ⏹")
         .emit_by_name::<()>("clicked", &[]);
     assert!(
-        !ui::preview_player(&window).transport.playing,
+        !ui::preview_player().transport.playing,
         "⏹ stopped the preview"
     );
     assert_eq!(
@@ -186,7 +182,7 @@ fn check_press_forwards(app: &adw::Application) {
     // before this check turns the main loop.
     play.emit_clicked();
     assert_eq!(
-        ui::running_step(&window),
+        ui::running_step(),
         Some(run::Step::Prepare),
         "press 1 opened Prepare's run"
     );
@@ -219,11 +215,7 @@ fn check_press_forwards(app: &adw::Application) {
         naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
         "the press's worker answered"
     );
-    assert_eq!(
-        ui::running_step(&window),
-        None,
-        "the run closed when it ended"
-    );
+    assert_eq!(ui::running_step(), None, "the run closed when it ended");
     assert_eq!(
         ui::state(&window).status,
         "frames 1/2: framing lecture",
@@ -392,7 +384,7 @@ fn check_the_pause_toggle_says_both_readings(app: &adw::Application) {
     // A run under way still outranks it — that is what `RunBar::press`'s own order pins — but the shell
     // asks the player first, so the check starts from a quiet player, as a person who never pressed ▶✂
     // would.
-    ui::set_preview_state(&window, false, false, naivepost::run::Transport::default());
+    ui::set_preview_state(false, false, naivepost::run::Transport::default());
     play.emit_by_name::<()>("clicked", &[]);
     assert!(
         bar.borrow().running.as_ref().is_some_and(|run| run.paused),
@@ -432,7 +424,6 @@ fn check_the_pause_toggle_says_both_readings(app: &adw::Application) {
     naivepost::ui::run_close::close_step_run(
         &bar,
         &queue,
-        &std::rc::Rc::new(std::cell::RefCell::new(naivepost::exchanges::RunLog::new())),
         &ui::find_status(window.upcast_ref()).expect("the window carries a status line"),
         &ui::progress_bar(&window).expect("the run bar has a progress widget"),
         &ui::log_expander(&window).expect("the shell has a log expander"),

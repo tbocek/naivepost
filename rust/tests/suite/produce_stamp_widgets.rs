@@ -225,7 +225,7 @@ fn seed_page(_window: &adw::ApplicationWindow) {
     ui::produce_page::set_state(page);
 }
 
-/// Lay the page's side of the wire down: the live cut the page reads through `review_cut_of`, seeded
+/// Lay the page's side of the wire down: the live cut the page reads through `window_preview::newest_review_cut`, seeded
 /// from the same two segments the stamp was built over, so the page's cut and this test's cut are one
 /// answer. Must run on the window's own thread — `seed_review_cut` writes a thread-local slot.
 fn seed_live_cut(window: &adw::ApplicationWindow) {
@@ -242,7 +242,7 @@ fn seed_live_cut(window: &adw::ApplicationWindow) {
 /// …the same, with any cut: an effect-only change is made by seeding the page's live cut with one zoom on
 /// top of the segments the standing video's stamp was built over.
 fn seed_live_cut_with(window: &adw::ApplicationWindow, cut: &naivepost::cut::Cut) {
-    ui::seed_review_cut(window, cut);
+    ui::seed_review_cut(cut);
     seed_page(window);
 }
 
@@ -603,7 +603,7 @@ fn f5_3_s12_a_press_still_skips_when_nothing_moved() {
 /// reads, so a change of location shows up in a press rather than only in a unit test.
 #[allow(dead_code)]
 fn stamp_is_beside_the_video(tree: &Tree) -> bool {
-    let stamp_file: PathBuf = stamp::stamp_path(tree);
+    let stamp_file: PathBuf = tree.final_stamp();
     let video = tree.final_video("mp4");
     stamp_file.parent() == video.parent()
         && stamp_file.file_name().map(|n| n == "final.stamp") == Some(true)

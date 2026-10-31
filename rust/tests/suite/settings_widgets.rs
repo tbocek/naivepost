@@ -231,11 +231,11 @@ fn check_failure_keeps_its_reason(app: &adw::Application) {
         "S2: the failure reaches the main log with its reason intact"
     );
     assert!(
-        ui::dialog_log_open(&window),
+        ui::dialog_log_open(),
         "S2: the first failure opens the dialog's own log and it stays open"
     );
     assert!(
-        ui::dialog_log(&window).contains("ffmpeg"),
+        ui::dialog_log().contains("ffmpeg"),
         "S2: the dialog's log holds the row that failed"
     );
 }

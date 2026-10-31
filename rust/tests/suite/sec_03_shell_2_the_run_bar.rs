@@ -614,7 +614,7 @@ fn sec_03_shell_2_the_run_bar_s1_the_stop_button_carries_the_spec_words() {
 fn repaint(window: &adw::ApplicationWindow, bar: &Rc<std::cell::RefCell<run::RunBar>>) {
     let play = ui::play_button(window).expect("the run bar has a \u{25b6}");
     let stop_ = ui::stop_button(window).expect("the run bar has a \u{23f9}");
-    let transport = ui::preview_player(window).transport;
+    let transport = ui::preview_player().transport;
     ui::window::paint_run_bar(
         &play,
         &stop_,

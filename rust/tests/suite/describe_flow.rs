@@ -938,7 +938,7 @@ fn f1_7_chunk_plan_uses_frames_per_request() {
         "three chunks, the last two frames long"
     );
     assert_eq!(
-        describe::requests_for(frames.len()),
+        naivepost::roles::vision_batches(frames.len()),
         3,
         "and the count matches prepare's own arithmetic"
     );

@@ -130,17 +130,12 @@ pub fn picked_up_status(clip_no: usize, border: Border, t: f64) -> String {
     )
 }
 
-/// A length of seconds as the page writes it ([`tools::tenths`], to a tenth).
-fn span(seconds: f64) -> String {
-    tools::tenths(seconds)
-}
-
 pub fn trim_status(clip_no: usize, start: f64, end: f64) -> String {
     format!(
         "clip {clip_no}: {} \u{2013} {} ({})",
         tools::mm_ss(start),
         tools::mm_ss(end),
-        span(end - start)
+        tools::tenths(end - start)
     )
 }
 
@@ -215,7 +210,7 @@ pub fn joined_status(start: f64, end: f64) -> String {
         "joined into one scene, {} \u{2013} {} ({}) \u{2014} \u{21b6} Undo puts the border back",
         tools::mm_ss(start),
         tools::mm_ss(end),
-        span(end - start)
+        tools::tenths(end - start)
     )
 }
 
@@ -267,10 +262,8 @@ pub fn press_targets(
     y: f64,
     x: f64,
     boxes: &[Box_],
-    pps: f64,
     band_name: Option<&str>,
 ) -> (Option<String>, Option<String>, bool) {
-    let _ = pps;
     let on_border = border_at(boxes, x).is_some();
     match band_at(y, &PLACEHOLDER_STRIP_BANDS) {
         Band::Recorders => (band_name.map(str::to_string), None, on_border),

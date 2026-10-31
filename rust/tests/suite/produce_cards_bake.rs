@@ -127,7 +127,7 @@ fn sec_06_effects_5_cards_svg_inserts_s10_an_unstamped_card_is_filled_in() {
         ("extra".to_string(), "unused".to_string()),
     ];
     let filled = produce_cards::draw("assets/mine.svg", &doc);
-    let joined = produce_cards::join_for_test(&doc, &args);
+    let joined = cards::fill(&doc, &args);
 
     assert_eq!(
         filled.arrived,
@@ -467,10 +467,7 @@ fn sec_06_effects_5_cards_svg_inserts_s15_the_length_reaches_the_form_and_the_en
     );
     assert_eq!(produce_cards::offer_seconds(&still.to_string_lossy()), None);
     assert_eq!(
-        cut_insert::default_length(
-            produce_cards::offer_seconds(&endless.to_string_lossy()),
-            true
-        ),
+        cut_insert::default_length(produce_cards::offer_seconds(&endless.to_string_lossy())),
         4.0,
         "an endlessly repeating card takes the default insert length"
     );
@@ -734,10 +731,8 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
         produce_cards::offer_seconds(&card_path.to_string_lossy()),
         None
     );
-    let seconds = cut_insert::default_length(
-        produce_cards::offer_seconds(&card_path.to_string_lossy()),
-        true,
-    );
+    let seconds =
+        cut_insert::default_length(produce_cards::offer_seconds(&card_path.to_string_lossy()));
     assert_eq!(seconds, cut_insert::DEFAULT_SECONDS);
 
     let cut = naivepost::cut::Cut {

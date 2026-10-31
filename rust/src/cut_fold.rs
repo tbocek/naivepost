@@ -291,9 +291,3 @@ pub fn remove_lane(cut: &mut Cut, name: &str) -> String {
     });
     format!("removed the {name} lane")
 }
-
-/// F2.11 S2 (`spec/inventory/cut.md` §B rule 11: "nRows holds an emptied bottom row"): how many rows the page
-/// draws, which is what keeps a row nobody is on any more until its ✕ spends the floor.
-pub fn bottom_row_survives(recordings: &[Recording], cut: &Cut) -> usize {
-    timeline::row_count(recordings, cut)
-}

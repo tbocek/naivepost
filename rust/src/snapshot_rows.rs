@@ -111,7 +111,7 @@ pub fn row_top(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
         .parse::<usize>()
         .ok()?
         .checked_sub(1)?;
-    let scene = crate::ui::cut_view::band_scene_for(window);
+    let scene = crate::ui::cut_view::band_scene_for();
     if row >= scene.row_count.max(1) {
         return None;
     }
@@ -297,7 +297,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     }
     let _ = crate::snapshot::write_silence_wav(&wav, 8000, 8000 * 45);
 
-    ui::seed_review_cut(window, &figure());
+    ui::seed_review_cut(&figure());
     // The band's red line: the band paints the PREVIEW's playhead (`band_scene_for`), so `set_line_position`
     // alone draws none.
     ui::set_playhead(window, LINE_PLAYHEAD);

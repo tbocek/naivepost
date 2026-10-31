@@ -151,7 +151,7 @@ impl RecordingLlm {
 }
 
 /// S1 Prepare: the bill divides by the modules that build the requests, never by a number written in
-/// the bill itself. Each divisor is read through its owner (`prepare::vision_calls` at
+/// the bill itself. Each divisor is read through its owner (`roles::vision_batches` at
 /// `P.machine.describeFramesPerReq`, `prepare::fixer_calls` at `P.machine.fixBlockLines`,
 /// `roles::RETAKE_RUNS_POOLED`) so a retuned parameter moves the request builder and the bill together.
 #[test]
@@ -163,7 +163,7 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s1_prepare_divides_by_its_owners_
     let describe = s.of("describe").expect("footage gets described");
     assert_eq!(
         describe.calls,
-        prepare::vision_calls(frames),
+        roles::vision_batches(frames),
         "describe ×(frames/4)"
     );
     assert_eq!(describe.calls, 10, "40 frames four to a call");
@@ -445,7 +445,7 @@ fn check_info_button_logs_the_setup_row(app: &adw::Application) {
             .is_some_and(|tip| !tip.is_empty()),
         "and it carries the shown tab's help as its tooltip"
     );
-    ui::set_session_context(&window, "cut on the words, not the model");
+    ui::set_session_context("cut on the words, not the model");
     wait_until("the Setup bill line reached the log", || {
         ui::window_logs()
             .iter()

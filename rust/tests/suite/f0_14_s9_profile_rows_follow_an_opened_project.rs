@@ -41,7 +41,7 @@ fn f0_14_s9_an_opened_project_takes_its_profiles_produce_rows() {
         common::settle();
         let german = vec!["German".to_string()];
         assert_eq!(
-            ui::session_handle(&window).borrow().produce.translate,
+            ui::session_handle().borrow().produce.translate,
             german,
             "in the window"
         );

@@ -411,9 +411,9 @@ fn f5_7_s4_asking_again_hands_back_an_empty_box() {
     assert_eq!(ITEM, "F5.7");
     // The press says those words were wrong; offering them back would be the mistake the redraw box exists to
     // stop, in the other direction.
-    assert_eq!(runs::re_ask("the old title"), "");
-    assert_eq!(runs::re_ask(""), "");
-    assert_ne!(runs::re_ask("anything at all"), "anything at all");
+    assert_eq!(runs::re_ask(), "");
+    assert_eq!(runs::re_ask(), "");
+    assert_ne!(runs::re_ask(), "anything at all");
 }
 
 // ---- S5: Words on the thumbnail ---------------------------------------------------

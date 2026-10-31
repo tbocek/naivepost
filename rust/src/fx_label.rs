@@ -1,8 +1,7 @@
 //! F3.7 Label by hand — `spec/06-effects.md` F3.7, and `spec/inventory/effects.md` §A.7 / §A.8.
 
-use crate::cut::{EffectKind, Fx};
+use crate::cut::Fx;
 use crate::cut_speed;
-use crate::fx_lane;
 use crate::render_fx;
 use crate::tools;
 
@@ -154,10 +153,4 @@ pub fn placed_status(fx: &Fx) -> String {
 /// this flow exists) rather than restated as a second `kind == "label"` test that could drift.
 pub fn never_rendered(fx: &Fx) -> bool {
     !render_fx::is_rendered(&fx.kind)
-}
-
-/// F3.7 S5 (`Drawn as a tag`): a label IS drawn — on the effects lane, as a grey-white tag with its tick and
-/// dashed line (§A.7's Lane row) — even while paused, which is what makes it visible to be judged.
-pub fn drawn_as_a_tag(kind: EffectKind) -> bool {
-    fx_lane::drawn_paused(kind)
 }

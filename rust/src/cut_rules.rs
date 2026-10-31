@@ -22,8 +22,7 @@ pub fn floor(verb: Floor) -> f64 {
 
 /// §7 (`One thing held at a time`), §J rule 3: picking something up **replaces** what was held rather than
 /// adding to it, so the page never has two things waiting for one drag.
-pub fn pick_up(current: Option<Held>, next: Held) -> Option<Held> {
-    let _ = current;
+pub fn pick_up(next: Held) -> Option<Held> {
     Some(next)
 }
 

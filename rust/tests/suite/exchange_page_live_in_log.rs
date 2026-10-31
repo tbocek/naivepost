@@ -9,7 +9,7 @@
 //! The seams are the program's own, so nothing here is scripted into the app: the LLM address is a fake
 //! server on a loopback port (`speak_leg`'s note: the address IS the seam, no program code can tell the
 //! difference), and the session folder is whatever the process's cwd resolves to, which is what BOTH
-//! `Tree::llm_dir()` writes into and `log_link::session_now()` resolves the link against.
+//! `Tree::llm_dir()` writes into and `startup::open_dir()` resolves the link against.
 
 use crate::common;
 use common::{fixture_dir, hold_last_window, release_last_window};

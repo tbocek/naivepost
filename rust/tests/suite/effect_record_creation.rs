@@ -96,7 +96,7 @@ fn sec_06_effects_1_record_s13_a_new_record_is_linear_and_holds_no_box() {
     let caption = rec::blank(EffectKind::Text, 5.0, 2.0);
     assert!(rec::ease_is_linear(&caption), "linear is the default");
     assert!(
-        rec::keeps_the_old_bytes(&caption),
+        rec::ease_is_linear(&caption),
         "and linear costs no `ease` key"
     );
     assert!(!caption.has_box(), "nothing was placed, so there is no box");

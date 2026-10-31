@@ -665,13 +665,13 @@ pub fn labelled(rows: &[SessionLine], narrator: &str, marks: &[Mark]) -> String 
                 folded[index] = true;
                 let mark = &marks[index];
                 let again = match mark.again {
-                    Some(again) => format!(", said again at {}", stamp(again)),
+                    Some(again) => format!(", said again at {}", crate::tools::mm_ss(again)),
                     None => String::new(),
                 };
                 out.push_str(&format!(
                     "{} (abandoned attempt to {}{again} -- already removed, read straight past it)\n",
-                    stamp(mark.start),
-                    stamp(mark.end)
+                    crate::tools::mm_ss(mark.start),
+                    crate::tools::mm_ss(mark.end)
                 ));
             }
             None => out.push_str(&format!(
@@ -711,14 +711,13 @@ pub fn label(source_base: &str, speaker: &str, narrator: &str) -> String {
     speaker.to_string()
 }
 
-/// S7: a moment on the session clock, as the cut model is shown it.
-pub fn stamp(seconds: f64) -> String {
-    crate::tools::mm_ss(seconds)
-}
-
 /// S7: a stretch, `mm:ss-mm:ss`.
 pub fn stamp_span(start: f64, end: f64) -> String {
-    format!("{}-{}", stamp(start), stamp(end))
+    format!(
+        "{}-{}",
+        crate::tools::mm_ss(start),
+        crate::tools::mm_ss(end)
+    )
 }
 
 /// S7: the whole of one `session.txt` line, both clocks in front of the label.
@@ -727,7 +726,7 @@ pub fn session_line(start: f64, end: f64, label: &str, text: &str) -> String {
         "[{}s-{}s | {}] {}: {}",
         stamp_seconds(start),
         stamp_seconds(end),
-        stamp(start),
+        crate::tools::mm_ss(start),
         label,
         flatten(text)
     )
@@ -753,12 +752,6 @@ fn flatten(text: &str) -> String {
 #[allow(dead_code)]
 fn one_line(base: &str, speaker: &str, narrator: &str, text: &str) -> String {
     format!("{}: {}", label(base, speaker, narrator), flatten(text))
-}
-
-/// S7: the timeline as the cut model reads it — one line each, stamped, marked stretches folded into a
-/// single line apiece by [`fold_marks`].
-pub fn session_text(rows: &[SessionLine], narrator: &str, marks: &[Mark]) -> String {
-    labelled(rows, narrator, marks)
 }
 
 fn covers(mark: &Mark, row: &SessionLine) -> bool {
@@ -931,7 +924,7 @@ where
     };
     out.marks = marks.len();
 
-    let text = session_text(&rows, narrator, &marks);
+    let text = labelled(&rows, narrator, &marks);
     write_session_text(tree, &text)?;
     if tree.session_txt().exists() {
         out.files.push(tree.session_txt());

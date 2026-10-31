@@ -20,7 +20,7 @@ use naivepost::textfmt::SessionLine;
 use naivepost::voice_ref;
 
 fn narrate_rows() -> Vec<params::Param> {
-    params::narrate()
+    naivepost::params_narrate::rows()
 }
 
 /// Every id the catalogue carries, from all four sections: what a row's home is when §10 puts it in another
@@ -30,7 +30,7 @@ fn all_sections() -> Vec<String> {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .map(|param| param.id.to_string())
         .collect()
 }

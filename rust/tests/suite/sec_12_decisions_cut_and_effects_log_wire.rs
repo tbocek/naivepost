@@ -77,7 +77,7 @@ fn check_the_gap_line_prints_from_the_press_door(app: &adw::Application) {
 
     let window = fresh_window(app);
     let log_mark = ui::window_logs().len();
-    ui::set_session_context(&window, CONTEXT);
+    ui::set_session_context(CONTEXT);
 
     ui::play_button(&window)
         .expect("the run bar has a \u{25b6}")
@@ -92,7 +92,9 @@ fn check_the_gap_line_prints_from_the_press_door(app: &adw::Application) {
         "the line says what the number is left at: {line}"
     );
     assert_eq!(
-        ui::session_policy(&window).target_length_seconds.value,
+        ui::window_policy::live_session_policy()
+            .target_length_seconds
+            .value,
         0.0,
         "P.policy.targetLengthSeconds: a length mentioned and unread leaves §10's none"
     );

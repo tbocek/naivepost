@@ -224,20 +224,16 @@ pub fn has_target(target: f64) -> bool {
     target > cutpass::NO_TARGET
 }
 
-pub fn target_window(target: f64) -> (f64, f64) {
-    cutpass::footage_window(target)
-}
-
 /// The target block of the cut message in §S2b's two forms (length or none); "no target" must not imply a ceiling.
 pub fn target_block(target: f64) -> String {
     if !has_target(target) {
         return "NO TARGET LENGTH: keep what is worth keeping.".to_string();
     }
-    let (low, high) = target_window(target);
+    let (low, high) = cutpass::footage_window(target);
     format!(
         "KEEP between {} and {} seconds of footage, in at most {} segments.",
-        cutpass::clock(low),
-        cutpass::clock(high),
+        tools::mm_ss(low),
+        tools::mm_ss(high),
         cutpass::max_segments(target)
     )
 }
@@ -295,11 +291,6 @@ pub fn passes_switched_on(policy_: &Policy) -> Vec<Pass> {
         .collect()
 }
 
-/// Whether attempt `attempt` was the last one allowed. `P.eng.llmAttempts`
-pub fn attempts_exhausted(attempt: u32) -> bool {
-    roles::cut_attempts_exhausted(attempt)
-}
-
 /// The whole-cut checks as a problem list, worst first ([`cutpass::cut_problems`]'s order; the tool phrases the complaint).
 pub fn whole_cut_problems(segs: &[(f64, f64)], target: f64) -> Vec<String> {
     let footage: f64 = segs.iter().map(|(a, b)| b - a).sum();
@@ -310,7 +301,7 @@ pub fn whole_cut_problems(segs: &[(f64, f64)], target: f64) -> Vec<String> {
         .collect();
     let status = cutpass::Status {
         footage,
-        window: target_window(target),
+        window: cutpass::footage_window(target),
         segments: segs.len(),
         min_segments: cutpass::min_segments(target),
         max_segments: cutpass::max_segments(target),

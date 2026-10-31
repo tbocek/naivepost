@@ -65,8 +65,8 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, &fixture_cut());
-    ui::seed_review_cut(&window, &fixture_cut());
+    ui::reopen_history_on(&fixture_cut());
+    ui::seed_review_cut(&fixture_cut());
     // The shot's tape: the trimmed tail has to reopen into filmed material, and the recorded length is what
     // sets the strip's zoom floor (see [`strip_pps_now`]). Seeded BEFORE any pixel maths, as the program does.
     ui::set_session_recordings(&tape());
@@ -75,8 +75,8 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     window
 }
 
-fn seg_at(window: &adw::ApplicationWindow, index: usize) -> Seg {
-    ui::review_cut_segs(window)
+fn seg_at(index: usize) -> Seg {
+    ui::review_cut_segs()
         .into_iter()
         .nth(index)
         .unwrap_or_else(|| panic!("the cut lost clip #{index}"))
@@ -100,9 +100,9 @@ fn total(segs: &[Seg]) -> f64 {
 /// gets 14 × pps seconds asked for, which the clamp stops at the next clip's start + 1 s. Real hands send many
 /// updates; this walks the border in [`STEP`] -second ticks, which is what a hand actually does.
 fn drag_border(window: &adw::ApplicationWindow, index: usize, border: Border, to_seconds: f64) {
-    let trimmer = ui::trim_gesture(window).expect("the Cut page wired a trim drag");
+    let trimmer = ui::trim_gesture().expect("the Cut page wired a trim drag");
     let pps = deepened_pps(window);
-    let boxes = cut_trim::clip_boxes(&ui::review_cut_segs(window), pps);
+    let boxes = cut_trim::clip_boxes(&ui::review_cut_segs(), pps);
     let grab_px = if matches!(border, Border::End) {
         boxes[index].x + boxes[index].w
     } else {
@@ -135,7 +135,7 @@ fn drag_border(window: &adw::ApplicationWindow, index: usize, border: Border, to
     // sends its moves spread over time; this walks the border in [`STEP`]-second ticks with the gate waited out
     // between them, which is the same sequence of writes the handler makes.
     let target = naivepost::cut_trim::clamp_edge(
-        &ui::review_cut_segs(window),
+        &ui::review_cut_segs(),
         index,
         border,
         to_seconds,
@@ -174,7 +174,7 @@ fn drag_border(window: &adw::ApplicationWindow, index: usize, border: Border, to
     settle();
     trimmer.emit_by_name::<()>("drag-end", &[&(to_seconds * pps), &0.0f64]);
     settle();
-    let landed = ui::review_cut_segs(window)
+    let landed = ui::review_cut_segs()
         .into_iter()
         .nth(index)
         .map(|seg| match border {
@@ -241,7 +241,7 @@ fn wait_past_scrub_gate() {
 /// The staged shot: the recipe's own sentence, the trimmed edge it claims, and the painted row agreeing.
 fn check_shot(app: &adw::Application) {
     let window = shot_window(app, "shot");
-    let before = total(&ui::review_cut_segs(&window));
+    let before = total(&ui::review_cut_segs());
     assert_eq!(before, 40.0, "the fixture keeps two 20 s clips");
     let said = naivepost::snapshot_trim::stage(&window, &fixture_dir());
     let line = said.last().cloned().unwrap_or_default();
@@ -255,7 +255,7 @@ fn check_shot(app: &adw::Application) {
         line,
         "and the painted status row says what the stage returned"
     );
-    let second = seg_at(&window, 1);
+    let second = seg_at(1);
     assert!(
         (second.s - 40.0).abs() < 1e-9,
         "the START stayed where it was; only the end moved: {second:?}"
@@ -264,12 +264,12 @@ fn check_shot(app: &adw::Application) {
         second.e < 60.0 - 1.0 && second.e > second.s + 1.0,
         "clip 2's end was pulled in from 60 s and stayed above the 1 s floor: {second:?}"
     );
-    let first = seg_at(&window, 0);
+    let first = seg_at(0);
     assert!(
         (first.s - 10.0).abs() < 1e-9 && (first.e - 30.0).abs() < 1e-9,
         "clip 1 is untouched by a drag on clip 2: {first:?}"
     );
-    let now = total(&ui::review_cut_segs(&window));
+    let now = total(&ui::review_cut_segs());
     assert!(
         (now - (before - 14.0)).abs() < 0.01,
         "the trim dropped exactly the tail it uncovered: {before} -> {now}"
@@ -289,7 +289,7 @@ fn check_shot(app: &adw::Application) {
 fn check_real_drag(app: &adw::Application) {
     let window = shot_window(app, "drag");
     drag_border(&window, SHOT_CLIP, Border::End, SHOT_TO);
-    let second = seg_at(&window, SHOT_CLIP);
+    let second = seg_at(SHOT_CLIP);
     println!(
         "DRAG left clip {} at {:?}",
         SHOT_CLIP + 1,
@@ -324,9 +324,9 @@ fn check_real_drag(app: &adw::Application) {
 fn check_line_never_moves(app: &adw::Application) {
     let window = shot_window(app, "line");
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 25.0 });
-    let mover = ui::move_gesture(&window).expect("the Cut page wired a move drag");
+    let mover = ui::move_gesture().expect("the Cut page wired a move drag");
     let pps = deepened_pps(&window);
-    let boxes = cut_trim::clip_boxes(&ui::review_cut_segs(&window), pps);
+    let boxes = cut_trim::clip_boxes(&ui::review_cut_segs(), pps);
     // The press goes on the DRAWN end border (60 s here, not the fixture's 40 s start): §S1's "either button
     // drags that border" is answered from the press position, so pressing mid-clip would take the slide path
     // instead and this check would say nothing about the border rule.
@@ -354,19 +354,19 @@ fn check_line_never_moves(app: &adw::Application) {
     let travel_px = -2.0 * pps;
     mover.emit_by_name::<()>("drag-end", &[&travel_px, &0.0f64]);
     settle();
-    let second = seg_at(&window, SHOT_CLIP);
+    let second = seg_at(SHOT_CLIP);
     println!(
         "RIGHT DRAG left clip {} at {:?}, line at {}",
         SHOT_CLIP + 1,
         (second.s, second.e),
-        ui::line_position(&window).t
+        ui::line_position().t
     );
     assert!(
         (second.e - 58.0).abs() < 0.01,
         "a right press on a border trims it by exactly the travel (§S1's either button): {second:?}"
     );
     assert!(
-        (ui::line_position(&window).t - 25.0).abs() < 1e-9,
+        (ui::line_position().t - 25.0).abs() < 1e-9,
         "§S3: a right click never moves the line"
     );
     RAN_LINE.store(true, Ordering::SeqCst);

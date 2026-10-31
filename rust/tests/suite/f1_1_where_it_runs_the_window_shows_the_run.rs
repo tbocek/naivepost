@@ -100,7 +100,7 @@ fn f1_1_where_it_runs_the_window_shows_the_run_as_it_goes() {
             .set_expanded(true);
         ui::play_button(&window).expect("▶").emit_clicked();
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             Some(naivepost::run::Step::Prepare),
             "the press opened the run"
         );
@@ -108,18 +108,17 @@ fn f1_1_where_it_runs_the_window_shows_the_run_as_it_goes() {
         assert!(
             turn_until(Duration::from_secs(60), || shown_log(&window)
                 .contains("input file(s)")
-                || ui::running_step(&window).is_none()),
+                || ui::running_step().is_none()),
             "the walk's lines or its end reached the screen"
         );
         let during = shown_log(&window);
         assert!(
-            ui::running_step(&window).is_some() && during.contains("input file(s)"),
+            ui::running_step().is_some() && during.contains("input file(s)"),
             "the log on screen showed the walk while it ran, not only when it ended: {during}"
         );
         // And when it ends, the run closes and its ending is on screen.
         assert!(
-            turn_until(Duration::from_secs(120), || ui::running_step(&window)
-                .is_none()),
+            turn_until(Duration::from_secs(120), || ui::running_step().is_none()),
             "the run closed; on screen: {}",
             shown_log(&window)
         );
@@ -154,7 +153,7 @@ fn f1_1_where_it_runs_the_window_shows_the_run_as_it_goes() {
                 naivepost::run::snapshot_sources(&project),
             );
         }
-        assert!(ui::running_step(&window).is_some(), "a run stands open");
+        assert!(ui::running_step().is_some(), "a run stands open");
         // Another worker still in flight when the run's one dies (a readouts recount, say): the run is closed
         // when the last of them lands, not left open because one was busy at the moment of the death.
         naivepost::ui::background::run(
@@ -165,7 +164,7 @@ fn f1_1_where_it_runs_the_window_shows_the_run_as_it_goes() {
         naivepost::ui::background::run("doomed", || panic!("a worker that dies"), |()| {});
         common::settle_workers();
         assert!(
-            ui::running_step(&window).is_none(),
+            ui::running_step().is_none(),
             "the run with no worker behind it was closed"
         );
         assert!(

@@ -53,9 +53,8 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     let Some(slider) = scale(window) else {
         return;
     };
-    let window = window.clone();
     slider.connect_value_changed(move |scale| {
-        window::set_preview_volume(&window, scale.value());
+        window::set_preview_volume(scale.value());
     });
 }
 

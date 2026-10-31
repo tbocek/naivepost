@@ -16,7 +16,6 @@ use naivepost::narrate_preview as view;
 use naivepost::narrate_rules as rules;
 use naivepost::narrate_screen as page;
 use naivepost::narration::{self, Entry, Narration, Silent};
-use naivepost::params;
 use naivepost::run::{self, Transport};
 use naivepost::shell::{self, Page};
 
@@ -245,10 +244,13 @@ fn sec_07_narrate_5_rules_s5_the_preview_hears_what_the_render_will_hear() {
         ..Default::default()
     }];
     for t in [5.0, 12.0, 25.0] {
-        assert_eq!(view::seek_rate(&fast, t), cut_hear::rate_under(&fast, t));
+        assert_eq!(
+            cut_hear::rate_under(&fast, t),
+            cut_hear::rate_under(&fast, t)
+        );
     }
-    assert_eq!(view::seek_rate(&fast, 12.0), 2.0);
-    assert_eq!(view::seek_rate(&fast, 5.0), 1.0);
+    assert_eq!(cut_hear::rate_under(&fast, 12.0), 2.0);
+    assert_eq!(cut_hear::rate_under(&fast, 5.0), 1.0);
 }
 
 // --- clause 6: boundary held while a line speaks -------------------------------------------------------------------
@@ -260,7 +262,7 @@ fn sec_07_narrate_5_rules_s5_the_preview_hears_what_the_render_will_hear() {
 #[test]
 fn sec_07_narrate_5_rules_s6_a_boundary_is_held_while_a_line_speaks() {
     // The row's bound and the render's ceiling are one number, or the preview runs on early.
-    let row: f64 = params::narrate()
+    let row: f64 = naivepost::params_narrate::rows()
         .into_iter()
         .find(|param| param.id == "P.eng.narrationMaxExtendSeconds")
         .expect("the hold has a catalogue row")

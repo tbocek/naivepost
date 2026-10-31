@@ -257,38 +257,35 @@ fn check_cut_rebuilt(app: &adw::Application) {
     let (dir, _tree) = plant("f11-cut");
     let window = cut_window(app, &dir);
     // Stale state, seeded the way a review press would leave it: three segs that no file on disk has.
-    ui::seed_review_cut(
-        &window,
-        &Cut {
-            segs: vec![
-                Seg {
-                    s: 0.0,
-                    e: 1.0,
-                    ..Default::default()
-                },
-                Seg {
-                    s: 1.0,
-                    e: 2.0,
-                    ..Default::default()
-                },
-                Seg {
-                    s: 2.0,
-                    e: 3.0,
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&Cut {
+        segs: vec![
+            Seg {
+                s: 0.0,
+                e: 1.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 1.0,
+                e: 2.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 2.0,
+                e: 3.0,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
     assert_eq!(
-        ui::review_cut_segs_count(&window),
+        ui::review_cut_segs_count(),
         3,
         "the stale cut is what the window holds"
     );
 
     press_rescan(&window);
 
-    let held = ui::review_cut_segs(&window);
+    let held = ui::review_cut_segs();
     assert_eq!(
         held.len(),
         2,

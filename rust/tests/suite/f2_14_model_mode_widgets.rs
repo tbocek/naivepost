@@ -105,25 +105,22 @@ fn checks(app: &adw::Application) {
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     // The mode the press must take: set by hand, through the same door the policy form uses.
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     assert_eq!(
-        ui::session_policy(&window).cut_mode.value,
+        ui::window_policy::live_session_policy().cut_mode.value,
         naivepost::project::CutMode::Model,
         "the press below is the model arm's"
     );
     // Footage on the page, so nothing but the case's own cause can refuse the press.
-    ui::seed_review_cut(
-        &window,
-        &Cut {
-            segs: vec![Seg {
-                s: 0.0,
-                e: 30.0,
-                cam: 0,
-                ..Default::default()
-            }],
+    ui::seed_review_cut(&Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 30.0,
+            cam: 0,
             ..Default::default()
-        },
-    );
+        }],
+        ..Default::default()
+    });
     settle();
 
     // --- S1: no session timeline ------------------------------------------------------------------

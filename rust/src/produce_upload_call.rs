@@ -94,7 +94,7 @@ fn read_turn(
 
 /// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
 fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     match paths {
         Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
         None => fallback,
@@ -390,7 +390,7 @@ impl State {
                 answer.answer
             }
             n if n == Tool::SetDescription.name() => {
-                let answer = upload::set_description(&self.publish, &text());
+                let answer = upload::set_description(&text());
                 self.publish.description = text();
                 self.wrote = true;
                 self.answers.push(answer.clone());

@@ -138,7 +138,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         }],
         ..Default::default()
     };
-    naivepost::ui::seed_review_cut(&window, &seeded);
+    naivepost::ui::seed_review_cut(&seeded);
     naivepost::ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 10.0 });
     settle();
     window

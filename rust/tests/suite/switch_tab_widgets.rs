@@ -115,8 +115,8 @@ fn outputs_text(window: &adw::ApplicationWindow) -> String {
     ui::outputs_sentence(window).expect("the window carries outputs-readout")
 }
 
-fn info_tip(window: &adw::ApplicationWindow) -> String {
-    ui::tab_info_button(window)
+fn info_tip() -> String {
+    ui::tab_info_button()
         .expect("the header bar carries tab-info-button")
         .tooltip_text()
         .map(|text| text.to_string())
@@ -215,7 +215,7 @@ fn f0_1_s4_readouts_shown_with_the_page(window: &adw::ApplicationWindow) {
 /// S4: ⓘ follows the page shown, not the page clicked-and-refused later on.
 fn f0_1_s4_info_syncs_to_the_page(window: &adw::ApplicationWindow) {
     click_tab(window, Page::Narrate);
-    let tip = info_tip(window);
+    let tip = info_tip();
     assert!(
         tip.starts_with("Narrate"),
         "ⓘ describes the page that is showing: {tip:?}"
@@ -294,7 +294,7 @@ fn f0_1_s5_narrate_refits_its_lines(app: &adw::Application, dir: &Path) {
 
     // Now owe one — the state a half-typed line leaves behind — and leave the tab again. The seam
     // resolves "this window" as the newest shell built, so this check must be the last window made.
-    ui::mark_narration_owed(&window);
+    ui::mark_narration_owed();
     click_tab(&window, Page::Prepare);
 
     let reread = narration::load(&tree).expect("narration still parses");
@@ -355,16 +355,13 @@ fn f0_1_switch_tab_through_the_widgets() {
 fn check_the_lock_is_asked_of_the_live_session(app: &adw::Application) {
     let window = ui::build_window(app, &Project::default(), "Prepare");
     window.present();
-    ui::session_handle(&window)
-        .borrow_mut()
-        .sources
-        .push(Source {
-            path: "project:sources/added.mkv".to_string(),
-            footage: true,
-            narrator: 0,
-            sepvoice: false,
-            tracks: vec![0],
-        });
+    ui::session_handle().borrow_mut().sources.push(Source {
+        path: "project:sources/added.mkv".to_string(),
+        footage: true,
+        narrator: 0,
+        sepvoice: false,
+        tracks: vec![0],
+    });
     click_tab(&window, Page::Cut);
     assert_eq!(
         ui::state(&window).page,

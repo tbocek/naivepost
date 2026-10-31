@@ -78,8 +78,7 @@ fn build() -> Result<Pipe, String> {
     })
 }
 
-pub fn cue(file: &str, at_secs: f64, play: bool, log: &dyn Fn(&str)) -> Result<(), String> {
-    let _ = log;
+pub fn cue(file: &str, at_secs: f64, play: bool) -> Result<(), String> {
     let generation = PIPE.with(|slot| -> Result<u64, String> {
         let mut slot = slot.borrow_mut();
         if slot.is_none() {

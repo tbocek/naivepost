@@ -48,7 +48,7 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> 
         }],
         ..Default::default()
     };
-    ui::seed_review_cut(window, &shot);
+    ui::seed_review_cut(&shot);
     ui::set_session_recordings(&[crate::timeline::Recording {
         base: TAPE.to_string(),
         start: 0.0,
@@ -80,7 +80,7 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> 
     );
     ui::text_type_words(window, fx_text::SNAPSHOT_CAPTION);
     let applied = ui::press_text_apply(window);
-    let placed = ui::review_cut_of(window)
+    let placed = ui::window_preview::newest_review_cut()
         .fx
         .iter()
         .filter(|fx| fx.kind == "text")

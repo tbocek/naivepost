@@ -410,7 +410,7 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
         "these are the seconds that broke it: the recomputed span is {:?}",
         (floor_pair.fx[0].t + floor_pair.fx[0].dur) - floor_pair.fx[0].t
     );
-    ui::seed_review_cut(&window, &floor_pair);
+    ui::seed_review_cut(&floor_pair);
     ui::refresh_effects_lane(&window);
     settle();
     // Each bar lives in the row box named after the row `fx_lane` packed it on, so two effects over one another
@@ -445,7 +445,7 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
 
     // And the ink follows the record: drop the label through the page's own door and its surface goes with it.
     cut.fx.remove(1);
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     ui::refresh_effects_lane(&window);
     settle();
     assert!(

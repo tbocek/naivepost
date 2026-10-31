@@ -200,7 +200,7 @@ pub(crate) fn run_narrate_on(window: &adw::ApplicationWindow, reply: NarrateRepl
     };
     if let Some(reason) = reason {
         if opened_by_this_press {
-            clear_narrate_bar();
+            crate::ui::run_close::close_window_run();
             repaint_play_button(window);
         }
         say_on_status(window, &reason);
@@ -212,7 +212,7 @@ pub(crate) fn run_narrate_on(window: &adw::ApplicationWindow, reply: NarrateRepl
     let held = window.clone();
     run_narrate_with(window, &project, reply, move |said: String| {
         if opened_by_this_press {
-            clear_narrate_bar();
+            crate::ui::run_close::close_window_run();
         }
         set_status_line(&held, &said);
         if opened_by_this_press {
@@ -237,7 +237,7 @@ pub(crate) fn repaint_play_button(window: &adw::ApplicationWindow) {
     }
 }
 
-/// Whether this window's run bar currently holds a run, the slot [`clear_narrate_bar`] empties.
+/// Whether this window's run bar currently holds a run, the slot [`run_close::close_window_run`] empties.
 pub(crate) fn bar_is_running() -> bool {
     ui::RUN_BARS
         .with(|bars| bars.borrow().last().cloned())
@@ -251,12 +251,7 @@ pub fn set_status_line(window: &adw::ApplicationWindow, said: &str) {
     }
 }
 
-/// Put this window's run bar back to idle after a narrate run that ran to its end in one go (F0.5 S4's close door).
-pub(crate) fn clear_narrate_bar() {
-    crate::ui::run_close::close_last_narrate_run();
-}
-
-/// The live project this window runs under: the newest slot, as `session_policy` reads it.
+/// The live project this window runs under: the newest slot, as `window_policy::live_session_policy` reads it.
 /// Public to the crate so the Produce page's F5.1 seam reads the session rather than a widget copy.
 pub(crate) fn live_project() -> Project {
     ui::PLAY_SESSION
@@ -683,30 +678,6 @@ pub fn show_narrate_progress(window: &adw::ApplicationWindow, written: u32, of: 
         .prog(0, written as f64 / of.max(1) as f64, &stage);
     NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
     set_narrate_stage(window, &stage, false);
-}
-
-/// Put the narration run's bar face on screen without running the run, for the snapshot (headless has no
-/// model, but §07's screen shows a page just written). Paints through `set_narrate_stage`, so the shot
-/// cannot show a state the run never produces.
-pub fn show_narrate_stage(window: &adw::ApplicationWindow, written: usize, of: usize) {
-    NARRATE_QUEUE.with(|queue| {
-        let mut queue = queue.borrow_mut();
-        queue.reset();
-        queue.phase(0.0, 0.5);
-        queue.job(0, JOB_NARRATION, 1, JOBS);
-        queue.push(0, of.max(1), "clip");
-        queue.prog(
-            0,
-            if of == 0 {
-                0.0
-            } else {
-                written as f64 / of as f64
-            },
-            &narrate_run::writing(written, of),
-        );
-        queue.job(1, JOB_SPEAKING, 2, JOBS);
-    });
-    set_narrate_stage(window, &narrate_run::writing(written, of), false);
 }
 
 pub type ScriptedLine = (u32, f64, String, String);

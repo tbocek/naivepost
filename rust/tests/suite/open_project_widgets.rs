@@ -133,7 +133,7 @@ fn a_press_nobody_answers_changes_nothing(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
 
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
     assert!(
         !before.is_empty(),
         "the fixture's session has sources to compare against"
@@ -143,7 +143,7 @@ fn a_press_nobody_answers_changes_nothing(app: &adw::Application) {
     open_.emit_clicked();
 
     assert_eq!(
-        ui::session_sources(&window),
+        ui::session_sources(),
         before,
         "an unanswered chooser leaves the session exactly where it was"
     );
@@ -160,7 +160,7 @@ fn an_old_single_file_refuses_through_the_window(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
 
     let opened = ui::open_from(&window, &file);
 
@@ -175,7 +175,7 @@ fn an_old_single_file_refuses_through_the_window(app: &adw::Application) {
         ui::window_logs()
     );
     assert_eq!(
-        ui::session_sources(&window),
+        ui::session_sources(),
         before,
         "a refusal must not have touched the session"
     );
@@ -192,7 +192,7 @@ fn a_folder_that_will_not_open_refuses_through_the_window(app: &adw::Application
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
 
     let opened = ui::open_from(&window, &bare);
 
@@ -207,7 +207,7 @@ fn a_folder_that_will_not_open_refuses_through_the_window(app: &adw::Application
         !mine.contains("single-file"),
         "an ordinary folder is not called an old single-file project: {mine}"
     );
-    assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
+    assert_eq!(ui::session_sources(), before, "nothing half-applied");
     window.close();
 }
 
@@ -230,13 +230,13 @@ fn a_valid_project_switches_the_session(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
 
     let opened = ui::open_from(&window, &folder);
     assert!(opened, "F0.9: a real project opens");
     // S4 builds the window again on the opened folder: the one to read is the new one.
     let window = ui::window::main_window();
-    let after = ui::session_sources(&window);
+    let after = ui::session_sources();
     assert_ne!(after, before, "the session switched to the opened project");
     assert_eq!(
         after,
@@ -424,7 +424,7 @@ fn the_dropped_source_is_said_by_the_real_open(app: &adw::Application) {
     let window = ui::window::main_window();
 
     assert_eq!(
-        ui::session_sources(&window),
+        ui::session_sources(),
         vec!["project:sources/keep.mkv".to_string()],
         "only the source whose file is there survives"
     );

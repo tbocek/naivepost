@@ -43,11 +43,11 @@ fn round(app: &adw::Application) {
         "the words walk needs more than one scene to trim: {:?}",
         base.segs
     );
-    ui::seed_review_cut(&window, &base);
-    ui::reopen_history_on(&window, &base);
-    ui::set_session_policy_field(&window, "cutMode", "words", "this test", Origin::User);
+    ui::seed_review_cut(&base);
+    ui::reopen_history_on(&base);
+    ui::window_policy::write_policy_field("cutMode", "words", "this test", Origin::User);
     assert_eq!(
-        ui::session_policy(&window).cut_mode.value,
+        ui::window_policy::live_session_policy().cut_mode.value,
         naivepost::project::CutMode::Words,
         "the press below is the words arm's"
     );
@@ -59,7 +59,7 @@ fn round(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let on_screen = ui::review_cut_of(&window);
+    let on_screen = ui::window_preview::newest_review_cut();
     assert!(
         on_screen.segs != base.segs,
         "the words walk changed the page's cut: {:?} -> {:?}",
@@ -111,7 +111,7 @@ fn round(app: &adw::Application) {
     ui::press_undo(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).segs,
+        ui::window_preview::newest_review_cut().segs,
         base.segs,
         "one Undo undid the words cut and left the page's own cut"
     );

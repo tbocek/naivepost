@@ -407,7 +407,7 @@ fn f2_14_s2b_three_attempts_and_it_says_so() {
         "`P.eng.llmAttempts` attempts and no more"
     );
     assert!(
-        sug::attempts_exhausted(naivepost::roles::LLM_ATTEMPTS),
+        naivepost::roles::cut_attempts_exhausted(naivepost::roles::LLM_ATTEMPTS),
         "and the bound is the same one `suggest` answers with"
     );
     RAN_EXHAUSTED.store(true, Ordering::SeqCst);

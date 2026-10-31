@@ -61,7 +61,7 @@ const CLIP: usize = 1;
 
 pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(window, &seeded());
+    ui::seed_review_cut(&seeded());
     write_lane_file(dir);
     // Deepen the zoom through the toolbar's own + door, as the other Cut-page shots do: at the opening 4 px/s
     // the 10 s hole is 40 px and a trimmed edge reads as nothing. Six steps lands on §A's ladder stop.
@@ -93,7 +93,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::cut_trim_press::end_release();
     // The sentence the shot is judged by, recomputed from the cut the drag LEFT rather than echoed from the
     // call above: if the clamp moved the edge somewhere else, this says where it really landed.
-    let seg = ui::review_cut_segs(window).remove(CLIP);
+    let seg = ui::review_cut_segs().remove(CLIP);
     said.push(cut_trim::trim_status(CLIP + 1, seg.s, seg.e));
     println!(
         "snapshot: 05-trim dragged clip {}'s end border to {TRIM_TO} s, it landed at {landed} s",

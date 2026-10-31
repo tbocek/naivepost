@@ -99,17 +99,15 @@ impl Default for Preview {
 }
 
 impl Preview {
-    /// S1: start the preview at `from`, with S3's rate from [`narrate_preview::seek_rate`]. A picture that will not
+    /// S1: start the preview at `from`, with S3's rate from [`cut_hear::rate_under`]. A picture that will not
     /// spawn is reported, not swallowed: it is the "nothing to show" case for the person.
     fn start(
         &mut self,
         tree: &crate::layout::Tree,
         cut: &Cut,
-        entries: &[Entry],
         from: f64,
         spawn: &mut Spawn,
     ) -> Result<String, String> {
-        let _ = entries;
         self.paused = false;
         self.waiting = None;
         self.speaking = None;
@@ -160,7 +158,7 @@ impl Preview {
         end_child(self.voice.take());
         if let Ok(child) = spawn(
             &VOICE_PROGRAM.with(|name| name.borrow().clone()),
-            &voice_args(wav, 0.0, ducked_voice(self.game_volume)),
+            &voice_args(wav, 0.0, voice_gain(self.game_volume)),
         ) {
             self.voice = Some(child);
         }
@@ -365,7 +363,7 @@ pub fn voice_program() -> String {
 fn named_program(conf_key: &str, env_key: &str, fallback: &str) -> String {
     if let Some(paths) = settings::from_environment() {
         if let Ok(conf) = settings::read(&paths) {
-            if let Some(value) = setting_value(&conf, conf_key) {
+            if let Some(value) = unknown_value(&conf, conf_key) {
                 if !value.is_empty() {
                     return value.to_string();
                 }
@@ -376,11 +374,6 @@ fn named_program(conf_key: &str, env_key: &str, fallback: &str) -> String {
         Ok(value) if !value.trim().is_empty() => value,
         _ => fallback.to_string(),
     }
-}
-
-/// One machine value out of `llm.conf`. The player keys are not drawn by the dialog yet, so they ride in the unknown-key list.
-fn setting_value(conf: &Conf, key: &str) -> Option<String> {
-    unknown_value(conf, key)
 }
 
 /// A key the settings writer carried through untouched. `Conf::unknown` is private, so the value is taken from the
@@ -461,7 +454,7 @@ pub fn step(
     let takes = take_states(tree, entries, &preview.failed);
     match narrate_preview::tick(now, &cut.segs, entries, &takes, preview.speaking) {
         narrate_preview::Tick::SkipTo(at) => {
-            let rate = narrate_preview::seek_rate(&cut.fx, at);
+            let rate = crate::cut_hear::rate_under(&cut.fx, at);
             preview.frozen = at;
             Stepped::Moved { at, rate }
         }
@@ -469,7 +462,7 @@ pub fn step(
         narrate_preview::Tick::Pause => Stepped::Paused,
         narrate_preview::Tick::Idle => Stepped::Same,
         narrate_preview::Tick::Speak { line, offset } => {
-            let gain = ducked_voice(preview.game_volume);
+            let gain = voice_gain(preview.game_volume);
             preview.speaking = Some(line);
             preview.frozen = now;
             if let Some(wav) = take_file(tree, entries, line) {
@@ -768,10 +761,6 @@ pub fn voice_gain(game_volume: f64) -> f64 {
     game_volume.clamp(VOICE_VOLUME_FLOOR, 1.0)
 }
 
-fn ducked_voice(game_volume: f64) -> f64 {
-    voice_gain(game_volume)
-}
-
 pub fn voice_args(file: &str, offset: f64, gain: f64) -> Vec<String> {
     audio_argv(&voice_program(), file, offset, None, gain)
 }
@@ -874,9 +863,7 @@ fn built_in(
         .next()
         .ok_or_else(|| narrate_preview::NO_RECORDING_AT_START.to_string())?;
     let local = narrate_preview_media::footage_second(cut, at);
-    crate::play_built_in::cue(&file, local, !hold, &|line| {
-        crate::ui::window::log_line(line)
-    })?;
+    crate::play_built_in::cue(&file, local, !hold)?;
     crate::play_built_in::set_volume(gain.clamp(0.0, 1.0));
     BUILT_IN_SHOWN.with(|cell| cell.set(true));
     Ok((
@@ -912,7 +899,6 @@ pub fn still_frame(
 pub fn start_running(
     tree: &crate::layout::Tree,
     cut: &Cut,
-    entries: &[Entry],
     from: f64,
     game_volume: f64,
     volume: f64,
@@ -927,7 +913,7 @@ pub fn start_running(
         volume,
         ..Default::default()
     };
-    let said = preview.start(tree, cut, entries, from, spawn)?;
+    let said = preview.start(tree, cut, from, spawn)?;
     RUNNING.with(|slot| *slot.borrow_mut() = Some(preview));
     Ok(said)
 }
@@ -1013,7 +999,7 @@ pub fn seek(
         return None;
     }
     let snapped = narrate_preview::snap_seek(target, &cut.segs, forward);
-    let rate = narrate_preview::seek_rate(&cut.fx, snapped);
+    let rate = crate::cut_hear::rate_under(&cut.fx, snapped);
     RUNNING.with(|slot| {
         let mut held = slot.borrow_mut();
         let Some(preview) = held.as_mut() else {
@@ -1061,13 +1047,13 @@ pub fn lead_in_of(entries: &[Entry], index: usize) -> Option<f64> {
         .map(|_| narrate_preview::lead_in(index, entries))
 }
 
-/// S2: free this take before the row ▶ dials the speech server, so a second failure reads as one ([`narrate_preview::retry_line`]
+/// S2: free this take before the row ▶ dials the speech server, so a second failure reads as one (`failed.retry`
 /// over the ONE set the preview reads). True = this press was a retry.
 pub fn retry_wav(wav: &str) -> bool {
     RUNNING.with(|slot| {
         let mut held = slot.borrow_mut();
         match held.as_mut() {
-            Some(preview) => narrate_preview::retry_line(preview.failed_mut(), wav),
+            Some(preview) => preview.failed_mut().retry(wav),
             None => false,
         }
     })
@@ -1114,7 +1100,7 @@ pub struct Heard {
 pub fn heard_at(cut: &Cut, at: f64, line_speaking: bool, game_volume: f64) -> Heard {
     Heard {
         duck: narrate_preview::duck(line_speaking, game_volume),
-        rate: narrate_preview::seek_rate(&cut.fx, at),
+        rate: crate::cut_hear::rate_under(&cut.fx, at),
         hushed: narrate_preview::lanes_heard(cut, at),
         at,
     }

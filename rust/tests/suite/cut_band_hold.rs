@@ -408,36 +408,36 @@ fn f3_8_s4_edit_refinds_by_kind_and_start_within_one_ms() {
     // |Delta-t| < 1 ms (effect_rules::REACH_SECONDS = 0.001), by VALUE and never by index: the page does not
     // hold the lane still while a dialog is open.
     let lane = vec![zoom_at(10.0, 3.0), zoom_at(20.0, 4.0)];
-    assert_eq!(fx_band::refind(&lane, "zoom", 20.0), Some(1));
+    assert_eq!(effect_rules::find_by_value(&lane, "zoom", 20.0), Some(1));
     assert_eq!(
-        fx_band::refind(&lane, "zoom", 20.0005),
+        effect_rules::find_by_value(&lane, "zoom", 20.0005),
         Some(1),
         "inside the 1 ms reach"
     );
     assert_eq!(
-        fx_band::refind(&lane, "zoom", 19.9995),
+        effect_rules::find_by_value(&lane, "zoom", 19.9995),
         Some(1),
         "inside the 1 ms reach"
     );
     assert_eq!(
-        fx_band::refind(&lane, "zoom", 20.0015),
+        effect_rules::find_by_value(&lane, "zoom", 20.0015),
         None,
         "outside the reach"
     );
     assert_eq!(
-        fx_band::refind(&lane, "zoom", 19.9985),
+        effect_rules::find_by_value(&lane, "zoom", 19.9985),
         None,
         "outside the reach"
     );
 
     // Same kind at a different start, and a different kind at the same start: both misses. Position in the list
     // buys nothing \u2014 the first element is never found by asking for the second's time.
-    assert_eq!(fx_band::refind(&lane, "zoom", 30.0), None);
-    assert_eq!(fx_band::refind(&lane, "volume", 20.0), None);
+    assert_eq!(effect_rules::find_by_value(&lane, "zoom", 30.0), None);
+    assert_eq!(effect_rules::find_by_value(&lane, "volume", 20.0), None);
 
     // The delegation and the miss sentence, whole.
     assert_eq!(
-        fx_band::refind(&lane, "zoom", 20.0005),
+        effect_rules::find_by_value(&lane, "zoom", 20.0005),
         effect_rules::find_by_value(&lane, "zoom", 20.0005)
     );
     assert_eq!(effect_rules::REACH_SECONDS, 0.001);

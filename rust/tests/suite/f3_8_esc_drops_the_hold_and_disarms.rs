@@ -50,8 +50,8 @@ fn cut_page_with_a_bar(app: &adw::Application) -> adw::ApplicationWindow {
         dur: 10.0,
         ..Default::default()
     });
-    ui::reopen_history_on(&window, &seeded);
-    ui::seed_review_cut(&window, &seeded);
+    ui::reopen_history_on(&seeded);
+    ui::seed_review_cut(&seeded);
     // `seed_review_cut` fills the slot only; the bar exists after the refresh every real press path does.
     ui::refresh_effects_lane(&window);
     settle();
@@ -70,7 +70,7 @@ fn pick_up_bar_zero(window: &adw::ApplicationWindow) {
         }
     );
     assert!(
-        ui::held_effect().is_some(),
+        ui::cut_hand::held_effect().is_some(),
         "the pick-up put the record in hand"
     );
     settle();
@@ -119,7 +119,10 @@ fn esc_drops_hold_and_disarms(app: &adw::Application) {
         Some(fx_band::CANCELLED),
         "S3's bare-disarm word covers both halves"
     );
-    assert!(ui::held_effect().is_none(), "S3: the hold dropped");
+    assert!(
+        ui::cut_hand::held_effect().is_none(),
+        "S3: the hold dropped"
+    );
     assert!(
         !ui::zoom_armed(),
         "S3: and the armed drag disarmed -- this is what used to stay up"
@@ -133,7 +136,7 @@ fn esc_drops_hold_and_disarms(app: &adw::Application) {
         Some(fx_band::CANCELLED)
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "the second Esc dropped its own hold"
     );
     assert!(!ui::zoom_armed(), "and its own arm");
@@ -152,8 +155,7 @@ fn esc_drops_hold_and_disarms(app: &adw::Application) {
 /// row, and drops BOTH the hold and every arm that was up (zoom and caption together).
 fn real_escape_key_drops_hold_and_disarms(app: &adw::Application) {
     let window = cut_page_with_a_bar(app);
-    let controller =
-        ui::band_esc_controller(&window).expect("the page wired a band Esc controller");
+    let controller = ui::band_esc_controller().expect("the page wired a band Esc controller");
 
     pick_up_bar_zero(&window);
     arm_zoom(&window);
@@ -178,7 +180,10 @@ fn real_escape_key_drops_hold_and_disarms(app: &adw::Application) {
         fx_band::CANCELLED,
         "the key reached the seam and printed"
     );
-    assert!(ui::held_effect().is_none(), "and dropped the hold");
+    assert!(
+        ui::cut_hand::held_effect().is_none(),
+        "and dropped the hold"
+    );
     assert!(!ui::zoom_armed(), "and disarmed ⊕ Zoom");
     assert!(!ui::text_armed(), "and disarmed ❝ Text");
 
@@ -202,7 +207,7 @@ fn bare_hold_still_answers_cancelled(app: &adw::Application) {
         Some(fx_band::CANCELLED)
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "a bare hold still drops, with no arm to take down"
     );
 
@@ -213,10 +218,10 @@ fn bare_hold_still_answers_cancelled(app: &adw::Application) {
     close.emit_by_name::<()>("clicked", &[]);
     settle();
     common::wait_until("the cross's press to drop the hold", || {
-        ui::held_effect().is_none()
+        ui::cut_hand::held_effect().is_none()
     });
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "the heading's cross went through the same door"
     );
 

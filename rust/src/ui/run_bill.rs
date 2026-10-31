@@ -50,7 +50,7 @@ fn session_tree() -> Option<layout::Tree> {
 }
 
 /// Prepare: `describe ×(frames/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins)`.
-/// Divisors come from `prepare::vision_calls`/`prepare::fixer_calls`, so retuning `P.machine.*` moves bill and readout together. The marking pass is `P.policy.markingPass`; joins are source changes in the session word list ([`joins::seams`]).
+/// Divisors come from `roles::vision_batches`/`prepare::fixer_calls`, so retuning `P.machine.*` moves bill and readout together. The marking pass is `P.policy.markingPass`; joins are source changes in the session word list ([`joins::seams`]).
 pub fn prepare_bill(project: &Project, tree: Option<&layout::Tree>) -> model_calls::Summary {
     let counts = tree.map_or_else(prepare::Counts::default, |tree| {
         prepare::count(tree, project)

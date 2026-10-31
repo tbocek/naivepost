@@ -503,18 +503,21 @@ fn f6_1_web_s1_no_firefox_or_flatpak_means_no_web_tools() {
     assert_eq!(ITEM, "F6.1");
     // The matrix: a sandbox has no host browser to launch; `off` is the setting's own word for it; an empty
     // setting means nothing was named.
-    assert!(!web_tools::offered("firefox", true));
+    assert!(!naivepost::degraded::web_available("firefox", true));
     assert!(
-        !web_tools::offered("", false),
+        !naivepost::degraded::web_available("", false),
         "an empty setting names nothing"
     );
-    assert!(!web_tools::offered("  ", false));
-    assert!(!web_tools::offered("off", false));
+    assert!(!naivepost::degraded::web_available("  ", false));
+    assert!(!naivepost::degraded::web_available("off", false));
     assert!(
-        !web_tools::offered("OFF", false),
+        !naivepost::degraded::web_available("OFF", false),
         "the setting is read case-insensitively"
     );
-    assert!(web_tools::offered("/usr/bin/firefox", false));
+    assert!(naivepost::degraded::web_available(
+        "/usr/bin/firefox",
+        false
+    ));
 
     // With them gone, a job's catalogue loses exactly those two rows and keeps their order.
     let offered = tools::offered(naivepost::roles::Job::Narrate);

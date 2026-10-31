@@ -499,7 +499,6 @@ pub fn probe_duration(
 ) -> Result<f64, String> {
     // The command line is logged by `run`'s own leg (`subprocess::run` prints it before starting,
     // §8's subprocess rule); this rule adds no line of its own while the probe runs.
-    let _ = log;
     let shown = path.display().to_string();
     let stamp = std::fs::metadata(path).ok().map(|meta| {
         let mtime = meta

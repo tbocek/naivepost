@@ -55,15 +55,15 @@ fn round(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &one_scene_cut());
-    ui::reopen_history_on(&window, &ui::review_cut_of(&window));
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::seed_review_cut(&one_scene_cut());
+    ui::reopen_history_on(&ui::window_preview::newest_review_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     // Only the cut is asked: the passes after it would each wait on the slow model too.
-    ui::set_captions_pass_for_test(&window, false);
-    ui::window::set_speeds_pass_for_test(&window, false);
-    ui::window::set_decorations_pass_for_test(&window, false);
+    ui::set_captions_pass_for_test(false);
+    ui::window::set_speeds_pass_for_test(false);
+    ui::window::set_decorations_pass_for_test(false);
     settle();
-    let before = ui::review_cut_of(&window).segs;
+    let before = ui::window_preview::newest_review_cut().segs;
 
     let pressed = std::time::Instant::now();
     ui::play_button(&window)
@@ -81,7 +81,7 @@ fn round(app: &adw::Application) {
         "the run is open while the model is asked, so ⏹ reaches it"
     );
     assert_eq!(
-        ui::review_cut_of(&window).segs,
+        ui::window_preview::newest_review_cut().segs,
         before,
         "nothing landed yet: the cut on screen is the one the press found"
     );
@@ -96,7 +96,7 @@ fn round(app: &adw::Application) {
         "the run closed when the cut landed"
     );
     assert_ne!(
-        ui::review_cut_of(&window).segs,
+        ui::window_preview::newest_review_cut().segs,
         before,
         "the model's cut landed on the page"
     );

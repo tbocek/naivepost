@@ -79,7 +79,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
 
         // At open a short session is drawn at the open zoom, under its fit: − cannot widen it further, and says so.
         let view = ui::cut_view::wheel_gestures_view(&window);
-        let opened = ui::cut_view::band_scene_for(&window).pps;
+        let opened = ui::cut_view::band_scene_for().pps;
         assert!(
             opened < view / SECONDS,
             "this session's fit is above the open zoom: {opened} px/s, fit {}",
@@ -87,7 +87,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
         );
         press(&window, "zoom-out-button");
         assert_eq!(
-            ui::cut_view::band_scene_for(&window).pps,
+            ui::cut_view::band_scene_for().pps,
             opened,
             "− never widens a band already showing the whole session"
         );
@@ -103,7 +103,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
         let mut at_limit = false;
         for _ in 0..40 {
             press(&window, "zoom-in-button");
-            let now = ui::cut_view::band_scene_for(&window).pps;
+            let now = ui::cut_view::band_scene_for().pps;
             if now > painted + 1e-9 {
                 // From under the fit, the first + goes straight to it: one press is always visible.
                 if first {
@@ -134,7 +134,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
         let mut at_floor = false;
         for _ in 0..60 {
             press(&window, "zoom-out-button");
-            let now = ui::cut_view::band_scene_for(&window).pps;
+            let now = ui::cut_view::band_scene_for().pps;
             if now < painted - 1e-9 {
                 painted = now;
                 continue;
@@ -160,9 +160,9 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
             let mut found = Vec::new();
             let mut y = 0.0;
             while y < f64::from(band_height(window)) {
-                if ui::band_cursor_at(window, 200.0, y) == Some("row-resize") {
+                if ui::band_cursor_at(200.0, y) == Some("row-resize") {
                     let from = y;
-                    while ui::band_cursor_at(window, 200.0, y) == Some("row-resize") {
+                    while ui::band_cursor_at(200.0, y) == Some("row-resize") {
                         y += 0.5;
                     }
                     found.push((from + y - 0.5) / 2.0);
@@ -182,7 +182,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
         let opened = edges(&window);
         let edge = opened[0];
         assert_ne!(
-            ui::band_cursor_at(&window, 200.0, all[0] - 20.0),
+            ui::band_cursor_at(200.0, all[0] - 20.0),
             Some("row-resize"),
             "inside the pictures the pointer is not the grip's"
         );
@@ -216,7 +216,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
             "the grip stays under the hand: {edge} pulled 30 px is at {moved:?}"
         );
         assert!(
-            ui::selection(&window).is_none(),
+            ui::selection().is_none(),
             "a pull on the grip draws no selection"
         );
 

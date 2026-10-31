@@ -320,7 +320,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s3_scra
     std::fs::write(clips.join("c001.mp4"), "x").unwrap();
     std::fs::write(clips.join("c001_a1b2c3.srt"), "x").unwrap();
     std::fs::create_dir_all(clips.join("loading.frames")).unwrap();
-    assert_eq!(details::clear(&clips).unwrap(), 2, "files only");
+    assert_eq!(render::clear_scratch(&clips).unwrap(), 2, "files only");
     assert!(
         clips.is_dir(),
         "the folder itself is not the sweep's business"
@@ -368,7 +368,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s4_mux_
     ];
     let mut settings = Produce::default();
     settings.subtitles = Subtitles::TrackInFile;
-    let argv = details::mux(&video, &audio, &tracks, &settings, &out, &list);
+    let argv = render::mux_command(&video, &audio, &tracks, &settings, &out, &list);
     let line = argv.join(" ");
     // Two streams plus one input per track: indices append-only, so a later filter's [N:a] still points at its
     // own file.
@@ -398,7 +398,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s4_mux_
         .collect();
     assert_eq!(named, ["s:s:0:title=Deutsch", "s:s:1:title=NL"], "{argv:?}");
     // Burned-in asks for nothing in the container, and §5's rule holds whatever the caller handed as tracks.
-    let burned = details::mux(&video, &audio, &tracks, &Produce::default(), &out, &list).join(" ");
+    let burned =
+        render::mux_command(&video, &audio, &tracks, &Produce::default(), &out, &list).join(" ");
     assert!(
         !burned.contains("-c:s"),
         "burned-in muxes no track: {burned}"
@@ -410,7 +411,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s4_mux_
         subtitles: Subtitles::TrackInFile,
         ..Default::default()
     };
-    let argv = details::mux(
+    let argv = render::mux_command(
         &video,
         &audio,
         &tracks,
@@ -896,7 +897,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s9_vide
     std::fs::write(dir.join("final.de.vtt"), "WEBVTT\n").unwrap();
     std::fs::write(dir.join("final.fr.vtt"), "WEBVTT\n").unwrap();
     std::fs::write(dir.join("final.srt"), "").unwrap();
-    let found = details::tracks_from_disk(&dir);
+    let found = embed::list_vtt(&dir);
     assert_eq!(found.len(), 3, "only .vtt files: {found:?}");
 
     // Own language first with `default` on the first only; the rest by name, because that is what a player's
@@ -920,24 +921,25 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s9_vide
 
     // A caption file deleted since the last run drops out of the page instead of shipping a broken <track>.
     std::fs::remove_file(dir.join("final.de.vtt")).unwrap();
-    let after = embed::tracks(&details::tracks_from_disk(&dir), "en", &list);
+    let after = embed::tracks(&embed::list_vtt(&dir), "en", &list);
     assert_eq!(after.len(), 2, "{after:?}");
     // And the tag is rewritten even when the encode was skipped: it lists what survived on disk.
     assert!(data::tag_rewritten(true));
 
     // Both web notes, verbatim — each names the browser to blame and the format to move to.
     assert_eq!(
-        details::web_note(Container::Mkv, Codec::H264),
+        embed::web_unplayable(Container::Mkv, Codec::H264),
         Some("no browser plays Matroska — render to mp4 or webm for a page")
     );
-    let h265 = details::web_note(Container::Mp4, Codec::H265).expect("h265 is a note of its own");
+    let h265 =
+        embed::web_unplayable(Container::Mp4, Codec::H265).expect("h265 is a note of its own");
     assert!(h265.starts_with("Firefox plays no h265 at all"), "{h265}");
     assert!(
         h265.contains("h264 is the one that plays everywhere"),
         "{h265}"
     );
     assert_eq!(
-        details::web_note(Container::Mp4, Codec::H264),
+        embed::web_unplayable(Container::Mp4, Codec::H264),
         None,
         "a page's own formats say nothing"
     );
@@ -946,10 +948,10 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s9_vide
     let without = embed::tag("final.mp4", None, &built);
     assert!(!without.contains("poster="), "{without}");
     assert!(
-        details::poster_missing_reason().len() > 8,
+        embed::no_poster_reason().len() > 8,
         "the log gives a reason"
     );
-    assert!(details::poster_unwritable_log("/tmp/final.jpg").contains("/tmp/final.jpg"));
+    assert!(embed::unwritable_log("/tmp/final.jpg").contains("/tmp/final.jpg"));
 
     // The page lives beside the video (tool:ffmpeg.encode's own folder).
     let tree = tree_in(&dir.join("demo.naivepost"));
@@ -993,7 +995,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s10_sta
     let tree = tree_in(&dir.join("demo.naivepost"));
     stamp::write_stamp(&tree, "abc").expect("the folder is writable here");
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some("abc"));
-    std::fs::write(stamp::stamp_path(&tree), "\n").unwrap();
+    std::fs::write(tree.final_stamp(), "\n").unwrap();
     assert_eq!(
         stamp::read_stamp(&tree),
         None,
@@ -1113,7 +1115,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_t
         subtitles: Subtitles::TrackInFile,
         ..Default::default()
     };
-    let argv = details::mux(&video, &audio, &tracks, &settings, &out, &list);
+    let argv = render::mux_command(&video, &audio, &tracks, &settings, &out, &list);
     // Per-stream metadata: `-metadata:s:s:<n>` names the subtitle stream, its value follows.
     let tagged: Vec<String> = argv
         .windows(2)
@@ -1208,7 +1210,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_o
     );
     // This container has no `SUBTITLE_LANGUAGES` to read, so every track lands on §6's fallback: `und`, named
     // by its upper-cased code. A listed language would carry its ISO-639-2 tag instead — pinned by the tagging
-    // test through `produce_details::mux`, where the list is an argument.
+    // test through `produce_render::mux_command`, where the list is an argument.
     let argv = plan.mux.argv.join(" ");
     // The joined file once (its picture and its sound are one input) + one input per track.
     assert_eq!(
@@ -1397,8 +1399,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_unwri
 
     // Unwritable: the stamp path is taken by a DIRECTORY, so `fs::write` cannot answer with a file. Works for
     // any user, unlike a chmod, which root would simply ignore.
-    std::fs::remove_file(stamp::stamp_path(&tree)).unwrap();
-    std::fs::create_dir_all(stamp::stamp_path(&tree)).unwrap();
+    std::fs::remove_file(tree.final_stamp()).unwrap();
+    std::fs::create_dir_all(tree.final_stamp()).unwrap();
     let mut said: Vec<String> = Vec::new();
     let ok = naivepost::produce_exec::write_stamp(&plan, &tree, &clean_ran, |line| {
         said.push(line.to_string())
@@ -1421,9 +1423,9 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_unwri
 
 /// The message `fs::write` gives when the stamp path is a directory — the same string `write_stamp` forwards.
 fn path_error(tree: &naivepost::layout::Tree) -> String {
-    match std::fs::write(stamp::stamp_path(tree), b"x") {
+    match std::fs::write(tree.final_stamp(), b"x") {
         Ok(()) => panic!("the stamp path was supposed to be occupied by a directory"),
-        Err(why) => format!("{}: {why}", stamp::stamp_path(tree).display()),
+        Err(why) => format!("{}: {why}", tree.final_stamp().display()),
     }
 }
 

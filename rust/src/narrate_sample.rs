@@ -15,7 +15,7 @@ pub fn already_heard(tree: &Tree, voice: &str, text: &str) -> Option<String> {
         cached.len() as u64,
         None,
     ));
-    play(&file).ok()
+    play_file(&file).ok()
 }
 
 /// S5's speech, shared by ▶ and ⟳. `roll` is absent from the log line for a first take (`>>> sample:` vs `>>> sample take 2:`).
@@ -66,18 +66,13 @@ pub fn speak(
                 bytes.len() as u64,
                 Some("just now"),
             ));
-            play(&file)
+            play_file(&file)
         }
     }
 }
 
 /// A reply this small carries no audio (a wav header is 44 bytes plus one 16-bit frame); `speak` refuses it and logs [`crate::narrate_details::sample_too_small_log`].
 pub const MIN_REPLY_BYTES: u64 = 46;
-
-/// Hand the sample to the player (same seam as the preview). The child is held so ⏹ can reach it via [`stop`]; `-autoexit` ends an unstopped one.
-fn play(file: &std::path::Path) -> Result<String, String> {
-    play_file(file)
-}
 
 /// Hear one file on the voice player; public because the take band's ▶ plays the same reference (§1).
 pub fn play_file(file: &std::path::Path) -> Result<String, String> {

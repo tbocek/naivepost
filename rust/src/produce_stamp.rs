@@ -251,10 +251,6 @@ pub fn disk_facts(path: &Path) -> (u64, u64) {
 
 // ---- where it lives and how it is read -------------------------------------------
 
-pub fn stamp_path(tree: &Tree) -> PathBuf {
-    tree.final_stamp()
-}
-
 pub fn gate_stamp(
     tree: &Tree,
     settings: &Produce,
@@ -279,7 +275,7 @@ pub fn gate_stamp(
 }
 
 pub fn read_stamp(tree: &Tree) -> Option<String> {
-    let text = fs::read_to_string(stamp_path(tree)).ok()?;
+    let text = fs::read_to_string(tree.final_stamp()).ok()?;
     let hash = text.trim().to_string();
     (!hash.is_empty()).then_some(hash)
 }
@@ -287,7 +283,7 @@ pub fn read_stamp(tree: &Tree) -> Option<String> {
 /// Write the new stamp after a successful encode — F5.2 S10's step, and only ever reached through
 /// [`crate::produce_render::stamp_written`]. The folder is created because a first render has never had one.
 pub fn write_stamp(tree: &Tree, hash: &str) -> Result<(), String> {
-    let path = stamp_path(tree);
+    let path = tree.final_stamp();
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
     }

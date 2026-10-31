@@ -232,7 +232,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_the_web_follows_the_w
         );
         // §2's column is the single source: both tables agree because one asks the other.
         assert_eq!(
-            tools::web_search_offered(which),
+            naivepost::roles::web_tools(which),
             naivepost::roles::web_tools(which)
         );
     }

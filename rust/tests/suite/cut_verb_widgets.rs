@@ -47,7 +47,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         ],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     window
 }
 
@@ -134,7 +134,7 @@ fn check_the_verb_buttons_reach_the_rule(app: &adw::Application) {
     cross.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        ui::selection(&window).is_none(),
+        ui::selection().is_none(),
         "the real cross cleared the band the verbs read"
     );
     assert!(
@@ -218,7 +218,7 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
 
     // Nothing held at all: the Delete key controller is attached and claims the key.
     ui::set_held_clip(None);
-    let controller = ui::delete_key_controller(&window).expect("⌦ has a key controller");
+    let controller = ui::delete_key_controller().expect("⌦ has a key controller");
     assert!(
         controller
             .upcast_ref::<gtk::EventController>()

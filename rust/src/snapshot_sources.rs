@@ -122,7 +122,7 @@ pub fn staged() -> Project {
 /// the page's own painter. Returns how many rows the page drew, counted off the widget tree.
 pub fn stage(window: &adw::ApplicationWindow) -> usize {
     let staged = staged();
-    let session = ui::session_handle(window);
+    let session = ui::session_handle();
     *session.borrow_mut() = staged;
     if !ui::source_rows_refresh::redraw(window) {
         println!("snapshot: 03-sources found no sources-list to redraw");

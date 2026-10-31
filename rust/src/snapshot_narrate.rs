@@ -32,10 +32,7 @@ pub(crate) fn stage_envelope(tree: &crate::layout::Tree, source: &std::path::Pat
 /// Stage the envelope for every file the shot's Narrate band may draw across — the built reference and the
 /// narrator-1 recording, in the order [`crate::ui::narrate_band`] tries them — and say what it managed.
 pub(crate) fn stage_seeded_envelopes(tree: &crate::layout::Tree) -> bool {
-    let mut staged = vec![stage_envelope(
-        tree,
-        &crate::narrate_data::base_reference(tree),
-    )];
+    let mut staged = vec![stage_envelope(tree, &tree.voice_ref_base_wav())];
     if let Ok(project) = crate::project::load(tree.dir()) {
         if let Some(recording) =
             crate::narrate_band_face::recording_path(tree, &project, "narrator1")
@@ -154,7 +151,7 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
             }
             .status(),
         );
-        crate::ui::run_close::close_last_narrate_run();
+        ui::run_close::close_window_run();
         ui::refresh(window);
         return true;
     }
@@ -168,7 +165,7 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
             .ok()
             .and_then(|tree| cut::load(&tree).ok())
             .map(|loaded| {
-                ui::seed_review_cut(window, &loaded);
+                ui::seed_review_cut(&loaded);
                 loaded.segs.len()
             })
             .unwrap_or(0);

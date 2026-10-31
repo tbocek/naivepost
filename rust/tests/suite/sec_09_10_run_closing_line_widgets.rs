@@ -13,9 +13,6 @@
 //! (`web_request_log::session_tree`), and `cwd` belongs to the process: the scenario holds a lock for as
 //! long as it pins it, the same guard `tests/suite/sec_09_llm_and_tools_10_more_doors.rs` uses.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use adw::prelude::*;
 use naivepost::layout::Tree;
 use naivepost::requests::{self, Request, Service};
@@ -112,15 +109,7 @@ fn closing_line_lands_in_the_window_log(app: &adw::Application) {
     let progress = ui::progress_bar(&window).expect("the run bar has a progress widget");
     let log = ui::log_expander(&window).expect("the shell has a log expander");
     let view = ui::log_view(&window).expect("the expander holds the log body");
-    ui::run_close::close_step_run(
-        &bar,
-        &queue,
-        &Rc::new(RefCell::new(naivepost::exchanges::RunLog::new())),
-        &status,
-        &progress,
-        &log,
-        &view,
-    );
+    ui::run_close::close_step_run(&bar, &queue, &status, &progress, &log, &view);
 
     let lines = ui::window_logs();
     let said = lines

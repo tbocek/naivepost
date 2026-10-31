@@ -73,7 +73,7 @@ pub(crate) fn apply(
             Refreshed::CutRebuild => {
                 let main = window::main_window();
                 if let Some(cut) = &found.cut {
-                    window::seed_review_cut(&main, cut);
+                    window::seed_review_cut(cut);
                 }
                 crate::ui::cut_cameras::refresh_camera_rows(&main);
                 window::refresh_effects_lane(&main);

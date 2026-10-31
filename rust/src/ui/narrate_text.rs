@@ -91,14 +91,14 @@ pub fn note_typing(window: &adw::ApplicationWindow, index: usize, typed: &str) -
         return String::new();
     }
     let said = apply_box(window, index, typed);
-    crate::ui::window::mark_narration_owed(window);
+    crate::ui::window::mark_narration_owed();
     crate::ui::shell_beats::arm_autosave(window);
     said
 }
 
 pub fn note_structure_change(window: &adw::ApplicationWindow) {
     carry_into_held_record();
-    crate::ui::window::mark_narration_owed(window);
+    crate::ui::window::mark_narration_owed();
     let _ = flush_owed(window);
 }
 

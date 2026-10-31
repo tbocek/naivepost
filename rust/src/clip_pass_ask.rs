@@ -189,7 +189,7 @@ pub fn system(step: &str, context: &str) -> String {
 /// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With no settings
 /// folder at all, the shipped wording is what goes out.
 fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     match paths {
         Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
         None => fallback,

@@ -21,7 +21,7 @@ use crate::ui::window::{paint_progress, paint_run_bar};
 /// The transport every run-bar paint and the ▶ press read: this window's live preview, never a default, or `run::RunBar::press`'s S2
 /// ("playback beats the page's action") could not fire while a preview plays or waits parked (§11 §2).
 pub(crate) fn live_transport() -> run::Transport {
-    ui::preview_player(&ui::main_window()).transport
+    ui::preview_player().transport
 }
 
 /// Where a press of ▶ is decided: [`run::RunBar::press`] on the player's own transport (§F0.2 S2), then redraw and put the bar's sentence on the status line.
@@ -39,7 +39,6 @@ pub(crate) fn wire_play(
     log_view: &gtk::TextView,
     queue: &Rc<RefCell<runqueue::Queue>>,
     exchange_log: &Rc<RefCell<exchanges::RunLog>>,
-    procs: &Rc<RefCell<run::Subprocesses>>,
     project: &Project,
 ) {
     let bar = bar.clone();
@@ -52,7 +51,6 @@ pub(crate) fn wire_play(
     let log_view = log_view.clone();
     let queue = queue.clone();
     let exchange_log = exchange_log.clone();
-    let _ = procs;
     play.connect_clicked(move |play| {
         // The press's last words: repaint the bar, close an opened run, paint progress, put a refusal on the status line, forward Narrate's or Produce's ▶.
         let tail = {
@@ -65,7 +63,6 @@ pub(crate) fn wire_play(
             let log = log.clone();
             let log_view = log_view.clone();
             let queue = queue.clone();
-            let exchange_log = exchange_log.clone();
             std::rc::Rc::new(move |pressed_started: bool, refusal: Option<String>| {
                 let play = &play;
                 paint_run_bar(
@@ -73,7 +70,7 @@ pub(crate) fn wire_play(
                     &stop_,
                     &bar.borrow(),
                     shell.borrow().page,
-                    ui::preview_player(&ui::main_window()).transport,
+                    ui::preview_player().transport,
                 );
                 status.set_text(&bar.borrow().status);
                 // F0.5 S4: a single-step press closes what it opened. §S7: the ending is the run's LAST word, so it goes back after the close, which writes the queue's line
@@ -84,13 +81,7 @@ pub(crate) fn wire_play(
                 );
                 if pressed_started && !closes_itself {
                     crate::ui::run_close::close_step_run(
-                        &bar,
-                        &queue,
-                        &exchange_log,
-                        &status,
-                        &progress,
-                        &log,
-                        &log_view,
+                        &bar, &queue, &status, &progress, &log, &log_view,
                     );
                     if run::step(shell.borrow().page) == run::Step::Prepare
                         && !bar.borrow().status.is_empty()
@@ -130,7 +121,7 @@ pub(crate) fn wire_play(
                 }
             })
         };
-        let transport = ui::preview_player(&ui::main_window()).transport;
+        let transport = ui::preview_player().transport;
         // F1.1 S1: Prepare refuses BEFORE the bar opens, or ⏸/⏹ would show for work that never began; other pages fall through to `press` (F0.2).
         let prepare_asked = run::step(shell.borrow().page) == run::Step::Prepare;
         // F4.1's ▶ on the Narrate page: refusal asked before the bar opens, as for Prepare.
@@ -148,7 +139,9 @@ pub(crate) fn wire_play(
         });
         // §11 §2 is the table this press asks first: what ▶ means on THIS page now. Its transport answer lands BEFORE any page step, so a playing or
         // parked preview cannot be interrupted by Suggest, write-and-speak or render.
-        let has_cut = !ui::review_cut_of(&ui::main_window()).segs.is_empty();
+        let has_cut = !crate::ui::window_preview::newest_review_cut()
+            .segs
+            .is_empty();
         let tab_play = crate::tab_states::play(shell.borrow().page, has_cut, transport);
         // §F0.2 S1: a run under way makes ▶ the pause button, ahead of both earlier branches: the page refusals (`narrate_run::refuse`, `produce_flow::refuse`,
         // Suggest) answer a busy bar with PAUSING, which would never pause and leave S1's `RESUMED` unreachable. `press` says which reading it is.
@@ -170,13 +163,15 @@ pub(crate) fn wire_play(
             crate::tab_states::Play::Transport { resume } => {
                 // Narrate's preview is the page's own, so the bar's ▶ is the page's ▶ (the door a click on the picture takes); writing only the window's transport record moved nothing.
                 if narrate_asked {
-                    let _ = crate::ui::narrate_page::press_narrate_play(&ui::main_window());
+                    let _ = crate::ui::narrate_page_transport::press_preview_picture(
+                        &ui::main_window(),
+                    );
                     return;
                 }
                 // Cut's the same way: the lit one of ▶ / ▶✂ / ▶✂✂ pauses or resumes the player and the lanes; flipping the record alone left picture and sound playing.
                 if suggest_asked {
                     let window = ui::main_window();
-                    let held = ui::preview_player(&window);
+                    let held = ui::preview_player();
                     let [recording, cut_lit, _review] =
                         crate::tab_states::preview_lits(&crate::cut_screen::Preview {
                             cut_only: held.cut_only,
@@ -195,12 +190,12 @@ pub(crate) fn wire_play(
                     }
                 }
                 // The face answers the transport this press LEFT, not the one it found.
-                let held = ui::preview_player(&ui::main_window());
+                let held = ui::preview_player();
                 let toggled = run::Transport {
                     playing: resume,
                     started: true,
                 };
-                ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
+                ui::set_preview_state(held.cut_only, held.reviewing, toggled);
                 paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, toggled);
                 return;
             }
@@ -254,7 +249,9 @@ pub(crate) fn wire_play(
         if produce_asked {
             // §F4.7 (**Text**): flushed before Produce reads the file; the render gates on `narration.json`, so an unwritten typed line would be missing.
             crate::ui::narrate_text::flush_owed(&ui::main_window());
-            let has_cut = !ui::review_cut_of(&ui::main_window()).segs.is_empty();
+            let has_cut = !crate::ui::window_preview::newest_review_cut()
+                .segs
+                .is_empty();
             if let Some(reason) =
                 crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut)
             {
@@ -270,13 +267,13 @@ pub(crate) fn wire_play(
             .press(shell.borrow().page, transport, &project);
         // S2 stops here (no snapshot, no step) and gets no sentence: the button's face carries the toggle.
         if let run::Pressed::ToggledTransport { resume } = pressed {
-            let held = ui::preview_player(&ui::main_window());
+            let held = ui::preview_player();
             // The face answers the transport this press LEFT: painting from `held.transport` would leave ⏸ up.
             let toggled = run::Transport {
                 playing: resume,
                 started: true,
             };
-            ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
+            ui::set_preview_state(held.cut_only, held.reviewing, toggled);
             paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, toggled);
             return;
         }
@@ -286,17 +283,19 @@ pub(crate) fn wire_play(
         // F0.5 S1: a press that opened a run also opened the bookkeeping (cancel context, queue, model log, log expander); only `Started` goes through `start_run`.
         if matches!(pressed, run::Pressed::Started { .. }) {
             // F0.7's second door: a context nobody has derived from is derived before the step reads it, so ▶ never runs on a lagging policy; only when the tracker says so.
-            let context = ui::user_context(&ui::main_window());
+            let context = ui::user_context();
             if ui::POLICY_TRACKERS
                 .with(|trackers| trackers.borrow().last().cloned())
                 .is_some_and(|tracker| tracker.borrow().needs_derive(&context))
             {
                 // Prepare asks the live model on its worker (§03-shell §1); a test's own answerer answers at once, so it is asked here.
                 if prepare_asked && !super::window_policy::answerer_installed() {
-                    derive_on_worker =
-                        Some((context.clone(), ui::session_policy(&ui::main_window())));
+                    derive_on_worker = Some((
+                        context.clone(),
+                        crate::ui::window_policy::live_session_policy(),
+                    ));
                 } else {
-                    let derived = ui::derive_policy(&ui::main_window());
+                    let derived = ui::derive_policy();
                     if !derived.used_defaults {
                         ui::log_line(&format!("policy: {}", derived.status()));
                     }
@@ -479,7 +478,7 @@ pub(crate) fn wire_stop(
         }
         // S1 reads the player's real transport; `press_stop` cannot know what is playing.
         let window = crate::ui::window::main_window();
-        let transport = ui::preview_player(&window).transport;
+        let transport = ui::preview_player().transport;
         let in_describe = crate::stop_legs::describe_stage();
         let stopped = bar.borrow_mut().press_stop(
             shell.borrow().page,
@@ -491,9 +490,9 @@ pub(crate) fn wire_stop(
         crate::run_stages::mirror_switches(&bar.borrow());
         // S1: stop the player itself, not only the sentence (the leg decides if this page owns one).
         if let Some(stopped) = crate::stop_legs::stop_page_preview(shell.borrow().page, transport) {
-            let held = ui::preview_player(&window);
+            let held = ui::preview_player();
             // A stopped review is over, as a paused one is (F2.3 S5).
-            ui::set_preview_state(&window, held.cut_only, false, stopped);
+            ui::set_preview_state(held.cut_only, false, stopped);
             if held.reviewing {
                 crate::ui::cut_review_play::clear();
             }
@@ -573,10 +572,9 @@ pub(crate) fn wire_play_recording(button: &gtk::Button, window: &adw::Applicatio
     });
 }
 /// F2.5 S6: hand the slider's number to [`set_preview_volume`] and nothing else: the one volume is owned by `cut_hear::PreviewVolume`.
-pub(crate) fn wire_preview_volume(scale: &gtk::Scale, window: &adw::ApplicationWindow) {
-    let window = window.clone();
+pub(crate) fn wire_preview_volume(scale: &gtk::Scale) {
     scale.connect_value_changed(move |slider| {
-        ui::set_preview_volume(&window, slider.value());
+        ui::set_preview_volume(slider.value());
     });
 }
 /// F2.2: the Cut page's ▶✂ forwards to [`ui::press_play_cut`], window cloned as in [`wire_play_recording`].

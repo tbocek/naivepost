@@ -82,8 +82,8 @@ fn press_decorations(window: &adw::ApplicationWindow) {
 
 /// The decorations this pass could have added, of one kind. Filtering by kind (rather than "everything that is
 /// not a caption") keeps the stage's own fixture effect out of the count and says which kind was checked.
-fn placed_of_kind(window: &adw::ApplicationWindow, kind: &str) -> Vec<Fx> {
-    ui::review_cut_of(window)
+fn placed_of_kind(kind: &str) -> Vec<Fx> {
+    ui::window_preview::newest_review_cut()
         .fx
         .iter()
         .filter(|fx| fx.kind == kind)
@@ -94,9 +94,9 @@ fn placed_of_kind(window: &adw::ApplicationWindow, kind: &str) -> Vec<Fx> {
 /// Everything on the lane that this pass could have written: none of the six §06 kinds the seeded cut lacks.
 /// Unused here (each stage counts by kind, because `cut_page` replays the previous window's undo history and a
 /// earlier stage's decoration can still be on the lane); kept as the whole-lane view of the same state.
-fn placed(window: &adw::ApplicationWindow) -> Vec<Fx> {
+fn placed() -> Vec<Fx> {
     const KINDS: [&str; 5] = ["zoom", "speed", "volume", "svg", "label"];
-    ui::review_cut_of(window)
+    ui::window_preview::newest_review_cut()
         .fx
         .iter()
         .filter(|fx| KINDS.contains(&fx.kind.as_str()))
@@ -110,12 +110,12 @@ fn round(app: &adw::Application) {
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
     assert!(
-        placed_of_kind(&window, "zoom").is_empty() && placed_of_kind(&window, "volume").is_empty(),
+        placed_of_kind("zoom").is_empty() && placed_of_kind("volume").is_empty(),
         "the seeded cut holds no decoration to confuse the count with"
     );
     press_decorations(&window);
 
-    let landed = placed_of_kind(&window, "zoom");
+    let landed = placed_of_kind("zoom");
     assert_eq!(
         landed.len(),
         1,
@@ -179,10 +179,10 @@ fn round(app: &adw::Application) {
     // with the app's ramp. (Each stage starts from a freshly seeded cut — `cut_page` re-seeds — so what is on the
     // lane is this press's doing and nobody else's.)
     assert!(
-        placed_of_kind(&window, "zoom").is_empty(),
+        placed_of_kind("zoom").is_empty(),
         "a `blur` line becomes no record at all"
     );
-    let landed = placed_of_kind(&window, "volume");
+    let landed = placed_of_kind("volume");
     assert_eq!(
         landed.len(),
         1,
@@ -199,7 +199,7 @@ fn round(app: &adw::Application) {
         "gain 0 is kept: silence is a decision someone can mean"
     );
     assert_eq!(
-        placed_of_kind(&window, "speed").len(),
+        placed_of_kind("speed").len(),
         0,
         "nothing else came with it"
     );
@@ -233,14 +233,14 @@ fn round(app: &adw::Application) {
     let window = cut_page(app, &captioned);
     press_decorations(&window);
     assert_eq!(
-        placed_of_kind(&window, "speed").len(),
+        placed_of_kind("speed").len(),
         1,
         "the pass placed one stop to undo"
     );
     ui::press_undo(&window);
     settle();
     assert!(
-        placed_of_kind(&window, "speed").is_empty(),
+        placed_of_kind("speed").is_empty(),
         "one ↶ undoes the whole pass -- it went through record_edit, not seed_review_cut"
     );
     RAN_UNDO.store(true, Ordering::SeqCst);

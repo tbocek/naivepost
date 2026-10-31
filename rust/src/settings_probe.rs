@@ -29,7 +29,7 @@ pub fn live_over(fallback: Provider) -> Provider {
 /// socket half that was missing.
 pub fn fetch_models(typed: &str) -> Result<String, String> {
     let endpoint = settings_probe_rows::llm_endpoint(&current_conf(), typed);
-    crate::model_list_fetch::models_at(&endpoint, &crate::web_request_log::session_tree())
+    crate::model_list_fetch::models_ask(&endpoint, &crate::web_request_log::session_tree())
 }
 
 /// The provider a real session installs with nothing else wired: the HTTP rows dial out, the rest
@@ -91,12 +91,12 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
             crate::text_gate_call::probe(&conf, paths.as_ref(), &ask)
         }
         "tts" | "asr" | "diar" | "sep" => {
-            let models = settings_probe_rows::audio_catalogue(&conf, typed)?;
+            let models = settings_probe_rows::audio_catalogue(&conf)?;
             let (label, task) = audio_row_pair(key).unwrap_or(("the model row", key));
             settings_probe_rows::audio_model_row(&models, typed, task, label)
         }
         "aligner" => {
-            let models = settings_probe_rows::audio_catalogue(&conf, typed)?;
+            let models = settings_probe_rows::audio_catalogue(&conf)?;
             settings_probe_rows::aligner_row(&models, typed)
         }
         "ffmpeg" => settings_probe_rows::ffmpeg_row(typed),

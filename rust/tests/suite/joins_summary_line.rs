@@ -201,7 +201,7 @@ impl Scene {
     }
 
     fn wording(&self, key: &str) -> String {
-        let shipped = naivepost::join_ask::shipped_file(key).unwrap_or_default();
+        let shipped = naivepost::prompts::shipped_text(key).unwrap_or_default();
         settings::prompt_text(&self.conf_paths(), key, &shipped).unwrap_or(shipped)
     }
 

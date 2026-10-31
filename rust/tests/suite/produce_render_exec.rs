@@ -740,7 +740,7 @@ fn f5_2_s5_a_probed_clip_at_another_size_is_named() {
     let spy = Spy::new();
     let mut materials = mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5);
     // The door the page hands the walk IS the program's door, so the walk really spawns ffprobe.
-    materials.probe = &naivepost::produce_probe::probe;
+    materials.probe = &naivepost::produce_probe::size_of;
     spy.run(&run, &tree, &materials, None);
     let logs = spy.logs_vec();
     // Proof the leg ran for real: the fake records every file it was asked about, and the walk must have
@@ -792,7 +792,7 @@ fn f5_2_s5_a_clip_that_cannot_be_probed_claims_nothing() {
     // The program's own door again, so "no ffprobe" is measured by a probe that really cannot answer — not
     // by a closure handed a `None`. (This case must set the seam itself: cargo runs the tests in this binary
     // on parallel threads, so it cannot inherit another case's pointing.)
-    materials.probe = &naivepost::produce_probe::probe;
+    materials.probe = &naivepost::produce_probe::size_of;
     spy.run(&run, &tree, &materials, None);
     std::env::set_var("NAIVEPOST_FFPROBE", "");
     assert!(

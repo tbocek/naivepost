@@ -40,8 +40,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
     ui::tab_button(&window, naivepost::shell::Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -93,9 +93,8 @@ fn two_rows() -> Cut {
 /// A box drawn while the page watches row 1 stores `cam: 1`; a box drawn with nothing watched stores row 0.
 /// Driven through the doors the gesture uses: arm (⊕ Zoom), the panel's own drag, then the form's Apply.
 fn zoom_row_round(app: &adw::Application) {
-    fn drag(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
-        let gesture =
-            ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+    fn drag(from: (f64, f64), to: (f64, f64)) {
+        let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
         gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
         gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
         settle();
@@ -158,14 +157,14 @@ fn zoom_row_round(app: &adw::Application) {
     assert!(ui::zoom_armed(), "the row armed the drag");
     // A box big enough to count (fx_zoom::DRAG_MIN_PX either way), with the source's own pixels handed in
     // because no ffprobe runs headless — the same seam tests/suite/zoom_drag_widgets.rs uses.
-    drag(&window, (100.0, 100.0), (700.0, 500.0));
+    drag((100.0, 100.0), (700.0, 500.0));
     let drawn = ui::zoom_form_open().expect("the finished box opened the form");
     assert_eq!(
         drawn.row, 1,
         "the form took its row from what the page is watching"
     );
     click(&window, "zoom-apply-button");
-    let placed = ui::review_cut_of(&window);
+    let placed = ui::window_preview::newest_review_cut();
     // The form is the page's answer to "which row am I watching", so it is asserted there; the record inherits
     // it through `fx_zoom::apply` -> `new_zoom`, which is what `a_reopened_zoom_keeps_its_own_row` proves.
     assert!(
@@ -176,7 +175,7 @@ fn zoom_row_round(app: &adw::Application) {
     // Nothing watched: row 0, which costs no key at all (§1's storage skips a neutral value).
     ui::set_watched_row(None);
     click(&window, "effect-item-zoom");
-    drag(&window, (100.0, 100.0), (700.0, 500.0));
+    drag((100.0, 100.0), (700.0, 500.0));
     assert_eq!(
         ui::zoom_form_open()
             .expect("the second box opened its form")
@@ -185,7 +184,7 @@ fn zoom_row_round(app: &adw::Application) {
         "with nothing watched the framing is row 0"
     );
     click(&window, "zoom-apply-button");
-    let again = ui::review_cut_of(&window);
+    let again = ui::window_preview::newest_review_cut();
     let second = again
         .fx
         .iter()
@@ -390,7 +389,7 @@ fn volume_lane_round(app: &adw::Application) {
         "the press asked the cut which lane these seconds belong to"
     );
     click(&window, "volume-apply-button");
-    let placed = ui::review_cut_of(&window);
+    let placed = ui::window_preview::newest_review_cut();
     let loud = placed
         .fx
         .iter()
@@ -407,7 +406,7 @@ fn volume_lane_round(app: &adw::Application) {
     let outside = ui::volume_form_open().expect("the row opened again");
     assert_eq!(outside.lane, "", "seconds no lane covers are the bed");
     click(&window, "volume-apply-button");
-    let after = ui::review_cut_of(&window);
+    let after = ui::window_preview::newest_review_cut();
     let bed_fx = after
         .fx
         .iter()

@@ -317,10 +317,10 @@ fn run_checks(app: &adw::Application) {
         .expect("the shell has a Cut tab")
         .emit_clicked();
     // The page shows cam0 with one hand-placed card nobody may trim.
-    ui::seed_review_cut(&window, &seeded_cut());
+    ui::seed_review_cut(&seeded_cut());
     // The page opened on the cut it was seeded with: without this the history would still be the one
     // `build_window` took from an empty page, and ↶ would answer with nothing instead of the pre-cut cut.
-    ui::reopen_history_on(&window, &seeded_cut());
+    ui::reopen_history_on(&seeded_cut());
     ui::cut_suggest_land::point_session_at(Some(p.tree.clone()));
     settle();
 
@@ -335,7 +335,7 @@ fn run_checks(app: &adw::Application) {
         "the log's own line"
     );
     assert!(made.wrote, "a real cut was written");
-    let on_screen = ui::review_cut_of(&window);
+    let on_screen = ui::window_preview::newest_review_cut();
     assert_eq!(
         on_screen.segs.len(),
         3,
@@ -353,7 +353,7 @@ fn run_checks(app: &adw::Application) {
     ui::press_undo(&window);
     settle();
     assert!(
-        ui::review_cut_of(&window)
+        ui::window_preview::newest_review_cut()
             .segs
             .iter()
             .any(|seg| seg.e == 60.0),
@@ -365,8 +365,8 @@ fn run_checks(app: &adw::Application) {
     // No footage on the page means no runs at all, which is the one input that cannot answer anything
     // but zero — the emptiness is structural, not a coincidence of word times.
     let dry = Project_::fresh("dry");
-    ui::seed_review_cut(&window, &Cut::default());
-    ui::reopen_history_on(&window, &Cut::default());
+    ui::seed_review_cut(&Cut::default());
+    ui::reopen_history_on(&Cut::default());
     ui::cut_suggest_land::point_session_at(Some(dry.tree.clone()));
     let empty = words_run::run_words(&window, &dry.tree, &dry.project);
     assert_eq!(empty.status, "cut by the words: 0 segments");

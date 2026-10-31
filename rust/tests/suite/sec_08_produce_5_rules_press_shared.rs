@@ -134,14 +134,11 @@ fn press(container: &str, translate: &[&str]) -> Vec<String> {
     page.crf = row[9].1.parse().expect("crf parses");
     page.voice = "1".to_string();
     ui::produce_page::set_state(page);
-    ui::seed_review_cut(
-        &window,
-        &naivepost::cut::Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
 
     let button =
         ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");

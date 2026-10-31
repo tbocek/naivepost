@@ -27,13 +27,6 @@ const INPUTS_PREFIX: &str = "Inputs: ";
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 
-/// A plain label beside a control, dimmed the way a field name is.
-pub fn label(text: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
-    label.add_css_class("dim-label");
-    label
-}
-
 // §1's badges **2**-**5**: the bench's heading row and its one text box. Everything the row says —
 // title, mark, Reset's liveness — is asked of [`bench`]; the widgets only forward.
 thread_local! {
@@ -250,12 +243,6 @@ pub(crate) fn bench_box(
     (heading, scroller)
 }
 
-/// Where this machine keeps an edited prompt (§1's ✎). `None` — no config home at all — leaves the
-/// bench showing rows with no mark rather than pretending to hold edits it cannot write.
-pub(crate) fn bench_paths() -> Option<crate::settings::Paths> {
-    crate::settings::from_environment()
-}
-
 /// Where settings are not: no folder at all, so every read finds nothing and every shipped wording
 /// shows through. Used when this machine has no config home to write prompts into.
 const NO_SETTINGS: crate::settings::Paths = crate::settings::Paths {
@@ -316,8 +303,8 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
         .sum();
     let rows = cut_screen::idle_readouts(
         &cut_.aspect,
-        crate::ui::preview_player(window).playhead.unwrap_or(0.0),
-        cut_select::marks(ui::selection(window).as_ref()),
+        crate::ui::preview_player().playhead.unwrap_or(0.0),
+        cut_select::marks(ui::selection().as_ref()),
         &cut_,
         source,
     );
@@ -375,7 +362,7 @@ pub(crate) fn paint_tabs(switcher: &adw::ViewSwitcher, shell: &Shell, project: &
     for page in Page::all() {
         // §2's "when it opens" column. `tab_states::opens` IS [`crate::shell::lock`] — asking it here is
         // what keeps the table and the tab row one rule instead of two that could drift.
-        let reason = crate::tab_states::opens(page, project);
+        let reason = crate::shell::lock(page, project);
         // The page shown is never greyed, even where it is locked: §1's "prerequisites vanish while
         // open" case leaves a locked page on screen for the moment before it is sent back.
         let dimmed = reason.is_some() && shell.page != page;
@@ -582,7 +569,7 @@ pub fn repaint_run_bar(window: &adw::ApplicationWindow) {
         &stop_,
         &bar,
         crate::ui::window::state(window).page,
-        crate::ui::window::preview_player(window).transport,
+        crate::ui::window::preview_player().transport,
     );
 }
 

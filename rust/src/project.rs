@@ -899,11 +899,6 @@ impl Autosave {
         self.last_written = Some(bytes);
         Ok(true)
     }
-
-    /// Window close: the same rule, named for the path that must not be skipped.
-    pub fn flush(&mut self, project: &Project, dir: &Path) -> Result<bool, String> {
-        self.save_if_changed(project, dir)
-    }
 }
 
 fn marshal(project: &Project) -> Result<Vec<u8>, String> {

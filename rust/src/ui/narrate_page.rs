@@ -628,7 +628,7 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
 
     fn volume(&self) -> f64 {
         // Read from the ONE holder (§A.4, F2.5 S6): two copies would be two answers, and an audition would differ from its preview (§C.4).
-        crate::ui::preview_volume(&self.0)
+        crate::ui::preview_volume()
     }
 
     fn say(&self, said: &str) {
@@ -667,7 +667,7 @@ pub use crate::ui::narrate_page_seek::{
 };
 
 pub use crate::ui::narrate_page_transport::{
-    narrate_preview_playing, press_narrate_play, press_preview_picture, press_preview_stop,
+    narrate_preview_playing, press_preview_picture, press_preview_stop,
 };
 
 pub use crate::ui::narrate_page_take::{
@@ -869,7 +869,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
     if let Some(tree) = crate::ui::window::narrate_session_tree() {
         set_state(crate::ui::narrate_seed::load_page(
             &tree,
-            crate::ui::window::line_position(window).t,
+            crate::ui::window::line_position().t,
         ));
     }
     // Set before its handler is connected so this is no drag.
@@ -894,7 +894,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
     if let Some(button) = crate::ui::line_step_button(&win, "narrate-play") {
         let w = win.clone();
         button.connect_clicked(move |_| {
-            press_narrate_play(&w);
+            press_preview_picture(&w);
         });
     }
     if let Some(button) = crate::ui::line_step_button(&win, "narrate-add-line") {

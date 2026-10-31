@@ -183,7 +183,7 @@ fn placed_drawing_window(app: &adw::Application, t: f64, src: &str) -> adw::Appl
     ui::svg_drag_ended(&window, (30.0, 30.0), (150.0, 96.0));
     let said = ui::press_svg_apply(&window);
     settle();
-    let held_cut = ui::review_cut_of(&window);
+    let held_cut = ui::window_preview::newest_review_cut();
     assert_eq!(
         held_cut.fx.len(),
         1,
@@ -220,7 +220,7 @@ fn rgb(data: &[u8], stride: usize, x: i32, y: i32) -> (u8, u8, u8) {
 
 /// Paint this window's OWN cut at the second its red line stands on, into a fresh surface, and hand back the pixels
 /// plus the surface size. Everything the painter needs comes from the live window through `describe`.
-fn paint_window(window: &adw::ApplicationWindow) -> (Vec<u8>, usize) {
+fn paint_window() -> (Vec<u8>, usize) {
     let mut surface =
         cairo::ImageSurface::create(cairo::Format::ARgb32, SURF_W, SURF_H).expect("a surface");
     {
@@ -228,10 +228,10 @@ fn paint_window(window: &adw::ApplicationWindow) -> (Vec<u8>, usize) {
         // White ground so "not drawn" reads as white rather than as the black a fresh surface is cleared to.
         cr.set_source_rgb(1.0, 1.0, 1.0);
         cr.paint().expect("white ground");
-        let held_cut = ui::review_cut_of(window);
+        let held_cut = ui::window_preview::newest_review_cut();
         let held_frame =
             ui::cut_preview_frame::held_frame(&held_cut, ui::cut_preview_frame::drawn_box());
-        let frame = ui::cut_preview_frame::describe(window, FIT, &held_frame);
+        let frame = ui::cut_preview_frame::describe(FIT, &held_frame);
         let seen = ui::cut_preview_frame::observe(&frame, None);
         ui::cut_preview_frame::paint_paused(&cr, &frame, &seen);
     }
@@ -371,7 +371,7 @@ fn round(app: &adw::Application) {
         // itself its alpha is nought, so the line moves just past the fade before anything is asked of the pixels.
         // That is the same fact `fx_lane::visibility_at` states, and the check reads it from the record rather than
         // guessing a number.
-        let held_cut = ui::review_cut_of(&window);
+        let held_cut = ui::window_preview::newest_review_cut();
         let placed = held_cut
             .fx
             .iter()
@@ -384,7 +384,7 @@ fn round(app: &adw::Application) {
             },
         );
         settle();
-        let (data, stride) = paint_window(&window);
+        let (data, stride) = paint_window();
         let box_ = effect_box_px(placed, FIT);
         // The png is SQUARE, so `fit_inside` keeps its shape inside the box the record carries; measuring with the
         // same door the painter uses is what keeps this a check of the rule, not of a lucky pixel.
@@ -413,7 +413,7 @@ fn round(app: &adw::Application) {
         ui::cut_preview_frame::note_box(Some(pending), &window);
         ui::release_svg_arm_only();
         let idle = ui::cut_preview_frame::held_frame(
-            &ui::review_cut_of(&window),
+            &ui::window_preview::newest_review_cut(),
             ui::cut_preview_frame::drawn_box(),
         );
         assert!(
@@ -422,7 +422,7 @@ fn round(app: &adw::Application) {
         );
         ui::svg_chosen(&window, Some(&file));
         let armed = ui::cut_preview_frame::held_frame(
-            &ui::review_cut_of(&window),
+            &ui::window_preview::newest_review_cut(),
             ui::cut_preview_frame::drawn_box(),
         );
         assert_eq!(
@@ -430,7 +430,7 @@ fn round(app: &adw::Application) {
             Some(pending),
             "while \u{25a8} SVG is armed the box under the hand reaches the painter"
         );
-        let frame = ui::cut_preview_frame::describe(&window, FIT, &armed);
+        let frame = ui::cut_preview_frame::describe(FIT, &armed);
         let seen = ui::cut_preview_frame::observe(&frame, None);
         assert!(
             seen.held.box_dashed,
@@ -440,7 +440,7 @@ fn round(app: &adw::Application) {
         ui::release_svg_arm_only();
         ui::cut_preview_frame::note_box(None, &window);
         let released = ui::cut_preview_frame::held_frame(
-            &ui::review_cut_of(&window),
+            &ui::window_preview::newest_review_cut(),
             ui::cut_preview_frame::drawn_box(),
         );
         assert!(
@@ -539,11 +539,11 @@ fn round(app: &adw::Application) {
         // And it still places: the box lands, the form opens, Apply writes the record.
         ui::svg_drag_ended(&window, (30.0, 30.0), (140.0, 100.0));
         settle();
-        let before = ui::review_cut_of(&window).fx.len();
+        let before = ui::window_preview::newest_review_cut().fx.len();
         ui::press_svg_apply(&window);
         settle();
         assert_eq!(
-            ui::review_cut_of(&window).fx.len(),
+            ui::window_preview::newest_review_cut().fx.len(),
             before + 1,
             "a failed preview does not stop the effect (§A.5)"
         );

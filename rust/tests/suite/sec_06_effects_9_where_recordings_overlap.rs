@@ -205,7 +205,7 @@ fn sec_06_effects_9_where_recordings_overlap_s4_a_stop_at_a_dropped_second_is_re
         rate: 0.0,
         ..Default::default()
     };
-    assert!(effect_overlap::is_a_stop(&stop));
+    assert!(naivepost::fx_record::is_stop(&stop));
     let sped = Fx {
         kind: "speed".into(),
         t: 1.0,
@@ -213,7 +213,7 @@ fn sec_06_effects_9_where_recordings_overlap_s4_a_stop_at_a_dropped_second_is_re
         rate: 2.0,
         ..Default::default()
     };
-    assert!(!effect_overlap::is_a_stop(&sped));
+    assert!(!naivepost::fx_record::is_stop(&sped));
 }
 
 /// §9's three sound rows: which answers the preview copies, which it must say it cannot do, and
@@ -773,7 +773,7 @@ fn sec_06_effects_9_where_recordings_overlap_s8_the_briefs_name_rows_and_lanes_o
     );
     let gain = cut_effects_pass::defaults("volume", 0.0, (2.0, 6.0), Some(0.5));
     assert!(gain.lane.is_empty(), "a proposed volume names no lane");
-    assert!(effect_overlap::suggested_volume_reaches_the_bed(&gain));
+    assert!(naivepost::fx_record::rides_whole_bed(&gain));
     drop(batch);
     // The naming rule, and the one line it produces.
     assert!(!effect_overlap::names_rows_and_lanes(1, 1));

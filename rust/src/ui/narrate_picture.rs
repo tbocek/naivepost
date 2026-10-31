@@ -10,9 +10,8 @@ pub fn install_draw(window: &adw::ApplicationWindow) {
     let Some(area) = picture_of(window) else {
         return;
     };
-    let win = window.clone();
     area.set_draw_func(move |_area, cr, width, height| {
-        paint(&win, cr, width.max(1) as f64, height.max(1) as f64);
+        paint(cr, width.max(1) as f64, height.max(1) as f64);
     });
 }
 
@@ -165,16 +164,10 @@ fn current_cut() -> crate::cut::Cut {
         .unwrap_or_default()
 }
 
-/// The panel's pixel box, from the window's own preview declaration — the Cut page's helper, so both
-/// pages measure the camera against one shape.
-fn fit_size(window: &adw::ApplicationWindow, width: f64, height: f64) -> (f64, f64) {
-    picture::fit_size_of(window, width, height)
-}
-
 /// Paint one frame with the shared painter: mask for what the camera hides, the stop's still, and the
 /// burned text/svg overlays — the same calls the Cut page's surface makes.
-fn paint(window: &adw::ApplicationWindow, cr: &cairo::Context, width: f64, height: f64) {
-    let fit = fit_size(window, width, height);
+fn paint(cr: &cairo::Context, width: f64, height: f64) {
+    let fit = picture::fit_size_of(width, height);
     let frame = frame_of(fit);
     let seen = picture::observe(&frame, None);
     // Only what the cut lays over the footage: the footage itself is `narrate-video` under this surface.

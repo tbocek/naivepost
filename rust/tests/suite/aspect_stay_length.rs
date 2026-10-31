@@ -18,7 +18,7 @@ fn anywhere(id: &str) -> params::Param {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .filter(|row| row.id == id)
         .collect::<Vec<_>>();

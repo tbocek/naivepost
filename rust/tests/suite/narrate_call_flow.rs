@@ -11,7 +11,7 @@ use naivepost::cut::Seg;
 use naivepost::narrate_call::drive;
 use naivepost::narrate_pass as pass;
 use naivepost::narrate_reply::{
-    all_silent_fault, clip_without_entry, unmatched_entry_fault, ENTRY_MATCH_TOLERANCE_SECONDS,
+    clip_without_entry, unmatched_entry_fault, ENTRY_MATCH_TOLERANCE_SECONDS,
 };
 
 use crate::common;
@@ -272,7 +272,7 @@ fn f4_2_s20_progress_counts_closed_clips_and_never_goes_backwards_across_a_retry
 }
 
 /// s21 — silence must be SAID. A reply whose every line is empty is a model refusing the job and is
-/// refused with `all_silent_fault`; a reply that skips a clip is refused with `clip_without_entry`,
+/// refused with `narrate_pass::no_line_fault`; a reply that skips a clip is refused with `clip_without_entry`,
 /// naming that clip and its bounds. Neither writes a silent video.
 #[test]
 fn f4_2_s21_an_all_empty_reply_and_a_reply_with_a_hole_are_both_refused() {
@@ -289,7 +289,7 @@ fn f4_2_s21_an_all_empty_reply_and_a_reply_with_a_hole_are_both_refused() {
         |_| {},
     )
     .expect_err("every line empty is a refusal, not taste");
-    assert_eq!(refused, all_silent_fault());
+    assert_eq!(refused, pass::no_line_fault());
     assert_eq!(
         refused,
         pass::no_line_fault(),

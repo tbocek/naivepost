@@ -242,20 +242,17 @@ fn sec_08_produce_3_data_s6_the_stamp_sits_beside_the_video_and_decides_the_enco
     assert_eq!(ITEM, "§08-produce#3-data");
     let (_root, tree) = tree_in("s6");
     // One path, two modules: §3 lists the file and F5.3 owns what is in it.
-    assert_eq!(data::stamp_path(&tree), tree.final_stamp());
-    assert_eq!(
-        data::stamp_path(&tree),
-        tree.dir().join("produce/final.stamp")
-    );
-    assert_ne!(data::stamp_path(&tree), tree.final_video("mp4"));
+    assert_eq!(tree.final_stamp(), tree.final_stamp());
+    assert_eq!(tree.final_stamp(), tree.dir().join("produce/final.stamp"));
+    assert_ne!(tree.final_stamp(), tree.final_video("mp4"));
 
     // What ▶ reads: a stamp equal to this run's hash skips the encode; anything else encodes.
-    assert!(data::video_is_up_to_date(Some("abc"), "abc"));
-    assert!(!data::video_is_up_to_date(Some("abc"), "abd"));
+    assert!(stamp::skip_encode(Some("abc"), "abc"));
+    assert!(!stamp::skip_encode(Some("abc"), "abd"));
     // A missing or unreadable file reads as None, and None means encode — the stamp may only ever
     // let a run skip work it can prove was done.
     assert_eq!(stamp::read_stamp(&tree), None);
-    assert!(!data::video_is_up_to_date(
+    assert!(!stamp::skip_encode(
         stamp::read_stamp(&tree).as_deref(),
         "abc"
     ));
@@ -264,12 +261,12 @@ fn sec_08_produce_3_data_s6_the_stamp_sits_beside_the_video_and_decides_the_enco
     // Written and read back, it is the same answer.
     stamp::write_stamp(&tree, "abc").unwrap();
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some("abc"));
-    assert!(data::video_is_up_to_date(
+    assert!(stamp::skip_encode(
         stamp::read_stamp(&tree).as_deref(),
         "abc"
     ));
     // And it is not the thumbnail's stamp, which lives under publish/ and answers another question.
-    assert_ne!(data::stamp_path(&tree), tree.thumbnail_stamp());
+    assert_ne!(tree.final_stamp(), tree.thumbnail_stamp());
 }
 
 // ---- S7: sidecars -------------------------------------------------------------------
@@ -307,7 +304,7 @@ fn sec_08_produce_3_data_s7_stale_sidecars_are_deleted_by_exact_name() {
     assert_eq!(ITEM, "§08-produce#3-data");
     // §3's `+ sidecars` and the rule that goes with them: ▶ deletes what it is about to rewrite by
     // name, never by a pattern — `*.de.srt` would take a translation of another video's file.
-    let stale = data::stale_files("final", &["de"]);
+    let stale = render::stale_sidecars("final", &["de"]);
     assert_eq!(
         stale,
         [
@@ -375,7 +372,7 @@ fn sec_08_produce_3_data_s9_the_record_exists_or_it_does_not() {
     publish::save(&record, &tree).unwrap();
     assert!(publish::is_written(&tree));
     assert_eq!(data::written(&tree), [data::DATA_FILES[10]]);
-    assert_eq!(data::publish_folder(&tree), tree.publish_dir());
+    assert_eq!(tree.publish_dir(), tree.publish_dir());
     assert_eq!(
         data::resolve(&tree, "publish/publish.json"),
         Some(tree.publish_json())
@@ -533,7 +530,7 @@ fn sec_08_produce_3_data_s10_every_path_stays_inside_the_project() {
         data::scratch_translation_srt(&tree, "de"),
         data::concat_path(&tree),
         tree.final_video("mp4"),
-        data::stamp_path(&tree),
+        tree.final_stamp(),
         tree.final_srt(Some("de")),
         tree.final_vtt(None),
         tree.final_jpg(),

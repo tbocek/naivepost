@@ -52,9 +52,7 @@ fn press_play_and_wait(window: &adw::ApplicationWindow, context: &str) {
     ui::play_button(window)
         .expect("the run bar has a \u{25b6}")
         .emit_by_name::<()>("clicked", &[]);
-    common::wait_until("the policy ask landed", || {
-        ui::policy_is_current(window, context)
-    });
+    common::wait_until("the policy ask landed", || ui::policy_is_current(context));
     ui::stop_button(window)
         .expect("the run bar has a \u{23f9}")
         .emit_by_name::<()>("clicked", &[]);
@@ -78,12 +76,12 @@ fn check_the_play_press_dials_the_policy_prompt(app: &adw::Application) {
 
     // A context typed but never derived from: exactly what a person leaves behind, and F0.7's reason
     // for deriving on the next ▶.
-    ui::set_session_context(&window, "cut on the words, not the model");
+    ui::set_session_context("cut on the words, not the model");
     assert!(
-        !ui::policy_is_current(&window, "cut on the words, not the model"),
+        !ui::policy_is_current("cut on the words, not the model"),
         "a fresh window has derived nothing"
     );
-    let before = ui::session_policy(&window).cut_mode.value;
+    let before = ui::window_policy::live_session_policy().cut_mode.value;
 
     press_play_and_wait(&window, "cut on the words, not the model");
 
@@ -131,13 +129,13 @@ fn check_the_play_press_dials_the_policy_prompt(app: &adw::Application) {
         "the User Context rode out with the prompt"
     );
     // And the answer was APPLIED, not just read: cutMode moved off its default.
-    let after = ui::session_policy(&window).cut_mode.value;
+    let after = ui::window_policy::live_session_policy().cut_mode.value;
     assert_ne!(
         before, after,
         "the model's proposal landed in the session policy"
     );
     assert!(
-        ui::policy_is_current(&window, "cut on the words, not the model"),
+        ui::policy_is_current("cut on the words, not the model"),
         "the tracker recorded the derivation, so the next press costs no wire"
     );
 }
@@ -175,9 +173,9 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
         ..Default::default()
     });
     naivepost::project::save(&on_disk, &dir).expect("the project names its profile");
-    ui::session_handle(&window).borrow_mut().profile = on_disk.profile.clone();
+    ui::session_handle().borrow_mut().profile = on_disk.profile.clone();
     // A different context from S10's so the LLM cache (keyed on the exact request) cannot answer here.
-    ui::set_session_context(&window, "burn in captions for the whole film");
+    ui::set_session_context("burn in captions for the whole film");
     press_play_and_wait(&window, "burn in captions for the whole film");
 
     let seen = llm.next_seen();
@@ -199,7 +197,9 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     );
     // S1's own default is `true`, so "landed" here is proven by the ORIGIN the proposal wrote, not by a
     // value flip: a model-sourced field is what a derivation looks like in the state.
-    let after = ui::session_policy(&window).captions_pass.clone();
+    let after = ui::window_policy::live_session_policy()
+        .captions_pass
+        .clone();
     assert_eq!(
         after.origin,
         naivepost::project::Origin::Model,

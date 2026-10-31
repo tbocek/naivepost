@@ -320,9 +320,9 @@ fn sec_02_services_4_degraded_modes_s9_a_tools_refusal_later_fails_the_call() {
 fn sec_02_services_4_degraded_modes_s10_a_cut_off_reply_keeps_the_calls_already_made() {
     // §4.6 — only `length` says cut off.
     assert_eq!(FINISH_LENGTH, "length");
-    assert!(degraded::cut_off(FINISH_LENGTH, false));
-    assert!(!degraded::cut_off("stop", true));
-    assert!(!degraded::cut_off("", false));
+    assert!(degraded::cut_off(FINISH_LENGTH));
+    assert!(!degraded::cut_off("stop"));
+    assert!(!degraded::cut_off(""));
 
     // With tools and calls already answered, everything already called stands.
     assert_eq!(degraded::after_cut_off(true, 3), AfterCutOff::KeepCalls);
@@ -431,7 +431,7 @@ fn sec_02_services_4_degraded_modes_s14_every_degradation_at_once_is_survivable(
     );
 
     // 4. That answer came back cut off, and no call had been made: ask again, shorter.
-    assert!(degraded::cut_off(FINISH_LENGTH, true));
+    assert!(degraded::cut_off(FINISH_LENGTH));
     let retry = degraded::after_cut_off(false, 0);
     assert!(matches!(retry, AfterCutOff::Retry(_)));
 

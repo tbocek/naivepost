@@ -157,8 +157,8 @@ fn frames_of(ctx: &Context, args: &serde_json::Value) -> String {
     if picked.is_empty() {
         return tools::error(&format!(
             "no frame falls in that stretch; this batch runs {} to {}",
-            crate::fix_transcripts::stamp(ctx.frames[0]),
-            crate::fix_transcripts::stamp(*ctx.frames.last().unwrap_or(&0.0)),
+            tools::mm_ss(ctx.frames[0]),
+            tools::mm_ss(*ctx.frames.last().unwrap_or(&0.0)),
         ));
     }
     let frames: Vec<serde_json::Value> = ctx
@@ -166,7 +166,7 @@ fn frames_of(ctx: &Context, args: &serde_json::Value) -> String {
         .iter()
         .enumerate()
         .filter(|(_, at)| picked.contains(at))
-        .map(|(index, at)| json!({"frame": index + 1, "at": crate::fix_transcripts::stamp(*at)}))
+        .map(|(index, at)| json!({"frame": index + 1, "at": tools::mm_ss(*at)}))
         .collect();
     tools::ok(&json!({"frames": frames, "already_sent": true}))
 }

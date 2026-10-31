@@ -84,8 +84,8 @@ fn stays_stopped() -> bool {
         && !wait_for(naivepost::play_back::running, Duration::from_millis(600))
 }
 
-fn line(window: &adw::ApplicationWindow) -> f64 {
-    ui::line_position(window).t
+fn line() -> f64 {
+    ui::line_position().t
 }
 
 fn face(button: &gtk4::Button) -> String {
@@ -163,10 +163,7 @@ fn sec_05_cut_2_every_transport_button_moves_the_media_as_its_face_says() {
             review_pause,
             "the review's face goes back to \u{25b6}"
         );
-        assert!(
-            !ui::preview_player(&window).reviewing,
-            "and the review is over"
-        );
+        assert!(!ui::preview_player().reviewing, "and the review is over");
 
         // F2.3 S5: ▶✂ during a review switches to the plain cut WITHOUT stopping.
         review.emit_clicked();
@@ -180,7 +177,7 @@ fn sec_05_cut_2_every_transport_button_moves_the_media_as_its_face_says() {
             || !naivepost::play_back::running(),
             Duration::from_millis(600)
         ));
-        assert!(!ui::preview_player(&window).reviewing, "the review ended");
+        assert!(!ui::preview_player().reviewing, "the review ended");
         assert_eq!(face(&cut), cut_pause, "\u{25b6}\u{2702} wears \u{23f8} now");
         assert_ne!(
             face(&review),
@@ -252,30 +249,30 @@ fn sec_05_cut_2_every_transport_button_moves_the_media_as_its_face_says() {
         one.emit_clicked();
         assert!(stays_stopped(), "f\u{203a} pauses the media");
         assert_ne!(face(&rec), rec_pause, "and \u{25b6}'s face");
-        let at = line(&window);
+        let at = line();
         one.emit_clicked();
         assert!(
-            (line(&window) - (at + 0.04)).abs() < 0.011,
+            (line() - (at + 0.04)).abs() < 0.011,
             "f\u{203a} is one frame: {at} -> {}",
-            line(&window)
+            line()
         );
         back.emit_clicked();
         assert!(
-            (line(&window) - at).abs() < 0.011,
+            (line() - at).abs() < 0.011,
             "\u{2039}f is one back: {}",
-            line(&window)
+            line()
         );
         five.emit_clicked();
         assert!(
-            (line(&window) - (at + 0.2)).abs() < 0.011,
+            (line() - (at + 0.2)).abs() < 0.011,
             "f\u{203a}\u{203a} is five: {}",
-            line(&window)
+            line()
         );
         back5.emit_clicked();
         assert!(
-            (line(&window) - at).abs() < 0.011,
+            (line() - at).abs() < 0.011,
             "\u{2039}\u{2039}f is five back: {}",
-            line(&window)
+            line()
         );
         assert!(stays_stopped(), "and stepping a paused line plays nothing");
 
@@ -290,7 +287,7 @@ fn sec_05_cut_2_every_transport_button_moves_the_media_as_its_face_says() {
         );
 
         assert!(
-            !ui::preview_player(&window).reviewing,
+            !ui::preview_player().reviewing,
             "and a review paused by a step is over, as one \u{25b6}\u{2702}\u{2702} pauses is"
         );
         window.close();

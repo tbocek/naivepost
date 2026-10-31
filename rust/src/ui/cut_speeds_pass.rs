@@ -12,7 +12,7 @@ use crate::ui::window;
 /// Rule-free like [`window::run_captions_pass`]. This seam reads the page, hands the rules their inputs (the kept clips AND the captions already on them: S1's brief notes them and S2 refuses a fast rate over one),
 /// and writes back what they answer. Placed speeds go through `record_edit`, NEVER `seed_review_cut`, so one ↶ takes the pass back. Each round asks afresh through `ask_speeds` (§F3.10 S4).
 pub fn run_speeds_pass(window: &adw::ApplicationWindow) -> String {
-    let inputs = window::pass_inputs(window);
+    let inputs = window::pass_inputs();
     let cut_ = window::newest_review_cut();
     let out = walk_speeds(&inputs, &cut_);
     window::land_pass(window, &out);
@@ -31,7 +31,7 @@ pub fn run_speeds_pass_with_reply(
     window: &adw::ApplicationWindow,
     calls: &[crate::cut_speed_pass::Call],
 ) -> String {
-    let inputs = window::pass_inputs(window);
+    let inputs = window::pass_inputs();
     let out = walk_speeds_with(&inputs, &window::newest_review_cut(), &|_, _| {
         calls.to_vec()
     });

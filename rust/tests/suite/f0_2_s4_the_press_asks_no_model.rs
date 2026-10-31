@@ -153,7 +153,7 @@ fn press_joins_asks_nothing(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     // Same slot the ▶ handler reads, set after the derive door would have closed.
-    ui::set_marking_pass(&window, MarkingPass::Joins);
+    ui::set_marking_pass(MarkingPass::Joins);
 
     ui::play_button(&window)
         .expect("the run bar has a ▶")

@@ -7,7 +7,7 @@
 //!   [`crate::fx_svg::NO_FILE`] and [`crate::fx_svg::Rasters::failure_line`], which answers `Some` the first time a
 //!   file fails and `None` after;
 //! * a rate for a whole segment being a speed effect over it, outside any decorations ceiling —
-//!   [`crate::cut_suggest::is_speed_effect`] and [`crate::cut_suggest::exempt_from_decorations_cap`];
+//!   [`crate::cut_suggest::is_speed_effect`];
 //! * the cards: their stamp, holes, generators, seeds, bake and length without an end — [`crate::cut_cards`], whose
 //!   §8 block holds the three notes a render logs;
 //! * a still needing one frame, and a CSS animation with no `@keyframes` being one — [`crate::cut_insert`];

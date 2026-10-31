@@ -216,12 +216,12 @@ pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
         }
         let drawn = draw_borders(segs, &[line]);
         if drawn.len() == segs.len() {
-            return Outcome::Refused(format!("nothing to split at {}", clock(line)));
+            return Outcome::Refused(format!("nothing to split at {}", crate::tools::mm_ss(line)));
         }
         return Outcome::Applied {
             status: format!(
                 "split at {} \u{2014} {} scenes, was {}",
-                clock(line),
+                crate::tools::mm_ss(line),
                 drawn.len(),
                 segs.len()
             ),
@@ -243,12 +243,12 @@ pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
     if sel.is_none() {
         let drawn = draw_borders(segs, &[line]);
         if drawn.is_empty() {
-            return Outcome::Refused(format!("nothing to split at {}", clock(line)));
+            return Outcome::Refused(format!("nothing to split at {}", crate::tools::mm_ss(line)));
         }
         return Outcome::Applied {
             status: format!(
                 "split at {} \u{2014} {} scenes, was {}",
-                clock(line),
+                crate::tools::mm_ss(line),
                 segs.len(),
                 segs.len()
             ),
@@ -262,8 +262,8 @@ pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
     if both.len() < 2 || (to - from) < 2.0 * MIN_SECONDS {
         return Outcome::Refused(format!(
             "nothing to split at {} \u{2013} {}",
-            clock(from),
-            clock(to)
+            crate::tools::mm_ss(from),
+            crate::tools::mm_ss(to)
         ));
     }
 
@@ -271,13 +271,13 @@ pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
     let named: Vec<String> = both
         .iter()
         .filter(|edge| a_border_was_drawn_at(segs, **edge))
-        .map(|edge| clock(*edge))
+        .map(|edge| crate::tools::mm_ss(*edge))
         .collect();
     if named.is_empty() {
         return Outcome::Refused(format!(
             "nothing to split at {} \u{2013} {}",
-            clock(from),
-            clock(to)
+            crate::tools::mm_ss(from),
+            crate::tools::mm_ss(to)
         ));
     }
 
@@ -606,12 +606,6 @@ fn footage_under_line(segs: &[Seg], line: f64) -> bool {
 /// added from, and a project with one camera never reaches the plural forms anyway.
 fn cam_name(cam: i32) -> String {
     format!("cam {cam}")
-}
-
-/// The `m:ss` clock face the spec's refusals use ("nothing to split at 1:20"). Reached through the
-/// project's own formatter so a refusal reads like every other time the app prints.
-fn clock(seconds: f64) -> String {
-    crate::tools::mm_ss(seconds)
 }
 
 /// Two ends as the ordered pair the split works on, collapsed when the band closed on itself.

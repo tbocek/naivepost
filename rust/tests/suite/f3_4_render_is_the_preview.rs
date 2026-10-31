@@ -266,7 +266,7 @@ fn place_caption(window: &adw::ApplicationWindow, words: &str) -> Fx {
     ui::text_type_words(window, words);
     // The button, fired the way a click fires it, so the wire is what is proven and not the door behind it.
     common::click(window, "text-apply-button");
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = ui::window_preview::newest_review_cut();
     let placed = cut_
         .fx
         .iter()
@@ -345,7 +345,6 @@ fn f3_4_s4_a_caption_placed_by_the_widgets_renders_fitted(app: &adw::Application
 
     // The preview side, over ITS box: same fitter, same break of the same words.
     let fit_panel = ui::cut_preview_frame::fit_size_of(
-        &window,
         naivepost::ui::window::PREVIEW_PANEL_W,
         naivepost::ui::window::PREVIEW_PANEL_H,
     );

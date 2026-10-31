@@ -68,12 +68,12 @@ fn project(root: &Path) -> PathBuf {
     dir
 }
 
-fn line(window: &adw::ApplicationWindow) -> f64 {
-    ui::line_position(window).t
+fn line() -> f64 {
+    ui::line_position().t
 }
 
-fn segs(window: &adw::ApplicationWindow) -> Vec<(f64, f64)> {
-    ui::review_cut_of(window)
+fn segs() -> Vec<(f64, f64)> {
+    ui::window_preview::newest_review_cut()
         .segs
         .iter()
         .map(|seg| (seg.s, seg.e))
@@ -84,8 +84,8 @@ fn status(window: &adw::ApplicationWindow) -> String {
     ui::state(window).status
 }
 
-fn x_of(window: &adw::ApplicationWindow, t: f64) -> f64 {
-    let scene = ui::cut_view::band_scene_for(window);
+fn x_of(t: f64) -> f64 {
+    let scene = ui::cut_view::band_scene_for();
     ui::cut_tracks::band_x(&scene, t) - ui::cut_view::origin()
 }
 
@@ -139,14 +139,14 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
         }
         to_start(&window);
         let bands = ui::cut_tracks::bands_for(naivepost::fx_lane::row_count(
-            &ui::review_cut_of(&window).fx,
+            &ui::window_preview::newest_review_cut().fx,
         ));
         let picture_y = bands.first_picture + bands.row_height / 2.0;
         let ruler_y = (bands.ruler.0 + bands.ruler.1) / 2.0;
 
         // F2.12 S6: a double left click on the card holds it, and Insert becomes Edit.
-        real_double_click(&band, x_of(&window, 14.0), picture_y, 1);
-        let held = ui::held_clip().unwrap_or_else(|| {
+        real_double_click(&band, x_of(14.0), picture_y, 1);
+        let held = ui::cut_hand::held_clip().unwrap_or_else(|| {
             panic!(
                 "a real double click on the card held it (status \"{}\")",
                 status(&window)
@@ -159,23 +159,26 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
             "Insert reads Edit under a held card"
         );
         real_key(&window, "Escape");
-        assert!(ui::held_now().is_none(), "Esc put the card down");
+        assert!(ui::cut_hand::held_kind().is_none(), "Esc put the card down");
         // ...and a right click holds it on its first press.
-        real_click(&band, x_of(&window, 14.0), picture_y, 3);
+        real_click(&band, x_of(14.0), picture_y, 3);
         assert_eq!(
-            ui::held_clip().map(|seg| seg.ins).as_deref(),
+            ui::cut_hand::held_clip().map(|seg| seg.ins).as_deref(),
             Some("assets/tier.svg"),
             "a real right click on the card held it (status \"{}\")",
             status(&window)
         );
         real_key(&window, "Escape");
-        assert!(ui::held_now().is_none(), "Esc put the card down again");
+        assert!(
+            ui::cut_hand::held_kind().is_none(),
+            "Esc put the card down again"
+        );
 
         // §1: the wheel over the transport bar steps the line one frame a notch.
-        real_click(&band, x_of(&window, 3.0), picture_y, 1);
+        real_click(&band, x_of(3.0), picture_y, 1);
         real_key(&window, "Escape");
         let transport = common::widget_in(&window, "group-transport").expect("the transport bar");
-        let at = line(&window);
+        let at = line();
         real_scroll(
             &transport,
             10.0,
@@ -184,9 +187,9 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
             &[],
         );
         assert!(
-            near(line(&window), at + 0.04, 0.011),
+            near(line(), at + 0.04, 0.011),
             "a wheel notch down over the transport stepped one frame: {at} -> {}",
-            line(&window)
+            line()
         );
         real_scroll(
             &transport,
@@ -196,9 +199,9 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
             &[],
         );
         assert!(
-            near(line(&window), at, 0.011),
+            near(line(), at, 0.011),
             "and a notch up stepped back: {}",
-            line(&window)
+            line()
         );
 
         // F3.1 S1-S2: ⊕ Zoom picked from the Effect menu by real clicks arms the zoom; a left drag on the preview,
@@ -246,34 +249,26 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
         // The verbs, each by a real click on its button.
         // F2.7 Split at the line (3 s, inside clip 1).
         to_start(&window);
-        real_click(&band, x_of(&window, 3.0), picture_y, 1);
+        real_click(&band, x_of(3.0), picture_y, 1);
         real_key(&window, "Escape");
-        let before = segs(&window);
+        let before = segs();
         real_click_centre(&button(&window, "split-button"));
-        let split = segs(&window);
+        let split = segs();
         assert!(
             split.len() == before.len() + 1 && split.iter().any(|seg| near(seg.1, 3.0, 0.05)),
             "Split cut clip 1 at the line: {split:?} (status \"{}\")",
             status(&window)
         );
         real_key(&window, "ctrl+z");
-        assert_eq!(segs(&window), before, "Ctrl+Z joined it again");
+        assert_eq!(segs(), before, "Ctrl+Z joined it again");
 
         // F2.7 Remove over a selection inside clip 2.
         // The view can follow the line between two presses; the drag is measured on a view at its start.
         to_start(&window);
-        real_drag(
-            &band,
-            (x_of(&window, 9.5), ruler_y),
-            (x_of(&window, 11.0), ruler_y),
-            1,
-        );
-        assert!(
-            ui::selection(&window).is_some(),
-            "the drag drew a selection"
-        );
+        real_drag(&band, (x_of(9.5), ruler_y), (x_of(11.0), ruler_y), 1);
+        assert!(ui::selection().is_some(), "the drag drew a selection");
         real_click_centre(&button(&window, "remove-button"));
-        let removed = segs(&window);
+        let removed = segs();
         assert!(
             removed.len() == before.len() + 1
                 && removed.iter().any(|seg| near(seg.1, 9.5, 0.05))
@@ -282,23 +277,15 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
             status(&window)
         );
         real_key(&window, "ctrl+z");
-        assert_eq!(segs(&window), before, "Ctrl+Z put it back");
+        assert_eq!(segs(), before, "Ctrl+Z put it back");
 
         // F2.7 Add over a selection on footage the cut left out (6.5..7.5 s).
         // The view can follow the line between two presses; the drag is measured on a view at its start.
         to_start(&window);
-        real_drag(
-            &band,
-            (x_of(&window, 6.5), ruler_y),
-            (x_of(&window, 7.5), ruler_y),
-            1,
-        );
-        assert!(
-            ui::selection(&window).is_some(),
-            "the drag drew a selection"
-        );
+        real_drag(&band, (x_of(6.5), ruler_y), (x_of(7.5), ruler_y), 1);
+        assert!(ui::selection().is_some(), "the drag drew a selection");
         real_click_centre(&button(&window, "add-button"));
-        let added = segs(&window);
+        let added = segs();
         assert!(
             added != before
                 && added
@@ -308,46 +295,36 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
             status(&window)
         );
         real_key(&window, "ctrl+z");
-        assert_eq!(segs(&window), before, "Ctrl+Z took it out again");
+        assert_eq!(segs(), before, "Ctrl+Z took it out again");
 
         // F2.9 Copy, then Paste at the line, then a Lane for the copy.
         // The view can follow the line between two presses; the drag is measured on a view at its start.
         to_start(&window);
-        real_drag(
-            &band,
-            (x_of(&window, 9.0), ruler_y),
-            (x_of(&window, 11.0), ruler_y),
-            1,
-        );
+        real_drag(&band, (x_of(9.0), ruler_y), (x_of(11.0), ruler_y), 1);
         real_click_centre(&button(&window, "copy-button"));
         assert!(
             status(&window).starts_with("copied"),
             "Copy took the selection in hand: \"{}\"",
             status(&window)
         );
-        real_click(&band, x_of(&window, 17.0), picture_y, 1);
+        real_click(&band, x_of(17.0), picture_y, 1);
         real_click_centre(&button(&window, "paste-button"));
         assert!(
             status(&window).starts_with("pasted"),
             "Paste put the copy at the line: \"{}\"",
             status(&window)
         );
-        assert_ne!(segs(&window), before, "and the cut changed");
+        assert_ne!(segs(), before, "and the cut changed");
         real_key(&window, "ctrl+z");
-        assert_eq!(segs(&window), before, "Ctrl+Z undid the paste");
-        let lanes = ui::review_lanes(&window).len();
+        assert_eq!(segs(), before, "Ctrl+Z undid the paste");
+        let lanes = ui::review_lanes().len();
         // The view can follow the line between two presses; the drag is measured on a view at its start.
         to_start(&window);
-        real_drag(
-            &band,
-            (x_of(&window, 9.0), ruler_y),
-            (x_of(&window, 11.0), ruler_y),
-            1,
-        );
+        real_drag(&band, (x_of(9.0), ruler_y), (x_of(11.0), ruler_y), 1);
         real_click_centre(&button(&window, "copy-button"));
         real_click_centre(&button(&window, "lane-button"));
         assert_eq!(
-            ui::review_lanes(&window).len(),
+            ui::review_lanes().len(),
             lanes + 1,
             "Lane gave the copy a row (status \"{}\")",
             status(&window)
@@ -357,7 +334,7 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
 
         // F2.12 S1: Insert with the line on footage raises its chooser, once.
         to_start(&window);
-        real_click(&band, x_of(&window, 3.0), picture_y, 1);
+        real_click(&band, x_of(3.0), picture_y, 1);
         real_key(&window, "Escape");
         let asked = ui::insert_asks_for_test();
         real_click_centre(&button(&window, "insert-button"));
@@ -422,7 +399,7 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
         real_click_centre(&record);
         drain(Duration::from_millis(100), Duration::from_millis(600));
         let shows = |what: &str, playing: bool| {
-            let transport = ui::preview_player(&window).transport;
+            let transport = ui::preview_player().transport;
             assert!(
                 transport.playing == playing && naivepost::play_built_in::playing() == playing,
                 "{what}: transport playing {} and the player playing {}, wanted {playing} (status \"{}\")",
@@ -442,9 +419,9 @@ fn sec_05_cut_the_remaining_surfaces_answer_real_input() {
         real_click_centre(&stop);
         drain(Duration::from_millis(100), Duration::from_millis(600));
         assert!(
-            !ui::preview_player(&window).transport.started && !naivepost::play_built_in::playing(),
+            !ui::preview_player().transport.started && !naivepost::play_built_in::playing(),
             "a real click on \u{23f9} ended the preview: started {}, the player playing {} (status \"{}\")",
-            ui::preview_player(&window).transport.started,
+            ui::preview_player().transport.started,
             naivepost::play_built_in::playing(),
             status(&window)
         );

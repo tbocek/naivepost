@@ -51,8 +51,8 @@ fn session_tree() -> (Tree, std::path::PathBuf, std::path::PathBuf) {
     };
     naivepost::cut::save(&cut, &tree).expect("cut.json written");
 
-    let base = naivepost::narrate_data::base_reference(&tree);
-    let served = naivepost::narrate_data::served_reference(&tree);
+    let base = tree.voice_ref_base_wav();
+    let served = tree.voice_ref_wav();
     std::fs::create_dir_all(base.parent().expect("narrate/ has a parent")).expect("narrate/ made");
     std::fs::write(&base, b"base wav").expect("base written");
     std::fs::write(&served, b"served wav").expect("served written");
@@ -224,8 +224,8 @@ fn controller_named(widget: &gtk::Widget, name: &str) -> gtk::EventController {
 /// with whatever px/s the band's painter is working with (`painted_view_for_test`, the mapping
 /// `sec_07_narrate_1_screen_widgets.rs` pins). A press that barely travels is a click, so the drag ends
 /// well past the click slop.
-fn drag_band_to(window: &adw::ApplicationWindow, to_px: f64) {
-    let gesture = ui::narrate_band::band_gesture_for_test(window)
+fn drag_band_to(to_px: f64) {
+    let gesture = ui::narrate_band::band_gesture_for_test()
         .expect("the page attached one drag gesture to `take-band`");
     gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &20.0f64]);
     gesture.emit_by_name::<()>("drag-update", &[&to_px, &20.0f64]);
@@ -243,7 +243,7 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
     // `P.eng.takeMinSeconds` — possible only once the fit rate is high enough, i.e. with a short file.
     // The base also has to come back: the voice switch above deleted it, and ▶ plays that file when the
     // band holds no takes.
-    let base = naivepost::narrate_data::base_reference(tree);
+    let base = tree.voice_ref_base_wav();
     std::fs::create_dir_all(base.parent().expect("narrate/ has a parent")).expect("narrate/");
     let lane_px = 600.0;
     let want_pps = naivepost::narrate_screen::TAKE_MIN_SECONDS * 100.0;
@@ -308,7 +308,7 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
     let play = widget_in(window, "take-play").expect("the page carries take-play");
 
     // --- a too-short span: refused, nothing lands, the sentence names both numbers -----------------
-    drag_band_to(window, short_px);
+    drag_band_to(short_px);
     let short = ui::narrate_band::live_selection().expect("the drag left a live selection");
     assert!(
         short.1 - short.0 < naivepost::narrate_screen::TAKE_MIN_SECONDS,
@@ -328,7 +328,7 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
     );
 
     // --- a span that clears the floor: it lands, and the status quotes it (§F4.6's caption) --------
-    drag_band_to(window, long_px);
+    drag_band_to(long_px);
     let wanted = ui::narrate_band::live_selection().expect("the drag left a live selection");
     assert!(
         wanted.1 - wanted.0 >= 4.0,
@@ -360,7 +360,7 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
     // --- − over part of it SPLITS the take rather than deleting it --------------------------------
     // The band's ONE gesture expresses press + release, so an interior range is reached the way a hand
     // reaches it: drag out to the far edge, which leaves the live selection the − press reads.
-    drag_band_to(window, long_px / 2.0);
+    drag_band_to(long_px / 2.0);
     let inner = ui::narrate_band::live_selection().expect("a span to cut out");
     remove.emit_by_name::<()>("clicked", &[]);
     settle();
@@ -407,15 +407,15 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
 /// debounce, and §F4.6's S4 ("changing takes, pitch or voice removes the shifted reference") is proven
 /// through the same invalidation door the slider's wire uses.
 fn pitch_slider_round(window: &adw::ApplicationWindow, tree: &Tree) {
-    let base = naivepost::narrate_data::base_reference(tree);
-    let served = naivepost::narrate_data::served_reference(tree);
+    let base = tree.voice_ref_base_wav();
+    let served = tree.voice_ref_wav();
     std::fs::write(&base, b"base wav").expect("base back for the shift test");
     // The tree the page's own seam resolves — asked THROUGH the program, not assumed from this test's
     // cwd: the slider's wire invalidates whatever tree IT resolves, and that must be the file planted here.
     let live = naivepost::ui::window::narrate_session_tree()
         .expect("the page resolves a session tree for this window");
     assert_eq!(
-        naivepost::narrate_data::served_reference(&live),
+        live.voice_ref_wav(),
         served,
         "the path the page invalidates is the path this test plants"
     );

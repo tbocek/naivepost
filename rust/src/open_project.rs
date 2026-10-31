@@ -24,10 +24,6 @@ pub fn dropped_line(file: &str) -> String {
     format!("!!! {file} is not there any more -- dropped from the session")
 }
 
-pub fn folder_for(picked: &Path) -> PathBuf {
-    startup::project_folder(picked)
-}
-
 /// What the picker's answer turned out to be.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Choice {
@@ -42,7 +38,7 @@ pub enum Choice {
 
 /// S1 → S2: sort the picked path into "open it" and "this is not a project".
 pub fn classify(picked: &Path, is_file: impl Fn(&Path) -> bool) -> Choice {
-    let folder = folder_for(picked);
+    let folder = startup::project_folder(picked);
     if folder == picked && is_file(picked) {
         // Same path, and it is a file: nothing to descend into. That is the single-file case.
         return Choice::NotAFolder {

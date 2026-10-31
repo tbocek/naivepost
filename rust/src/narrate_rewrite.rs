@@ -75,10 +75,6 @@ pub fn indexes_without_line(clips: &[(f64, f64)], narration: &Narration) -> Vec<
         .collect()
 }
 
-pub fn silent_kept(narration: &Narration, start: f64, end: f64) -> bool {
-    narration.is_silent(start, end)
-}
-
 /// The whole log line, in the shape F4.1 S3 spells: `>>> narrate: <why> — writing N clip(s), one LLM
 /// call, then speaking them`. Owns the frame so the wording of `<why>` cannot drift from it.
 pub fn log_line(reason: &str, clips: usize) -> String {

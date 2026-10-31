@@ -18,16 +18,15 @@ pub fn runs_now() -> Vec<(f64, f64)> {
 
 /// The files to hand the player, in run order: each run's start second says which recording is on
 /// screen there, and the session's source list names the file.
-pub fn files_for(window: &adw::ApplicationWindow, runs: &[(f64, f64)]) -> Vec<String> {
+pub fn files_for(runs: &[(f64, f64)]) -> Vec<String> {
     let root = std::env::current_dir().unwrap_or_default();
-    let project_dir = startup_session_dir();
-    let _ = window;
+    let project_dir = crate::startup::open_dir();
     let mut files: Vec<String> = Vec::new();
     for (start, _) in runs {
         let Some(base) = base_at(&cut_folds::page_recordings(), *start) else {
             continue;
         };
-        let written = ui::session_sources(window)
+        let written = ui::session_sources()
             .into_iter()
             .find(|path| file_stem(path.rsplit('/').next().unwrap_or(path)) == base);
         let Some(written) = written else {
@@ -53,8 +52,7 @@ pub fn files_for(window: &adw::ApplicationWindow, runs: &[(f64, f64)]) -> Vec<St
     files
 }
 
-fn source_file(window: &adw::ApplicationWindow, base: &str) -> Option<String> {
-    let _ = window;
+fn source_file(base: &str) -> Option<String> {
     recording_file(base).map(|path| path.to_string_lossy().into_owned())
 }
 
@@ -72,7 +70,7 @@ pub(crate) fn recording_file(base: &str) -> Option<std::path::PathBuf> {
                 .find(|path| file_stem(path.rsplit('/').next().unwrap_or(path)) == base)
         })
     })?;
-    let path = layout::resolve(&root, &startup_session_dir(), &written);
+    let path = layout::resolve(&root, &crate::startup::open_dir(), &written);
     path.is_file().then_some(path)
 }
 
@@ -87,21 +85,21 @@ thread_local! {
 /// F2.1 through the built-in player: the recording the picture shows at session second `at`, from
 /// that second of its file, playing or held on the frame, on the preview's own picture.
 pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> bool {
-    let Some((recording, local)) = crate::ui::cut_picture::picture_source(window, at) else {
+    let Some((recording, local)) = crate::ui::cut_picture::picture_source(at) else {
         log_line(&preview::playback_failure(
             "Cut",
             &format!("nothing filmed at {at:.1} s"),
         ));
         return false;
     };
-    let Some(file) = source_file(window, &recording.base) else {
+    let Some(file) = source_file(&recording.base) else {
         log_line(&preview::playback_failure(
             "Cut",
             &format!("{} is not on disk", recording.base),
         ));
         return false;
     };
-    match crate::play_built_in::cue(&file, local, play, &|line| log_line(line)) {
+    match crate::play_built_in::cue(&file, local, play) {
         Ok(()) => {
             IN_VIDEO.with(|cell| cell.set(Some((at - local, recording.end))));
             crate::ui::cut_picture::show_video(window);
@@ -115,10 +113,10 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
 }
 
 pub fn follow_in_video(window: &adw::ApplicationWindow, at: f64) -> bool {
-    let Some((recording, _)) = crate::ui::cut_picture::picture_source(window, at) else {
+    let Some((recording, _)) = crate::ui::cut_picture::picture_source(at) else {
         return false;
     };
-    let Some(file) = source_file(window, &recording.base) else {
+    let Some(file) = source_file(&recording.base) else {
         return false;
     };
     let same = crate::play_built_in::file().as_deref() == Some(file.as_str());
@@ -165,7 +163,7 @@ pub fn after_press(window: &adw::ApplicationWindow, pressed: &Press, runs: &[(f6
             play_in_preview(window, *from, true);
         }
         Press::Playing { from } => {
-            let files = files_for(window, runs);
+            let files = files_for(runs);
             // ▶ takes the preview from ▶✂: the cut's own player and spare go first, or two
             // pipelines would make sound at once (F2.2 S2 hands the pipeline over, it does not
             // share it).
@@ -199,7 +197,7 @@ pub fn paint_button(window: &adw::ApplicationWindow) {
     let Some(button) = ui::play_recording_button(window) else {
         return;
     };
-    let player = ui::preview_player(window);
+    let player = ui::preview_player();
     let [ours_lit, _cut_lit, _review_lit] =
         crate::tab_states::preview_lits(&crate::cut_screen::Preview {
             cut_only: player.cut_only,
@@ -238,7 +236,7 @@ pub fn set_steady_label(button: &gtk4::Button, text: &str, all: &[&str]) {
 /// All three are restated from [`crate::tab_states::preview_lits`] whichever button was painted,
 /// because a press on one changes which of the others is lit.
 pub fn light_lit(window: &adw::ApplicationWindow) {
-    let player = ui::preview_player(window);
+    let player = ui::preview_player();
     let lits = crate::tab_states::preview_lits(&crate::cut_screen::Preview {
         cut_only: player.cut_only,
         reviewing: player.reviewing,
@@ -257,10 +255,6 @@ pub fn light_lit(window: &adw::ApplicationWindow) {
             }
         }
     }
-}
-
-fn startup_session_dir() -> std::path::PathBuf {
-    crate::startup::open_dir()
 }
 
 /// A stored path's name without its extension.

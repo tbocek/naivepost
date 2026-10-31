@@ -65,8 +65,8 @@ fn cache() -> &'static Mutex<HashMap<PathBuf, f64>> {
 }
 
 /// The rate to step at for this window's session: the footage file's own, else [`crate::cut_line::FALLBACK_FPS`] with a logged reason.
-pub fn session_fps(window: &adw::ApplicationWindow) -> f64 {
-    let Some(file) = footage_file(window) else {
+pub fn session_fps() -> f64 {
+    let Some(file) = footage_file() else {
         crate::ui::window::log_line(&format!(
             "no footage file in this session: stepping at {:.0} fps",
             crate::cut_line::FALLBACK_FPS
@@ -101,8 +101,8 @@ fn ask(file: &Path) -> f64 {
 
 /// The footage row's file, resolved with `layout::resolve`, if it exists.
 /// DECISION where the spec is silent: with several cameras the footage-marked row is what ▶ plays ([`crate::ui::cut_record_play`]) and its rate is the session's.
-fn footage_file(window: &adw::ApplicationWindow) -> Option<PathBuf> {
-    let written = crate::ui::cut_lane::footage_source_path(window)?;
+fn footage_file() -> Option<PathBuf> {
+    let written = crate::ui::cut_lane::footage_source_path()?;
     let root = std::env::current_dir().unwrap_or_default();
     let project_dir = crate::startup::open_dir();
     let path = crate::layout::resolve(&root, &project_dir, &written);

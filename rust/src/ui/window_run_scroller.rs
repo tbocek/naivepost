@@ -44,11 +44,6 @@ pub fn progress_px(row_w: i32, badges: i32, readouts: i32, gaps: i32) -> i32 {
     (row_w - badges - readouts - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX)
 }
 
-/// Re-ask §1's progress-bar width for a row that has just been resized.
-pub fn resize_row(row: &gtk::Widget) {
-    hand_the_free_width_to(row);
-}
-
 /// The widths GTK actually gave the run-bar row's parts, as `(name, left edge, width)` in the window's own
 /// coordinates — how the shell shot and §1's screen tests read badge 13 instead of guessing from the PNG.
 pub fn drawn_row_widths(row: &gtk::Widget) -> Vec<(String, f64, f64)> {
@@ -103,7 +98,7 @@ pub fn charged_widths_for_test(row: &gtk::Widget) -> Vec<(String, i32)> {
 
 /// Size the progress bar from what the row has LEFT, which is what "the row's free width" means (§1 badge 13).
 fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
-    // THE ROW'S OWN WIDTH, whatever it happens to be when this runs — see [`resize_row`] for why the same ask is
+    // THE ROW'S OWN WIDTH, whatever it happens to be when this runs — see [`window_run_scroller::hand_the_free_width_to`] for why the same ask is
     // re-made once the divider has been allocated.
     let badges_floor = find_in(row, "run-controls-inner")
         .map(|w| w.measure(gtk::Orientation::Horizontal, -1).0.max(0))

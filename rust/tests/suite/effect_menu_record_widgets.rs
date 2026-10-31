@@ -87,8 +87,8 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
         .emit_by_name::<()>("clicked", &[]);
     // Open the history on what the page opens with, then show it -- the order build_window uses, so a
     // recorded effect is one Undo away from THIS baseline rather than from a stale one.
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     let _ = tape;
     window
@@ -137,7 +137,7 @@ fn fx_menu_round(app: &adw::Application) {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 81.0 });
     click(&window, "effect-item-volume");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "the press adds no record: until the percent is given there is no loudness to place"
     );
@@ -170,7 +170,7 @@ fn fx_menu_round(app: &adw::Application) {
     ui::note_place(true);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 81.0 });
     click(&window, "effect-item-zoom");
-    let cut_ = ui::review_cut_of(&window);
+    let cut_ = ui::window_preview::newest_review_cut();
     assert_eq!(
         cut_.fx.len(),
         0,
@@ -205,13 +205,13 @@ fn fx_menu_round(app: &adw::Application) {
     click(&window, "effect-item-volume");
     click(&window, "volume-apply-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "Apply, not the press, is what put one volume on the cut"
     );
     click(&window, "undo-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "one Undo took the hand-added effect back -- a hand-added effect is never an unwinding surprise"
     );

@@ -56,7 +56,7 @@ fn f0_9_s1_picking_the_project_file_opens_its_folder() {
 
     let picked = folder.join(PROJECT_FILE);
     assert_eq!(
-        open_project::folder_for(&picked),
+        naivepost::startup::project_folder(&picked),
         folder,
         "the file's own folder"
     );
@@ -68,10 +68,10 @@ fn f0_9_s1_picking_the_folder_is_idempotent() {
     let root = temp_dir("s1-folder");
     let folder = project_folder(&root.join("show.naivepost"), "{}", &[]);
 
-    let once = open_project::folder_for(&folder);
+    let once = naivepost::startup::project_folder(&folder);
     assert_eq!(once, folder, "a folder stays itself");
     assert_eq!(
-        open_project::folder_for(&once),
+        naivepost::startup::project_folder(&once),
         folder,
         "resolving the answer again lands in the same place"
     );

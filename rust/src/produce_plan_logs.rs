@@ -12,7 +12,6 @@ use crate::narration::Entry;
 use crate::produce_details as details;
 use crate::produce_read_head;
 use crate::produce_render as render;
-use crate::timeline::Recording;
 
 /// What the walk needs beyond the segments: the doors only a caller with the session in hand can answer.
 pub struct Doors<'a> {
@@ -20,7 +19,7 @@ pub struct Doors<'a> {
     /// no sound at all (§6's "with no sound — it plays silent").
     pub lanes: &'a [crate::cut::Lane],
     /// The filmed spans, so a SECOND can be placed on tape: `Materials::on_recording` only says whether the
-    /// session has tape at all. Empty means no tape anywhere. Built by [`Doors::filmed`].
+    /// session has tape at all. Empty means no tape anywhere. Built by [`crate::timeline::filmed_runs`].
     pub runs: &'a [(f64, f64)],
     /// The base each clip copies or reads from: the footage row's name for footage and `copy:`, the asset's own
     /// for an insert (§6's "past the end of <base>" sentences name it).
@@ -30,13 +29,6 @@ pub struct Doors<'a> {
     /// Does an insert's asset still exist: the door `plan_clips` answers its "is not there any more" line with,
     /// so a clip with a reason says it once. Asked with the cut's own spelling.
     pub exists: &'a dyn Fn(&str) -> bool,
-}
-
-impl<'a> Doors<'a> {
-    /// The filmed spans a walk needs, from the recordings a snapshot gathered ([`crate::timeline::filmed_runs`]).
-    pub fn filmed(recordings: &[Recording]) -> Vec<(f64, f64)> {
-        crate::timeline::filmed_runs(recordings)
-    }
 }
 
 /// A caller with no tape: no spans, so every clip sits on no recording and each missing-recording sentence is
@@ -124,7 +116,7 @@ pub fn refusals(
             logs.push(details::insert_plays_silent_log(no));
         }
         // "a stop at T s falls in no recording — its still is skipped": a freeze needs one real frame.
-        for stop in fx.iter().filter(|e| effect_overlap::is_a_stop(e)) {
+        for stop in fx.iter().filter(|e| crate::fx_record::is_stop(e)) {
             if !instant_on_tape(stop.t, doors.runs) {
                 logs.push(details::stop_in_no_recording_log(stop.t));
             }

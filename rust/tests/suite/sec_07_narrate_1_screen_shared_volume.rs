@@ -119,7 +119,7 @@ fn check_the_slider_writes_the_shared_number(app: &adw::Application) {
     assert!(scale.is_mapped(), "the slider is drawn on the visible page");
     // Untouched means audible, and it is the SHARED default rather than a page-private number.
     assert_eq!(
-        ui::preview_volume(&window),
+        ui::preview_volume(),
         cut_hear::VOLUME_DEFAULT,
         "an untouched Narrate page reads the shared default"
     );
@@ -127,16 +127,16 @@ fn check_the_slider_writes_the_shared_number(app: &adw::Application) {
     scale.set_value(40.0);
     settle();
     assert!(
-        (ui::preview_volume(&window) - 0.4).abs() < 1e-9,
+        (ui::preview_volume() - 0.4).abs() < 1e-9,
         "40 on this slider lands as the shared gain 0.4 — not 40, not 0.004, got {}",
-        ui::preview_volume(&window)
+        ui::preview_volume()
     );
     // And the page's own preview leg asks the same holder, so an audition cannot sound louder than the
     // preview it belongs to (§C.4: sound equals the render's).
     scale.set_value(75.0);
     settle();
     assert!(
-        (ui::preview_volume(&window) - 0.75).abs() < 1e-9,
+        (ui::preview_volume() - 0.75).abs() < 1e-9,
         "a second move follows: the handler is not a one-shot"
     );
     RAN_SHARED.store(true, Ordering::SeqCst);
@@ -160,9 +160,9 @@ fn check_both_pages_show_the_one_volume(app: &adw::Application) {
     narrate_scale(&narrate).set_value(40.0);
     settle();
     assert!(
-        (ui::preview_volume(&narrate) - 0.4).abs() < 1e-9,
+        (ui::preview_volume() - 0.4).abs() < 1e-9,
         "40 on this page's slider is the shared gain 0.4, got {}",
-        ui::preview_volume(&narrate)
+        ui::preview_volume()
     );
     ui::refresh(&narrate);
     settle();
@@ -179,9 +179,9 @@ fn check_both_pages_show_the_one_volume(app: &adw::Application) {
     cut_scale.set_value(25.0);
     settle();
     assert!(
-        (ui::preview_volume(&narrate) - 0.25).abs() < 1e-9,
+        (ui::preview_volume() - 0.25).abs() < 1e-9,
         "the number the Cut page moved is the number every preview reads, got {}",
-        ui::preview_volume(&narrate)
+        ui::preview_volume()
     );
     ui::refresh(&narrate);
     settle();

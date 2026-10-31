@@ -208,13 +208,6 @@ pub fn camera_clock_is_smoothed() -> bool {
     true
 }
 
-/// §06-effects#2-the-lane-and-the-preview (`A stop's still: rendered from the scene's own camera, fitted on the
-/// footage's transform`): a held frame borrows its framing from where it stands and never invents one, so it is
-/// placed by the zoom that was already there.
-pub fn still_come_from_scene_camera(fx: &Fx) -> bool {
-    fx_record::is_stop(fx)
-}
-
 // --- preview and render, deliberately different --------------------------------------------------------------------
 
 /// §06-effects#2-the-lane-and-the-preview (`preview runs speed at one flat rate`): [`crate::cut_hear::rate_under`]

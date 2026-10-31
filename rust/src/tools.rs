@@ -147,7 +147,7 @@ impl Tool {
     }
 }
 
-/// The five shared tools of §3.1 that start each tool-using job's list; `web_search`/`web_read` are separate, see [`web_search_offered`].
+/// The five shared tools of §3.1 that start each tool-using job's list; `web_search`/`web_read` are separate, see [`roles::web_tools`].
 #[allow(
     dead_code,
     reason = "the per-job lists spell the five inline; kept as §3.1's own row"
@@ -240,7 +240,7 @@ pub fn offered(job: Job) -> Vec<Tool> {
             Tool::TranslateLine,
         ],
     };
-    if web_search_offered(job) {
+    if roles::web_tools(job) {
         out.push(Tool::WebSearch);
         out.push(Tool::WebRead);
     }
@@ -397,11 +397,6 @@ pub const WEB_CALL_SECONDS: u64 = 45;
 /// The search ladder's budget: three queries (broad, medium, narrow) sharing one 45 s.
 pub fn web_ladder_budget() -> (u64, u32) {
     (WEB_CALL_SECONDS, 3)
-}
-
-/// Whether this job gets the web: "cut, narrate, upload text", §2's `(+ web tools)` column.
-pub fn web_search_offered(job: Job) -> bool {
-    roles::web_tools(job)
 }
 
 /// Whether a tool is one of the pair §8 withdraws after a first rejection.

@@ -131,7 +131,7 @@ fn check_the_next_press_derives_once(app: &adw::Application) {
 
     let window = fresh_window(app);
     let log_mark = ui::window_logs().len();
-    ui::set_session_context(&window, CONTEXT);
+    ui::set_session_context(CONTEXT);
     assert_eq!(asked.load(Ordering::SeqCst), 0, "typing alone asks nothing");
 
     let play = ui::play_button(&window).expect("the run bar has a \u{25b6}");
@@ -143,11 +143,11 @@ fn check_the_next_press_derives_once(app: &adw::Application) {
         || asked.load(Ordering::SeqCst) >= 1,
     );
     assert!(
-        ui::policy_is_current(&window, CONTEXT),
+        ui::policy_is_current(CONTEXT),
         "after the press the policy answers the context the step is about to use"
     );
     assert_eq!(
-        ui::session_policy(&window).cut_mode.origin,
+        ui::window_policy::live_session_policy().cut_mode.origin,
         Origin::Model,
         "and what landed is the model's answer, stored with its source"
     );

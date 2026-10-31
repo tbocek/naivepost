@@ -216,12 +216,6 @@ pub fn clear_scratch(scratch: &Path) -> Result<usize, String> {
     render::clear_scratch(scratch)
 }
 
-/// S5's clip stem: the plan's own index, so stems sort in play order (the concat list reads filename order), with the
-/// run's stamp in the name (§B's `c%03d_<stamp>`) so a leftover `c000_x.mp4` of an older cut cannot join in.
-fn stem_at(index: usize, stamp: &str) -> String {
-    render::clip_stem(index, stamp)
-}
-
 /// Move one sheet cue onto the video's timeline like [`subs::on_clock`]: the clip's start plus each second shrunk by the
 /// clip's rate. The sheet's cues arrive relative to the clip and this walk already holds the offset `produced_clocks` answered.
 fn cue_on_clock(cue: &subs::Cue, produced_start: f64, rate: f64) -> subs::Cue {
@@ -259,10 +253,6 @@ pub fn speech_plan(run: &Run, tree: &Tree, mats: &Materials, speaking: bool) -> 
             })
             .collect(),
     }
-}
-
-pub fn speaking_line(done: usize, total: usize) -> String {
-    render::speaking_job_line(done, total)
 }
 
 /// S5: the length of speech each placed line carries: **the wav's own duration** (§F4.3). `plan_clips` fits with 0.0
@@ -448,7 +438,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         .iter()
         .enumerate()
         .map(|(index, clip)| {
-            let stem = stem_at(index, &stamp);
+            let stem = render::clip_stem(index, &stamp);
             let file = scratch.join(format!("{stem}.{}", container_ext(settings)));
             let mut clip = clip.clone();
             clip.lane_files = mats
@@ -771,7 +761,7 @@ where
         match speak(line) {
             Ok(()) => {
                 ran.spoken += 1;
-                log(&speaking_line(ran.spoken, plan.speech.len()));
+                log(&render::speaking_job_line(ran.spoken, plan.speech.len()));
             }
             Err(why) => {
                 log(&render::synthesis_failure_log(ran.spoken as f64, &why));

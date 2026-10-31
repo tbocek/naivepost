@@ -257,7 +257,7 @@ fn open_through_the_open_button(app: &adw::Application) {
 
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
 
     let opened = ui::open_folder(&bar, &status, &session, &folder);
     assert!(
@@ -265,7 +265,7 @@ fn open_through_the_open_button(app: &adw::Application) {
         "{ITEM}: opening a hand-edited project still succeeds"
     );
     // F0.9 S4 builds the window again on the opened folder: its session is the one the open filled.
-    let session = ui::session_handle(&ui::window::main_window());
+    let session = ui::session_handle();
 
     // The live session -- what ▶ freezes as the run's snapshot -- holds the CLEANED rows.
     let held = session.borrow();

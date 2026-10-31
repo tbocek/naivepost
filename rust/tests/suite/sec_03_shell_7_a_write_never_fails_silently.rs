@@ -71,12 +71,12 @@ fn check_a_fold_that_cannot_be_saved_says_so(app: &adw::Application) {
         start: 0.0,
         end: 120.0,
     }]);
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     ui::refresh_camera_rows(&window);
     ui::refresh_fold_badges(&window);
     settle();
     block(&tree.cut_json());
-    let index = ui::fold_gaps(&window)
+    let index = ui::fold_gaps()
         .iter()
         .position(|gap| *gap == (30.0, 40.0))
         .expect("a badge over the hole");

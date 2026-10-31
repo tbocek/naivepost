@@ -312,9 +312,9 @@ fn check_dialog_saves(app: &adw::Application) {
         read(&paths.conf_path())
     );
     assert!(
-        ui::dialog_log(&window).contains("settings saved to"),
+        ui::dialog_log().contains("settings saved to"),
         "the dialog said where it saved: {}",
-        ui::dialog_log(&window)
+        ui::dialog_log()
     );
 
     // Closing lands the last keystroke even though no beat has elapsed since it.

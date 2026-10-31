@@ -53,7 +53,7 @@ pub fn recording_path(tree: &layout::Tree, project: &Project, voice: &str) -> Op
     if voice == narrate_screen::CAPTIONS || voice.is_empty() {
         return None;
     }
-    if let Some(slot) = voice_ref::narrator_slot(voice) {
+    if let Some(slot) = crate::narrate_rules::narrator_slot(voice) {
         let source = project
             .sources
             .iter()
@@ -78,7 +78,7 @@ fn voices_candidate(voice: &str) -> Option<PathBuf> {
 /// The band's tape for this voice (§1 badge 10): a narrator slot's kept stretches across every recording tagged with that slot ([`crate::narrate_tape::kept`]); any other voice is its file whole.
 /// Empty for captions, or with no recording at all.
 pub fn tape(tree: &layout::Tree, project: &Project, voice: &str) -> crate::narrate_tape::Tape {
-    if let Some(slot) = voice_ref::narrator_slot(voice) {
+    if let Some(slot) = crate::narrate_rules::narrator_slot(voice) {
         let narrated: Vec<(String, PathBuf)> = project
             .sources
             .iter()

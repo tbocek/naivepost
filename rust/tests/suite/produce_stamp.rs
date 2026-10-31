@@ -414,19 +414,19 @@ fn f5_3_s7_the_stamp_lives_beside_the_video_named_after_its_stem() {
     // both names, so one stamp file serves every container — switching mp4→webm is a settings change inside
     // the hash, not a second stamp nobody would ever clear.
     assert_eq!(stamp::STAMP_FILE, "final.stamp");
-    assert_eq!(stamp::stamp_path(&tree), tree.final_stamp());
+    assert_eq!(tree.final_stamp(), tree.final_stamp());
     assert_eq!(
-        stamp::stamp_path(&tree),
+        tree.final_stamp(),
         root.join("demo.naivepost/produce/final.stamp")
     );
     assert_eq!(
-        stamp::stamp_path(&tree).parent(),
+        tree.final_stamp().parent(),
         tree.final_video("mp4").parent(),
         "the stamp sits beside the video it describes"
     );
 
     // Not in the scratch folder, which every run clears before it encodes anything.
-    assert!(!stamp::stamp_path(&tree).starts_with(tree.clips_dir()));
+    assert!(!tree.final_stamp().starts_with(tree.clips_dir()));
     std::fs::remove_dir_all(&root).ok();
 }
 
@@ -458,13 +458,13 @@ fn f5_3_s8_the_same_hash_skips_the_encode() {
     stamp::write_stamp(&tree, &current).unwrap();
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some(current.as_str()));
 
-    std::fs::write(stamp::stamp_path(&tree), "\n").unwrap();
+    std::fs::write(tree.final_stamp(), "\n").unwrap();
     assert_eq!(
         stamp::read_stamp(&tree),
         None,
         "an empty stamp proves nothing"
     );
-    std::fs::remove_file(stamp::stamp_path(&tree)).unwrap();
+    std::fs::remove_file(tree.final_stamp()).unwrap();
     assert!(!stamp::skip_encode(
         stamp::read_stamp(&tree).as_deref(),
         &current
@@ -485,7 +485,7 @@ fn f5_3_s9_encode_then_write_the_new_stamp() {
     let current = base.stamp();
 
     // A first run: nothing stored, so encode, then write. The folder does not exist yet and is created.
-    assert!(!stamp::stamp_path(&tree).exists());
+    assert!(!tree.final_stamp().exists());
     assert!(
         stamp::stamp_written(true, false),
         "an encode that returned writes the stamp"
@@ -567,7 +567,7 @@ fn f5_3_s10_the_upload_text_is_not_in_the_stamp() {
     // And that gate lives inside `produce/`, beside the video and its stamp.
     assert!(tree
         .publish_json()
-        .starts_with(stamp::stamp_path(&tree).parent().unwrap().parent().unwrap()));
+        .starts_with(tree.final_stamp().parent().unwrap().parent().unwrap()));
     std::fs::remove_dir_all(&root).ok();
 }
 

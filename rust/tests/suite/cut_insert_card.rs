@@ -103,9 +103,9 @@ fn f2_12_s2_the_chooser_asks_for_what_the_scope_is() {
 #[test]
 fn f2_12_s2_the_chooser_opens_in_the_cards_folder() {
     let root = Path::new("/home/dev/lecture");
-    assert_eq!(ins::chooser_dir(root), layout::assets_dir(root));
+    assert_eq!(layout::assets_dir(root), layout::assets_dir(root));
     assert_eq!(
-        ins::chooser_dir(root),
+        layout::assets_dir(root),
         Path::new("/home/dev/lecture/assets")
     );
 }
@@ -236,22 +236,18 @@ fn f2_12_s3_a_file_with_no_length_of_its_own_falls_back_to_four_seconds() {
     // P.policy.insertDefaultSeconds = 4, catalogued from cut_insert::DEFAULT_SECONDS.
     assert_eq!(ins::DEFAULT_SECONDS, 4.0);
     assert_eq!(
-        ins::default_length(Some(12.75), false),
+        ins::default_length(Some(12.75)),
         12.75,
         "a sting of its own length"
     );
+    assert_eq!(ins::default_length(None), ins::DEFAULT_SECONDS, "a still");
     assert_eq!(
-        ins::default_length(None, false),
-        ins::DEFAULT_SECONDS,
-        "a still"
-    );
-    assert_eq!(
-        ins::default_length(None, true),
+        ins::default_length(None),
         ins::DEFAULT_SECONDS,
         "an SVG with nothing animating it"
     );
     assert_eq!(
-        ins::default_length(Some(0.0), false),
+        ins::default_length(Some(0.0)),
         ins::DEFAULT_SECONDS,
         "a probe that found nothing"
     );

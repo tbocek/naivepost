@@ -94,10 +94,7 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
     let said = ui::insert_chosen_with_length(&window, &video, 20.0, Some(7.5));
     settle();
     assert!(said.contains("sting.mp4"), "{said}");
-    assert!(
-        ui::insert_open(&window).is_some(),
-        "the insert form is open"
-    );
+    assert!(ui::insert_open().is_some(), "the insert form is open");
     let heading = common::find_named(&window, "cut-form-heading").expect("the pinned heading");
     let title = common::find_named(&window, "cut-form-title")
         .and_then(|w| w.downcast::<gtk::Label>().ok())
@@ -125,10 +122,7 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
 
-    assert!(
-        ui::insert_open(&window).is_none(),
-        "the ✕ closed the insert form"
-    );
+    assert!(ui::insert_open().is_none(), "the ✕ closed the insert form");
     assert!(
         !common::find_named(&window, "insert-form")
             .expect("the insert holder")

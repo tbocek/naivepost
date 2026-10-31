@@ -92,20 +92,13 @@ pub fn outputs_sentence(window: &adw::ApplicationWindow) -> Option<String> {
     Some(format!("{word} {}", outputs_readout(window)?.text()))
 }
 /// Mark this window's narration write as owed — the state a half-typed line leaves behind.
-pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
-    let _ = window;
+pub fn mark_narration_owed() {
     if let Some(shell) = ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
         shell
             .borrow_mut()
             .narration_pending
             .touched(std::time::Duration::from_secs(0));
     }
-}
-/// §1 badge **4** — the header's project name/path label, so a caller (a switch, an Open, a Save that
-/// renamed the folder) can redraw it without reaching into the header tree.
-pub fn project_title(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
-    let _ = window;
-    project_title_of()
 }
 
 /// Build §1 badge **4** — the header's project name/path label, packed after Save — publish
@@ -121,7 +114,7 @@ pub fn paint_project_title() {
     let Some(title) = project_title_of() else {
         return;
     };
-    let dir = crate::ui::save_apply::open_dir().unwrap_or_else(crate::startup::open_dir);
+    let dir = crate::startup::open_dir_if_set().unwrap_or_else(crate::startup::open_dir);
     let tab = ui::WINDOW_SHELLS
         .with(|shells| shells.borrow().last().cloned())
         .map(|shell| shell.borrow().page.label().to_string())
@@ -131,7 +124,7 @@ pub fn paint_project_title() {
 
 /// The same read, for a painter that has no window handle (the shared readout repaint in
 /// `window_bench::paint_readouts`).
-pub(crate) fn project_title_of() -> Option<gtk::Label> {
+pub fn project_title_of() -> Option<gtk::Label> {
     HEADER_TITLES.with(|titles| titles.borrow().last().cloned())
 }
 
@@ -145,13 +138,12 @@ thread_local! {
 
 /// §1 badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
 /// button this window built rather than one left over from an earlier window in the same process.
-pub fn tab_info_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    let _ = window;
+pub fn tab_info_button() -> Option<gtk::Button> {
     ui::INFO_BUTTON.with(|slots| slots.borrow().last().cloned())
 }
 /// The §1 header ⓘ's tooltip — the door a test reads instead of matching a raw glyph.
-pub fn tab_info_parts(window: &adw::ApplicationWindow) -> Option<(String, String)> {
-    let tip = tab_info_button(window)?.tooltip_text()?.to_string();
+pub fn tab_info_parts() -> Option<(String, String)> {
+    let tip = tab_info_button()?.tooltip_text()?.to_string();
     let join = tip.find(" \u{2014} ")?;
     Some((
         tip[..join].to_string(),
@@ -204,14 +196,12 @@ pub fn open_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
         .ok()
 }
 /// The sources of the project this window currently holds.
-pub fn session_handle(window: &adw::ApplicationWindow) -> Rc<RefCell<Project>> {
-    let _ = window;
+pub fn session_handle() -> Rc<RefCell<Project>> {
     ui::SESSION
         .with(|slots| slots.borrow().last().cloned())
         .expect("the window has a session")
 }
-pub fn session_sources(window: &adw::ApplicationWindow) -> Vec<String> {
-    let _ = window;
+pub fn session_sources() -> Vec<String> {
     ui::SESSION.with(|slots| {
         slots
             .borrow()
@@ -278,8 +268,7 @@ pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckBu
 }
 /// The step the run bar is holding, if any — read off `RunBar::running` rather than off a button's
 /// face.
-pub fn running_step(window: &adw::ApplicationWindow) -> Option<crate::run::Step> {
-    let _ = window;
+pub fn running_step() -> Option<crate::run::Step> {
     ui::RUN_BARS.with(|bars| {
         bars.borrow()
             .last()
@@ -295,8 +284,7 @@ pub fn marking_pass(_window: &adw::ApplicationWindow) -> MarkingPass {
         .unwrap_or(MarkingPass::Retakes)
 }
 /// Move the live session's marking pass, as saving a project that names Joins would.
-pub fn set_marking_pass(window: &adw::ApplicationWindow, pass: MarkingPass) {
-    let _ = window;
+pub fn set_marking_pass(pass: MarkingPass) {
     if let Some(session) = ui::PLAY_SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.marking_pass.value = pass;
     }

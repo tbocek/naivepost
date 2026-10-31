@@ -71,7 +71,7 @@ fn clamp_round(app: &adw::Application) {
     let window = cut_page(app, &clips_with_a_doomed_zoom());
     fire_remove_over(&window, 20.0, 30.0);
 
-    let after = ui::review_cut_of(&window);
+    let after = ui::window_preview::newest_review_cut();
     assert_eq!(
         after.segs.len(),
         2,
@@ -120,7 +120,7 @@ fn clamp_round(app: &adw::Application) {
         said, "effects clamped to the cut \u{2014} 1 dropped",
         "the under-floor band is the one that went"
     );
-    let kept = ui::review_cut_of(&window).fx;
+    let kept = ui::window_preview::newest_review_cut().fx;
     assert_eq!(kept.len(), 1, "only the 2.5 s survivor is left: {kept:?}");
     assert!(
         approx(kept[0].t, 7.5),
@@ -148,11 +148,15 @@ fn clamp_round(app: &adw::Application) {
     // `publish_cut` alone, the dropped effect would be unreachable.
     let window = cut_page(app, &clips_with_a_doomed_zoom());
     fire_remove_over(&window, 20.0, 30.0);
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "clamped first");
+    assert_eq!(
+        ui::window_preview::newest_review_cut().fx.len(),
+        1,
+        "clamped first"
+    );
     let back = ui::press_undo(&window);
     settle();
     println!("UNDO SAID {back}");
-    let restored = ui::review_cut_of(&window);
+    let restored = ui::window_preview::newest_review_cut();
     assert_eq!(
         restored.fx.len(),
         2,
@@ -182,7 +186,7 @@ fn clamp_round(app: &adw::Application) {
         "nothing to clamp \u{2014} every effect sits inside the footage the cut keeps"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx,
+        ui::window_preview::newest_review_cut().fx,
         cut_.fx,
         "the effect list is exactly what was seeded"
     );

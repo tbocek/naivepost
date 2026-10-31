@@ -63,13 +63,6 @@ pub fn ease_is_linear(fx: &Fx) -> bool {
     fx.ease == LINEAR_EASE
 }
 
-/// §06-effects#1-record (`keeping old files byte-identical`): will saving this effect write no `ease` key at
-/// all? Only a linear fade is skipped, which is what makes an untouched file come back unchanged — the reason
-/// the field has a name for "no name" instead of defaulting to `"linear"`.
-pub fn keeps_the_old_bytes(fx: &Fx) -> bool {
-    ease_is_linear(fx)
-}
-
 /// §06-effects#1-record (`an unknown name survives untouched`): every curve this build knows and every curve a
 /// later one may add is kept as written. Dropping an unrecognised shape would silently re-time a fade someone
 /// chose, on a build that was never asked to edit it.

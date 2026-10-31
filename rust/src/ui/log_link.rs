@@ -98,7 +98,7 @@ pub fn painted_lines_for_test(buffer: &gtk::TextBuffer) -> Vec<String> {
 /// Draw a whole log body, one [`paint_line`] per line. The session folder is read once, at PAINT time (Save
 /// as can move it); [`activate_line`] reads it again on click.
 pub fn paint_lines(buffer: &gtk::TextBuffer, lines: &[String]) {
-    let session = session_now();
+    let session = crate::startup::open_dir();
     for line in lines {
         paint_line(buffer, line, &session);
     }
@@ -109,11 +109,6 @@ const LINK_TAG: &str = "exchange-link";
 
 /// GTK cannot paint a `links` span on this build (see [`install_with`]), so the tag carries the link colour itself.
 const LINK_COLOUR: &str = "#1c71d8";
-
-/// The folder a log line's page sits under, read at PAINT and at ACTIVATION time, never stored (Save as moves it).
-fn session_now() -> std::path::PathBuf {
-    crate::startup::open_dir()
-}
 
 /// Make `view`'s link line clickable, opening it through [`open`].
 pub fn install(view: &gtk::TextView) {
@@ -217,7 +212,7 @@ pub fn activate_line(
     // before asking §7's rule, which is written against the quoted wording.
     let drawn = line_text(&buffer, line).unwrap_or_default();
     let marked = restore_mark(&drawn);
-    let session = session_now();
+    let session = crate::startup::open_dir();
     let uri = match target_of(&marked, &session) {
         Some(page) => page,
         None => {

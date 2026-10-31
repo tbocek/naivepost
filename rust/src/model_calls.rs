@@ -108,7 +108,7 @@ pub fn prepare(frames: usize, lines: usize, marking: MarkingPass, joins: usize) 
     s.calls.push(from_job(
         "describe",
         Job::Describe,
-        prepare::vision_calls(frames),
+        roles::vision_batches(frames),
     ));
     s.calls.push(from_job(
         "fix",

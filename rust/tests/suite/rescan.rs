@@ -15,7 +15,7 @@ use naivepost::narrate_screen;
 use naivepost::narration::{self, Entry, Narration};
 use naivepost::project::{Project, Source};
 use naivepost::rescan::{self, Refreshed, RESCANNED};
-use naivepost::shell::{self, Page, Shell};
+use naivepost::shell::{Page, Shell};
 
 /// A project folder with the three recordings a session names, so "gone" and "there" are both real
 /// files rather than paths that merely look plausible.
@@ -265,7 +265,14 @@ fn f0_11_s2_the_refreshed_files_drive_the_tabs_readouts() {
         on(Page::Narrate).inputs(Some(&tree), &project, &cut, &narration_file),
         // §7 §1's full line, counted off this session: one clip, its length, and the tally's own marks.
         // Built with §1's helper rather than hand-written, so the wording lives in one place.
-        narrate_screen::inputs_readout(1, shell::cut_seconds(&cut), 0, 0, false, true)
+        narrate_screen::inputs_readout(
+            1,
+            naivepost::cut_screen::cut_seconds(&cut),
+            0,
+            0,
+            false,
+            true
+        )
     );
 
     fs::remove_dir_all(&root).ok();

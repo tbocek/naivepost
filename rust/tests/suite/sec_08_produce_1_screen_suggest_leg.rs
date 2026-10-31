@@ -168,25 +168,22 @@ fn produce_page(app: &adw::Application) -> adw::ApplicationWindow {
     window.set_default_size(1280, 800);
     window.present();
     settle();
-    ui::seed_review_cut(
-        &window,
-        &Cut {
-            segs: vec![
-                naivepost::cut::Seg {
-                    s: 0.0,
-                    e: 15.0,
-                    ..Default::default()
-                },
-                naivepost::cut::Seg {
-                    s: 15.0,
-                    e: 30.0,
-                    ..Default::default()
-                },
-            ],
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&Cut {
+        segs: vec![
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 15.0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 15.0,
+                e: 30.0,
+                ..Default::default()
+            },
+        ],
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
     let mut page = ui::produce_page::read_state();
     page.instruction = "an instruction already on the page".to_string();
     page.thumb_title = "a title already on the page".to_string();

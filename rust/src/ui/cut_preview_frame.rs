@@ -51,13 +51,13 @@ pub fn install_draw(window: &adw::ApplicationWindow) {
     if let Some(frame) = frame_of(&held) {
         frame.set_draw_func(move |_, cr, width, height| {
             let panel = (width as f64, height as f64);
-            let fit = fit_size_of(&held, panel.0, panel.1);
-            let cut = crate::ui::review_cut_of(&held);
+            let fit = fit_size_of(panel.0, panel.1);
+            let cut = crate::ui::window_preview::newest_review_cut();
             // The box under the hand arrives in panel px; the frame draws in the picture's, which starts after the letterbox bars.
             let (ox, oy) = picture_offset(panel, fit);
             let drawn = drawn_box().map(|(x, y, w, h)| (x - ox, y - oy, w, h));
-            let frame = describe(&held, fit, &held_frame(&cut, drawn));
-            let seen = observe(&frame, live_of(&held));
+            let frame = describe(fit, &held_frame(&cut, drawn));
+            let seen = observe(&frame, live_of());
             paint_in_panel(cr, &frame, &seen, panel);
         });
     }
@@ -104,7 +104,7 @@ pub fn note_box(box_: Option<(f64, f64, f64, f64)>, window: &adw::ApplicationWin
 
 /// The record in hand resolved to this cut's index, and the box under the hand; a held record not on this cut holds no overlay.
 pub fn held_frame(cut: &Cut, box_px: Option<(f64, f64, f64, f64)>) -> Held {
-    let index = crate::ui::held_effect().and_then(|held| {
+    let index = crate::ui::cut_hand::held_effect().and_then(|held| {
         cut.fx
             .iter()
             .position(|effect| effect.kind == held.kind && effect.t == held.t)
@@ -122,10 +122,10 @@ pub fn held_frame(cut: &Cut, box_px: Option<(f64, f64, f64, f64)>) -> Held {
 }
 
 /// The footage's box on this panel: no ffprobe runs headless, so the fit is against the panel's declared shape ([`crate::ui::window::PREVIEW_PANEL_W`] x [`crate::ui::window::PREVIEW_PANEL_H`]), as `preview_picture_px` does; an allocation differing between a test and a loaded suite made fractions hit the clamp.
-pub fn fit_size_of(window: &adw::ApplicationWindow, width: f64, height: f64) -> (f64, f64) {
-    let (w, h) = crate::ui::window::preview_picture_px(window);
+pub fn fit_size_of(width: f64, height: f64) -> (f64, f64) {
+    let (w, h) = crate::ui::window::preview_picture_px();
     // §9 (`both MUST use the first footage clip's frame`): fractions multiply by the plate's agreed shape (`cut_picture::refresh` via `effect_overlap::source_frame`), not whatever camera is watched. The one place preview fractions become pixels.
-    let (sw, sh) = crate::ui::cut_picture::plate_shape(window);
+    let (sw, sh) = crate::ui::cut_picture::plate_shape();
     let (w, h) = if sw > 0 && sh > 0 {
         (sw as f64, sh as f64)
     } else {
@@ -141,13 +141,13 @@ pub struct Held {
     pub box_px: Option<(f64, f64, f64, f64)>,
 }
 
-pub fn describe(window: &adw::ApplicationWindow, fit: (f64, f64), held: &Held) -> Frame {
-    let cut = crate::ui::review_cut_of(window);
-    let line = crate::ui::line_position(window).t;
+pub fn describe(fit: (f64, f64), held: &Held) -> Frame {
+    let cut = crate::ui::window_preview::newest_review_cut();
+    let line = crate::ui::line_position().t;
     describe_at(
         &cut,
         line,
-        crate::ui::preview_player(window).transport.playing,
+        crate::ui::preview_player().transport.playing,
         crate::ui::zoom_armed(),
         fit,
         held,
@@ -176,8 +176,8 @@ pub fn describe_at(
 }
 
 /// The live clock while playing: the player's playhead plus the elapsed tick through [`preview::live_clock`] (§2's smoothed clock, so the mask does not shimmer). `None` for a never-played player ([`camera_clock`] falls back to the line). The rate is the FLAT rate of the second the line left ([`crate::cut_speed_play::flat_rate_at`]), else the mask slides off the picture under a hand-drawn speed.
-pub fn live_of(window: &adw::ApplicationWindow) -> Option<f64> {
-    let player = crate::ui::preview_player(window);
+pub fn live_of() -> Option<f64> {
+    let player = crate::ui::preview_player();
     if !player.transport.playing {
         return None;
     }
@@ -212,7 +212,7 @@ pub fn camera_clock(playing: bool, live: Option<f64>, line: f64) -> f64 {
     }
 }
 
-/// The frame as the painter needs it: `held` the paused half ([`fx_lane::paused_scene`]), `titles` the playing half ([`fx_lane::playing_scene`]), `camera` at [`camera_clock`]. A stop's still borrows the scene camera ([`fx_lane::still_come_from_scene_camera`]) so it is framed by the same number as the mask.
+/// The frame as the painter needs it: `held` the paused half ([`fx_lane::paused_scene`]), `titles` the playing half ([`fx_lane::playing_scene`]), `camera` at [`camera_clock`]. A stop's still borrows the scene camera ([`fx_record::is_stop`]) so it is framed by the same number as the mask.
 pub struct Observed {
     pub held: PausedScene,
     pub titles: Vec<(usize, cut::EffectKind, f64)>,
@@ -254,9 +254,7 @@ pub fn fit_size(source_w: f64, source_h: f64, panel_w: f64, panel_h: f64) -> (f6
 pub fn stop_px(fx: &[crate::cut::Fx], at: f64, fit: (f64, f64)) -> Option<(f64, f64, f64, f64)> {
     fx.iter()
         .any(|effect| {
-            fx_lane::still_come_from_scene_camera(effect)
-                && effect.spans().0 <= at
-                && at < effect.spans().1
+            crate::fx_record::is_stop(effect) && effect.spans().0 <= at && at < effect.spans().1
         })
         .then(|| camera_rect_px(&fx_zoom::camera_at(fx, at), fit))
 }

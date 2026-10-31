@@ -53,7 +53,7 @@ pub fn pick_voice(id: &str, narrators: usize, voice_files: &[String], dir: &str)
     if id == CAPTIONS {
         return VoiceChoice::Silent(SILENT_SWITCH.to_string());
     }
-    if let Some(slot) = narrator_slot(id) {
+    if let Some(slot) = crate::narrate_rules::narrator_slot(id) {
         if slot < 1 || slot > narrators {
             return VoiceChoice::Refused(untagged_narrator(slot));
         }
@@ -69,10 +69,6 @@ pub fn pick_voice(id: &str, narrators: usize, voice_files: &[String], dir: &str)
         };
     }
     VoiceChoice::Refused(vanished_voice(id, dir))
-}
-
-pub fn narrator_slot(id: &str) -> Option<usize> {
-    crate::narrate_rules::narrator_slot(id)
 }
 
 /// S1's refusal when a slot has no recording tagged on the Prepare step.
@@ -407,13 +403,13 @@ pub fn recut_for_voice(
     if let Some(renamed) = adopt_existing_reference(tree) {
         said.push(format!(
             "voice reference had no base; renamed {} to {}",
-            narrate_data::served_reference(tree).display(),
+            tree.voice_ref_wav().display(),
             renamed.display()
         ));
     }
 
-    let base = narrate_data::base_reference(tree);
-    let served = narrate_data::served_reference(tree);
+    let base = tree.voice_ref_base_wav();
+    let served = tree.voice_ref_wav();
     // S2's first question is not about diarization at all but about the project: the spec's "nothing
     // is tagged as narrator N on the Prepare step" is answered of the recording this build was asked
     // to cut from, and it comes BEFORE the rule because the rule cannot see the project file.
@@ -465,7 +461,7 @@ pub fn recut_for_voice(
         // a recording named `take, 2.wav` would otherwise split on its own comma.
         let mut parts: Vec<PathBuf> = Vec::new();
         for (index, piece) in pieces.iter().enumerate() {
-            let part = part_path(tree, index);
+            let part = narrate_data::reference_part(tree, index);
             let args = level_piece_args(
                 &files[index],
                 piece.start,
@@ -475,7 +471,7 @@ pub fn recut_for_voice(
             run_ffmpeg(ffmpeg, &args)?;
             parts.push(part);
         }
-        let list = list_path(tree);
+        let list = narrate_data::reference_list(tree);
         let body: String = parts
             .iter()
             .map(|part| {
@@ -533,7 +529,7 @@ fn nothing_is_tagged(tree: &Tree, source: &str) -> bool {
 
 /// The narrator slot the project's voice names, `None` for a voices-folder file.
 pub fn voice_slot(tree: &Tree) -> Option<u32> {
-    narrator_slot(&narrate_data::read_voice(tree)).map(|slot| slot as u32)
+    crate::narrate_rules::narrator_slot(&narrate_data::read_voice(tree)).map(|slot| slot as u32)
 }
 
 /// Whether a person picked seconds for this voice, which beats everything automatic.
@@ -584,16 +580,6 @@ fn picked_takes(tree: &Tree, source: &str) -> Vec<(String, f64, f64)> {
         .collect()
 }
 
-/// One stitched piece's working file, beside the two the server reads.
-fn part_path(tree: &Tree, index: usize) -> PathBuf {
-    narrate_data::reference_part(tree, index)
-}
-
-/// The concat list that names the parts in playing order.
-fn list_path(tree: &Tree) -> PathBuf {
-    narrate_data::reference_list(tree)
-}
-
 pub fn level_piece_args(input: &str, start: f64, end: f64, out: &str) -> Vec<String> {
     let mut args = level_args(input, out);
     let at = args.iter().position(|a| a == "-i").unwrap_or(0);
@@ -631,8 +617,8 @@ pub fn concat_args(list: &str, out: &str) -> Vec<String> {
 
 /// S3: build the reference from `source` through the configured ffmpeg binary.
 pub fn build(tree: &Tree, source: &str, ffmpeg: &str, semitones: f64) -> Result<Built, String> {
-    let base = narrate_data::base_reference(tree);
-    let served = narrate_data::served_reference(tree);
+    let base = tree.voice_ref_base_wav();
+    let served = tree.voice_ref_wav();
     let mut said = Vec::new();
 
     let stage_source = source.to_string();
@@ -667,8 +653,8 @@ pub fn build(tree: &Tree, source: &str, ffmpeg: &str, semitones: f64) -> Result<
 
 /// S3's last sentence: a project holding `voice_ref.wav` with no base renames the former to the base.
 pub fn adopt_existing_reference(tree: &Tree) -> Option<PathBuf> {
-    let served = narrate_data::served_reference(tree);
-    let base = narrate_data::base_reference(tree);
+    let served = tree.voice_ref_wav();
+    let base = tree.voice_ref_base_wav();
     if served.exists() && !base.exists() {
         std::fs::rename(&served, &base).ok()?;
         return Some(base);

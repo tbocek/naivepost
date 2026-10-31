@@ -160,7 +160,7 @@ pub fn whole_takes() -> Vec<String> {
     }) {
         return held;
     }
-    let bases: Vec<String> = crate::retakes::read_marks(&file)
+    let bases: Vec<String> = crate::textfmt::read_retakes(&file)
         .unwrap_or_default()
         .iter()
         .flat_map(|mark| {
@@ -418,8 +418,8 @@ fn lens(cr: &cairo::Context, cx: f64, cy: f64, on: bool) {
 
 /// This window's marks where its band draws them, in the band's own pixels: tape marks less the scroll, so each
 /// `(x, y)` is where a press on the surface lands on it.
-pub fn placed_on(window: &adw::ApplicationWindow) -> Vec<Placed> {
-    let scene = crate::ui::cut_view::band_scene_for(window);
+pub fn placed_on() -> Vec<Placed> {
+    let scene = crate::ui::cut_view::band_scene_for();
     let rows = cut_tracks::rows_for_press(&scene);
     placed(&scene, rows)
         .into_iter()
@@ -448,7 +448,7 @@ pub fn mark_at(scene: &Scene, rows: Rows, x: f64, y: f64) -> Option<Mark> {
 /// A press on the band: if a mark is under it, fire that mark's door, say what happened, repaint, and answer
 /// true so the press places no line and starts no selection.
 pub fn press_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> bool {
-    let scene = crate::ui::cut_view::band_scene_for(window);
+    let scene = crate::ui::cut_view::band_scene_for();
     let rows = cut_tracks::rows_for_press(&scene);
     let Some(mark) = mark_at(&scene, rows, x, y) else {
         return false;

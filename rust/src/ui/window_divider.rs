@@ -27,7 +27,7 @@ pub fn install(
     // to its floor and hand the leftover to the band (measured: page 342 px, bottom box 843 of 844).
     // That works only with `AdwViewStack::set_vhomogeneous(false)` in `window.rs`: homogeneous, every tab's
     // minimum (the Cut tape's ~760 px) was charged to the start half. Only the band may be squeezed, and
-    // `bottom-bar` carries its own floor ([`super::window_shot::rest_px`]).
+    // `bottom-bar` carries its own floor ([`window_shot::height_ask`]).
     let log = log
         .downcast_ref::<gtk::Expander>()
         .expect("the log is an expander")
@@ -40,7 +40,7 @@ pub fn install(
     // `[start minimum, total − end minimum]`, and headless the minimums summed to MORE than the window (page
     // ~760, bottom ~274 because a collapsed expander still counts its 220 px body); an inverted range resolves
     // to "page = everything" and the run bar falls off the shot. Both halves therefore shrink, so the position
-    // is the RULE's answer (`window_shot::rest_px`), not a clamp.
+    // is the RULE's answer (`window_shot::height_ask`), not a clamp.
     divider.set_start_child(Some(page));
     page.set_vexpand(true);
     // THE BAND DOES NOT EXPAND: a `gtk::Paned` hands its leftover to the halves that do (an expanding band ate
@@ -140,7 +140,7 @@ fn connect_every_layout(divider: &gtk::Paned) {
                         .max(super::window_shot::band_px(&run_row, &log))
                         .clamp(1, height - 1);
                     d.set_position(super::window_shot::rest_position(height, band));
-                    super::window_run_scroller::resize_row(&run_row);
+                    crate::ui::window_run_scroller::hand_the_free_width_to(&run_row);
                 }
                 _ => rest_split(&d),
             }
@@ -209,7 +209,7 @@ pub fn rest_split(divider: &gtk::Paned) {
     let band = super::window_shot::band_px(&run_row, &log).clamp(1, total - 1);
     divider.set_position(super::window_shot::rest_position(total, band));
     // The run-bar row now has a width, so the progress bar's ask is re-made from it (§1 badge 13).
-    super::window_run_scroller::resize_row(&run_row);
+    crate::ui::window_run_scroller::hand_the_free_width_to(&run_row);
 }
 
 /// The first widget named `name` at or below `node`, how [`rest_split`] finds the two widgets §1 counts.
@@ -242,7 +242,7 @@ fn connect_band_rest(divider: &gtk::Paned, run_row: &gtk::Widget, log: &gtk::Exp
             let total = d.height().max(1);
             d.set_position(super::window_shot::rest_position(
                 total,
-                super::window_shot::rest_px(&run_row, &log),
+                crate::ui::window_shot::height_ask(&run_row, &log),
             ));
         }
     });
@@ -255,7 +255,7 @@ fn connect_band_rest(divider: &gtk::Paned, run_row: &gtk::Widget, log: &gtk::Exp
                 collapse_without_room(&d);
                 super::window_shot::band_px(&run_row, l)
             } else {
-                super::window_shot::rest_px(&run_row, l)
+                crate::ui::window_shot::height_ask(&run_row, l)
             };
             d.set_position(super::window_shot::rest_position(total, band));
         }

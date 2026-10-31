@@ -83,7 +83,7 @@ pub fn attach(window: &adw::ApplicationWindow) {
             .current_event_state()
             .contains(gtk::gdk::ModifierType::SHIFT_MASK);
         if shift {
-            pan(&scroll_win, dy * band::pan_by(view_width(&scroll_win)));
+            pan(&scroll_win, dy * band::pan_by(view_width()));
         } else {
             zoom_by(&scroll_win, -dy);
         }
@@ -108,12 +108,8 @@ pub fn attach(window: &adw::ApplicationWindow) {
     });
     lane.add_controller(motion);
 
-    fit_lane_to_view(window);
-    repaint(window);
-}
-
-fn fit_lane_to_view(window: &adw::ApplicationWindow) {
     note_lane_size(window);
+    repaint(window);
 }
 
 pub fn note_lane_size(window: &adw::ApplicationWindow) {
@@ -199,8 +195,7 @@ pub fn painted_seconds() -> Option<f64> {
     )
 }
 
-pub fn band_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    let _ = window;
+pub fn band_gesture_for_test() -> Option<gtk::GestureDrag> {
     DRAG.with(|slot| slot.borrow().clone())
 }
 
@@ -225,7 +220,7 @@ thread_local! {
     /// The live selection in seconds: written by motion, emptied by a click.
     static SELECTION: std::cell::RefCell<Option<(f64, f64)>> =
         const { std::cell::RefCell::new(None) };
-    /// The drag's press second, so release can ask `band::drag_or_click` with both ends.
+    /// The drag's press second, so release can ask `screen::take_press` with both ends.
     static PRESS_X: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
     /// The pointer's x in lane px, or negative when it is off the band.
     static POINTER_X: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
@@ -368,10 +363,10 @@ fn note_motion(x: f64) {
 
 fn selected(x: f64) -> Option<(f64, f64)> {
     let press = PRESS_X.with(|slot| slot.get());
-    // [`band::drag_or_click`] owns the slop and direction rule (`screen::take_press`); only its CASE is
+    // [`screen::take_press`] owns the slop and direction rule; only its CASE is
     // asked here, because the seconds come from this lane's own offset and px/s, which that rule does not
     // know about. A click (SetBar) selects nothing — it moves the red bar instead.
-    match band::drag_or_click(press, x, 0.0) {
+    match screen::take_press(press, x, 0.0) {
         screen::TakePress::SetBar => None,
         screen::TakePress::Select { .. } => {
             let (start, pps) = view();
@@ -419,7 +414,7 @@ fn zoom_by(window: &adw::ApplicationWindow, steps: f64) {
     let (second, on_screen) = (anchor / before.max(f64::EPSILON), anchor - scrolled);
     let zoom = band::zoom_step(zoom(), -steps);
     ZOOM.with(|slot| slot.set(zoom));
-    fit_lane_to_view(window);
+    note_lane_size(window);
     let after = band::px_per_second(zoom, duration, view);
     if let Some(adjustment) = adjustment {
         glib::timeout_add_local_once(std::time::Duration::from_millis(30), move || {
@@ -468,8 +463,7 @@ fn view() -> (f64, f64) {
 }
 
 /// The lane's width as the last paint saw it, for a wheel that pans before a repaint.
-fn view_width(window: &adw::ApplicationWindow) -> f64 {
-    let _ = window;
+fn view_width() -> f64 {
     VIEW_WIDTH.with(|slot| slot.get())
 }
 
@@ -524,7 +518,7 @@ fn lane_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
 
 pub fn recording_seconds() -> Option<f64> {
     let tree = crate::ui::window::narrate_session_tree()?;
-    let reference = crate::narrate_data::base_reference(&tree);
+    let reference = tree.voice_ref_base_wav();
     Some(crate::voice_ref::wav_seconds(&reference)?.max(0.1))
 }
 
@@ -709,13 +703,7 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     }
 }
 
-pub fn envelope_report_for_test(
-    state: &crate::ui::narrate_page::NarrateState,
-) -> Result<(f64, Vec<u8>), String> {
-    envelope_attempt(state)
-}
-
-fn envelope_attempt(
+pub fn envelope_attempt(
     state: &crate::ui::narrate_page::NarrateState,
 ) -> Result<(f64, Vec<u8>), String> {
     let tree = crate::ui::window::narrate_session_tree().ok_or("no session folder open")?;
@@ -733,7 +721,7 @@ fn envelope_sources(
     let tape = crate::project::load(tree.dir())
         .map(|project| crate::narrate_band_face::tape(tree, &project, voice))
         .unwrap_or_default();
-    (tape, crate::narrate_data::base_reference(tree))
+    (tape, tree.voice_ref_base_wav())
 }
 
 fn envelope_of(

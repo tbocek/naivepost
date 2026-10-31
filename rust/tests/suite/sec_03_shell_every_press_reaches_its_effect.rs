@@ -104,7 +104,7 @@ fn check_footage(window: &adw::ApplicationWindow) {
     footage.emit_clicked();
     assert!(!footage.is_active());
     assert!(
-        !ui::session_handle(window).borrow().sources[0].footage,
+        !ui::session_handle().borrow().sources[0].footage,
         "the session follows the click"
     );
     assert!(
@@ -113,7 +113,7 @@ fn check_footage(window: &adw::ApplicationWindow) {
         status_of(window)
     );
     footage.emit_clicked();
-    assert!(ui::session_handle(window).borrow().sources[0].footage);
+    assert!(ui::session_handle().borrow().sources[0].footage);
 }
 
 /// §4: the track menu of a file holding two audio streams.
@@ -147,11 +147,7 @@ fn check_tracks(window: &adw::ApplicationWindow) {
         ticks[0].is_active() && !ticks[1].is_active(),
         "the first ticked, the second not"
     );
-    let heard = || {
-        ui::session_handle(window).borrow().sources[0]
-            .tracks
-            .clone()
-    };
+    let heard = || ui::session_handle().borrow().sources[0].tracks.clone();
     ticks[1].set_active(true);
     assert_eq!(
         heard(),
@@ -194,13 +190,9 @@ fn check_copy_tick(
         &[outside.join("2026-10-25 11-00-00.mkv")]
     ));
     common::settle_workers();
-    let referenced = ui::session_handle(window)
-        .borrow()
-        .sources
-        .iter()
-        .any(|source| {
-            source.path.ends_with("11-00-00.mkv") && !source.path.starts_with("project:")
-        });
+    let referenced = ui::session_handle().borrow().sources.iter().any(|source| {
+        source.path.ends_with("11-00-00.mkv") && !source.path.starts_with("project:")
+    });
     assert!(referenced, "unticked: the file is referenced where it lies");
     assert!(
         !session.join("sources/2026-10-25 11-00-00.mkv").exists(),
@@ -216,7 +208,7 @@ fn check_copy_tick(
         session.join("sources/2026-10-25 11-05-00.mkv").exists(),
         "ticked: copied into the project's sources/"
     );
-    assert!(ui::session_handle(window)
+    assert!(ui::session_handle()
         .borrow()
         .sources
         .iter()
@@ -256,7 +248,7 @@ fn check_profile_choices(window: &adw::ApplicationWindow) {
     let kind: gtk::DropDown = named(window, "profile-field-kind");
     kind.set_selected(1);
     let value = |field: &str| {
-        ui::session_handle(window)
+        ui::session_handle()
             .borrow()
             .profile
             .as_ref()
@@ -348,7 +340,7 @@ fn check_new_confirm(window: &adw::ApplicationWindow) {
         "Cancel put up no naming sheet"
     );
     assert!(
-        !ui::session_handle(window).borrow().sources.is_empty(),
+        !ui::session_handle().borrow().sources.is_empty(),
         "and emptied nothing"
     );
     new_.emit_clicked();

@@ -44,7 +44,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
     let mut seeded = cut::Cut::default();
     seeded.segs = vec![clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)];
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     // The press fell on the middle scene, with no band under it: the third question the flowchart asks.
     ui::set_press_scene(Some(1));
     ui::set_press_band(None);
@@ -60,7 +60,7 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
 
     let strip = ui::track_strip(&window).expect("the Cut page carries track-strip");
     println!("STRIP {}x{}", strip.width(), strip.height());
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     assert!(
         mover
             .upcast_ref::<gtk::EventController>()
@@ -71,7 +71,7 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
 
     // The line before the drag. S3 says a right click never moves it, so this is the number compared
     // after every emission below.
-    let line_before = ui::line_position(&window);
+    let line_before = ui::line_position();
     println!("LINE BEFORE {line_before:?}");
 
     // Fire the gesture the way GTK does: begin, update 40 px along, end. The gesture reports its OWN
@@ -123,7 +123,7 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
 
     // S3: the red line did not budge.
     assert_eq!(
-        ui::line_position(&window),
+        ui::line_position(),
         line_before,
         "a right drag never moves the line"
     );
@@ -131,7 +131,7 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
     mover.emit_by_name::<()>("drag-end", &[&40.0f64, &0.0f64]);
     settle();
     assert_eq!(
-        ui::line_position(&window),
+        ui::line_position(),
         line_before,
         "and still not after release"
     );
@@ -143,7 +143,7 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
 fn check_an_unmoved_press_is_a_click(app: &adw::Application) {
     let window = cut_window(app);
     let before = status_text(&window);
-    let segs_before = ui::review_cut_segs_count(&window);
+    let segs_before = ui::review_cut_segs_count();
 
     let gesture = ui::press_move(&window, 0.0, false, 0.0);
     assert_eq!(gesture, trim::Gesture::Click, "zero travel is a click");
@@ -153,7 +153,7 @@ fn check_an_unmoved_press_is_a_click(app: &adw::Application) {
         "a click prints no sentence about a change"
     );
     assert_eq!(
-        ui::review_cut_segs_count(&window),
+        ui::review_cut_segs_count(),
         segs_before,
         "a click changes no segments"
     );
@@ -171,12 +171,12 @@ fn check_an_unmoved_press_is_a_click(app: &adw::Application) {
 /// clamped every later clip's end to its 1 s minimum the moment it was taken.
 fn check_a_border_past_the_first_hour_moves(app: &adw::Application) {
     let window = cut_window(app);
-    let mut seeded = ui::window::review_cut_of(&window);
+    let mut seeded = ui::window_preview::newest_review_cut();
     seeded.segs = vec![clip(3638.5, 3683.9)];
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     let end = |t: f64| {
         ui::window::press_trim_border(&window, 0, naivepost::cut_trim::Border::End, t);
-        ui::window::review_cut_of(&window).segs[0].e
+        ui::window_preview::newest_review_cut().segs[0].e
     };
     assert!((end(3690.0) - 3690.0).abs() < 1e-9, "the end grows");
     assert!(
@@ -245,7 +245,7 @@ fn check_a_border_drag_lands_where_the_rule_says(app: &adw::Application) {
 fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) {
     let window = cut_window(app);
     let strip = ui::track_strip(&window).expect("the Cut page carries track-strip");
-    let trimmer = ui::trim_gesture(&window).expect("the strip carries the trim gesture");
+    let trimmer = ui::trim_gesture().expect("the strip carries the trim gesture");
     assert!(
         trimmer
             .upcast_ref::<gtk::EventController>()
@@ -255,7 +255,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     );
 
     // The pixel the hand aims at: clip 2's END sits at 30 s * TRACK_STRIP_PPS, well inside the reach.
-    let boxes = trim::clip_boxes(&ui::review_cut_segs(&window), ui::window::strip_pps());
+    let boxes = trim::clip_boxes(&ui::review_cut_segs(), ui::window::strip_pps());
     let end_px = boxes[1].x + boxes[1].w;
     assert!(
         trim::border_at(&boxes, end_px - 2.0) == Some((1, trim::Border::End)),
@@ -274,7 +274,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     trimmer.emit_by_name::<()>("drag-end", &[&target_px, &0.0f64]);
     settle();
 
-    let after = ui::review_cut_segs(&window);
+    let after = ui::review_cut_segs();
     let expected = trim::clamp_edge(
         &[clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)],
         1,
@@ -303,7 +303,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
 
     // S1's plain trim, no join: drag the first clip's end to 5 s. The next clip starts at 10, so nothing
     // comes within a frame and the release says only where the clip now runs.
-    let plain = ui::review_cut_segs(&window)[0].e * ui::window::strip_pps();
+    let plain = ui::review_cut_segs()[0].e * ui::window::strip_pps();
     let plain_to = 5.0 * ui::window::strip_pps();
     trimmer.emit_by_name::<()>("drag-begin", &[&plain, &0.0f64]);
     settle();
@@ -311,7 +311,7 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     settle();
     trimmer.emit_by_name::<()>("drag-end", &[&plain_to, &0.0f64]);
     settle();
-    let trimmed = ui::review_cut_segs(&window);
+    let trimmed = ui::review_cut_segs();
     assert_eq!(trimmed.len(), 3, "a trim with room around it joins nothing");
     assert_eq!(trimmed[0].e, 5.0);
     assert_eq!(
@@ -321,19 +321,19 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     );
 
     // S3: an unmoved press on that very border is a click — the strip repaints, the cut does not.
-    let before_len = ui::review_cut_segs_count(&window);
-    let before_end = ui::review_cut_segs(&window)[0].e;
-    let grab_px = ui::review_cut_segs(&window)[0].e * ui::window::strip_pps();
+    let before_len = ui::review_cut_segs_count();
+    let before_end = ui::review_cut_segs()[0].e;
+    let grab_px = ui::review_cut_segs()[0].e * ui::window::strip_pps();
     trimmer.emit_by_name::<()>("drag-begin", &[&grab_px, &0.0f64]);
     settle();
     trimmer.emit_by_name::<()>("drag-end", &[&grab_px, &0.0f64]);
     settle();
     assert_eq!(
-        ui::review_cut_segs(&window)[0].e,
+        ui::review_cut_segs()[0].e,
         before_end,
         "a press that went nowhere trimmed nothing"
     );
-    assert_eq!(ui::review_cut_segs_count(&window), before_len);
+    assert_eq!(ui::review_cut_segs_count(), before_len);
     let _ = strip;
     window.close();
 }
@@ -443,7 +443,7 @@ fn check_a_right_drag_on_a_wave_strip_slides_that_recording(app: &adw::Applicati
     );
     assert!(!on_border, "mid-scene x is not a border");
 
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     ui::set_press_x(press_x);
     mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &wave_y]);
     // >3 px of travel, or the gesture never opens (S3's slop).
@@ -465,7 +465,7 @@ fn check_a_right_drag_on_a_wave_strip_slides_that_recording(app: &adw::Applicati
         "nor as a whole-row shift: {printed}"
     );
     // And the shift landed on the named recording only -- real cut state, written by apply_gesture.
-    let shifted = ui::review_cut_shift(&window);
+    let shifted = ui::review_cut_shift();
     assert!(
         shifted.contains_key(WAVE_REC),
         "the shift map holds the recording the wave strip named: {shifted:?}"
@@ -501,7 +501,7 @@ fn check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app: &adw::A
         "away from a border, so S2 may slide the selection"
     );
 
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     ui::set_press_x(press_x);
     mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &ruler_y]);
     mover.emit_by_name::<()>("drag-update", &[&20.0f64, &ruler_y]);
@@ -515,7 +515,7 @@ fn check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app: &adw::A
     );
     // The band itself is untouched by the press -- selecting is not clearing.
     assert!(
-        ui::selection(&window).is_some(),
+        ui::selection().is_some(),
         "the selection survived the press"
     );
     window.close();
@@ -526,7 +526,7 @@ fn check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app: &adw::A
 fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
     let window = bare_cut_window(app);
     ui::set_press_band(None);
-    let segs_before = ui::review_cut_segs(&window);
+    let segs_before = ui::review_cut_segs();
     assert_eq!(segs_before.len(), 3, "three seeded scenes");
     // Scene 2 runs 40.0 .. 70.0 s => its start edge sits at 40 * TRACK_STRIP_PPS px. Grabbing THAT one
     // rather than scene 1's keeps this check unambiguous: scene 1's start (40 px) and scene 2's start
@@ -543,7 +543,7 @@ fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
         "x={grab_x} is within EDGE_GRAB_PX of scene 2's start border"
     );
 
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     ui::set_press_x(grab_x);
     mover.emit_by_name::<()>("drag-begin", &[&0.0f64, &bar_y]);
     // The update carries an OFFSET from the press, so the pointer sits at grab_x + offset. Dragging 12 s
@@ -553,7 +553,7 @@ fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
     mover.emit_by_name::<()>("drag-update", &[&48.0f64, &bar_y]);
     settle();
 
-    let segs_after = ui::review_cut_segs(&window);
+    let segs_after = ui::review_cut_segs();
     println!(
         "BORDER TRIM scene2 before {:?}..{:?} after {:?}..{:?}",
         segs_before[2].s, segs_before[2].e, segs_after[2].s, segs_after[2].e
@@ -590,12 +590,12 @@ fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
 fn check_an_unmoved_right_press_changes_nothing_through_the_widget(app: &adw::Application) {
     let window = bare_cut_window(app);
     ui::set_press_band(Some(WAVE_REC.to_string()));
-    let segs_before = ui::review_cut_segs(&window);
-    let shift_before = ui::review_cut_shift(&window);
-    let line_before = ui::line_position(&window);
+    let segs_before = ui::review_cut_segs();
+    let shift_before = ui::review_cut_shift();
+    let line_before = ui::line_position();
     let status_before = status_text(&window);
 
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     let bands = trim::PLACEHOLDER_STRIP_BANDS;
     let wave_y = bands.wave.0 + 1.0;
     ui::set_press_x(90.0);
@@ -604,13 +604,13 @@ fn check_an_unmoved_right_press_changes_nothing_through_the_widget(app: &adw::Ap
     settle();
 
     assert_eq!(
-        ui::review_cut_segs(&window).len(),
+        ui::review_cut_segs().len(),
         segs_before.len(),
         "an unmoved press added or removed no scene"
     );
     for (i, (before, after)) in segs_before
         .iter()
-        .zip(ui::review_cut_segs(&window).iter())
+        .zip(ui::review_cut_segs().iter())
         .enumerate()
     {
         assert_eq!(
@@ -620,12 +620,12 @@ fn check_an_unmoved_right_press_changes_nothing_through_the_widget(app: &adw::Ap
         );
     }
     assert_eq!(
-        ui::review_cut_shift(&window),
+        ui::review_cut_shift(),
         shift_before,
         "no shift was pushed for a press that never moved"
     );
     assert_eq!(
-        ui::line_position(&window).t,
+        ui::line_position().t,
         line_before.t,
         "\"a right click never moves the line\""
     );

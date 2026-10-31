@@ -201,7 +201,7 @@ fn f1_6_s1_a_skip_rewrites_nothing() {
 #[test]
 fn f1_6_s2_the_scene_pass_is_four_frames_a_second_with_every_score_reported() {
     // P.machine.sceneThreshold is applied by `scene_changes`, not by ffmpeg: scdet runs at threshold 0.
-    let plan = frames::scene_pass_plan(SCENE_THRESHOLD);
+    let plan = frames::scene_pass_plan();
     let filter = plan
         .iter()
         .skip_while(|arg| *arg != "-vf")
@@ -601,7 +601,7 @@ fn f1_6_s2_the_scene_pass_runs_on_real_ffmpeg_and_finds_a_cut() {
         .expect("ffmpeg runs");
     assert!(made.success(), "the clip was written");
     let mut argv: Vec<String> = vec!["-i".into(), clip.display().to_string()];
-    argv.extend(frames::scene_pass_plan(SCENE_THRESHOLD));
+    argv.extend(frames::scene_pass_plan());
     let out = std::process::Command::new("ffmpeg")
         .args(&argv)
         .output()

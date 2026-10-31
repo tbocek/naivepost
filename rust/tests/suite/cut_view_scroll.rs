@@ -111,9 +111,9 @@ fn sec_05_cut_1_screen_s9_a_scroll_stays_inside_the_timeline_at_both_ends() {
     // Left of the gutter: it never had room to go there.
     assert_eq!(cut_view::set_origin(-500.0, total, view), 0.0);
     // A pan is an eighth of the view, wherever it starts.
-    assert_eq!(cut_view::pan_eighth(view), view / 8.0);
+    assert_eq!(naivepost::cut_screen::pan_px(view), view / 8.0);
     assert_eq!(
-        cut_view::scroll_by(total, view, cut_view::pan_eighth(view)),
+        cut_view::scroll_by(total, view, naivepost::cut_screen::pan_px(view)),
         view / 8.0
     );
     // An empty timeline has nowhere to scroll: the origin stays put at zero.

@@ -70,7 +70,7 @@ fn cut_page(
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(tape);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     // Nothing left in hand from the previous check: a held card would make Insert read "Edit" where this
     // check means "Insert", and a held band would answer S1 where the check wants "no target".
     ui::set_held_clip(None);
@@ -86,10 +86,10 @@ fn cut_page(
 /// Let the main context run what the widget emissions queued.
 
 /// This window's cut as a whole, so its length is measured the same way the page measures it.
-fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
+fn cut_of() -> cut::Cut {
     let mut fresh = cut::Cut::default();
-    fresh.segs = ui::review_cut_segs(window);
-    fresh.lanes = ui::review_lanes(window);
+    fresh.segs = ui::review_cut_segs();
+    fresh.lanes = ui::review_lanes();
     fresh
 }
 
@@ -192,9 +192,9 @@ fn maybe_radio(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Check
 fn f2_12_s1_a_click_with_no_target_refuses(app: &adw::Application) {
     let window = cut_page(app, &tape(), &cut::Cut::default());
     // No line placed, no seconds marked: the page opened with nowhere for an insert to go.
-    assert_eq!(ui::selection(&window), None, "no band on a fresh page");
+    assert_eq!(ui::selection(), None, "no band on a fresh page");
     assert_eq!(
-        ui::line_position(&window).t,
+        ui::line_position().t,
         0.0,
         "and no target was claimed, so Insert has nothing to place against"
     );
@@ -208,10 +208,10 @@ fn f2_12_s1_a_click_with_no_target_refuses(app: &adw::Application) {
         "the refusal must be §G's sentence, verbatim"
     );
     assert!(
-        ui::review_cut_segs(&window).is_empty(),
+        ui::review_cut_segs().is_empty(),
         "a refused insert writes no segment"
     );
-    assert!(ui::insert_open(&window).is_none(), "and opens no form");
+    assert!(ui::insert_open().is_none(), "and opens no form");
     window.close();
 }
 
@@ -249,7 +249,7 @@ fn f2_12_s1_a_line_or_a_selection_makes_insert_live(app: &adw::Application) {
         "a selection gives it somewhere too"
     );
     assert_eq!(
-        ui::selection(&window).map(|band| band.start),
+        ui::selection().map(|band| band.start),
         Some(40.0),
         "the band the button reads is the one that was drawn"
     );
@@ -382,7 +382,7 @@ fn f2_12_s5_apply_between_splices_a_card(app: &adw::Application) {
     button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let after = cut_of(&window);
+    let after = cut_of();
     let placed = after
         .segs
         .iter()
@@ -400,7 +400,7 @@ fn f2_12_s5_apply_between_splices_a_card(app: &adw::Application) {
     assert!(line.contains("inserted at 00:20 for 4.0 s"), "{line}");
     assert!(line.contains("the cut is now 01:34 (was 01:30)"), "{line}");
     assert!(line.contains("\u{21b6} Undo takes it back"), "{line}");
-    assert!(ui::insert_open(&window).is_none(), "Apply closes the form");
+    assert!(ui::insert_open().is_none(), "Apply closes the form");
     window.close();
 }
 
@@ -422,7 +422,7 @@ fn f2_12_s5_apply_over_replaces_those_seconds(app: &adw::Application) {
     button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let after = cut_of(&window);
+    let after = cut_of();
     let placed = after
         .segs
         .iter()
@@ -506,7 +506,7 @@ fn f2_12_s5_lane_adds_a_row_and_cuts_nothing(app: &adw::Application) {
     button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let after = cut_of(&window);
+    let after = cut_of();
     assert_eq!(after.segs.len(), 1, "a lane cuts nothing: {:?}", after.segs);
     let lanes: Vec<&Lane> = after.lanes.iter().collect();
     assert_eq!(lanes.len(), 1, "one row was added: {lanes:?}");
@@ -570,7 +570,7 @@ fn f2_12_s4_the_sound_tick_decides_whether_the_insert_is_heard(app: &adw::Applic
         settle();
         button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
         settle();
-        let placed = cut_of(&window)
+        let placed = cut_of()
             .segs
             .into_iter()
             .find(|seg| seg.is_insert())

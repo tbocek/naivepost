@@ -74,7 +74,7 @@ fn f5_1_where_it_runs_the_press_returns_with_the_run_open() {
             aspect: "16:9".into(),
             ..Default::default()
         };
-        ui::seed_review_cut(&window, &cut);
+        ui::seed_review_cut(&cut);
         let mut state = ui::produce_page::read_state();
         state.clips = cut.segs.len();
         state.seconds = 20.0;
@@ -93,7 +93,7 @@ fn f5_1_where_it_runs_the_press_returns_with_the_run_open() {
             "▶ came back after {took:?}: the render walked inside the click"
         );
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             Some(naivepost::run::Step::Produce),
             "the run is open while the render walks, so ⏹ can reach it"
         );
@@ -117,7 +117,7 @@ fn f5_1_where_it_runs_the_press_returns_with_the_run_open() {
             "S6's ending word lands on the status line when the walk does: {ending}"
         );
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             None,
             "and the run's own ending closed the bar"
         );

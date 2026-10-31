@@ -11,8 +11,8 @@ use crate::cut;
 use crate::cut_speed;
 use crate::fx_band;
 use crate::ui::window::{
-    find_status, find_widget_by_name, live_form_answer_is_undo, paste_line, record_edit,
-    refresh_effects_lane, review_cut_of, save_insert_cut, selection, INSERT_PLACE_KNOWN,
+    find_status, find_widget_by_name, live_form_answer_is_undo, record_edit, refresh_effects_lane,
+    save_insert_cut, selection, INSERT_PLACE_KNOWN,
 };
 
 thread_local! {
@@ -24,14 +24,14 @@ thread_local! {
 }
 
 /// The line, known only if this session ever placed one.
-pub(crate) fn known_line(window: &adw::ApplicationWindow) -> Option<f64> {
+pub(crate) fn known_line() -> Option<f64> {
     let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    known.then(|| paste_line(window))
+    known.then(|| crate::ui::cut_lane::paste_line())
 }
 
 /// The marked stretch; a band under every effect's floor for "marked" is not a band at all, exactly as F3.3 reads it.
-pub(crate) fn marked_band(window: &adw::ApplicationWindow) -> Option<(f64, f64)> {
-    selection(window)
+pub(crate) fn marked_band() -> Option<(f64, f64)> {
+    selection()
         .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
         .map(|band| (band.start, band.end))
 }
@@ -50,7 +50,7 @@ pub(crate) fn owns_form(
 
 /// A new effect lands on the cut, the file and the lane.
 pub(crate) fn land_new_effect(window: &adw::ApplicationWindow, fx: cut::Fx) {
-    let mut cut_ = review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     cut_.fx.push(fx);
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.

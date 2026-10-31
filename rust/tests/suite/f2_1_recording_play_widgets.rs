@@ -155,7 +155,7 @@ fn check_s3_a_press_gives_the_window_real_filmed_runs(app: &adw::Application) {
     button.emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let player = ui::preview_player(&window);
+    let player = ui::preview_player();
     assert!(
         player.transport.playing,
         "with real runs the press plays, it does not refuse"
@@ -187,7 +187,7 @@ fn check_s3_a_press_gives_the_window_real_filmed_runs(app: &adw::Application) {
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        !ui::preview_player(&window).transport.playing,
+        !ui::preview_player().transport.playing,
         "the second click paused it"
     );
     assert!(
@@ -268,7 +268,6 @@ fn check_the_button_wears_the_pause_label(app: &adw::Application) {
 fn check_s1_switches_and_carries_on(app: &adw::Application) {
     let (window, root) = cut_window(app, "switch");
     ui::set_preview_state(
-        &window,
         true,
         false,
         naivepost::run::Transport {
@@ -277,13 +276,13 @@ fn check_s1_switches_and_carries_on(app: &adw::Application) {
         },
     );
     assert!(
-        ui::preview_player(&window).cut_only,
+        ui::preview_player().cut_only,
         "the ✂ preview is showing to start with"
     );
     let button = ui::play_recording_button(&window).expect("▶");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
-    let after = ui::preview_player(&window);
+    let after = ui::preview_player();
     assert!(!after.cut_only, "the preview is the recording now");
     assert!(
         after.transport.playing,

@@ -54,7 +54,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         }],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     ui::set_session_recordings(&tape());
     settle();
     window
@@ -85,7 +85,7 @@ fn check_the_three_gestures_are_attached(app: &adw::Application) {
 /// the line the readout shows — not a second copy of the arithmetic.
 fn check_a_notch_over_the_transport_steps_the_line(app: &adw::Application) {
     let window = cut_window(app);
-    let before = ui::line_position(&window).t;
+    let before = ui::line_position().t;
     let said =
         ui::cut_view::apply_wheel(&window, WheelOver::Transport, false, 1.0, 0.0, |frames| {
             let _ = ui::step_frames_of(&window, frames);
@@ -95,7 +95,7 @@ fn check_a_notch_over_the_transport_steps_the_line(app: &adw::Application) {
         said.is_none(),
         "a step says nothing here — the transport owns that sentence"
     );
-    let after = ui::line_position(&window).t;
+    let after = ui::line_position().t;
     assert!(
         after > before,
         "a notch forward moved the red line: {before} -> {after}"
@@ -108,7 +108,7 @@ fn check_a_notch_over_the_transport_steps_the_line(app: &adw::Application) {
     settle();
     assert!(shifted.is_none());
     assert!(
-        ui::line_position(&window).t - after > (before * 0.0 + 0.1),
+        ui::line_position().t - after > (before * 0.0 + 0.1),
         "Shift stepped further than one frame"
     );
     window.close();

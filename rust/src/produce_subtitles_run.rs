@@ -92,7 +92,7 @@ pub fn clear_stale_sidecars(video: &Path, keep: &Path, stems: &[String]) -> usiz
     for stem in stems.iter() {
         // `final` answers `final.srt`/`final.vtt`; a translated stem answers its own pair. §3's
         // lister is called with no languages, because the STEMS already carry the language.
-        for name in crate::produce_data::stale_files(stem, &[]) {
+        for name in crate::produce_render::stale_sidecars(stem, &[]) {
             let victim = produce_dir.join(&name);
             // The scratch sheet is this run's own output and gets rewritten after this.
             if victim != keep && victim.is_file() {

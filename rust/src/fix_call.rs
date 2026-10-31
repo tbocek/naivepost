@@ -61,7 +61,7 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
 pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
-    let session = session_dir();
+    let session = crate::startup::open_dir();
     let tree = Tree::new(&session)
         .map_err(|_| format!("{}: not a project folder to fix into", session.display()))?;
     let source = task
@@ -76,11 +76,6 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
     let conf = settings::read(&paths).unwrap_or_default();
     stage_chunk(&tree, &paths, &conf, &lane, is_video, is_commentary, log)?;
     Ok(())
-}
-
-/// The session folder the walk works in, resolved like every other dial.
-fn session_dir() -> std::path::PathBuf {
-    crate::startup::open_dir()
 }
 
 /// One source's transcript through the fixer, one ask per block; returns blocks walked.
@@ -171,17 +166,8 @@ pub fn ask_for<'a>(
     move |message: &str| ask_once(tree, paths, conf, message)
 }
 
-pub fn ask_block(
-    tree: &Tree,
-    paths: &Paths,
-    conf: &settings::Conf,
-    message: &str,
-) -> Result<Vec<Reply>, String> {
-    ask_once(tree, paths, conf, message)
-}
-
 /// One block's ask: system wording, then the User Context over the block's message, ONE chat call with no tools. Returns the model's rows ([`Reply::Row`]) or [`Reply::Unreadable`]. Every dial writes a timed `requests.tsv` row (§09 §10); a VALID answer is filed by `fix_transcripts::store_block`.
-fn ask_once(
+pub fn ask_once(
     tree: &Tree,
     paths: &Paths,
     conf: &settings::Conf,
@@ -279,6 +265,6 @@ fn fix_system(paths: &Paths) -> String {
 
 /// The wording to ask with, through the settings read path so an edit wins (§04-prepare#6); the shipped wording when none is on disk.
 fn wording(paths: &Paths, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
 }

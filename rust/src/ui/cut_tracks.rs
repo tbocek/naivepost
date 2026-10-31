@@ -271,7 +271,7 @@ pub fn scene_from(
         &scene.recording_rows,
         scene.row_count,
         line,
-        crate::ui::window::held_segment().as_ref(),
+        crate::ui::cut_hand::held_clip_or_edge().as_ref(),
     );
     scene.marks.whole = crate::ui::cut_band_marks::whole_takes();
     scene
@@ -279,8 +279,8 @@ pub fn scene_from(
 
 /// The band's laid-out height for THIS window, from the scene the page would paint. `install` sized the surfaces
 /// before any cut, so anything charging for the stack (layout, snapshot crop) asks this, not a widget not yet re-laid-out.
-pub fn band_height_for_window(window: &adw::ApplicationWindow) -> i32 {
-    let mut scene = crate::ui::cut_view::band_scene_for(window);
+pub fn band_height_for_window() -> i32 {
+    let mut scene = crate::ui::cut_view::band_scene_for();
     scene.thumbs = scene
         .recordings
         .iter()
@@ -563,8 +563,8 @@ pub fn gutter_row_switches(window: &adw::ApplicationWindow) -> Option<gtk::Fixed
         .ok()
 }
 
-pub fn row_wave_top(window: &adw::ApplicationWindow, row: usize) -> f64 {
-    rows(&crate::ui::cut_view::band_scene_for(window), thumb_px()).wave_top(row)
+pub fn row_wave_top(row: usize) -> f64 {
+    rows(&crate::ui::cut_view::band_scene_for(), thumb_px()).wave_top(row)
 }
 
 /// The band's two surfaces found again through the window by the names [`build`] gave them, so no remembered copy goes stale.

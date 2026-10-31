@@ -301,13 +301,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
     // A stop's still is rendered from the scene's own camera: it borrows its framing, never invents one.
     let mut stop = fx(EffectKind::Speed, 6.0, 2.0);
     stop.rate = 0.0;
-    assert!(lane::still_come_from_scene_camera(&stop));
+    assert!(fx_record::is_stop(&stop));
     let mut own = fx(EffectKind::Speed, 6.0, 2.0);
     own.rate = 1.0;
-    assert!(
-        !lane::still_come_from_scene_camera(&own),
-        "rate 1 is not a still"
-    );
+    assert!(!fx_record::is_stop(&own), "rate 1 is not a still");
     for kind in [
         EffectKind::Zoom,
         EffectKind::Text,
@@ -316,7 +313,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
         EffectKind::Label,
     ] {
         assert!(
-            !lane::still_come_from_scene_camera(&fx(kind, 6.0, 2.0)),
+            !fx_record::is_stop(&fx(kind, 6.0, 2.0)),
             "{kind:?} is not a stop"
         );
     }

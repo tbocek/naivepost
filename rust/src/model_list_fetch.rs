@@ -16,18 +16,12 @@ pub fn budget() -> Duration {
     Duration::from_secs(seconds.max(1))
 }
 
-/// Ask one LLM server what it serves and hand back its body, exactly as it arrived. # The tree
-/// decides whether the request is logged (it must be — §10)
-pub fn models_at(
+/// One `GET /v1/models`, logged when there is a tree to log into, bounded by §9's fifteen seconds
+/// either way.
+pub fn models_ask(
     endpoint: &Endpoint,
     tree: &Option<crate::layout::Tree>,
 ) -> Result<String, String> {
-    models_ask(endpoint, tree)
-}
-
-/// One `GET /v1/models`, logged when there is a tree to log into, bounded by §9's fifteen seconds
-/// either way.
-fn models_ask(endpoint: &Endpoint, tree: &Option<crate::layout::Tree>) -> Result<String, String> {
     let (method, path, seconds) = model_list::request();
     // The description is the caller's contract: if §9 ever changes the verb or the path, this says
     // so out loud instead of quietly sending something else.

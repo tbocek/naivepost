@@ -44,7 +44,7 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s1_prepare_describe_fix_and_one_m
     assert_eq!(describe.calls, 10, "40 frames / 4 a call");
     assert_eq!(
         describe.calls,
-        prepare::vision_calls(40),
+        roles::vision_batches(40),
         "same divisor as the request builder"
     );
     assert!(describe.cached, "§4 marks the whole Prepare row cached");
@@ -83,7 +83,7 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s1_prepare_describe_fix_and_one_m
     assert!(unmarked.of("retake").is_none() && unmarked.of("textedit").is_none());
     assert_eq!(
         unmarked.asked(),
-        prepare::vision_calls(8) + prepare::fixer_calls(50)
+        roles::vision_batches(8) + prepare::fixer_calls(50)
     );
 
     // The step's total is the sum of its rows, nothing hidden.

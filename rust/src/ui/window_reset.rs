@@ -38,7 +38,7 @@ fn ask(window: &adw::ApplicationWindow) {
             status.set_text(text);
         }
     };
-    if window::running_step(window).is_some() || crate::ui::produce_worker::busy() {
+    if window::running_step().is_some() || crate::ui::produce_worker::busy() {
         say("stop the run first");
         return;
     }

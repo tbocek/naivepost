@@ -277,7 +277,7 @@ fn f3_3_s3_a_stop_is_not_a_rate() {
     assert_eq!((hard.trans, hard.tout), (0.0, 0.5));
 
     // The curve: "Linear" writes no key; a name this build does not know survives rather than being flattened.
-    assert!(fx_record::keeps_the_old_bytes(&ramped));
+    assert!(fx_record::ease_is_linear(&ramped));
     let mut unknown = form(0.0, 4.0, 2.0, 0.0, 0.0);
     unknown.curve = "EaseInOut".into();
     assert_eq!(speed::apply(&unknown).ease, "EaseInOut");

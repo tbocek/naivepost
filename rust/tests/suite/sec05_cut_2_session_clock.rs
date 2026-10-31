@@ -146,7 +146,7 @@ fn cut_page(app: &adw::Application, seeded: &cut::Cut) -> adw::ApplicationWindow
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -154,12 +154,12 @@ fn cut_page(app: &adw::Application, seeded: &cut::Cut) -> adw::ApplicationWindow
 /// S3 wire: seed a cut whose row carries a -19 s correction and read the geometry the band paints from.
 /// Nothing else was pressed: the correction alone must move the clips.
 fn check_a_slided_recording_shows_at_its_new_place(app: &adw::Application) {
-    let plain = cut_page(app, &cut_with(None));
-    let before = ui::window::band_clip_boxes_for_test(&plain);
+    let _plain = cut_page(app, &cut_with(None));
+    let before = ui::window::band_clip_boxes_for_test();
     assert_eq!(before.len(), 2, "both kept scenes drew boxes");
 
-    let slid = cut_page(app, &cut_with(Some(-19.0)));
-    let after = ui::window::band_clip_boxes_for_test(&slid);
+    let _slid = cut_page(app, &cut_with(Some(-19.0)));
+    let after = ui::window::band_clip_boxes_for_test();
     assert_eq!(after.len(), 2, "and still both after the slide");
     assert!(
         (after[0].x - before[0].x - 19.0 * ui::cut_view::pps()).abs() < 1e-6,

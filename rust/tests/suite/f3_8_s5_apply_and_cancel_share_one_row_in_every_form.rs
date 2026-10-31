@@ -267,8 +267,8 @@ fn cancel_leaves_every_effect_alone(app: &adw::Application) {
         let (_, _, cancel) = measured_row(&window, holder_name);
         cancel.emit_by_name::<()>("clicked", &[]);
         settle();
-        let before = ui::review_cut_of(&window).fx[index].clone();
-        let after = ui::review_cut_of(&window).fx[index].clone();
+        let before = ui::window_preview::newest_review_cut().fx[index].clone();
+        let after = ui::window_preview::newest_review_cut().fx[index].clone();
         assert_eq!(
             (after.t, after.dur),
             (before.t, before.dur),
@@ -295,7 +295,7 @@ fn a_refused_apply_keeps_the_form_open(app: &adw::Application) {
         .expect("label is one of the six");
     let holder_name = forms()[index].1.clone();
     click_band(&window, index);
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     widget(&window, "label-field-name")
         .downcast::<gtk::Entry>()
         .expect("the label form's name is an entry")
@@ -304,7 +304,7 @@ fn a_refused_apply_keeps_the_form_open(app: &adw::Application) {
     apply.emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "an empty name placed no label"
     );

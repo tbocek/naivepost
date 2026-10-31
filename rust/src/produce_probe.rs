@@ -10,12 +10,6 @@
 
 use std::path::Path;
 
-/// The frame size of one encoded file, read off the file by ffprobe: the door `produce_exec::Materials::probe`
-/// carries. Every failure (no binary, non-zero exit, unparseable reply) answers `None`, read as "no claim".
-pub fn probe(file: &Path) -> Option<(i32, i32)> {
-    size_of(file)
-}
-
 /// ffprobe's argv for one file's video-stream size: `-select_streams v:0` (audio has no size), `csv=p=0` (one line of two numbers).
 pub fn args_for(file: &Path) -> Vec<String> {
     vec![

@@ -587,8 +587,7 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
                 .expect("the shell has a Cut tab")
                 .emit_clicked();
             settle();
-            let controller =
-                ui::history_key_controller(&window).expect("history has a key controller");
+            let controller = ui::history_key_controller().expect("history has a key controller");
 
             // Each chord gets its OWN edit underneath it. One note_edit cannot serve all three: after the
             // first undo there is exactly one redo step left, so the second chord would answer

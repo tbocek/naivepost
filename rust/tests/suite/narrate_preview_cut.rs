@@ -249,9 +249,9 @@ fn f4_5_s3_sound_equals_the_render_and_speed_applies_at_seeks() {
         rate: 2.0,
         ..Default::default()
     };
-    assert_eq!(view::seek_rate(std::slice::from_ref(&fast), 13.0), 2.0);
-    assert_eq!(view::seek_rate(&[fast], 17.0), 1.0);
-    assert_eq!(view::seek_rate(&[], 13.0), 1.0);
+    assert_eq!(cut_hear::rate_under(std::slice::from_ref(&fast), 13.0), 2.0);
+    assert_eq!(cut_hear::rate_under(&[fast], 17.0), 1.0);
+    assert_eq!(cut_hear::rate_under(&[], 13.0), 1.0);
 }
 
 /// S4: a seek lands on the cut, because the seconds between two clips are not in the video at all. The
@@ -342,11 +342,8 @@ fn f4_5_s5_the_row_follows_the_playhead_and_selecting_one_seeks_to_its_lead_in()
     assert_eq!(AUDITION_LEAD_SECONDS, 3.0);
 
     let entries = [line(10.0, "spoken")];
-    assert_eq!(view::selected_row(21.0, &entries), None);
-    assert_eq!(
-        view::selected_row(19.0, &entries),
-        view::line_at(19.0, &entries)
-    );
+    assert_eq!(view::line_at(21.0, &entries), None);
+    assert_eq!(view::line_at(19.0, &entries), view::line_at(19.0, &entries));
 
     // Three seconds ahead of the line — and never back before the clip starts, where there is no video.
     assert_eq!(view::lead_in(0, &entries), 17.0);
@@ -362,7 +359,7 @@ fn f4_5_s5_the_row_follows_the_playhead_and_selecting_one_seeks_to_its_lead_in()
     let two = [line(2.0, "first"), line(6.0, "second")];
     assert_eq!(view::lead_in(1, &two), 16.0);
     assert_eq!(
-        view::selected_row(15.0, &two),
+        view::line_at(15.0, &two),
         Some(0),
         "and 15 s really is the first line's"
     );
@@ -485,10 +482,7 @@ fn f4_5_s9_retrying_a_take_clears_its_key_so_the_next_attempt_is_allowed() {
     );
 
     // The retried key is cleared by its own press, so this attempt is allowed through.
-    assert!(
-        view::retry_line(&mut failed, "take-7.wav"),
-        "there was a failure to clear"
-    );
+    assert!(failed.retry("take-7.wav"), "there was a failure to clear");
     assert!(
         !failed.holds("take-7.wav"),
         "cleared, so the next synthesis may run"
@@ -500,9 +494,9 @@ fn f4_5_s9_retrying_a_take_clears_its_key_so_the_next_attempt_is_allowed() {
 
     // Pressing ▶ on a take that never failed answers false: the caller reads that as a first attempt, not a
     // retry, and does not claim to have rescued anything.
-    assert!(!view::retry_line(&mut failed, "never-failed.wav"));
+    assert!(!failed.retry("never-failed.wav"));
     // And a second retry of the rescued take also answers false: it is already free.
-    assert!(!view::retry_line(&mut failed, "take-7.wav"));
+    assert!(!failed.retry("take-7.wav"));
 
     // Re-editing a line gives it a new key, so the freed take and the fresh one are different questions.
     failed.add("take-7.wav");

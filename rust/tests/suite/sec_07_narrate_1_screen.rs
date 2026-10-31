@@ -123,9 +123,9 @@ fn sec_07_narrate_1_screen_s2_one_notch_is_one_ratio_and_the_view_cannot_leave_t
 #[test]
 fn sec_07_narrate_1_screen_s3_a_press_under_the_slop_sets_the_bar_and_a_drag_selects() {
     // Exactly at the slop is still a click; one px more is a drag — asked of the one rule that decides.
-    assert_eq!(band::drag_or_click(50.0, 53.0, 0.0), TakePress::SetBar);
+    assert_eq!(screen::take_press(50.0, 53.0, 0.0), TakePress::SetBar);
     assert_eq!(
-        band::drag_or_click(50.0, 54.0, 0.0),
+        screen::take_press(50.0, 54.0, 0.0),
         TakePress::Select {
             from: 50.0,
             to: 54.0
@@ -133,7 +133,7 @@ fn sec_07_narrate_1_screen_s3_a_press_under_the_slop_sets_the_bar_and_a_drag_sel
     );
     // Backwards drags name their seconds in order, because a take's seconds have no direction.
     assert_eq!(
-        band::drag_or_click(54.0, 50.0, 0.0),
+        screen::take_press(54.0, 50.0, 0.0),
         TakePress::Select {
             from: 50.0,
             to: 54.0
@@ -141,7 +141,7 @@ fn sec_07_narrate_1_screen_s3_a_press_under_the_slop_sets_the_bar_and_a_drag_sel
     );
     // With a start second (the view's own origin) the seconds arrive shifted by it.
     assert_eq!(
-        band::drag_or_click(10.0, 20.0, 100.0),
+        screen::take_press(10.0, 20.0, 100.0),
         TakePress::Select {
             from: 110.0,
             to: 120.0

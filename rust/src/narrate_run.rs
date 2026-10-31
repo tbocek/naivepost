@@ -143,8 +143,7 @@ pub enum Speak {
 }
 
 /// S6's per-line checkpoint rule: skip blank text or a cached wav, otherwise synthesize.
-pub fn speak_line(text: &str, voice: &str, cached_wav_exists: bool) -> Speak {
-    let _ = voice;
+pub fn speak_line(text: &str, cached_wav_exists: bool) -> Speak {
     if text.trim().is_empty() {
         return Speak::SkippedBlank;
     }
@@ -203,10 +202,10 @@ pub fn fold_written(record: &Narration, written: &[Written]) -> Narration {
 }
 
 /// S6: decide every line of the record in one pass.
-pub fn speak_pass(voice: &str, record: &[Entry], cached: impl Fn(&Entry) -> bool) -> Vec<Speak> {
+pub fn speak_pass(record: &[Entry], cached: impl Fn(&Entry) -> bool) -> Vec<Speak> {
     record
         .iter()
-        .map(|entry| speak_line(&entry.text, voice, cached(entry)))
+        .map(|entry| speak_line(&entry.text, cached(entry)))
         .collect()
 }
 
@@ -274,11 +273,11 @@ mod smoke {
         let folded = super::fold_written(&Narration::default(), &[w]);
         assert_eq!(folded.entries.len(), 1);
         assert_eq!(
-            super::tally(&super::speak_pass("own", &folded.entries, |_| false)),
+            super::tally(&super::speak_pass(&folded.entries, |_| false)),
             (1, 0)
         );
         assert_eq!(
-            super::tally(&super::speak_pass("own", &folded.entries, |_| true)),
+            super::tally(&super::speak_pass(&folded.entries, |_| true)),
             (0, 1)
         );
     }

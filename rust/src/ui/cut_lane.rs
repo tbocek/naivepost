@@ -6,10 +6,10 @@ use crate::ui::window;
 /// ⇲ Lane with nothing copied: the row starts at the red line, windows the session's footage file, and runs
 /// for what ffprobe says that file is.
 pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
-    let Some(at) = paste_line_opt(window) else {
+    let Some(at) = paste_line_opt() else {
         return cut_copy::NO_LANE_LINE_YET.to_string();
     };
-    let Some(file) = footage_source_path(window) else {
+    let Some(file) = footage_source_path() else {
         return "no source is marked as footage \u{2014} Inputs says which files are tape"
             .to_string();
     };
@@ -20,10 +20,10 @@ pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
 /// [`lane_for_footage_file`] with the probe on a worker (§03-shell §1): the same refusals at once, then the
 /// row filed, and its sentence on the status line, when ffprobe has answered.
 pub fn lane_for_footage_file_on_worker(window: &adw::ApplicationWindow) -> String {
-    let Some(at) = paste_line_opt(window) else {
+    let Some(at) = paste_line_opt() else {
         return cut_copy::NO_LANE_LINE_YET.to_string();
     };
-    let Some(file) = footage_source_path(window) else {
+    let Some(file) = footage_source_path() else {
         return "no source is marked as footage \u{2014} Inputs says which files are tape"
             .to_string();
     };
@@ -41,7 +41,7 @@ pub fn lane_for_footage_file_on_worker(window: &adw::ApplicationWindow) -> Strin
     );
     format!(
         "measuring {} \u{2026}",
-        source_base(&footage_source_path(window).unwrap_or_default())
+        source_base(&footage_source_path().unwrap_or_default())
     )
 }
 
@@ -77,16 +77,16 @@ fn line_is_placed() -> bool {
 }
 
 /// The red line's second when there is one — the row's start — or `None` when the page has no line yet.
-pub(crate) fn paste_line_opt(window: &adw::ApplicationWindow) -> Option<f64> {
-    line_is_placed().then(|| window::paste_line(window))
+pub(crate) fn paste_line_opt() -> Option<f64> {
+    line_is_placed().then(|| paste_line())
 }
 
 /// The line the copy lands on — where the eye is looking, which is what "paste at the red line" asks for.
-pub fn paste_line(window: &adw::ApplicationWindow) -> f64 {
-    window::live_player(window)
+pub fn paste_line() -> f64 {
+    window::live_player()
         .filter(|player| player.borrow().transport.playing)
         .and_then(|player| player.borrow().playhead)
-        .unwrap_or_else(|| window::line_position(window).t)
+        .unwrap_or_else(|| window::line_position().t)
 }
 
 /// The base name of a project path — what a `Scope::Sound { recording }` names.
@@ -99,8 +99,8 @@ pub(crate) fn source_base(path: &str) -> String {
 }
 
 /// The session's first footage-marked file, by path: the file ⇲ Lane can put on a row of its own.
-pub(crate) fn footage_source_path(window: &adw::ApplicationWindow) -> Option<String> {
-    window::session_handle(window)
+pub(crate) fn footage_source_path() -> Option<String> {
+    window::session_handle()
         .borrow()
         .sources
         .iter()

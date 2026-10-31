@@ -105,16 +105,13 @@ fn sec_06_effects_1_record_s2_fades_and_ease() {
         rec::ease_is_linear(&fx("text", 1.0)),
         "the default is linear"
     );
-    assert!(rec::keeps_the_old_bytes(&fx("text", 1.0)));
+    assert!(rec::ease_is_linear(&fx("text", 1.0)));
     let shaped = Fx {
         ease: "quad".into(),
         ..fx("text", 1.0)
     };
     assert!(!rec::ease_is_linear(&shaped));
-    assert!(
-        !rec::keeps_the_old_bytes(&shaped),
-        "a named shape is written"
-    );
+    assert!(!rec::ease_is_linear(&shaped), "a named shape is written");
     // A curve this build has never heard of survives: dropping it would re-time a fade nobody asked to change.
     assert!(rec::ease_survives("zigzag"), "an unknown shape is kept");
     assert!(!rec::ease_survives(""), "and linear is not a name");

@@ -106,7 +106,7 @@ fn place_caption(window: &adw::ApplicationWindow, words: &str) -> usize {
     );
     ui::text_type_words(window, words);
     let applied = ui::press_text_apply(window);
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = ui::window_preview::newest_review_cut();
     let index = cut_
         .fx
         .iter()
@@ -117,8 +117,8 @@ fn place_caption(window: &adw::ApplicationWindow, words: &str) -> usize {
 }
 
 /// The text record at `index`, read back off the page — the state the logic doors answer, not a painted pixel.
-fn record(window: &adw::ApplicationWindow, index: usize) -> Fx {
-    ui::review_cut_of(window)
+fn record(index: usize) -> Fx {
+    ui::window_preview::newest_review_cut()
         .fx
         .into_iter()
         .nth(index)
@@ -140,17 +140,16 @@ fn box_of(record: &Fx) -> fx_text::Box_ {
 /// (`fit_size_of` for the fitted picture, `cut_preview_caption::box_of` for the box), not recomputed from the
 /// panel constants: headless the plate answers no footage shape, so `fit_size_of` returns the panel itself, and a
 /// check that assumed that would silently disagree with the page the moment real footage is probed.
-fn placed_box_px(window: &adw::ApplicationWindow, index: usize) -> (f64, f64, f64, f64) {
-    let fit = ui::cut_preview_frame::fit_size_of(&last_window(), FRAME.0, FRAME.1);
-    ui::cut_preview_caption::box_of(&record(window, index), fit)
+fn placed_box_px(index: usize) -> (f64, f64, f64, f64) {
+    let fit = ui::cut_preview_frame::fit_size_of(FRAME.0, FRAME.1);
+    ui::cut_preview_caption::box_of(&record(index), fit)
 }
 
 /// Fire the panel's own drag: begin at the press position, release with the OFFSET that signal carries.
 /// Returns the status line the page printed, which is how a caller tells an edit from a play/pause toggle.
 fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) -> String {
     let _ = window;
-    let gesture =
-        ui::zoom_gesture(&last_window()).expect("the page wired a drag onto the preview panel");
+    let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
@@ -198,12 +197,6 @@ fn hold_window(window: &adw::ApplicationWindow) {
     LAST_WINDOW.with(|slot| *slot.borrow_mut() = Some(window.clone()));
 }
 
-fn last_window() -> adw::ApplicationWindow {
-    LAST_WINDOW
-        .with(|slot| slot.borrow().clone())
-        .expect("a page is built")
-}
-
 /// Build the Cut page for one check. `common::cut_page` keeps its own last-window slot, which is what the
 /// gesture lookup and the player follow, so this only adds the handle this file needs.
 fn page(app: &adw::Application) -> adw::ApplicationWindow {
@@ -217,8 +210,8 @@ fn page(app: &adw::Application) -> adw::ApplicationWindow {
 fn f3_4_s5_a_drag_on_a_placed_box_moves_it(app: &adw::Application) {
     let window = page(app);
     let index = place_caption(&window, "one lecture");
-    let before = box_of(&record(&window, index));
-    let (x, y, w, h) = placed_box_px(&window, index);
+    let before = box_of(&record(index));
+    let (x, y, w, h) = placed_box_px(index);
     // Middle of the box, and UPWARD on purpose: the lower third's bottom edge already sits on the frame's bottom
     // line, so a downward move is clamped back to where it started and proves nothing about the drag.
     // `fx_text::grab_edge` answers `None` at the middle, so this is a move, not a resize.
@@ -235,7 +228,7 @@ fn f3_4_s5_a_drag_on_a_placed_box_moves_it(app: &adw::Application) {
         said.contains("moved") || said.contains("no zoom armed"),
         "the drag printed neither §F3.8's moved sentence nor the framing refusal: {said:?}"
     );
-    let after = box_of(&record(&window, index));
+    let after = box_of(&record(index));
     assert!(
         (after.cy - before.cy).abs() > 0.001,
         "the drag left the record's cy alone ({before:?} -> {after:?}) -- the gesture never reached the box"
@@ -259,21 +252,21 @@ fn f3_4_s5_a_drag_on_a_placed_box_moves_it(app: &adw::Application) {
 fn f3_4_s5_one_undo_takes_the_move_back(app: &adw::Application) {
     let window = page(app);
     let index = place_caption(&window, "one lecture");
-    let before = box_of(&record(&window, index));
-    let (x, y, w, h) = placed_box_px(&window, index);
+    let before = box_of(&record(index));
+    let (x, y, w, h) = placed_box_px(index);
     drag_panel(
         &window,
         (x + w / 2.0, y + h / 2.0),
         (x + w / 2.0, y + h / 2.0 - 30.0),
     );
-    let moved = box_of(&record(&window, index));
+    let moved = box_of(&record(index));
     assert_ne!(
         moved.cy, before.cy,
         "nothing moved, so undo would prove nothing"
     );
     // The toolbar's ↶, by name — the button a click reaches.
     common::click(&window, "undo-button");
-    let back = box_of(&record(&window, index));
+    let back = box_of(&record(index));
     assert!(
         (back.cy - before.cy).abs() < 1e-9 && (back.cx - before.cx).abs() < 1e-9,
         "one \u{21b6} did not restore the box: {before:?} -> {moved:?} -> {back:?}"
@@ -288,10 +281,10 @@ fn f3_4_s5_one_undo_takes_the_move_back(app: &adw::Application) {
 fn f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px(app: &adw::Application) {
     let window = page(app);
     let index = place_caption(&window, "one lecture");
-    let (x, y, w, h) = placed_box_px(&window, index);
+    let (x, y, w, h) = placed_box_px(index);
     drag_panel(&window, (x + w, y + h / 2.0), (x + 2.0, y + h / 2.0));
-    let after = box_of(&record(&window, index));
-    let (_, ny, _, nh) = placed_box_px(&window, index);
+    let after = box_of(&record(index));
+    let (_, ny, _, nh) = placed_box_px(index);
     let nw = after.wf * FRAME.0;
     assert!(
         nw >= fx_text::MIN_BOX_PX - 0.5,
@@ -332,7 +325,7 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
     let frame_y = fx_text::frame_lines(FRAME.1);
     let (left_x, centre_x, right_x) = (frame_x[0], frame_x[1], frame_x[2]);
     let index = place_caption(&window, "one lecture");
-    let (x, y, w, h) = placed_box_px(&window, index);
+    let (x, y, w, h) = placed_box_px(index);
     let middle = (x + w / 2.0, y + h / 2.0);
 
     // ── OFF EVERY REACH, AS A MOVE ── press the band's middle (96 px from either edge, so no grip is in question) and
@@ -350,7 +343,7 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
         Some(None),
         "the first nudge resized instead of moving -- it said: {off_said}"
     );
-    let moved = placed_box_px(&window, index);
+    let moved = placed_box_px(index);
     assert!(
         (moved.0 - (x - naivepost::fx_zoom::DRAG_MIN_PX - 1.0)).abs() <= 0.6,
         "a release with no line within reach should keep the hand's own position: left edge at {:.2}, expected {:.2}",
@@ -385,7 +378,7 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
         frame_y[1] - h - fx_text::SNAP_PX * 0.5,
     );
     let aim_delta = fx_text::move_box(
-        box_of(&record(&window, index)),
+        box_of(&record(index)),
         (wanted.0 - moved.0, wanted.1 - moved.1),
         FRAME,
     );
@@ -401,7 +394,7 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
         Some(None),
         "the pull toward the centre resized instead of moving -- it said: {aim_said}"
     );
-    let centred = placed_box_px(&window, index);
+    let centred = placed_box_px(index);
     assert!(
         (centred.0 + centred.2 / 2.0 - centre_x).abs() <= 0.6,
         "a release whose middle stopped 5 px off the centre line was not snapped onto it: middle at {:.2}",
@@ -425,7 +418,7 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
         heard(&right_said),
         "the page did not take the pull toward the right edge as an edit -- it said: {right_said}"
     );
-    let edged = placed_box_px(&window, index);
+    let edged = placed_box_px(index);
     assert_eq!(
         resized_edge(centred, edged),
         fx_text::Edge::Right,
@@ -447,7 +440,7 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
         heard(&left_said),
         "the page did not take the pull toward the left edge as an edit -- it said: {left_said}"
     );
-    let at_left = placed_box_px(&window, index);
+    let at_left = placed_box_px(index);
     assert_eq!(
         resized_edge(edged, at_left),
         fx_text::Edge::Left,
@@ -507,7 +500,7 @@ fn f3_4_s5_the_snap_lines_show_while_the_box_is_moved(app: &adw::Application) {
     // direct read at paint time, a check's read here) are seen to agree on one state and not keep two.
     naivepost::ui::cut_preview_frame::note_edit(true);
     assert!(
-        naivepost::ui::cut_preview_press::snap_lines_are_on_for_test(),
+        ui::cut_preview_frame::edit_snap_on(),
         "note_edit did not turn the lines on"
     );
     naivepost::ui::cut_preview_frame::note_edit(false);
@@ -524,17 +517,17 @@ fn f3_4_s5_the_snap_lines_show_while_the_box_is_moved(app: &adw::Application) {
 fn f3_4_s5_a_press_without_travel_still_toggles_play(app: &adw::Application) {
     let window = page(app);
     let index = place_caption(&window, "one lecture");
-    let before = box_of(&record(&window, index));
-    let (x, y, w, h) = placed_box_px(&window, index);
+    let before = box_of(&record(index));
+    let (x, y, w, h) = placed_box_px(index);
     let middle = (x + w / 2.0, y + h / 2.0);
-    let playing_before = ui::preview_player(&window).transport.playing;
+    let playing_before = ui::preview_player().transport.playing;
     drag_panel(&window, middle, middle);
     assert_eq!(
-        ui::preview_player(&window).transport.playing,
+        ui::preview_player().transport.playing,
         !playing_before,
         "a click inside the caption's box did not toggle the transport"
     );
-    let after = box_of(&record(&window, index));
+    let after = box_of(&record(index));
     assert_eq!(
         (after.cx, after.cy),
         (before.cx, before.cy),
@@ -549,7 +542,7 @@ fn f3_4_s5_a_press_without_travel_still_toggles_play(app: &adw::Application) {
 /// Apply BUTTON: no record, the form still open, and the refusal is `fx_text::NO_WORDS` itself.
 fn f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open(app: &adw::Application) {
     let window = page(app);
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     ui::note_place(true);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     ui::press_effect_item(&window, EffectKind::Text);
@@ -561,7 +554,7 @@ fn f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open(app: &adw::Applica
     // The button, fired the way a click fires it — not `press_text_apply`, so the wire is what is proven.
     common::click(&window, "text-apply-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "empty words were placed"
     );

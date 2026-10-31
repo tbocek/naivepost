@@ -71,7 +71,7 @@ fn round(app: &adw::Application) {
         let window = cut_page(app, &three_clips());
         fire_remove_over(&window, 20.0, 30.0);
 
-        let on_screen = ui::review_cut_of(&window);
+        let on_screen = ui::window_preview::newest_review_cut();
         assert_eq!(
             on_screen.segs.len(),
             2,
@@ -117,7 +117,7 @@ fn round(app: &adw::Application) {
         );
         for to in [9.0, 8.0, 7.0] {
             let landed = ui::press_trim_border(&window, 0, naivepost::cut_trim::Border::End, to);
-            let edge = ui::review_cut_of(&window).segs[0].e;
+            let edge = ui::window_preview::newest_review_cut().segs[0].e;
             // The file must be EXACTLY what it was before the tick — byte for byte — which is a stronger and
             // more honest statement than "no file": §7's rule is that a mid-drag update never reaches disk.
             let bytes = std::fs::read(tree().cut_json()).unwrap_or_default();

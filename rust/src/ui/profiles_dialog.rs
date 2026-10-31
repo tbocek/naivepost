@@ -20,10 +20,6 @@ pub fn open_window() -> Option<gtk::Window> {
     OPEN.with(|open| open.borrow().clone())
 }
 
-fn paths() -> Option<crate::settings::Paths> {
-    crate::settings::from_environment()
-}
-
 fn named<W: IsA<gtk::Widget>>(widget: &W, name: &str) -> W {
     widget.set_widget_name(name);
     widget.clone()
@@ -131,7 +127,10 @@ fn say_summary(summary: &gtk::Label, text: &str) {
 
 fn select(state: &Editor, name: Option<&str>) {
     *state.current.borrow_mut() = name.map(str::to_string);
-    let names = paths().as_ref().map(profile::list).unwrap_or_default();
+    let names = crate::settings::from_environment()
+        .as_ref()
+        .map(profile::list)
+        .unwrap_or_default();
     let mut rows = vec![NEW.to_string()];
     rows.extend(names.iter().cloned());
     state.painting.set(true);
@@ -143,7 +142,7 @@ fn select(state: &Editor, name: Option<&str>) {
     state.picker.set_selected(at as u32);
     state.painting.set(false);
     let text = match name {
-        Some(name) => paths()
+        Some(name) => crate::settings::from_environment()
             .and_then(|paths| profile::load(&paths, name).ok())
             .unwrap_or_default(),
         None => profile::starter(),
@@ -159,7 +158,7 @@ fn paint_buttons(state: &Editor) {
 }
 
 fn save_named(name: &str, text: &str) -> String {
-    let Some(paths) = paths() else {
+    let Some(paths) = crate::settings::from_environment() else {
         return "nowhere to keep profiles on this machine".to_string();
     };
     match profile::save(&paths, name, text) {
@@ -173,7 +172,7 @@ fn save_named(name: &str, text: &str) -> String {
 }
 
 fn profile_named(path: &std::path::Path) -> Option<String> {
-    let folder = profile::dir(&paths()?);
+    let folder = profile::dir(&crate::settings::from_environment()?);
     let in_folder = path.parent().is_some_and(|parent| {
         parent == folder
             || parent.canonicalize().ok() == folder.canonicalize().ok() && folder.exists()
@@ -248,7 +247,7 @@ fn choose_file(
         .transient_for(parent)
         .modal(true)
         .build();
-    if let Some(folder) = paths().map(|paths| profile::dir(&paths)) {
+    if let Some(folder) = crate::settings::from_environment().map(|paths| profile::dir(&paths)) {
         let _ = std::fs::create_dir_all(&folder);
         let _ = chooser.set_current_folder(Some(&gtk::gio::File::for_path(&folder)));
     }
@@ -413,7 +412,7 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
         });
     let wanted = name.map(str::to_string).or(used);
     let known = wanted.filter(|name| {
-        paths()
+        crate::settings::from_environment()
             .as_ref()
             .map(profile::list)
             .unwrap_or_default()
@@ -511,7 +510,8 @@ fn delete_current(state: &Editor) {
     let Some(name) = state.current.borrow().clone() else {
         return;
     };
-    let said = match paths().map(|paths| profile::delete(&paths, &name)) {
+    let said = match crate::settings::from_environment().map(|paths| profile::delete(&paths, &name))
+    {
         Some(Ok(())) => format!("profile {name} deleted"),
         Some(Err(why)) => why,
         None => "nowhere to keep profiles on this machine".to_string(),

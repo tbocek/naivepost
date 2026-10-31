@@ -5,7 +5,7 @@
 //! that the catalogue holds exactly one row for the id.
 //!
 //! The exemption half is not this parameter's own rule but 05-cut#8's, reached through
-//! [`naivepost::cut_suggest::exempt_from_decorations_cap`]: a rate the cut asked for decides how long
+//! [`cut_suggest::is_speed_effect`]: a rate the cut asked for decides how long
 //! the segment runs, so it is not decoration and is not charged.
 
 use crate::common;
@@ -21,7 +21,7 @@ fn row(id: &str) -> params::Param {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .filter(|row| row.id == id)
         .collect::<Vec<_>>();
@@ -67,7 +67,7 @@ fn p_machine_maxproposedeffects_s2_a_whole_segment_rate_is_exempt() {
         EffectKind::Volume,
         EffectKind::Label,
     ] {
-        let expected = if cut_suggest::exempt_from_decorations_cap(kind) {
+        let expected = if cut_suggest::is_speed_effect(kind) {
             0
         } else {
             1
@@ -162,7 +162,7 @@ fn p_machine_maxproposedeffects_s6_no_second_home_for_the_same_bound() {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .map(|r| r.id.to_string())
         .collect();

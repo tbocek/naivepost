@@ -337,14 +337,13 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
     // Before it (9 s): nothing owed. Then three ticks INSIDE it: one sentence for the entry, not three — which
     // is what the state the door keeps on the player is FOR, exactly as `report_mute_change`'s twin avoids
     // printing one mute eight times per second.
-    ui::apply_mix(&window, &footage(), &lanes(), &[], 9.0);
+    ui::apply_mix(&footage(), &lanes(), &[], 9.0);
     assert!(
         !ui::preview_sound::sound_clock_noticed(),
         "9 s is an ordinary stretch"
     );
     for _ in 0..3 {
         let mix = ui::apply_mix(
-            &window,
             &footage(),
             &lanes(),
             std::slice::from_ref(&scene_speed),
@@ -360,13 +359,12 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
         "the door remembers it has already said this — a 100 ms tick would otherwise print it ten times a second"
     );
     // Walking out and back in earns it again: a per-entry notice, not a once-per-process one.
-    ui::apply_mix(&window, &footage(), &lanes(), &[], 16.0);
+    ui::apply_mix(&footage(), &lanes(), &[], 16.0);
     assert!(
         !ui::preview_sound::sound_clock_noticed(),
         "leaving the stretch clears the remembered notice"
     );
     ui::apply_mix(
-        &window,
         &footage(),
         &lanes(),
         std::slice::from_ref(&scene_speed),
@@ -380,13 +378,7 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
     // be worse than silence.
     for snd in ["", "pitch", "mute"] {
         let effect = speed(10.0, 4.0, 2.0, snd);
-        let mix = ui::apply_mix(
-            &window,
-            &footage(),
-            &lanes(),
-            std::slice::from_ref(&effect),
-            11.0,
-        );
+        let mix = ui::apply_mix(&footage(), &lanes(), std::slice::from_ref(&effect), 11.0);
         assert!(
             !mix.sound_needs_two_clocks,
             "`{snd}` previews as the render does"
@@ -471,7 +463,7 @@ fn only_speed(cut: &Cut) -> &naivepost::cut::Fx {
 fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application) {
     // A 4 s band at 30..34, "1× to the scene's end" (row 3), length 4.
     let window = place_speed_by_click(app, 30.0, 34.0, 3, "4");
-    let cut = ui::review_cut_of(&window);
+    let cut = ui::window_preview::newest_review_cut();
     let placed = only_speed(&cut);
     assert_eq!(
         placed.snd, "scene",
@@ -479,7 +471,7 @@ fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application)
     );
     let inside = placed.t + placed.dur / 2.0;
     // The tick's own door, at a second inside what the click placed.
-    let mix = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
+    let mix = ui::apply_mix(&cut.segs, &cut.lanes, &cut.fx, inside);
     assert!(
         mix.sound_needs_two_clocks,
         "a placed `scene` speed is one the preview cannot copy (§2)"
@@ -491,7 +483,7 @@ fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application)
     );
     // Another tick INSIDE the same stretch says nothing again — the notice is per entry, not per 100 ms.
     for _ in 0..3 {
-        ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
+        ui::apply_mix(&cut.segs, &cut.lanes, &cut.fx, inside);
     }
     let lines = std::cell::RefCell::new(Vec::new());
     ui::preview_sound::report_sound_clock_change(true, true, "scene", &|line| {
@@ -518,14 +510,14 @@ fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application)
 /// a parked line alike (§A.6 "Preview gain applies even paused").
 fn placed_silent_speed_silences_the_preview_bed(app: &adw::Application) {
     let window = place_speed_by_click(app, 30.0, 34.0, 4, "4");
-    let cut = ui::review_cut_of(&window);
+    let cut = ui::window_preview::newest_review_cut();
     let placed = only_speed(&cut);
     assert_eq!(
         placed.snd, "mute",
         "the Silent row stores the mute answer (§1's migration spelling)"
     );
     let inside = placed.t + placed.dur / 2.0;
-    let mix = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
+    let mix = ui::apply_mix(&cut.segs, &cut.lanes, &cut.fx, inside);
     assert!(
         mix.bed_silenced,
         "the mix says the bed is silenced under this speed"
@@ -535,11 +527,11 @@ fn placed_silent_speed_silences_the_preview_bed(app: &adw::Application) {
         "every pipeline is asked for nothing — footage AND lane together"
     );
     assert_eq!(
-        ui::paused_preview_gain(&window, inside),
+        ui::paused_preview_gain(inside),
         0.0,
         "and a line PARKED inside the silent stretch is silent too (§A.6)"
     );
-    let outside = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, placed.t - 2.0);
+    let outside = ui::apply_mix(&cut.segs, &cut.lanes, &cut.fx, placed.t - 2.0);
     assert!(
         !outside.bed_silenced && outside.gain > 0.0,
         "nothing covers the second before it: gain {}",

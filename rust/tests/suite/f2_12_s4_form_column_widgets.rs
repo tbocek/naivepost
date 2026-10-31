@@ -47,17 +47,14 @@ fn cut_page(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(
-        &window,
-        &cut::Cut {
-            segs: vec![Seg {
-                s: 0.0,
-                e: 90.0,
-                ..Default::default()
-            }],
+    ui::seed_review_cut(&cut::Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 90.0,
             ..Default::default()
-        },
-    );
+        }],
+        ..Default::default()
+    });
     ui::set_held_clip(None);
     ui::clear_selection(&window);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
@@ -103,7 +100,7 @@ fn open_form(window: &adw::ApplicationWindow) {
     let said = ui::insert_chosen_with_length(window, std::path::Path::new(&card), 20.0, Some(4.0));
     settle();
     assert!(said.contains("column-card.svg"), "{said}");
-    assert!(ui::insert_open(window).is_some(), "the form is open");
+    assert!(ui::insert_open().is_some(), "the form is open");
     // §1's pinned heading names what is being placed. It goes through `cut_form_frame::open_form_title`, which
     // spells its own wording ("insert <base>"), so that is the pair of facts asserted here rather than one
     // hand-written string.
@@ -299,10 +296,7 @@ fn check_the_cross_goes_back_to_the_readings(app: &adw::Application) {
         .expect("the heading carries a cross")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(
-        ui::insert_open(&window).is_none(),
-        "the cross closed the form"
-    );
+    assert!(ui::insert_open().is_none(), "the cross closed the form");
     assert!(
         readings.is_visible(),
         "with nothing open the idle readings show again"

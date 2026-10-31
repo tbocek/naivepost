@@ -90,7 +90,7 @@ pub const SHOT_SECONDS: f64 = LINE_SECONDS;
 pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, screen: &str) -> bool {
     if screen == "06-preview" {
         let staged = staged_cut();
-        ui::seed_review_cut(window, &staged);
+        ui::seed_review_cut(&staged);
         ui::set_session_recordings(&[crate::timeline::Recording {
             base: "session-tape".to_string(),
             start: 0.0,
@@ -110,7 +110,7 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
             .and_then(|path| gtk::gdk_pixbuf::Pixbuf::from_file(path).ok())
             .map(|pixbuf| (pixbuf.width(), pixbuf.height()))
         {
-            ui::cut_picture::note_plate_shape(window, shape);
+            ui::cut_picture::note_plate_shape(shape);
         }
         ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
         ui::note_place(true);
@@ -127,7 +127,7 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
             (box_px.0 + box_px.2, box_px.1 + box_px.3),
         );
         println!("snapshot: 06-preview | caption box: {landed_box}");
-        let after = ui::review_cut_of(window);
+        let after = ui::window_preview::newest_review_cut();
         println!(
             "snapshot: 06-preview | staged cut: {} records",
             after.fx.len()
@@ -155,7 +155,7 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
             crate::snapshot_face::seed_structured_frame(dir, "session-tape", LINE_SECONDS)
                 .or_else(|| still.clone());
         match crate::snapshot_preview_frame::write_png(
-            &staged_with_caption(window),
+            &ui::window_preview::newest_review_cut(),
             SHOT_SECONDS,
             picture.as_deref(),
             false,
@@ -169,10 +169,4 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
     }
 
     false
-}
-
-/// The cut the preview shot shows, read back from the window AFTER the caption was placed through ❝ Text's own
-/// doors — so the frame image carries the record the app wrote, not a second copy of the staging.
-fn staged_with_caption(window: &adw::ApplicationWindow) -> cut::Cut {
-    ui::review_cut_of(window)
 }

@@ -195,7 +195,7 @@ fn produce_window(app: &adw::Application, project: &Project, cut: &Cut) -> adw::
     window.present();
     settle();
     // The Cut page's own cut is what F5.1 S3 asks first, so seed it: an unsaved tweak must still render.
-    ui::seed_review_cut(&window, cut);
+    ui::seed_review_cut(cut);
     // Publish the page's own state the way a flow does, so `clips` and the readouts match the cut.
     let mut state = ui::produce_page::read_state();
     state.clips = cut.segs.len();
@@ -608,7 +608,7 @@ fn run_round(app: &adw::Application) {
         // §F5.2 S10's checkpoints are asked of exactly that switch, so the walk halts at the next one and
         // the run ends with S6's stopped word rather than "done".
         let tree = session_tree();
-        let stamp = produce_stamp::stamp_path(&tree);
+        let stamp = tree.final_stamp();
         let _ = std::fs::remove_file(&stamp);
         // No video standing: the gate goes straight to Encode, so the press reaches the walk instead of
         // stopping at §S2's overwrite question (which would leave the encode, and its checkpoints, unasked).

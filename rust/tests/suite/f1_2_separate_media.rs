@@ -270,7 +270,7 @@ fn f1_2_s3_a_chunk_is_cut_at_the_plan_times_and_named_after_its_recording() {
         "lane first, then the part number"
     );
     assert_eq!(
-        media::chunk_name(2),
+        naivepost::asr::part(2),
         naivepost::asr::part(2),
         "and the bare name stays asr::part's twin"
     );

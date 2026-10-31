@@ -44,8 +44,8 @@ struct RightPress {
 
 /// The kept scenes as the band draws them (`cut_tracks::band_boxes`: the gutter, the folds, the gaps between
 /// recordings and the hand corrections counted), unscrolled.
-fn boxes(window: &adw::ApplicationWindow) -> Vec<cut_trim::Box_> {
-    let scene = cut_view::band_scene_for(window);
+fn boxes() -> Vec<cut_trim::Box_> {
+    let scene = cut_view::band_scene_for();
     crate::ui::cut_tracks::band_boxes(&scene)
         .into_iter()
         .zip(scene.segs.iter())
@@ -61,12 +61,8 @@ fn boxes(window: &adw::ApplicationWindow) -> Vec<cut_trim::Box_> {
 
 /// The border a press at band pixel `x` grabs, if it is within reach and not an insert's (inserts are files,
 /// never trimmed: rule 8).
-fn border_under(
-    window: &adw::ApplicationWindow,
-    geo: &Geometry,
-    x: f64,
-) -> Option<(usize, cut_trim::Border)> {
-    let boxes = boxes(window);
+fn border_under(geo: &Geometry, x: f64) -> Option<(usize, cut_trim::Border)> {
+    let boxes = boxes();
     let (index, border) = cut_trim::border_at(&boxes, x + geo.origin)?;
     let insert = boxes
         .iter()
@@ -77,7 +73,7 @@ fn border_under(
 
 /// Move the dragged border to band pixel `x`, one Undo step for the whole hold (S1), the picture scrubbing.
 fn trim_to(window: &adw::ApplicationWindow, drag: &mut BorderDrag, x: f64, last: bool) {
-    let geo = Geometry::of(window);
+    let geo = Geometry::of();
     let to = geo.second_at(x);
     if last {
         crate::ui::window_trim_strip::press_trim_border(window, drag.index, drag.border, to);
@@ -92,12 +88,12 @@ fn trim_to(window: &adw::ApplicationWindow, drag: &mut BorderDrag, x: f64, last:
         cut_trim_press::press_border_move(window, drag.index, drag.border, to, first);
     }
     let landed = cut_trim_press::edge_second(drag.index, drag.border);
-    cut_trim_press::scrub_picture(window, landed);
+    cut_trim_press::scrub_picture(landed);
     cut_view::repaint_page(window);
 }
 
-pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'static str> {
-    let scene = cut_view::band_scene_for(window);
+pub fn cursor_at(x: f64, y: f64) -> Option<&'static str> {
+    let scene = cut_view::band_scene_for();
     let rows = crate::ui::cut_tracks::rows_for_press(&scene);
     if crate::ui::cut_band_marks::mark_at(&scene, rows, x, y).is_some() {
         return Some("pointer");
@@ -106,16 +102,16 @@ pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'st
     if crate::ui::cut_tracks::grip_at(&scene, y).is_some() {
         return Some("row-resize");
     }
-    let geo = Geometry::of(window);
+    let geo = Geometry::of();
     let surface = geo.surface_at(y);
     if !matches!(surface, Surface::PictureRow(_) | Surface::SelectionBand) {
         return None;
     }
-    if border_under(window, &geo, x).is_some() {
+    if border_under(&geo, x).is_some() {
         return Some("col-resize");
     }
     let on_a_bar = matches!(surface, Surface::SelectionBand)
-        && boxes(window).iter().any(|b| {
+        && boxes().iter().any(|b| {
             let at = x + geo.origin;
             !b.insert && b.w > 0.0 && at >= b.x && at <= b.x + b.w
         });
@@ -146,19 +142,18 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
 
     // The pointer follows what a press here would take (§F2.8 S1).
     let motion = gtk::EventControllerMotion::new();
-    let (win, over) = (window.clone(), band.clone());
-    motion.connect_motion(move |_m, x, y| show_cursor(&over, cursor_at(&win, x, y)));
+    let over = band.clone();
+    motion.connect_motion(move |_m, x, y| show_cursor(&over, cursor_at(x, y)));
     let over = band.clone();
     motion.connect_leave(move |_m| show_cursor(&over, None));
     band.add_controller(motion);
 
     let left = gtk::GestureDrag::new();
     left.set_button(1);
-    let win = window.clone();
     left.connect_drag_begin(move |gesture, x, y| {
         // §1 badge 2: the bottom edge of a picture row sizes the thumbnails; nothing else takes that press. The
         // line above the sound strip sizes the strip, unless a badge stands on it (the pointer says the same).
-        let scene = cut_view::band_scene_for(&win);
+        let scene = cut_view::band_scene_for();
         let grip = crate::ui::cut_tracks::grip_at(&scene, y);
         let above = match grip {
             Some(crate::ui::cut_tracks::Grip::Row(above)) => Some(above),
@@ -174,14 +169,12 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             gesture.set_state(gtk::EventSequenceState::Claimed);
             return;
         }
-        let geo = Geometry::of(&win);
+        let geo = Geometry::of();
         let on_trim_ground = matches!(
             geo.surface_at(y),
             Surface::PictureRow(_) | Surface::SelectionBand
         );
-        let taken = on_trim_ground
-            .then(|| border_under(&win, &geo, x))
-            .flatten();
+        let taken = on_trim_ground.then(|| border_under(&geo, x)).flatten();
         LEFT.with(|cell| {
             *cell.borrow_mut() = taken.map(|(index, border)| BorderDrag {
                 index,
@@ -240,14 +233,13 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
 
     let right = gtk::GestureDrag::new();
     right.set_button(3);
-    let win = window.clone();
     right.connect_drag_begin(move |_g, x, y| {
-        let geo = Geometry::of(&win);
+        let geo = Geometry::of();
         RIGHT.with(|cell| {
             *cell.borrow_mut() = Some(RightPress {
                 x,
                 y,
-                border: border_under(&win, &geo, x),
+                border: border_under(&geo, x),
                 travelled: false,
                 first_trim: true,
             })
@@ -268,7 +260,7 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             // standing that would refuse every later write of `cut.json`.
             cut_trim_press::begin_move();
         }
-        let geo = Geometry::of(&win);
+        let geo = Geometry::of();
         if let Some((index, border)) = press.border {
             // S1: "either button drags that border".
             let to = geo.second_at(press.x + dx);
@@ -277,7 +269,7 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
         } else {
             // S2's order: the recorders' band, the wave strip, a selection the press falls inside, the scene.
             let surface = geo.surface_at(press.y);
-            let named = crate::ui::cut_select_press::recording_for_surface(&win, surface, press.y);
+            let named = crate::ui::cut_select_press::recording_for_surface(surface, press.y);
             let (recorders, wave) = match surface {
                 Surface::Lane => (named, None),
                 Surface::WaveStrip => (None, named),
@@ -285,7 +277,7 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             };
             let press_second = geo.second_at(press.x);
             let at = press.x + geo.origin;
-            let scene = boxes(&win)
+            let scene = boxes()
                 .iter()
                 .find_map(|b| (at >= b.x && at <= b.x + b.w && !b.insert).then_some(b.index));
             cut_trim_press::press_move_scaled(

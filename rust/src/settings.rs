@@ -330,7 +330,7 @@ fn pair_key(key: &str) -> Option<(u32, Which)> {
 }
 
 /// Assign one of the named settings. True when the key was one of ours.
-fn set_key(conf: &mut Conf, key: &str, value: &str) -> bool {
+pub fn set_key(conf: &mut Conf, key: &str, value: &str) -> bool {
     // The keys 03-shell.md §6 lists as belonging to this file. A key that is NOT here is a
     // newer build's setting and goes to `Conf::unknown` untouched.
     let field = match key {
@@ -362,11 +362,6 @@ pub fn value_named<'a>(conf: &'a Conf, key: &str) -> Option<&'a str> {
         .iter()
         .find(|(name, _)| *name == key)
         .map(|(_, get)| get(conf))
-}
-
-/// Set one named setting. False for a name this file does not hold (nothing is changed then).
-pub fn set_named(conf: &mut Conf, key: &str, value: &str) -> bool {
-    set_key(conf, key, value)
 }
 
 /// Read `llm.conf`. No file is no settings — a machine that has never opened the dialog.

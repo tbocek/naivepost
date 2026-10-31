@@ -30,7 +30,7 @@ pub fn suggest_press(
     busy: bool,
 ) -> SuggestAnswer {
     use crate::project::CutMode;
-    if let Some(reason) = refuse_suggest_run(window, busy) {
+    if let Some(reason) = refuse_suggest_run(busy) {
         return SuggestAnswer {
             said: reason,
             refused: true,
@@ -41,7 +41,7 @@ pub fn suggest_press(
         CutMode::Words => press_words(window),
         // §S2b: the model is asked, the answer is walked back, and only then does anything reach
         // the page.
-        CutMode::Model => press_model(window, busy),
+        CutMode::Model => press_model(window),
     };
     SuggestAnswer {
         said,
@@ -65,13 +65,12 @@ fn press_words(window: &adw::ApplicationWindow) -> String {
 }
 
 /// The window's own ▶ press for the model mode (§S2b): ask, walk back, land, say what landed.
-fn press_model(window: &adw::ApplicationWindow, busy: bool) -> String {
-    let _ = busy;
-    let (tree, parts) = match crate::ui::cut_suggest_model_run::press_parts(window) {
+fn press_model(window: &adw::ApplicationWindow) -> String {
+    let (tree, parts) = match crate::ui::cut_suggest_model_run::press_parts() {
         Ok(got) => got,
         Err(why) => return crate::ui::cut_suggest_model_run::blocked(why).said,
     };
-    open_run(window);
+    open_run();
     let held = window.clone();
     crate::ui::background::run(
         "suggest",
@@ -81,7 +80,7 @@ fn press_model(window: &adw::ApplicationWindow, busy: bool) -> String {
     String::new()
 }
 
-fn open_run(window: &adw::ApplicationWindow) {
+fn open_run() {
     let Some(bar) = crate::ui::window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()) else {
         return;
     };
@@ -89,7 +88,7 @@ fn open_run(window: &adw::ApplicationWindow) {
     else {
         return;
     };
-    let project = crate::ui::window::session_handle(window).borrow().clone();
+    let project = crate::ui::window::session_handle().borrow().clone();
     crate::runqueue::start_run(
         &mut bar.borrow_mut(),
         &mut queue.borrow_mut(),
@@ -115,7 +114,7 @@ fn land_model(window: &adw::ApplicationWindow, made: crate::ui::cut_suggest_mode
     }
     land(window, &made.applied);
     // §S2b's `M2` node: the cut landed, so now the passes that work over a cut are asked.
-    let inputs = crate::ui::window::pass_inputs(window);
+    let inputs = crate::ui::window::pass_inputs();
     if crate::cut_suggest_passes::order(&inputs.policy).is_empty() || crate::cancel_leg::cancelled()
     {
         end_run(window, &made.said);
@@ -188,7 +187,7 @@ pub fn session() -> Option<crate::layout::Tree> {
 
 /// §F2.14 S1: why ▶ did not ask for a cut, in the flowchart's fixed order, or `None` when the press
 /// may run.
-pub fn refuse_suggest_run(window: &adw::ApplicationWindow, busy: bool) -> Option<String> {
+pub fn refuse_suggest_run(busy: bool) -> Option<String> {
     let tree = match session_tree() {
         Some(Some(tree)) => tree,
         // No folder to read at all: there is no timeline, which is §S1's third refusal, not a
@@ -202,7 +201,7 @@ pub fn refuse_suggest_run(window: &adw::ApplicationWindow, busy: bool) -> Option
     // before the flag is read is the whole ordering: the other way round the Cut page could never remake
     // through its own ▶, because the first thing it said was "press Revert first".
     if crate::hand_edit::edited(mtime(&tree.final_txt()), mtime(&tree.retakes_tsv())) {
-        let sources = crate::ui::window::session_sources(window);
+        let sources = crate::ui::window::session_sources();
         if let Some(outcome) = crate::hand_edit::before_cut(&tree, &sources) {
             for line in &outcome.logs {
                 crate::ui::window::log_line(line);

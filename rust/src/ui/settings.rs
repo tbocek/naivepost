@@ -891,7 +891,7 @@ model answers through judge_text that nothing changed",
         badges: RefCell::new(vec![]),
         buttons: RefCell::new(vec![]),
         fetched: RefCell::new(vec![]),
-        list: find_in(window.upcast_ref(), "model-list")
+        list: crate::ui::window::find_widget_by_name(window.upcast_ref(), "model-list")
             .and_then(|w| w.downcast::<gtk::DropDown>().ok())
             .expect("the dialog builds model-list"),
         log_view,
@@ -1037,19 +1037,25 @@ fn wire_entries_to_store(dialog: &Rc<Dialog>) {
 /// Each `test-<key>-button` gets the row whose entry shares its key.
 fn wire_buttons(dialog: &Rc<Dialog>) {
     for key in test_keys() {
-        let Some(button) = find_in(dialog.window.upcast_ref(), &format!("test-{key}-button"))
-            .and_then(|w| w.downcast::<gtk::Button>().ok())
-        else {
+        let Some(button) = crate::ui::window::find_widget_by_name(
+            dialog.window.upcast_ref(),
+            &format!("test-{key}-button"),
+        )
+        .and_then(|w| w.downcast::<gtk::Button>().ok()) else {
             continue;
         };
-        let Some(entry) = find_in(dialog.window.upcast_ref(), &format!("entry-{key}"))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-        else {
+        let Some(entry) = crate::ui::window::find_widget_by_name(
+            dialog.window.upcast_ref(),
+            &format!("entry-{key}"),
+        )
+        .and_then(|w| w.downcast::<gtk::Entry>().ok()) else {
             continue;
         };
-        let Some(badge) = find_in(dialog.window.upcast_ref(), &format!("badge-{key}"))
-            .and_then(|w| w.downcast::<gtk::Label>().ok())
-        else {
+        let Some(badge) = crate::ui::window::find_widget_by_name(
+            dialog.window.upcast_ref(),
+            &format!("badge-{key}"),
+        )
+        .and_then(|w| w.downcast::<gtk::Label>().ok()) else {
             continue;
         };
         dialog.entries.borrow_mut().push((key.to_string(), entry));
@@ -1064,8 +1070,9 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
         button.connect_clicked(move |_| owned.ask(&key));
     }
 
-    if let Some(all) = find_in(dialog.window.upcast_ref(), "test-all-button")
-        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    if let Some(all) =
+        crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), "test-all-button")
+            .and_then(|w| w.downcast::<gtk::Button>().ok())
     {
         let owned = Rc::clone(dialog);
         all.connect_clicked(move |_| owned.ask_all());
@@ -1073,14 +1080,16 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
 
     // Fetch models and Use: the two buttons that share the Writing block. They are looked up by name
     // like every other control, so neither can be drawn without being wired.
-    if let Some(fetch) = find_in(dialog.window.upcast_ref(), "fetch-models-button")
-        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    if let Some(fetch) =
+        crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), "fetch-models-button")
+            .and_then(|w| w.downcast::<gtk::Button>().ok())
     {
         let owned = Rc::clone(dialog);
         fetch.connect_clicked(move |_| owned.fetch_models());
     }
-    if let Some(use_choice_button) = find_in(dialog.window.upcast_ref(), "use-model-button")
-        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    if let Some(use_choice_button) =
+        crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), "use-model-button")
+            .and_then(|w| w.downcast::<gtk::Button>().ok())
     {
         let owned = Rc::clone(dialog);
         use_choice_button.connect_clicked(move |_| owned.use_model());
@@ -1088,8 +1097,11 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
     // The two badges drawn outside `add(...)` join the same key -> badge map, so `report` paints
     // them exactly like a per-row verdict instead of dropping straight into the log.
     for key in [FETCH_KEY, USE_KEY] {
-        if let Some(badge) = find_in(dialog.window.upcast_ref(), &format!("badge-{key}"))
-            .and_then(|w| w.downcast::<gtk::Label>().ok())
+        if let Some(badge) = crate::ui::window::find_widget_by_name(
+            dialog.window.upcast_ref(),
+            &format!("badge-{key}"),
+        )
+        .and_then(|w| w.downcast::<gtk::Label>().ok())
         {
             dialog.badges.borrow_mut().push((key.to_string(), badge));
         }
@@ -1168,7 +1180,7 @@ pub fn flush_owed() -> usize {
 
 /// The header bar's Settings button.
 pub fn settings_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_in(window.upcast_ref(), "settings-button")?
+    crate::ui::window::find_widget_by_name(window.upcast_ref(), "settings-button")?
         .downcast()
         .ok()
 }
@@ -1179,7 +1191,9 @@ pub fn listed_models(_window: &adw::ApplicationWindow) -> Vec<String> {
         .and_then(|w| w.downcast::<gtk::DropDown>().ok())
         .or_else(|| {
             last_dialog()
-                .and_then(|d| find_in(d.window.upcast_ref(), "model-list"))
+                .and_then(|d| {
+                    crate::ui::window::find_widget_by_name(d.window.upcast_ref(), "model-list")
+                })
                 .and_then(|w| w.downcast::<gtk::DropDown>().ok())
         })
     else {
@@ -1207,9 +1221,12 @@ pub fn test_button(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Bu
         .downcast()
         .ok()
         .or_else(|| {
-            find_in(window.upcast_ref(), &format!("test-{key}-button"))?
-                .downcast()
-                .ok()
+            crate::ui::window::find_widget_by_name(
+                window.upcast_ref(),
+                &format!("test-{key}-button"),
+            )?
+            .downcast()
+            .ok()
         })
 }
 
@@ -1218,7 +1235,7 @@ pub fn badge(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Label> {
     last_dialog()
         .and_then(|dialog| dialog.badge(key))
         .or_else(|| {
-            find_in(window.upcast_ref(), &format!("badge-{key}"))?
+            crate::ui::window::find_widget_by_name(window.upcast_ref(), &format!("badge-{key}"))?
                 .downcast()
                 .ok()
         })
@@ -1229,26 +1246,24 @@ pub fn entry(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Entry> {
     last_dialog()
         .and_then(|dialog| dialog.entry(key))
         .or_else(|| {
-            find_in(window.upcast_ref(), &format!("entry-{key}"))?
+            crate::ui::window::find_widget_by_name(window.upcast_ref(), &format!("entry-{key}"))?
                 .downcast()
                 .ok()
         })
 }
 
 /// The dialog's own log text, which is what its expander shows.
-pub fn dialog_log(window: &adw::ApplicationWindow) -> String {
+pub fn dialog_log() -> String {
     if let Some(dialog) = last_dialog() {
         return buffer_text(&dialog.log_view);
     }
-    let _ = window;
     String::new()
 }
 
-pub fn dialog_log_open(window: &adw::ApplicationWindow) -> bool {
+pub fn dialog_log_open() -> bool {
     if let Some(dialog) = last_dialog() {
         return dialog.log_expander.is_expanded();
     }
-    let _ = window;
     false
 }
 
@@ -1266,12 +1281,7 @@ fn last_dialog() -> Option<Rc<Dialog>> {
 /// A widget by name inside the open dialog.
 fn find_named(name: &str) -> Option<gtk::Widget> {
     let dialog = last_dialog()?;
-    find_in(dialog.window.upcast_ref(), name)
-}
-
-/// The first widget under `root` carrying `name` — the same walk the window uses.
-fn find_in(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    crate::ui::window::find_widget_by_name(root, name)
+    crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), name)
 }
 
 fn buffer_text(view: &gtk::TextView) -> String {

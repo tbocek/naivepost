@@ -116,7 +116,7 @@ static RAN_REFUSED_PRESS: AtomicBool = AtomicBool::new(false);
 static RAN_ALL: AtomicBool = AtomicBool::new(false);
 
 fn refuse(busy: bool) -> Option<String> {
-    cut_suggest_land::refuse_suggest_run(&ui::main_window(), busy)
+    cut_suggest_land::refuse_suggest_run(busy)
 }
 
 fn checks(app: &adw::Application) {
@@ -128,18 +128,15 @@ fn checks(app: &adw::Application) {
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     // The page shows cam0's footage, so the word gate reads cam0's files.
-    ui::seed_review_cut(
-        &window,
-        &Cut {
-            segs: vec![naivepost::cut::Seg {
-                s: 0.0,
-                e: 30.0,
-                cam: 0,
-                ..Default::default()
-            }],
+    ui::seed_review_cut(&Cut {
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 30.0,
+            cam: 0,
             ..Default::default()
-        },
-    );
+        }],
+        ..Default::default()
+    });
     settle();
 
     // --- the order, each cause alone below, then all together -------------------------------------

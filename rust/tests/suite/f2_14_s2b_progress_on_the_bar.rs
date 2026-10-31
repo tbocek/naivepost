@@ -60,9 +60,9 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &one_scene_cut());
-    ui::reopen_history_on(&window, &ui::review_cut_of(&window));
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::seed_review_cut(&one_scene_cut());
+    ui::reopen_history_on(&ui::window_preview::newest_review_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     settle();
 
     let bar = ui::progress_bar(&window).expect("the run bar has its progress bar");
@@ -84,7 +84,7 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
 
     // The count landed, which is what proves the progress came from THIS press's own reply.
     assert!(
-        !ui::review_cut_of(&window).segs.is_empty(),
+        !ui::window_preview::newest_review_cut().segs.is_empty(),
         "the suggestion landed, so its progress had a reply to count"
     );
     // The bar's own number is GTK's and cannot be read back — `ProgressBar` exposes no getter, which is why
@@ -120,7 +120,7 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
     assert!(
         status
             .text()
-            .starts_with(&format!("suggested {} segments, ", ui::review_cut_of(&window).segs.len())),
+            .starts_with(&format!("suggested {} segments, ", ui::window_preview::newest_review_cut().segs.len())),
         "the row ends on the press's answer, which could only follow a progress line the door wrote, got {:?}",
         status.text()
     );
@@ -150,9 +150,9 @@ fn s2b_the_bar_pulses_while_nothing_has_closed(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &one_scene_cut());
-    ui::reopen_history_on(&window, &ui::review_cut_of(&window));
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::seed_review_cut(&one_scene_cut());
+    ui::reopen_history_on(&ui::window_preview::newest_review_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     settle();
 
     let bar = ui::progress_bar(&window).expect("the run bar has its progress bar");
@@ -215,7 +215,7 @@ fn s2b_a_fresh_window_does_not_move_a_pointed_session(app: &adw::Application) {
 
     // The window is built on the launch's working copy, which has no `session.txt`: were its own folder
     // answering, this is the sentence the press would have got. It did not, because the pointing stands.
-    let refused = cut_suggest_land::refuse_suggest_run(&window, false);
+    let refused = cut_suggest_land::refuse_suggest_run(false);
     assert_ne!(
         refused.as_deref(),
         Some(suggest::NO_TIMELINE),

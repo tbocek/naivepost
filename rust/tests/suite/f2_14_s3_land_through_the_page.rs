@@ -130,10 +130,10 @@ fn round(app: &adw::Application) {
         .expect("the shell has a Cut tab")
         .emit_clicked();
     let base = base_cut();
-    ui::seed_review_cut(&window, &base);
+    ui::seed_review_cut(&base);
     // The page opened on the cut it was seeded with: without this ↶ answers with nothing.
-    ui::reopen_history_on(&window, &base);
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::reopen_history_on(&base);
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     settle();
 
     let before = std::fs::read(f.tree.cut_json()).is_ok();
@@ -159,7 +159,7 @@ fn round(app: &adw::Application) {
     );
 
     // --- §S3: the page holds the WALKED-BACK scenes -------------------------------------------
-    let on_screen = ui::review_cut_of(&window);
+    let on_screen = ui::window_preview::newest_review_cut();
     let footage: Vec<&Seg> = on_screen
         .segs
         .iter()
@@ -250,7 +250,7 @@ fn round(app: &adw::Application) {
     // One step for the scenes and their effects together.
     let first = ui::press_undo(&window);
     settle();
-    let after_first = ui::review_cut_of(&window);
+    let after_first = ui::window_preview::newest_review_cut();
     let back = after_first.clone();
     assert!(
         !first.contains("nothing to undo"),

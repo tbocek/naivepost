@@ -11,8 +11,8 @@ use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo, log_line,
-    paste_line, press_band_esc, record_edit, refresh_effects_lane, review_cut_of, save_insert_cut,
-    selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
+    press_band_esc, record_edit, refresh_effects_lane, save_insert_cut, selection, trim_seconds,
+    zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 // --- F3.3 Speed and stop by hand: the press, the form, the Apply ----------------------------------------------
@@ -21,11 +21,11 @@ use crate::ui::window::{
 ///
 /// The refusal is answered BEFORE any form is drawn, so a cancelled dialog never costs the user a refusal (F2.12 Insert). A band under [`cut_speed::MIN_MARKED_SECONDS`] falls through to the line, read through the seam Paste and Insert use (`paste_line`).
 pub fn press_speed_item(window: &adw::ApplicationWindow) -> String {
-    let band = selection(window)
+    let band = selection()
         .filter(|band| band.length() > 0.0)
         .map(|band| (band.start, band.end));
     let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    let line = known.then(|| paste_line(window));
+    let line = known.then(|| crate::ui::cut_lane::paste_line());
     match cut_speed::press(band, line) {
         cut_speed::Pressed::Refused => {
             close_speed_form(window);
@@ -268,8 +268,7 @@ fn speed_rate_from_form(stored: &cut_speed::Form) -> f64 {
 }
 
 /// Is THIS window's typed rate box live? Read by a test to assert the greying; live only while the dropdown stands on `Custom…` (index == RATES.len()).
-pub fn speed_custom_rate_visible(window: &adw::ApplicationWindow) -> bool {
-    let _ = window;
+pub fn speed_custom_rate_visible() -> bool {
     LAST_SPEED_WINDOW.with(|cell| {
         cell.borrow()
             .as_ref()
@@ -318,7 +317,7 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
         snd: cut_speed::sound_stored(snd),
     };
     let effect = cut_speed::apply(&form);
-    let mut cut_ = review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     // §9 (`A stop at a dropped second SHOULD be refused when placed`): refuse BEFORE writing: a stop holds a frame, and the cut keeps none at a dropped second or a card.
     // The form stays open with the reason, as for a refused length. A cut with no scenes has no say.
     if crate::fx_record::is_stop(&effect) && !cut_.segs.is_empty() {
@@ -468,7 +467,6 @@ thread_local! {
 }
 
 /// This window's band-Esc controller, so a test can see it is attached. `None` on a page that drew none.
-pub fn band_esc_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
-    let _ = window;
+pub fn band_esc_controller() -> Option<gtk::EventControllerKey> {
     BAND_ESC_KEYS.with(|cell| cell.borrow().clone())
 }

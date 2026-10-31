@@ -120,7 +120,6 @@ fn hear(
         match narrate_preview_leg::start_running(
             tree,
             &cut,
-            &s.entries,
             from,
             game_volume,
             preview_volume,

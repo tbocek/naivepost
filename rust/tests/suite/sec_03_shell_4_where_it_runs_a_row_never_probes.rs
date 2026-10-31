@@ -60,7 +60,7 @@ fn sec_03_shell_4_where_it_runs_a_row_never_probes() {
             "the repaint after 🗑 probed nothing on the window thread"
         );
         assert_eq!(
-            ui::session_sources(&window),
+            ui::session_sources(),
             ["project:sources/take-b.wav"],
             "the row went"
         );

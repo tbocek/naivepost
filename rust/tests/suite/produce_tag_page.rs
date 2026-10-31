@@ -490,14 +490,11 @@ fn check_press_writes_the_tag_page(root: &Path) {
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn());
 
     let window = produce_window(&app_in_round());
-    ui::seed_review_cut(
-        &window,
-        &naivepost::cut::Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
     seed_page(&window);
     let said = press_play(&window);
     assert_ne!(
@@ -562,14 +559,11 @@ fn check_skipped_encode_still_rewrites_the_page(root: &Path) {
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn());
 
     let window = produce_window(&app_in_round());
-    ui::seed_review_cut(
-        &window,
-        &naivepost::cut::Cut {
-            segs: two_segs(),
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
     seed_page(&window);
     let said = press_play(&window);
     assert_eq!(

@@ -50,8 +50,8 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         segs: vec![clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
-    ui::reopen_history_on(&window, &seeded);
+    ui::seed_review_cut(&seeded);
+    ui::reopen_history_on(&seeded);
     window
 }
 
@@ -61,52 +61,66 @@ fn check_picking_up_replaces_what_was_held(app: &adw::Application) {
 
     // An effect first, then a clip EDGE, then the whole clip: each pickup replaces the one before. Before this
     // rule had a caller the three lived in three thread_locals, so the effect stayed held under the clip and
-    // `held_now()`'s ladder picked a winner the user never chose.
+    // `cut_hand::held_kind()`'s ladder picked a winner the user never chose.
     ui::set_held_effect(Some(cut::Fx {
         kind: "zoom".into(),
         t: 4.0,
         dur: 6.0,
         ..Default::default()
     }));
-    assert_eq!(ui::held_now(), Some(Held::Effect), "the effect is in hand");
-    assert!(ui::held_clip().is_none(), "nothing else came with it");
+    assert_eq!(
+        ui::cut_hand::held_kind(),
+        Some(Held::Effect),
+        "the effect is in hand"
+    );
+    assert!(
+        ui::cut_hand::held_clip().is_none(),
+        "nothing else came with it"
+    );
 
     ui::set_held_edge(Some(clip(10.0, 30.0)));
     assert_eq!(
-        ui::held_now(),
+        ui::cut_hand::held_kind(),
         Some(Held::Edge),
         "the edge took the hand from the effect"
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "and the effect is NOT still in hand"
     );
 
     ui::set_held_clip(Some(clip(10.0, 30.0)));
     assert_eq!(
-        ui::held_now(),
+        ui::cut_hand::held_kind(),
         Some(Held::Clip),
         "the whole clip took the hand from the edge"
     );
-    assert!(ui::held_edge().is_none(), "no edge survives the pickup");
-    assert!(ui::held_effect().is_none(), "nor does the effect");
+    assert!(
+        ui::cut_hand::held_edge().is_none(),
+        "no edge survives the pickup"
+    );
+    assert!(ui::cut_hand::held_effect().is_none(), "nor does the effect");
     // The clip reader answers for an edge pick too — both name the segment to move — but the KIND says Clip.
     assert_eq!(
-        ui::held_clip().map(|seg| (seg.s, seg.e)),
+        ui::cut_hand::held_clip().map(|seg| (seg.s, seg.e)),
         Some((10.0, 30.0))
     );
 
     // Clearing empties the one slot: no half-held remainder anywhere.
     ui::set_held_clip(None);
-    assert_eq!(ui::held_now(), None, "the hand is empty");
-    assert!(ui::held_clip().is_none() && ui::held_edge().is_none() && ui::held_effect().is_none());
+    assert_eq!(ui::cut_hand::held_kind(), None, "the hand is empty");
+    assert!(
+        ui::cut_hand::held_clip().is_none()
+            && ui::cut_hand::held_edge().is_none()
+            && ui::cut_hand::held_effect().is_none()
+    );
     drop(window);
 }
 
 /// §7 bullet 1 (`one Undo per drag`): a border drag of three moves, ONE step to take back.
 fn check_one_undo_per_trim_drag(app: &adw::Application) {
     let window = cut_page(app);
-    let trimmer = ui::trim_gesture(&window).expect("the strip carries the trim gesture");
+    let trimmer = ui::trim_gesture().expect("the strip carries the trim gesture");
     assert!(
         trimmer
             .upcast_ref::<gtk4::EventController>()
@@ -125,7 +139,7 @@ fn check_one_undo_per_trim_drag(app: &adw::Application) {
         "the page sits on its opened state: nothing to undo"
     );
 
-    let boxes = trim::clip_boxes(&ui::review_cut_segs(&window), ui::window::strip_pps());
+    let boxes = trim::clip_boxes(&ui::review_cut_segs(), ui::window::strip_pps());
     let start_px = boxes[1].x;
     assert_eq!(
         trim::border_at(&boxes, start_px + 2.0),
@@ -148,12 +162,12 @@ fn check_one_undo_per_trim_drag(app: &adw::Application) {
             &[&(target * ui::window::strip_pps()), &0.0f64],
         );
         settle();
-        edges.push(ui::review_cut_segs(&window)[1].s);
+        edges.push(ui::review_cut_segs()[1].s);
     }
     // The release repeats the last second, so it changes nothing and costs nothing of its own.
     trimmer.emit_by_name::<()>("drag-end", &[&(15.0 * ui::window::strip_pps()), &0.0f64]);
     settle();
-    let dragged = ui::review_cut_segs(&window)[1].s;
+    let dragged = ui::review_cut_segs()[1].s;
     assert!(
         dragged > 10.0,
         "the drag moved the border at all: pressed 10.0, released at {dragged}, ticks {edges:?}"
@@ -163,7 +177,7 @@ fn check_one_undo_per_trim_drag(app: &adw::Application) {
     // second-to-last tick — and the ↶ behind it refusing says there is nothing else behind it.
     let said = ui::press_undo(&window);
     settle();
-    let back = ui::review_cut_segs(&window)[1].s;
+    let back = ui::review_cut_segs()[1].s;
     assert!(
         !said.contains("nothing to undo"),
         "and the drag left something to take back: ↶ said {said}"
@@ -234,7 +248,7 @@ fn check_a_press_resolves_to_the_drawn_lane(app: &adw::Application) {
         ],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     settle();
 
     let lanes = naivepost::fx_lane::row_count(&seeded.fx);
@@ -252,30 +266,30 @@ fn check_a_press_resolves_to_the_drawn_lane(app: &adw::Application) {
         bands.fx
     );
     assert_eq!(
-        cut_line_press::surface_at_band(&window, shallow),
+        cut_line_press::surface_at_band(shallow),
         Surface::FxLane,
         "the top of the drawn lane"
     );
     assert_eq!(
-        cut_line_press::surface_at_band(&window, deep),
+        cut_line_press::surface_at_band(deep),
         Surface::FxLane,
         "and its bottom — a fixed one-row lane would call this a picture row"
     );
-    let gesture =
-        crate::suite::sec_05_cut_7_hand_widgets::ui::window::band_line_gesture_for_test(&window)
-            .expect("the painted band carries its line-click gesture");
+    let gesture = crate::suite::sec_05_cut_7_hand_widgets::ui::window::band_line_gesture_for_test()
+        .expect("the painted band carries its line-click gesture");
     let x_px = naivepost::ui::cut_view::gutter_px() + 15.0 * naivepost::ui::cut_view::pps();
     ui::set_held_clip(None);
     gesture.emit_by_name::<()>("released", &[&1i32, &x_px, &deep]);
     settle();
     assert!(
-        ui::held_clip().is_none(),
+        ui::cut_hand::held_clip().is_none(),
         "a press on the drawn lane took no footage into hand"
     );
 
     gesture.emit_by_name::<()>("released", &[&1i32, &x_px, &(bands.fx.1 + 2.0)]);
     settle();
-    let held = ui::held_clip().expect("the same press one pixel lower took the scene under it");
+    let held =
+        ui::cut_hand::held_clip().expect("the same press one pixel lower took the scene under it");
     assert_eq!(
         (held.s, held.e),
         (0.0, 60.0),

@@ -205,7 +205,7 @@ fn door_round(app: &adw::Application) {
 
     let window = ui::build_window(app, &f.project, "Prepare");
     window.present();
-    ui::seed_review_cut(&window, &base);
+    ui::seed_review_cut(&base);
     cut_suggest_land::point_session_at(Some(f.tree.clone()));
     settle();
     publish_tape();
@@ -220,7 +220,7 @@ fn door_round(app: &adw::Application) {
         landed.cut.segs
     );
     assert_eq!(
-        ui::review_cut_of(&window).segs,
+        ui::window_preview::newest_review_cut().segs,
         landed.cut.segs,
         "the page holds the walked cut, not the unwalked one"
     );

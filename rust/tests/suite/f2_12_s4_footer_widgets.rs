@@ -47,17 +47,14 @@ fn cut_page(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(
-        &window,
-        &cut::Cut {
-            segs: vec![Seg {
-                s: 0.0,
-                e: 90.0,
-                ..Default::default()
-            }],
+    ui::seed_review_cut(&cut::Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 90.0,
             ..Default::default()
-        },
-    );
+        }],
+        ..Default::default()
+    });
     ui::set_held_clip(None);
     ui::clear_selection(&window);
     // A claimed line: without it every door answers §S1's refusal and no form is drawn at all.
@@ -110,17 +107,14 @@ fn open_form(window: &adw::ApplicationWindow) {
     let said = ui::insert_chosen_with_length(window, std::path::Path::new(&card), 20.0, None);
     settle();
     assert!(said.contains("timed.svg"), "{said}");
-    assert!(
-        ui::insert_open(window).is_some(),
-        "the form is open: {said}"
-    );
+    assert!(ui::insert_open().is_some(), "the form is open: {said}");
 }
 
 /// This window's cut as a whole, so its segments are read back the way the page measures them.
-fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
+fn cut_of() -> cut::Cut {
     cut::Cut {
-        segs: ui::review_cut_segs(window),
-        lanes: ui::review_lanes(window),
+        segs: ui::review_cut_segs(),
+        lanes: ui::review_lanes(),
         ..Default::default()
     }
 }
@@ -204,7 +198,7 @@ fn check_the_footer_holds_the_buttons_that_place_the_insert(app: &adw::Applicati
 fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
     let window = cut_page(app, "apply");
     open_form(&window);
-    let before = cut_of(&window);
+    let before = cut_of();
     assert_eq!(before.segs.len(), 1, "one kept scene before the insert");
 
     common::find_named(&window, "insert-apply-button")
@@ -217,7 +211,7 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
         said.contains("inserted at") && said.contains("\u{21b6} Undo"),
         "the press said what it did, in cut_insert's own words: {said}"
     );
-    let after = cut_of(&window);
+    let after = cut_of();
     assert_eq!(
         after.segs.iter().filter(|seg| seg.is_insert()).count(),
         1,
@@ -227,7 +221,7 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
         after.segs.iter().any(|seg| seg.is_insert()),
         "the new segment is the spliced card (s == e with a dur): {after:?}"
     );
-    assert!(ui::insert_open(&window).is_none(), "Apply closed the form");
+    assert!(ui::insert_open().is_none(), "Apply closed the form");
     assert!(
         !common::find_named(&window, "insert-form-footer")
             .expect("the footer")
@@ -248,21 +242,21 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
 fn check_clicking_cancel_closes_the_form_without_placing(app: &adw::Application) {
     let window = cut_page(app, "cancel");
     open_form(&window);
-    let before = cut_of(&window);
+    let before = cut_of();
 
     common::find_named(&window, "insert-cancel-button")
         .expect("the footer holds the cancel button")
         .emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let after = cut_of(&window);
+    let after = cut_of();
     assert_eq!(
         after.segs.len(),
         before.segs.len(),
         "Cancel places nothing: {:?}",
         after.segs
     );
-    assert!(ui::insert_open(&window).is_none(), "Cancel closed the form");
+    assert!(ui::insert_open().is_none(), "Cancel closed the form");
     assert!(
         !common::find_named(&window, "insert-form-footer")
             .expect("the footer")

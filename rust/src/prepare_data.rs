@@ -3,7 +3,7 @@
 //!
 //! [`crate::layout`] spells every path in §1's block; this adds what a path cannot say: which recording a run chose, and the whole set of files as data a test can walk.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::add_sources::is_video;
 use crate::layout::{self, Tree};
@@ -85,17 +85,12 @@ pub fn write_meta(tree: &Tree, project: &Project, root: &Path) -> Result<(), Str
     requests::write_meta(tree, &meta(project, root, tree.dir()))
 }
 
-/// The application root `meta.env`'s paths are written against: the folder the session sits in (§F1.1's `startup::session_dir(cwd)`); a caller that knows its root passes it to [`write_meta`].
-pub fn default_root() -> PathBuf {
-    crate::startup::open_dir()
-}
-
 /// §3 (▶ Prepare): stamp `inputs/meta.env` at the start of a run, before any stage reads a source.
 ///
 /// §1 treats this file as the sources-were-read marker. The spec gives no failure rule for a marker, so by Failure-is-specific a `meta.env` that will not write does NOT refuse the press:
 /// the sentence comes back for the log. `Ok(None)` is success: S4's own lines already report the inputs.
 pub fn stamp_meta(tree: &Tree, project: &Project) -> Option<String> {
-    write_meta(tree, project, &default_root())
+    write_meta(tree, project, &crate::startup::open_dir())
         .err()
         .map(|error| format!(">>> could not write meta.env -- {error}"))
 }

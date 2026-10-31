@@ -60,12 +60,6 @@ pub fn unmatched_entry_fault(start: f64, end: f64) -> String {
     format!("an entry says {start}-{end}, which matches no clip (or is out of order)")
 }
 
-/// Every clip answered with an empty line: a model that refused the job rather than one exercising
-/// taste.
-pub fn all_silent_fault() -> String {
-    crate::narrate_pass::no_line_fault()
-}
-
 /// A clip nobody answered at all — the same fault [`crate::narrate_pass::missing_clip_fault`]
 /// names, kept here so §6's wording is pinned in one file. Bounds are echoed back because they are
 /// what the reply was asked to copy.

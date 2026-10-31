@@ -37,17 +37,17 @@ fn video(at: &std::path::Path) {
     assert!(made.success(), "the test video was written");
 }
 
-fn line(window: &adw::ApplicationWindow) -> f64 {
-    ui::preview_player(window).playhead.unwrap_or(-1.0)
+fn line() -> f64 {
+    ui::preview_player().playhead.unwrap_or(-1.0)
 }
 
 /// Click the band at second `t` and height `y`, and say where the line went.
-fn click_at(window: &adw::ApplicationWindow, band: &gtk4::Widget, t: f64, y: f64) -> f64 {
-    let scene = ui::cut_view::band_scene_for(window);
+fn click_at(band: &gtk4::Widget, t: f64, y: f64) -> f64 {
+    let scene = ui::cut_view::band_scene_for();
     let x = ui::cut_tracks::band_x(&scene, t) - ui::cut_view::origin();
     real_input::real_click(band, x, y, 1);
     common::settle_workers();
-    line(window)
+    line()
 }
 
 #[test]
@@ -79,14 +79,9 @@ fn f2_4_s1_a_real_click_on_the_band_places_the_line() {
         // The line in the middle of the take first, then zoomed in, as the person had it.
         let band = common::widget_in(&window, "track-band").expect("the tracks band");
         let middle = ui::cut_tracks::bands_for(naivepost::fx_lane::row_count(
-            &ui::review_cut_of(&window).fx,
+            &ui::window_preview::newest_review_cut().fx,
         ));
-        click_at(
-            &window,
-            &band,
-            10.0,
-            (middle.ruler.0 + middle.ruler.1) / 2.0,
-        );
+        click_at(&band, 10.0, (middle.ruler.0 + middle.ruler.1) / 2.0);
         for _ in 0..4 {
             ui::line_step_button(&window, "zoom-in-button")
                 .expect("zoom +")
@@ -95,14 +90,14 @@ fn f2_4_s1_a_real_click_on_the_band_places_the_line() {
         }
         // The rows as the page lays them out: an effects lane is always drawn, even an empty one.
         let bands = ui::cut_tracks::bands_for(naivepost::fx_lane::row_count(
-            &ui::review_cut_of(&window).fx,
+            &ui::window_preview::newest_review_cut().fx,
         ));
         let picture_y = bands.first_picture + bands.row_height / 2.0;
         let ruler_y = (bands.ruler.0 + bands.ruler.1) / 2.0;
         let selection_y = (bands.selection.0 + bands.selection.1) / 2.0;
         // + zooms about the red line (F2.4: it keeps its place on screen), so with the line at 10 s the band is
         // scrolled now, as a zoomed-in band usually is: the seconds are aimed at from the first one on screen.
-        let first = ui::cut_view::origin() / ui::cut_view::band_scene_for(&window).pps;
+        let first = ui::cut_view::origin() / ui::cut_view::band_scene_for().pps;
         assert!(
             first > 1.0,
             "four steps in, the band is scrolled (first second on screen {first})"
@@ -112,7 +107,7 @@ fn f2_4_s1_a_real_click_on_the_band_places_the_line() {
             ("the ruler", ruler_y, first + 2.5),
             ("the selection band", selection_y, first + 3.5),
         ] {
-            let landed = click_at(&window, &band, t, y);
+            let landed = click_at(&band, t, y);
             assert!(
                 (landed - t).abs() < 0.3,
                 "a real click on {what} at {t} s puts the red line there, got {landed} (status \"{}\")",

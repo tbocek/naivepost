@@ -22,11 +22,6 @@ pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindo
     });
 }
 
-pub fn session_policy(window: &adw::ApplicationWindow) -> crate::project::Policy {
-    let _ = window;
-    live_session_policy()
-}
-
 pub fn live_session_policy() -> crate::project::Policy {
     // A run's worker holds no window session: it reads the policy the run saved before its first stage
     // (F1.1 S2), which is the one it runs under.
@@ -42,7 +37,7 @@ pub fn live_session_policy() -> crate::project::Policy {
 }
 
 /// The shared half of every writer: validate through `policy::apply`, then stamp the origin on a Set.
-pub(crate) fn write_policy_field(
+pub fn write_policy_field(
     field: &str,
     value: &str,
     because: &str,
@@ -63,18 +58,6 @@ pub(crate) fn write_policy_field(
         stamp_origin(&mut project.borrow_mut().policy, field, origin);
     }
     outcome
-}
-
-/// Put a value, source and reason on one policy field of this window's live session.
-pub fn set_session_policy_field(
-    window: &adw::ApplicationWindow,
-    field: &str,
-    value: &str,
-    because: &str,
-    origin: Origin,
-) -> policy::Applied {
-    let _ = window;
-    write_policy_field(field, value, because, origin)
 }
 
 /// Move one field's `source` to `origin` without touching its value or reason.
@@ -140,8 +123,7 @@ pub fn set_policy_sender_for_tests(
 }
 
 /// The window's User Context text, read through the session the bench writes.
-pub(crate) fn user_context(window: &adw::ApplicationWindow) -> String {
-    let _ = window;
+pub(crate) fn user_context() -> String {
     SESSION
         .with(|slots| slots.borrow().last().cloned())
         .map(|session| session.borrow().context.clone())
@@ -149,15 +131,13 @@ pub(crate) fn user_context(window: &adw::ApplicationWindow) -> String {
 }
 
 /// The window's User Context text, as the bench and `derive_policy` read it.
-pub fn set_session_context(window: &adw::ApplicationWindow, text: &str) {
-    let _ = window;
+pub fn set_session_context(text: &str) {
     if let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().context = text.to_string();
     }
 }
 
-pub fn policy_is_current(window: &adw::ApplicationWindow, context: &str) -> bool {
-    let _ = window;
+pub fn policy_is_current(context: &str) -> bool {
     POLICY_TRACKERS
         .with(|trackers| trackers.borrow().last().cloned())
         .is_some_and(|tracker| !tracker.borrow().needs_derive(context))
@@ -167,14 +147,14 @@ fn live_policy_answer(
     req: &policy::DerivationRequest,
     refusals: &[String],
 ) -> Vec<policy::Proposal> {
-    // `session_policy` is the same slot the ⚙ form reads, so the model's view of the fields and the
+    // `window_policy::live_session_policy` is the same slot the ⚙ form reads, so the model's view of the fields and the
     // form's cannot drift.
-    crate::policy_call::set_live_policy(&session_policy(&main_window()));
+    crate::policy_call::set_live_policy(&live_session_policy());
     crate::policy_call::answer(req, refusals)
 }
 
-pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
-    let context = user_context(window);
+pub fn derive_policy() -> policy::Derived {
+    let context = user_context();
     let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
         return policy::Derived {
             used_defaults: true,
@@ -277,7 +257,7 @@ pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
                 if POLICY_SENDERS.with(|senders| senders.borrow().is_empty()) {
                     derive_in_background(&held);
                 } else {
-                    let derived = derive_policy(&held);
+                    let derived = derive_policy();
                     say_status(&held, &derived);
                 }
                 glib::ControlFlow::Break
@@ -300,12 +280,12 @@ thread_local! {
 }
 
 fn derive_in_background(window: &adw::ApplicationWindow) {
-    let context = user_context(window);
+    let context = user_context();
     let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
         return;
     };
     let policy = session.borrow().policy.clone();
-    let live = session_policy(window);
+    let live = live_session_policy();
     let generation = DERIVE_GENERATION.with(|newest| {
         newest.set(newest.get() + 1);
         newest.get()
@@ -328,7 +308,7 @@ fn derive_in_background(window: &adw::ApplicationWindow) {
                     crate::ui::window::log_line(&line);
                 }
                 let newest = DERIVE_GENERATION.with(|newest| newest.get()) == generation;
-                if newest && user_context(&held) == context {
+                if newest && user_context() == context {
                     let derived = finish_derivation(&session, policy, derived, &context);
                     say_status(&held, &derived);
                 }
@@ -338,8 +318,4 @@ fn derive_in_background(window: &adw::ApplicationWindow) {
             Err(_) => glib::ControlFlow::Break,
         }
     });
-}
-
-pub(crate) fn wire_policy(button: &gtk::Button, window: &adw::ApplicationWindow) {
-    let _ = (button, window);
 }

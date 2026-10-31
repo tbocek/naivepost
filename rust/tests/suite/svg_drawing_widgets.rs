@@ -62,8 +62,8 @@ fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
 
 /// Fire the preview panel's own drag the way the toolkit does: begin at the press position, then release with
 /// the OFFSET that signal carries.
-fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
-    let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+fn drag_panel(from: (f64, f64), to: (f64, f64)) {
+    let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
@@ -133,7 +133,7 @@ fn f3_5_s4_the_form_buttons_answer_once_through_the_widgets(app: &adw::Applicati
         "one ⋯ Choose, one chooser"
     );
     click(&window, "svg-apply-button");
-    let cut_ = ui::review_cut_of(&window);
+    let cut_ = ui::window_preview::newest_review_cut();
     assert_eq!(cut_.fx.len(), 1, "one ▸ Apply, one drawing");
     assert_eq!(
         common::status_text(&window),
@@ -142,7 +142,7 @@ fn f3_5_s4_the_form_buttons_answer_once_through_the_widgets(app: &adw::Applicati
     );
     click(&window, "undo-button");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "and one ↶ takes it back: one record step"
     );
     window.close();
@@ -151,7 +151,7 @@ fn f3_5_s4_the_form_buttons_answer_once_through_the_widgets(app: &adw::Applicati
     let window = land_click_form(app, 40.0);
     click(&window, "svg-cancel-button");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "Cancel places nothing"
     );
     assert!(!form_visible(&window), "and closes the form");
@@ -216,7 +216,7 @@ fn f3_5_s2_a_cancelled_chooser_places_nothing(app: &adw::Application) {
     assert!(ui::svg_chosen_file().is_none(), "no file carried");
     assert!(ui::svg_form_open().is_none(), "no form drawn");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "and nothing reaches the cut"
     );
     RAN_NO_FILE.store(true, Ordering::SeqCst);
@@ -309,7 +309,7 @@ fn f3_5_s3_a_click_lands_the_middle_box_not_the_lower_third(app: &adw::Applicati
     assert_eq!(form.trans, fx_text::FADE_SECONDS, "fade in 0.3");
     assert_eq!(form.tout, fx_text::FADE_SECONDS, "fade out 0.3");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "landing a box records nothing: the file was chosen, the length not yet answered"
     );
     ui::release_svg_arm_only();
@@ -352,7 +352,7 @@ fn f3_5_s3_a_drag_keeps_its_box_and_a_selection_gives_the_seconds(app: &adw::App
 
     // THE DISPATCH PROOF: the panel carries ONE left-button GestureDrag (F3.1's). Fired while SVG is armed its
     // drag-end must route to F3.5 and open neither the zoom nor the caption flow.
-    drag_panel(&window, (150.0, 10.0), (220.0, 60.0));
+    drag_panel((150.0, 10.0), (220.0, 60.0));
     assert!(
         ui::svg_form_open().is_some(),
         "the real gesture's press reached the drawing seam"
@@ -382,7 +382,7 @@ fn f3_5_s3_the_camera_layer_stays_up_while_a_drawing_is_placed(app: &adw::Applic
     assert!(
         !panel_armed.has_css_class("zoom-camera-down"),
         "arming a drawing puts no camera layer down (camera_layer_stays_up = {})",
-        fx_svg::camera_layer_stays_up()
+        fx_text::camera_layer_stays_up()
     );
 
     ui::svg_drag_ended(&window, (40.0, 40.0), (40.0, 40.0));
@@ -493,7 +493,7 @@ fn f3_5_s4_no_file_is_not_placed(app: &adw::Application) {
         "Apply with a blanked file answers `NO_FILE` verbatim, got {said}"
     );
     assert!(
-        ui::review_cut_of(&boxed).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "a drawing with no ink is not placed"
     );
     assert!(
@@ -529,7 +529,7 @@ fn f3_5_s4_a_length_under_the_floor_is_refused_naming_it(app: &adw::Application)
         "and quotes the value too short, got {said}"
     );
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "a refused Apply places nothing"
     );
     assert!(
@@ -552,7 +552,7 @@ fn f3_5_s4_apply_places_one_drawing_and_one_undo_takes_it_back(app: &adw::Applic
         fx_record::recorded_status(naivepost::cut::EffectKind::Svg),
         "the door behind `svg-apply-button` answers with `fx_record`'s own sentence for the kind"
     );
-    let cut_ = ui::review_cut_of(&window);
+    let cut_ = ui::window_preview::newest_review_cut();
     assert_eq!(cut_.fx.len(), 1, "one Apply, one record");
     let fx = &cut_.fx[0];
     assert_eq!(fx.kind, "svg", "of kind svg");
@@ -576,7 +576,7 @@ fn f3_5_s4_apply_places_one_drawing_and_one_undo_takes_it_back(app: &adw::Applic
 
     click(&window, "undo-button");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "ONE ↶ takes the drawing back -- proof Apply went through record_edit, not seed_review_cut"
     );
     RAN_APPLY_UNDO.store(true, Ordering::SeqCst);

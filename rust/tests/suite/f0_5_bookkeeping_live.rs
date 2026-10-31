@@ -243,15 +243,7 @@ fn line_overwrites(app: &adw::Application) {
     let log = ui::log_expander(&window).expect("the shell has a log expander");
     use gtk4::prelude::*;
     let view = ui::log_view(&window).expect("the expander holds the log body");
-    naivepost::ui::run_close::close_step_run(
-        &bar,
-        &queue,
-        &Rc::new(RefCell::new(naivepost::exchanges::RunLog::new())),
-        &status,
-        &progress,
-        &log,
-        &view,
-    );
+    naivepost::ui::run_close::close_step_run(&bar, &queue, &status, &progress, &log, &view);
     assert_eq!(
         ui::state(&window).status,
         joined,
@@ -611,7 +603,6 @@ struct Handles {
     log: gtk4::Expander,
     log_view: gtk4::TextView,
     queue: Rc<RefCell<Queue>>,
-    exchange_log: Rc<RefCell<naivepost::exchanges::RunLog>>,
 }
 
 /// Close the run these handles hold through the program's one close door (§S4).
@@ -619,7 +610,6 @@ fn close(handles: &Handles) {
     naivepost::ui::run_close::close_step_run(
         &handles.bar,
         &handles.queue,
-        &handles.exchange_log,
         &handles.status,
         &handles.progress,
         &handles.log,
@@ -639,6 +629,5 @@ fn handles() -> Handles {
         log: gtk4::Expander::new(None),
         log_view: gtk4::TextView::new(),
         queue: Rc::new(RefCell::new(Queue::new())),
-        exchange_log: Rc::new(RefCell::new(naivepost::exchanges::RunLog::new())),
     }
 }

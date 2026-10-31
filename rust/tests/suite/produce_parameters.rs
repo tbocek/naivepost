@@ -50,7 +50,7 @@ fn anywhere(id: &str) -> Option<params::Param> {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .find(|param| param.id == id)
 }
@@ -459,7 +459,7 @@ fn sec_08_produce_4_parameters_used_s7_the_servers_deadlines_the_poster_and_the_
         params::prepare(),
         params::cut(),
         params::effects(),
-        params::narrate(),
+        naivepost::params_narrate::rows(),
         params::produce(),
     ] {
         for param in section {
@@ -537,7 +537,7 @@ fn sec_08_produce_4_parameters_used_s8_the_brief_bound_and_the_one_row_per_param
         .count();
     assert_eq!(in_produce, 0, "its home is narrate()");
     assert_eq!(
-        params::narrate()
+        naivepost::params_narrate::rows()
             .into_iter()
             .filter(|p| p.id == "P.eng.narrationTailSeconds")
             .count(),
@@ -549,7 +549,7 @@ fn sec_08_produce_4_parameters_used_s8_the_brief_bound_and_the_one_row_per_param
         .count();
     assert_eq!(in_produce, 0);
     assert_eq!(
-        params::narrate()
+        naivepost::params_narrate::rows()
             .into_iter()
             .filter(|p| p.id == "P.eng.narrationMaxExtendSeconds")
             .count(),

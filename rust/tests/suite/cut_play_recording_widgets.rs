@@ -127,7 +127,7 @@ fn check_s2_plays_from_the_red_line_through_the_click(app: &adw::Application) {
     let button = ui::play_recording_button(&window).expect("the Cut page's ▶");
 
     button.emit_clicked();
-    let playing = ui::preview_player(&window);
+    let playing = ui::preview_player();
     assert!(playing.transport.playing, "the click started playback");
     assert!(
         playing.transport.started,
@@ -140,7 +140,7 @@ fn check_s2_plays_from_the_red_line_through_the_click(app: &adw::Application) {
     );
 
     button.emit_clicked();
-    let paused = ui::preview_player(&window);
+    let paused = ui::preview_player();
     assert!(!paused.transport.playing, "the second click paused it");
     assert!(
         paused.transport.started,
@@ -160,12 +160,12 @@ fn check_s1_switches_back_to_the_recording_through_the_click(app: &adw::Applicat
     // From the ✂ cut preview.
     let window = cut_window(app);
     ui::set_playhead(&window, 30.0);
-    ui::set_preview_state(&window, true, false, Transport::default());
+    ui::set_preview_state(true, false, Transport::default());
     ui::play_recording_button(&window)
         .expect("▶")
         .emit_clicked();
 
-    let after = ui::preview_player(&window);
+    let after = ui::preview_player();
     assert!(!after.cut_only, "the preview is the recording now");
     assert_eq!(
         ui::state(&window).status,
@@ -184,7 +184,6 @@ fn check_s1_switches_back_to_the_recording_through_the_click(app: &adw::Applicat
     ui::set_playhead(&reviewing, 30.0);
     // The review is already running when ▶ is pressed -- §F2.1 S1's "already playing: carry on".
     ui::set_preview_state(
-        &reviewing,
         false,
         true,
         Transport {
@@ -196,7 +195,7 @@ fn check_s1_switches_back_to_the_recording_through_the_click(app: &adw::Applicat
         .expect("▶")
         .emit_clicked();
 
-    let carried = ui::preview_player(&reviewing);
+    let carried = ui::preview_player();
     assert!(!carried.reviewing, "the review was left behind");
     assert!(
         carried.transport.playing,
@@ -222,7 +221,7 @@ fn check_nothing_filmed_refuses_through_the_click(app: &adw::Application) {
         Press::NoFootage,
         "the refusal came from the seam, not from the test"
     );
-    let idle = ui::preview_player(&window);
+    let idle = ui::preview_player();
     assert!(!idle.transport.playing, "nothing started");
     assert_eq!(idle.playhead, None, "no line was invented to play from");
     let status = ui::state(&window).status;

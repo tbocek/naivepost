@@ -14,15 +14,15 @@ use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_refused, log_line,
-    preview_picture_px, record_edit, refresh_effects_lane, refresh_selection_readout,
-    review_cut_of, trim_seconds, zoom_field_row, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
+    preview_picture_px, record_edit, refresh_effects_lane, refresh_selection_readout, trim_seconds,
+    zoom_field_row, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
 };
 use crate::ui::{cut_form_buttons, cut_form_frame};
 
 pub fn press_text_item(window: &adw::ApplicationWindow) -> String {
     // A marked stretch outranks the line for the tail's wording; a band under every effect's floor for "marked"
     // (cut_speed::MIN_MARKED_SECONDS) is not a band at all, exactly as F3.3 reads it.
-    let marked = cut_form_buttons::marked_band(window);
+    let marked = cut_form_buttons::marked_band();
     match fx_text::arm(text_armed()) {
         fx_text::Press::Armed => {
             set_text_armed(true);
@@ -362,8 +362,8 @@ pub fn text_drag_ended_with_source(
 ) -> String {
     let choice = fx_text::drag_choice(from, to);
     // The line is known only if this session ever placed one, read through the same seam Paste/Insert/Speed use.
-    let line = cut_form_buttons::known_line(window);
-    let selection = cut_form_buttons::marked_band(window);
+    let line = cut_form_buttons::known_line();
+    let selection = cut_form_buttons::marked_band();
     match fx_text::place(choice, line, selection, source) {
         Some(fx) => {
             show_text_form(window, &fx);
@@ -386,7 +386,7 @@ pub fn text_drag_ended(
     from: (f64, f64),
     to: (f64, f64),
 ) -> String {
-    let source = preview_picture_px(window);
+    let source = preview_picture_px();
     text_drag_ended_with_source(window, from, to, source)
 }
 
@@ -397,7 +397,7 @@ pub fn nudge_text_box(
 ) -> String {
     let frame = (PREVIEW_PANEL_W, PREVIEW_PANEL_H);
     if let Some(index) = target {
-        return match placed_text_box(window, index) {
+        return match placed_text_box(index) {
             Some(mut record) => {
                 let moved = fx_text::move_box(record_box(&record), delta, frame);
                 record.cx = Some(moved.cx);
@@ -435,8 +435,11 @@ fn no_box_to_resize() -> String {
 }
 
 /// The record at `index`, if it is a text one — the only kind §F3.4 gives a preview box to.
-fn placed_text_box(window: &adw::ApplicationWindow, index: usize) -> Option<cut::Fx> {
-    let record = review_cut_of(window).fx.into_iter().nth(index)?;
+fn placed_text_box(index: usize) -> Option<cut::Fx> {
+    let record = crate::ui::window_preview::newest_review_cut()
+        .fx
+        .into_iter()
+        .nth(index)?;
     (record.kind == "text").then_some(record)
 }
 
@@ -451,7 +454,7 @@ fn record_box(record: &cut::Fx) -> fx_text::Box_ {
 }
 
 fn write_text_record(window: &adw::ApplicationWindow, index: usize, record: &cut::Fx) {
-    let mut edited = review_cut_of(window);
+    let mut edited = crate::ui::window_preview::newest_review_cut();
     if let Some(slot) = edited.fx.get_mut(index) {
         *slot = record.clone();
     }
@@ -467,7 +470,7 @@ pub fn drag_text_edge(
 ) -> String {
     let frame = (PREVIEW_PANEL_W, PREVIEW_PANEL_H);
     if let Some(index) = target {
-        return match placed_text_box(window, index) {
+        return match placed_text_box(index) {
             Some(mut record) => {
                 let resized = fx_text::resize_box(record_box(&record), edge, to_px, frame);
                 record.cx = Some(resized.cx);
@@ -499,7 +502,7 @@ pub fn drag_text_edge(
 }
 
 pub fn press_aspect(window: &adw::ApplicationWindow, choice: &str) -> String {
-    let mut cut_ = review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     let status = fx_aspect::apply(&mut cut_, choice);
     record_edit(window, &cut_);
     // The shape changes what the preview frames, so the lane and the preview redraw in the same turn as the
@@ -514,7 +517,7 @@ pub fn press_aspect(window: &adw::ApplicationWindow, choice: &str) -> String {
 }
 
 pub(crate) fn refresh_aspect_readout(window: &adw::ApplicationWindow) {
-    let cut_ = review_cut_of(window);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let name = cut_screen::readout_widget("Aspect ratio");
     if let Some(label) = find_widget_by_name(window.upcast_ref(), &name) {
         if let Ok(label) = label.downcast::<gtk::Label>() {

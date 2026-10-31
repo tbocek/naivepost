@@ -43,11 +43,8 @@ fn card(s: f64, e: f64, dur: f64) -> Seg {
 #[test]
 fn sec_05_cut_7_rules_s1_one_thing_held_and_only_one_undo_per_gesture() {
     // One thing at a time: an edge already in hand makes way for a clip.
-    assert_eq!(
-        cut_rules::pick_up(Some(Held::Edge), Held::Clip),
-        Some(Held::Clip)
-    );
-    assert_eq!(cut_rules::pick_up(None, Held::Effect), Some(Held::Effect));
+    assert_eq!(cut_rules::pick_up(Held::Clip), Some(Held::Clip));
+    assert_eq!(cut_rules::pick_up(Held::Effect), Some(Held::Effect));
 
     // Picking up is reading: no move, no edit, nothing for ↶ to take back.
     assert!(!cut_rules::picking_up_edits(false));

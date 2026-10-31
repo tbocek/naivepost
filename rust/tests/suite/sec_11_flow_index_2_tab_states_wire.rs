@@ -25,8 +25,8 @@ static RAN_S5_TRIO: AtomicBool = AtomicBool::new(false);
 static RAN_S4_REFUSAL: AtomicBool = AtomicBool::new(false);
 
 /// A player-shaped value for the pure §2 helpers, read off the window's real player.
-fn preview_of(window: &adw::ApplicationWindow) -> cut_screen::Preview {
-    let player = ui::preview_player(window);
+fn preview_of() -> cut_screen::Preview {
+    let player = ui::preview_player();
     cut_screen::Preview {
         cut_only: player.cut_only,
         reviewing: player.reviewing,
@@ -108,11 +108,10 @@ fn scratch_session(tag: &str) -> std::path::PathBuf {
 fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
     let window = cut_window(app);
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     // Recording preview, cued: the state a person is in after clicking the timeline, which is exactly
     // when §2 says the button stopped meaning "Suggest".
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -121,7 +120,7 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
         },
     );
     assert_eq!(
-        tab_states::play(Page::Cut, true, ui::preview_player(&window).transport).0,
+        tab_states::play(Page::Cut, true, ui::preview_player().transport).0,
         tab_states::Play::Transport { resume: true },
         "§2's rule: started but parked, so the transport owns ▶"
     );
@@ -129,7 +128,7 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
     let play = ui::play_button(&window).expect("the run bar has a ▶");
     play.emit_by_name::<()>("clicked", &[]);
     settle();
-    let after = ui::preview_player(&window).transport;
+    let after = ui::preview_player().transport;
     assert!(after.playing, "▶ resumed the parked preview: {after:?}");
     assert!(
         ui::run_bar(&window)
@@ -142,7 +141,7 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
 
     // Playing: the same press parks it again rather than starting the step.
     play.emit_by_name::<()>("clicked", &[]);
-    let parked = ui::preview_player(&window).transport;
+    let parked = ui::preview_player().transport;
     assert!(
         !parked.playing && parked.started,
         "the next press parked it again: {parked:?}"
@@ -167,7 +166,7 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
         .expect("the run bar has a ⏹")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    let stopped = ui::preview_player(&window).transport;
+    let stopped = ui::preview_player().transport;
     assert!(!stopped.playing, "⏹ stopped the preview");
     assert!(
         !stopped.started,
@@ -208,10 +207,9 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
 
     let window = cut_window(app);
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     naivepost::ui::cut_review_play::clear();
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -225,7 +223,6 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
 
     // ▶ recording first: the recording slot is lit and the other two say "Play".
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -258,7 +255,7 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
     // ▶✂✂: the review takes the lit slot.
     review.emit_by_name::<()>("clicked", &[]);
     settle();
-    let preview = preview_of(&window);
+    let preview = preview_of();
     assert!(
         cut_screen::review_lit(&preview),
         "the review is the lit mode: {preview:?}"
@@ -285,7 +282,6 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
     // `tests/suite/cut_play_the_cut_widgets.rs`, which is why it is seeded here rather than pressed.
     naivepost::ui::cut_review_play::clear();
     ui::set_preview_state(
-        &window,
         true,
         false,
         Transport {
@@ -295,13 +291,13 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
     );
     naivepost::ui::cut_cut_play::paint_both_skipping_buttons(&window);
     crate::suite::sec_11_flow_index_2_tab_states_wire::ui::cut_record_play::paint_button(&window);
-    let preview = preview_of(&window);
+    let preview = preview_of();
     assert!(
         cut_screen::play_cut_lit(&preview) && !cut_screen::review_lit(&preview),
         "the lit slot moved to ▶✂: {preview:?}"
     );
     assert!(
-        ui::preview_player(&window).transport.playing,
+        ui::preview_player().transport.playing,
         "a switch-over carries the preview on without stopping"
     );
     assert!(
@@ -357,7 +353,7 @@ fn check_s4_no_cut_refuses_on_narrate(app: &adw::Application) {
         "Narrate opens always"
     );
     // No cut in this window's session: seed an empty one so "without a cut" is a fact, not a default.
-    ui::seed_review_cut(&window, &Cut::default());
+    ui::seed_review_cut(&Cut::default());
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);

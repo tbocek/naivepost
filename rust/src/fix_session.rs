@@ -84,7 +84,7 @@ pub fn run_session(
     merge_mark_write(&tree, &project, log, reached)
 }
 
-/// §F1.8 S1–S4 for the whole session in one walk: place, block by block over EVERY recording, write the fixed files. `ask` is [`crate::fix_call::ask_block`], the clean-transcript job's door (§3.1 reads stay answerable, §09 §5's bound is applied by `llm_request::body`).
+/// §F1.8 S1–S4 for the whole session in one walk: place, block by block over EVERY recording, write the fixed files. `ask` is [`fix_call::ask_once`], the clean-transcript job's door (§3.1 reads stay answerable, §09 §5's bound is applied by `llm_request::body`).
 pub fn session_fix(
     tree: &Tree,
     project: &Project,
@@ -103,7 +103,7 @@ pub fn session_fix(
         &narrator_of(project),
         pass,
         &crate::fix_call::cache_prompt(&paths, &project.context),
-        |message| crate::fix_call::ask_block(tree, &paths, &conf, message),
+        |message| crate::fix_call::ask_once(tree, &paths, &conf, message),
         || run_marking_pass(tree, project, pass, log, reached),
     )?;
     for line in &outcome.logs {
@@ -240,7 +240,7 @@ pub fn merge_mark_write(
 
     // S7: the text the cut model reads, which is also the text the person opens.
     let narrator = narrator_of(project);
-    let text = fix_transcripts::session_text(&rows, &narrator, &marks);
+    let text = fix_transcripts::labelled(&rows, &narrator, &marks);
     fix_transcripts::write_session_text(tree, &text)?;
     log(&format!(
         ">>> session.txt: {} line(s), {} marked stretch(es)",
@@ -297,7 +297,7 @@ pub fn run_marking_pass(
     let stored = if refused {
         Vec::new()
     } else {
-        retakes::read_marks(&tree.retakes_tsv()).unwrap_or_default()
+        crate::textfmt::read_retakes(&tree.retakes_tsv()).unwrap_or_default()
     };
     Ok(marks_to_fix(&stored))
 }

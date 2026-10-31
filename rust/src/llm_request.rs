@@ -170,7 +170,7 @@ impl Reply {
     /// Whether the model stopped because it ran out of room, which is [`crate::degraded`]'s
     /// question to answer.
     pub fn cut_off(&self) -> bool {
-        crate::degraded::cut_off(&self.finish_reason, !self.content.is_empty())
+        crate::degraded::cut_off(&self.finish_reason)
     }
 }
 

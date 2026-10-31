@@ -40,12 +40,7 @@ pub enum Press {
     Dropped,
 }
 
-/// F3.8 S1 (`under 4 px of travel is a click`): the band's own slop. `cut_trim::is_click` uses `ROW_TRAVEL_PX` (3 px) for F2.8 clip drags, which would make a 3 px jitter on a band a move; so read through [`cut_select::is_drag`] (`moved_px > DRAG_SLOP_PX`).
-fn is_band_drag(travel_px: f64) -> bool {
-    cut_select::is_drag(travel_px)
-}
-
-/// F3.8 S1/S3 (`Press: ✕ → kill; band → hold; empty lane → drop` + `Drag under 4 px is a click`) + S2: what a press answers, in the flowchart's order. The ✕ is checked FIRST (a kill is deliberate); then whether there was a band at all; only then travel decides click vs drag via [`is_band_drag`] (4 px, not F2.8's 3). `grab` is carried into the `Hold`.
+/// F3.8 S1/S3 (`Press: ✕ → kill; band → hold; empty lane → drop` + `Drag under 4 px is a click`) + S2: what a press answers, in the flowchart's order. The ✕ is checked FIRST (a kill is deliberate); then whether there was a band at all; only then travel decides click vs drag via [`cut_select::is_drag`] (4 px, not F2.8's 3). `grab` is carried into the `Hold`.
 pub fn press_band(
     t: f64,
     width_px: f64,
@@ -60,7 +55,7 @@ pub fn press_band(
     if !lane_hit {
         return Press::Dropped;
     }
-    if !is_band_drag(travel_px) {
+    if !cut_select::is_drag(travel_px) {
         return Press::ClickForm;
     }
     Press::Hold { t, from_end: grab }
@@ -122,13 +117,6 @@ pub fn hold_drops(t: f64, dur: f64, line: f64) -> bool {
 /// F3.8 S3 (`undo pushed on the first 2 px of travel`): does this update take the gesture's one Undo? Once-only via [`cut_trim::pushes_undo`]; the 2 px is the "did it move" argument.
 pub fn undo_pushed(travel_px: f64, already_pushed: bool) -> bool {
     cut_trim::pushes_undo(travel_px >= UNDO_PUSH_PX, already_pushed)
-}
-
-/// F3.8 S4 (`Edit re-finds the effect by kind and start (
-/// Δt
-/// < 1 ms)`): which record the reopened form talks about; by value via [`effect_rules::find_by_value`] with [`effect_rules::REACH_SECONDS`], never by index, since the lane moves while a dialog is open.
-pub fn refind(fx: &[Fx], kind: &str, t: f64) -> Option<usize> {
-    effect_rules::find_by_value(fx, kind, t)
 }
 
 /// F3.8 S4 (`box always from the live effect, never the form's snapshot`): the four fractions a form shows. `form_snapshot` exists only to make the rule visible; the answer comes off `live`.

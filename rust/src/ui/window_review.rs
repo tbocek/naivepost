@@ -55,8 +55,7 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
 
 /// Write this window's cut's segment list, keeping lanes, shifts, rows and folds as they were; the write side
 /// of [`newest_review_cut`](super::window_preview::newest_review_cut), used by the verb doors.
-pub(crate) fn set_review_segs(window: &adw::ApplicationWindow, segs: &[cut::Seg]) {
-    let _ = window;
+pub(crate) fn set_review_segs(segs: &[cut::Seg]) {
     super::window::REVIEW_CUTS.with(|slots| {
         if let Some(slot) = slots.borrow().last() {
             slot.borrow_mut().segs = segs.to_vec();

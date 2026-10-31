@@ -557,7 +557,7 @@ pub(crate) fn wire_open(
 }
 
 /// S1: the folder chooser, titled for opening. Folder-select because a project *is* a folder (01 §1); picking
-/// `naivepost.json` inside one still gets the folder ([`open_project::folder_for`]).
+/// `naivepost.json` inside one still gets the folder ([`startup::project_folder`]).
 fn ask_open_project(
     bar: &Rc<RefCell<run::RunBar>>,
     status: &gtk::Label,

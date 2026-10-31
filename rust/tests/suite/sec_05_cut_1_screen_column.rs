@@ -78,7 +78,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         }],
         ..Default::default()
     };
-    naivepost::ui::seed_review_cut(&window, &seeded);
+    naivepost::ui::seed_review_cut(&seeded);
     // §1 badge 29 is "the row's sound switch", and `refresh_camera_rows` draws one gutter switch per cut
     // LANE (`cut_.lanes`), so the page needs a lane to have a switch at all. The demo fixture ships none, and
     // the band's own left edge is measured from the fold badge (§B puts both in the same 30 px column).
@@ -90,7 +90,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         off: 0.0,
         dur: 30.0,
     }];
-    naivepost::ui::seed_review_cut(&window, &with_lane);
+    naivepost::ui::seed_review_cut(&with_lane);
     // A silent-everywhere lane would show its switch OFF; press the door the switch itself fires so the
     // widget on screen carries the state the rule writes (and the wire is exercised by a real click below).
     naivepost::ui::press_gutter_switch(&window, "mic-lav");
@@ -414,7 +414,7 @@ fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
     settle();
     assert!(said.contains("sting.mp4"), "{said}");
     assert!(
-        naivepost::ui::insert_open(&window).is_some(),
+        naivepost::ui::insert_open().is_some(),
         "the insert form is open"
     );
 
@@ -509,14 +509,14 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
     println!("GUTTER rails inside track-layers: gutter-badges + gutter-switches");
     // And the controls §B names are drawn IN the gutter, on the band itself: badge 23 (the whole-cut fold
     // badge) at its top and badge 29 (each lane's sound switch) below it, every one inside the first 30 px.
-    let marks = naivepost::ui::cut_band_marks::placed_on(&window);
+    let marks = naivepost::ui::cut_band_marks::placed_on();
     use naivepost::ui::cut_band_marks::Mark;
     let badge = marks
         .iter()
         .find(|placed| matches!(placed.mark, Mark::FoldAll(_)))
         .expect("\u{a7}1 badge 23: the fold-all badge is drawn in the gutter");
     let lane = "mic-lav";
-    let lane_index = naivepost::ui::cut_view::band_scene_for(&window)
+    let lane_index = naivepost::ui::cut_view::band_scene_for()
         .lanes
         .iter()
         .position(|kept| kept.name == lane)
@@ -549,10 +549,10 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
     // reaches the hearing rule, which is what makes this the wire as well as the position check.
     let heard_before = matches!(switch.mark, Mark::LaneSound(_, true));
     let gesture =
-        naivepost::ui::window::band_line_gesture_for_test(&window).expect("the band takes clicks");
+        naivepost::ui::window::band_line_gesture_for_test().expect("the band takes clicks");
     gesture.emit_by_name::<()>("released", &[&1i32, &switch.x, &switch.y]);
     settle();
-    let after = naivepost::ui::cut_band_marks::placed_on(&window)
+    let after = naivepost::ui::cut_band_marks::placed_on()
         .into_iter()
         .find(|placed| matches!(placed.mark, Mark::LaneSound(i, _) if i == lane_index))
         .expect("the switch is still drawn");

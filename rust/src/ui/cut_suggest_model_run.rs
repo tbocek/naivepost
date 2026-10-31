@@ -21,11 +21,10 @@ pub const STEP: &str = "cut";
 /// The shipped prompt this request is built from (`spec/prompts/cut.md`, through the settings copy).
 pub const PROMPT_KEY: &str = "cut";
 /// §S2b's first pass, counted from 1. The bound itself is `P.eng.llmAttempts` and is asked through
-/// [`suggest::attempts_exhausted`], so the loop never repeats the number.
+/// [`roles::cut_attempts_exhausted`], so the loop never repeats the number.
 pub const FIRST_ATTEMPT: u32 = 1;
 pub fn filmed_spans(inputs: &cut_suggest_words_run::Inputs) -> Vec<(f64, f64)> {
     let spoken: Vec<(f64, f64)> = inputs.runs.iter().map(|run| run.span).collect();
-    let _ = inputs;
     let recordings: Vec<timeline::Recording> = spoken
         .iter()
         .map(|(start, end)| timeline::Recording {
@@ -217,7 +216,7 @@ pub fn system_message(user_context: &str, paths: Option<&Paths>) -> Option<Strin
 }
 
 fn wording(paths: Option<&Paths>, key: &str) -> Option<String> {
-    let fallback = crate::join_ask::shipped_file(key)?;
+    let fallback = crate::prompts::shipped_text(key)?;
     match paths {
         Some(paths) => settings::prompt_text(paths, key, &fallback).ok(),
         None => Some(fallback),
@@ -482,7 +481,7 @@ where
     // What every second of this session was filmed by: §8 drops a segment with no recording at either end
     // BEFORE its length is judged, because a stretch nobody filmed has no length to argue about.
     let filmed = filmed_spans(&inputs);
-    // The bound is `P.eng.llmAttempts`, asked through `attempts_exhausted` so the number lives once.
+    // The bound is `P.eng.llmAttempts`, asked through `roles::cut_attempts_exhausted` so the number lives once.
     // Every attempt gets a fresh `Plan`: a correction round repairs the model's answer, not the tool's
     // arithmetic, and a plan carried over would let a refused segment survive into the next answer.
     for number in FIRST_ATTEMPT.. {
@@ -494,7 +493,7 @@ where
             .map(|problems| correction_from(problems, past_end_claim(problems, end)))
             .unwrap_or_default();
         let complaint = (!complaint.is_empty()).then_some(complaint.as_str());
-        if suggest::attempts_exhausted(number) {
+        if crate::roles::cut_attempts_exhausted(number) {
             break;
         }
         // §8: the web tools come off after the FIRST rejection, and the page is told they did.
@@ -687,7 +686,7 @@ pub(crate) enum Blocked {
     Settings(String),
 }
 
-pub(crate) fn press_parts(window: &adw::ApplicationWindow) -> Result<(Tree, Press), Blocked> {
+pub(crate) fn press_parts() -> Result<(Tree, Press), Blocked> {
     let Some(tree) = session() else {
         return Err(Blocked::NoSession);
     };
@@ -699,7 +698,7 @@ pub(crate) fn press_parts(window: &adw::ApplicationWindow) -> Result<(Tree, Pres
         tree,
         Press {
             paths,
-            project: crate::ui::window::session_handle(window).borrow().clone(),
+            project: crate::ui::window::session_handle().borrow().clone(),
             cut: crate::ui::window::newest_review_cut(),
         },
     ))
@@ -716,9 +715,8 @@ pub(crate) fn blocked(why: Blocked) -> Landed {
 
 /// The window's door for `suggest_press`'s model arm: read the settings this press dials, ask, walk
 /// back, answer.
-pub fn press(window: &adw::ApplicationWindow, busy: bool) -> Landed {
-    let _ = busy;
-    let (tree, parts) = match press_parts(window) {
+pub fn press() -> Landed {
+    let (tree, parts) = match press_parts() {
         Ok(got) => got,
         Err(why) => return blocked(why),
     };

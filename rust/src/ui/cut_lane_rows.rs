@@ -96,7 +96,7 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     // are sized to the cut first: a `DrawingArea` clips its draw callback to its allocation.
     crate::ui::cut_tracks::fit_band_height_for_window(
         window,
-        &crate::ui::cut_view::band_scene_for(window),
+        &crate::ui::cut_view::band_scene_for(),
     );
     if LANE_REFRESH.with(|cell| cell.get()) {
         return;
@@ -104,12 +104,12 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     LANE_REFRESH.with(|cell| cell.set(true));
     install_lane_css_once();
 
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let bars = fx_lane::lane_layout(&cut_.fx);
     let rows = fx_lane::row_count(&cut_.fx);
-    let t = ui::paste_line(window);
+    let t = crate::ui::cut_lane::paste_line();
     // The held effect is identified by its index in the cut's list; one not on this cut holds no overlay.
-    let mut held_index = ui::held_effect().and_then(|held| {
+    let mut held_index = crate::ui::cut_hand::held_effect().and_then(|held| {
         cut_.fx
             .iter()
             .position(|effect| effect.kind == held.kind && effect.t == held.t)

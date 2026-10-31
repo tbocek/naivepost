@@ -19,7 +19,7 @@ pub fn redraw(window: &adw::ApplicationWindow) -> bool {
     };
     // The same handle every page reads, so what is drawn is what the session holds — not a copy of it.
     source_rows::repaint(&Rows {
-        session: crate::ui::session_handle(window),
+        session: crate::ui::session_handle(),
         status,
         list,
     });

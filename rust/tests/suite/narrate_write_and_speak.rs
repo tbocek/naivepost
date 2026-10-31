@@ -306,16 +306,13 @@ fn f4_1_s5_captions_only_stops_before_speaking() {
 #[test]
 fn f4_1_s6_speak_skips_blank_and_cached() {
     // Blank first: synthesizing "" would cache a mistake under a key that suppresses the line forever.
-    assert_eq!(speak_line("", "own", false), Speak::SkippedBlank);
-    assert_eq!(speak_line("   \n\t ", "own", false), Speak::SkippedBlank);
-    assert_eq!(speak_line("", "own", true), Speak::SkippedBlank);
+    assert_eq!(speak_line("", false), Speak::SkippedBlank);
+    assert_eq!(speak_line("   \n\t ", false), Speak::SkippedBlank);
+    assert_eq!(speak_line("", true), Speak::SkippedBlank);
     // Not blank but already in the cache: spend nothing.
-    assert_eq!(
-        speak_line("said it already", "own", true),
-        Speak::SkippedCached
-    );
+    assert_eq!(speak_line("said it already", true), Speak::SkippedCached);
     // Otherwise hand it to F4.4.
-    assert_eq!(speak_line("a new line", "own", false), Speak::Synthesize);
+    assert_eq!(speak_line("a new line", false), Speak::Synthesize);
 
     // The summary's indent is part of the spec: FOUR spaces, never `>>> `.
     assert!(spoken_log(2, 3).starts_with("    narrate:"));
@@ -554,7 +551,7 @@ fn f4_1_s6_speak_pass_counts() {
         silent: Vec::new(),
     };
     // Only the middle clip's wav exists in the cache. `speak_pass` is handed the record's entries.
-    let speaks = speak_pass("own", &record.entries, |entry| entry.s == 10.0);
+    let speaks = speak_pass(&record.entries, |entry| entry.s == 10.0);
     assert_eq!(
         speaks,
         vec![Speak::SkippedBlank, Speak::SkippedCached, Speak::Synthesize],

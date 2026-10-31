@@ -44,7 +44,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
     let mut seeded = cut::Cut::default();
     seeded.segs = vec![clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)];
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     // No copy in hand at the start of every check: the thread-local outlives a window, so a leftover hand
     // would make the next check's greying wrong rather than today's answer.
     drop_copy();
@@ -54,10 +54,10 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// Let the main context run what the widget emissions queued.
 
 /// This window's cut as a whole, so the length can be measured the same way the page measures it.
-fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
+fn cut_of() -> cut::Cut {
     let mut fresh = cut::Cut::default();
-    fresh.segs = ui::review_cut_segs(window);
-    fresh.lanes = ui::review_lanes(window);
+    fresh.segs = ui::review_cut_segs();
+    fresh.lanes = ui::review_lanes();
     fresh
 }
 
@@ -101,8 +101,8 @@ fn press_key(controller: &gtk::EventControllerKey, key: gtk::gdk::Key) {
     );
 }
 
-fn remember_esc(window: &adw::ApplicationWindow) {
-    let controller = ui::copy_esc_controller(window).expect("Esc has a key controller");
+fn remember_esc() {
+    let controller = ui::copy_esc_controller().expect("Esc has a key controller");
     assert!(
         controller
             .upcast_ref::<gtk::EventController>()
@@ -116,7 +116,7 @@ fn remember_esc(window: &adw::ApplicationWindow) {
 /// S1 refusal: nothing selected leaves ⧉ Copy greyed, and a half-second band refuses when clicked anyway.
 fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Application) {
     let window = cut_window(app);
-    remember_esc(&window);
+    remember_esc();
 
     let copy_ =
         ui::line_step_button(&window, "copy-button").expect("the Cut page carries copy-button");
@@ -130,7 +130,7 @@ fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Applicati
     seed_band(&window, 12.0, 12.5);
     settle();
     assert!(
-        ui::selection(&window).is_some(),
+        ui::selection().is_some(),
         "the short band was drawn before the refusal is asked for"
     );
     let said = ui::press_copy(&window);
@@ -149,7 +149,7 @@ fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Applicati
         "// P.policy.minSceneSeconds is the floor the sentence quotes"
     );
     assert!(
-        ui::selection(&window).is_some(),
+        ui::selection().is_some(),
         "refusing copies did not clear the band either"
     );
     let _ = MIN_SCENE_SECONDS;
@@ -159,7 +159,7 @@ fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Applicati
 /// S1 taken: a second or longer goes into hand, the status is the rule's own sentence, and the band lives.
 fn check_a_long_selection_is_taken_in_hand_and_survives(app: &adw::Application) {
     let window = cut_window(app);
-    remember_esc(&window);
+    remember_esc();
 
     seed_band(&window, 12.0, 20.0);
     settle();
@@ -183,7 +183,7 @@ fn check_a_long_selection_is_taken_in_hand_and_survives(app: &adw::Application) 
         status_text(&window)
     );
     assert!(
-        ui::selection(&window).is_some(),
+        ui::selection().is_some(),
         "taking a copy is reading, not editing: the band survives"
     );
     window.close();
@@ -193,7 +193,7 @@ fn check_a_long_selection_is_taken_in_hand_and_survives(app: &adw::Application) 
 /// consumed, and the printed sentence names both totals.
 fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Application) {
     let window = cut_window(app);
-    remember_esc(&window);
+    remember_esc();
 
     seed_band(&window, 12.0, 20.0);
     settle();
@@ -203,8 +203,8 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
     settle();
     let _hand = ui::copy_hand().expect("the copy is in hand");
 
-    let before_segs = ui::review_cut_segs_count(&window);
-    let before_len = naivepost::cut_screen::cut_seconds(&cut_of(&window));
+    let before_segs = ui::review_cut_segs_count();
+    let before_len = naivepost::cut_screen::cut_seconds(&cut_of());
     assert_eq!(before_segs, 3, "three clips were seeded");
 
     // The line inside kept footage, well clear of a border.
@@ -216,7 +216,7 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
     paste_.emit_clicked();
     settle();
 
-    let after = ui::review_cut_segs(&window);
+    let after = ui::review_cut_segs();
     assert_eq!(
         after.len(),
         before_segs + 1,
@@ -230,9 +230,9 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
     assert_eq!(spliced.e, 35.0, "a spliced insert sits at one instant");
     assert_eq!(spliced.dur, 8.0, "and runs for the copied length");
     assert!(
-        naivepost::cut_screen::cut_seconds(&cut_of(&window)) > before_len,
+        naivepost::cut_screen::cut_seconds(&cut_of()) > before_len,
         "the video got longer: {before_len} -> {}",
-        naivepost::cut_screen::cut_seconds(&cut_of(&window))
+        naivepost::cut_screen::cut_seconds(&cut_of())
     );
     assert_eq!(ui::copy_hand(), None, "pasting consumes the copy: S2");
     let said = status_text(&window);
@@ -254,7 +254,7 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
 /// S3 lane: the copy gets a row of its own and NOTHING is cut — no segment appears.
 fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Application) {
     let window = cut_window(app);
-    remember_esc(&window);
+    remember_esc();
 
     seed_band(&window, 12.0, 20.0);
     settle();
@@ -264,8 +264,8 @@ fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Applicatio
     settle();
     let hand = ui::copy_hand().expect("the copy is in hand");
 
-    let before_lanes = ui::review_lanes(&window).len();
-    let before_segs = ui::review_cut_segs_count(&window);
+    let before_lanes = ui::review_lanes().len();
+    let before_segs = ui::review_cut_segs_count();
     // Inside a filmed run, so `lane_start` accepts the second.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 15.0 });
     let lane_ =
@@ -275,13 +275,13 @@ fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Applicatio
     lane_.emit_clicked();
     settle();
 
-    let lanes = ui::review_lanes(&window);
+    let lanes = ui::review_lanes();
     assert_eq!(lanes.len(), before_lanes + 1, "one row arrived");
     let fresh = lanes.last().expect("the new lane");
     assert_eq!(fresh.at, 15.0, "the row starts at the line");
     assert_eq!(fresh.dur, hand.length, "and runs for the copied length");
     assert_eq!(
-        ui::review_cut_segs_count(&window),
+        ui::review_cut_segs_count(),
         before_segs,
         "nothing was cut to the new row — ＋ Add does that later"
     );
@@ -298,10 +298,7 @@ fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Applicatio
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 16.0 });
     lane_.emit_clicked();
     settle();
-    let names: Vec<String> = ui::review_lanes(&window)
-        .iter()
-        .map(|l| l.name.clone())
-        .collect();
+    let names: Vec<String> = ui::review_lanes().iter().map(|l| l.name.clone()).collect();
     assert_eq!(names.len(), 2, "a second row arrived");
     assert_ne!(
         names[0], names[1],
@@ -313,7 +310,7 @@ fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Applicatio
 /// S2's other half: Esc drops the copy, and only that key.
 fn check_esc_drops_the_copy(app: &adw::Application) {
     let window = cut_window(app);
-    remember_esc(&window);
+    remember_esc();
 
     seed_band(&window, 12.0, 20.0);
     settle();
@@ -429,33 +426,33 @@ fn check_copy_then_paste_lengthens_through_the_real_buttons(app: &adw::Applicati
         "holding a copy makes \u{29c9} Paste live"
     );
     assert!(
-        ui::selection(&window).is_some(),
+        ui::selection().is_some(),
         "S1: taking a copy leaves the selection on the band"
     );
 
     // Aim it at the red line and press the real Paste button.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 40.0 });
-    let before_len = naivepost::cut_screen::cut_seconds(&cut_of(&window));
-    let before_segs = ui::review_cut_segs_count(&window);
+    let before_len = naivepost::cut_screen::cut_seconds(&cut_of());
+    let before_segs = ui::review_cut_segs_count();
     paste_.emit_clicked();
     settle();
 
-    let after_segs = ui::review_cut_segs_count(&window);
+    let after_segs = ui::review_cut_segs_count();
     assert_eq!(
         after_segs,
         before_segs + 1,
         "the spliced insert joined the cut"
     );
-    let card = ui::review_cut_segs(&window)
+    let card = ui::review_cut_segs()
         .into_iter()
         .find(|seg| seg.ins.contains("copy:"))
         .expect("the pasted segment is a `copy:<seconds>` insert");
     assert_eq!(card.s, 40.0, "it opens the cut at the line");
     assert_eq!(card.dur, 6.0, "and runs for the copied length");
     assert!(
-        naivepost::cut_screen::cut_seconds(&cut_of(&window)) > before_len,
+        naivepost::cut_screen::cut_seconds(&cut_of()) > before_len,
         "the video got longer: {before_len} -> {}",
-        naivepost::cut_screen::cut_seconds(&cut_of(&window))
+        naivepost::cut_screen::cut_seconds(&cut_of())
     );
     // S2: pasting CONSUMES the copy -- and the buttons go grey again on their own.
     assert!(

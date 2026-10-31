@@ -65,8 +65,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
         .emit_by_name::<()>("clicked", &[]);
     // The order build_window uses: open the history on what the page opens with, then show it, so a recorded
     // effect is one Undo away from THIS baseline rather than from a stale one.
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     // `seed_review_cut` only fills the cut slot — it draws nothing. The lane's bars and their ✕ exist only
     // after a refresh, which is what every real press path does; without this call no `fx-bar-*` would be in
     // the tree for any check to find.
@@ -141,8 +141,8 @@ fn fire_key(controller: &gtk::EventControllerKey, key: gtk::gdk::Key) {
 }
 
 /// This window's ⌦ controller, so a test can fire a real Delete through it. `None` on a page that drew none.
-fn delete_controller(window: &adw::ApplicationWindow) -> gtk::EventControllerKey {
-    ui::delete_key_controller(window).expect("the Cut page wired its delete keys")
+fn delete_controller() -> gtk::EventControllerKey {
+    ui::delete_key_controller().expect("the Cut page wired its delete keys")
 }
 
 // --- the round ----------------------------------------------------------------------------------------
@@ -184,7 +184,7 @@ fn band_hold_round(app: &adw::Application) {
         },
         "past the slop the band is picked up"
     );
-    let held = ui::held_effect().expect("the press put the record in hand");
+    let held = ui::cut_hand::held_effect().expect("the press put the record in hand");
     assert_eq!(held.t, 20.0, "the thing in hand is bar 0's record");
     assert_eq!(
         status_text(&window),
@@ -201,7 +201,7 @@ fn band_hold_round(app: &adw::Application) {
     );
     // And the line landed on the band's start, which is what S1 says picking something up means.
     assert_eq!(
-        ui::line_position(&window).t,
+        ui::line_position().t,
         20.0,
         "the line moved to the band's start"
     );
@@ -257,13 +257,13 @@ fn band_hold_round(app: &adw::Application) {
     // --- (4) S3: the ✕ removes the record, and ONE ↶ puts it back --------------------------------
     let window = cut_page(app, &two_records());
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         2,
         "two records before the kill"
     );
     click(&window, "fx-remove-0");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "the ✕ took one record out"
     );
@@ -273,19 +273,19 @@ fn band_hold_round(app: &adw::Application) {
         "the kill sentence, whole \u{2014} it promises ↶ and this test collects that promise"
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "nothing stays in hand after its record is gone"
     );
     // The promise: the SAME undo seam F2.13's tests use. This only works because removal went through
     // `record_edit`; a `seed_review_cut` would leave nothing to take back.
     click(&window, "undo-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         2,
         "one ↶ restored the killed record"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx[0].kind,
+        ui::window_preview::newest_review_cut().fx[0].kind,
         "zoom",
         "and it is the zoom, not the label"
     );
@@ -311,26 +311,26 @@ fn band_hold_round(app: &adw::Application) {
     let window = cut_page(app, &two_records());
     pick_up_bar_zero(&window);
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         2,
         "holding changes nothing yet"
     );
-    fire_key(&delete_controller(&window), gtk::gdk::Key::Delete);
+    fire_key(&delete_controller(), gtk::gdk::Key::Delete);
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "\u{2326} with an effect in hand removed THAT effect"
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "and the hand is empty afterwards"
     );
     // With NOTHING held the same key must still reach the selection-delete path: the effect count cannot
     // drop again (there is no effect selected), so the branch that ran is the old one.
-    let before = ui::review_cut_of(&window).fx.len();
-    fire_key(&delete_controller(&window), gtk::gdk::Key::Delete);
+    let before = ui::window_preview::newest_review_cut().fx.len();
+    fire_key(&delete_controller(), gtk::gdk::Key::Delete);
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "with nothing held the key takes no effect \u{2014} the selection path is untouched"
     );
@@ -344,7 +344,7 @@ fn band_hold_round(app: &adw::Application) {
     let pps = ui::SELECT_SURFACE_PPS;
     let said = ui::drag_held_band(&window, 30.0, &[], pps, 100.0, None);
     assert_eq!(said, fx_band::moved("Zoom"), "a slide reports 'moved'");
-    let moved = &ui::review_cut_of(&window).fx[0];
+    let moved = &ui::window_preview::newest_review_cut().fx[0];
     assert_eq!(
         moved.t, 30.0,
         "the whole band slid to where the hand left it"
@@ -356,7 +356,7 @@ fn band_hold_round(app: &adw::Application) {
         fx_band::resized("Zoom"),
         "an end reports 'resized'"
     );
-    let resized = &ui::review_cut_of(&window).fx[0];
+    let resized = &ui::window_preview::newest_review_cut().fx[0];
     // `end = false` is the LEADING end, so the start is what moves and the stop is what holds: 30 + 10 =
     // 40 stays 40, and the band is 36 → 40. The rule lives in `fx_lane::drag_end`, clamped from the
     // stationary end so a crossing stop cannot invert the band.
@@ -368,7 +368,7 @@ fn band_hold_round(app: &adw::Application) {
     );
     // Floor: dragging the end far past the start stops AT 0.1 s rather than through it.
     ui::drag_held_band(&window, 5.0, &[], pps, 100.0, Some(true));
-    let floored = &ui::review_cut_of(&window).fx[0];
+    let floored = &ui::window_preview::newest_review_cut().fx[0];
     assert!(
         floored.dur >= naivepost::fx_lane::MIN_BAND_SECONDS,
         "length stopped at the 0.1 s floor, got {}",
@@ -385,7 +385,7 @@ fn band_hold_round(app: &adw::Application) {
     // A mark sits 0.05 s away \u{2014} well inside the snap reach at this zoom \u{2014} and the nudge ignores it.
     let said = ui::nudge_held_effect(&window, -1.0 / 25.0);
     assert_eq!(said, fx_band::moved("Zoom"));
-    let nudged = &ui::review_cut_of(&window).fx[0];
+    let nudged = &ui::window_preview::newest_review_cut().fx[0];
     assert_eq!(
         nudged.t,
         20.0 - 1.0 / 25.0,
@@ -414,7 +414,7 @@ fn band_hold_round(app: &adw::Application) {
         said.contains(fx_band::KEPT_AS_YOU_TYPE),
         "the edit line carries the live-form note: {said}"
     );
-    let shown = ui::held_effect().expect("Edit kept the record in hand");
+    let shown = ui::cut_hand::held_effect().expect("Edit kept the record in hand");
     assert_eq!(
         shown.cx,
         Some(0.4),
@@ -428,7 +428,7 @@ fn band_hold_round(app: &adw::Application) {
         "and the form of that kind is open on it"
     );
     // Now remove the record and ask again: the miss sentence, and no write at all.
-    let before = ui::review_cut_of(&window);
+    let before = ui::window_preview::newest_review_cut();
     ui::remove_effect_at(&window, 0);
     ui::set_held_effect(Some(wide_zoom(20.0)));
     let gone = ui::press_edit_effect(&window);
@@ -438,7 +438,7 @@ fn band_hold_round(app: &adw::Application) {
         "a record that is not there says so, whole"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before.fx.len() - 1,
         "the miss wrote nothing further to the cut"
     );
@@ -451,7 +451,7 @@ fn band_hold_round(app: &adw::Application) {
     pick_up_bar_zero(&window);
     let dropped = ui::press_band_esc(&window).expect("with a hold, Esc answers");
     assert_eq!(dropped, "cancelled", "§A.9's bare-disarm word");
-    assert!(ui::held_effect().is_none(), "the hold is gone");
+    assert!(ui::cut_hand::held_effect().is_none(), "the hold is gone");
     assert!(
         ui::press_band_esc(&window).is_none(),
         "with nothing held Esc is NOT claimed \u{2014} it travels on to the form/arm controllers"
@@ -459,8 +459,7 @@ fn band_hold_round(app: &adw::Application) {
     // Through the real controller too: every Esc listener on this window runs, and with no form open and no
     // arm the band's own controller is the one left to answer (§A.9: Esc drops the hold).
     pick_up_bar_zero(&window);
-    let controller =
-        ui::band_esc_controller(&window).expect("the page wired a band Esc controller");
+    let controller = ui::band_esc_controller().expect("the page wired a band Esc controller");
     fire_key(&controller, gtk::gdk::Key::Escape);
     settle();
     assert_eq!(
@@ -468,7 +467,10 @@ fn band_hold_round(app: &adw::Application) {
         "cancelled",
         "the key reached the seam and printed"
     );
-    assert!(ui::held_effect().is_none(), "and dropped the hold");
+    assert!(
+        ui::cut_hand::held_effect().is_none(),
+        "and dropped the hold"
+    );
     RAN_ESC.store(true, Ordering::SeqCst);
     window.close();
     settle();

@@ -225,7 +225,7 @@ fn the_split_toggle_is_not_the_mic(window: &adw::ApplicationWindow) {
     // §4's greyed case, driven rather than asserted from a rule: rename the session's first source to a
     // split product's name (that is what `sources::separable` reads), repaint the list through the page's
     // own door, and the same-named toggle must now be insensitive.
-    let session = ui::session_handle(window);
+    let session = ui::session_handle();
     let renamed = {
         let mut project = session.borrow_mut();
         let held = project

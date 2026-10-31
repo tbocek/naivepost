@@ -43,13 +43,10 @@ thread_local! {
     static FORMS: RefCell<Vec<Rc<Form>>> = const { RefCell::new(Vec::new()) };
 }
 
-fn paths() -> Option<crate::settings::Paths> {
-    crate::settings::from_environment()
-}
-
 /// The template a profile name stands for on this machine, parsed. `Err` says why there is none.
 fn template_of(name: &str) -> Result<Template, String> {
-    let paths = paths().ok_or("nowhere to keep profiles on this machine")?;
+    let paths =
+        crate::settings::from_environment().ok_or("nowhere to keep profiles on this machine")?;
     let source = profile::load(&paths, name)
         .map_err(|_| format!("the profile {name} is not on this machine"))?;
     profile::parse(&source).map_err(|errors| {
@@ -299,7 +296,10 @@ fn derive_policy() {
 
 /// The dropdown, the form and which of form or text box the scroller holds, from the project.
 fn paint(form: &Rc<Form>) {
-    let names = paths().as_ref().map(profile::list).unwrap_or_default();
+    let names = crate::settings::from_environment()
+        .as_ref()
+        .map(profile::list)
+        .unwrap_or_default();
     let used = form.session.borrow().profile.clone();
     let mut rows: Vec<String> = vec![NONE.to_string()];
     let mut behind = names.clone();

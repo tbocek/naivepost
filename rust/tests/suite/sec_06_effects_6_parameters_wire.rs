@@ -69,7 +69,7 @@ fn ceiling_round(app: &adw::Application) {
             said.contains(&format!("{:.0}%", fx_volume::max_percent())),
             "Apply says what it stored, at the ceiling: {said}"
         );
-        let heard = fx_volume::heard_while_paused(&ui::review_cut_of(&window).fx, 6.0);
+        let heard = fx_volume::heard_while_paused(&ui::window_preview::newest_review_cut().fx, 6.0);
         assert!(
             (heard - fx_record::gain_ceiling()).abs() < 1e-9,
             "the paused preview hears exactly the ceiling, the same number s3 reads: {heard}"
@@ -83,7 +83,7 @@ fn ceiling_round(app: &adw::Application) {
         type_percent(&window, "300");
         click(&window, "volume-apply-button");
         settle();
-        let heard = fx_volume::heard_while_paused(&ui::review_cut_of(&window).fx, 6.0);
+        let heard = fx_volume::heard_while_paused(&ui::window_preview::newest_review_cut().fx, 6.0);
         assert!(
             (heard - 3.0).abs() < 1e-9,
             "×3 is under the ceiling and stays ×3: {heard}"

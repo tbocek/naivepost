@@ -196,14 +196,14 @@ fn s1_a_picture_row_is_footage_and_a_wave_strip_names_that_rows_recording() {
             ],
             ..Default::default()
         };
-        ui::seed_review_cut(&window, &seeded);
+        ui::seed_review_cut( &seeded);
         ui::set_session_recordings(&[
             Recording { base: "cam0".to_string(), start: 0.0, end: 30.0 },
             Recording { base: "cam1".to_string(), start: 5.0, end: 25.0 },
         ]);
         settle();
 
-        let geo = Geometry::of(&window);
+        let geo = Geometry::of();
         assert!(geo.bands.wave_height > 0.0, "the painted band reserves a wave strip per row");
         let pitch = geo.bands.row_height + geo.bands.wave_height;
         let picture_y = geo.bands.first_picture + geo.bands.row_height / 2.0;
@@ -217,7 +217,7 @@ fn s1_a_picture_row_is_footage_and_a_wave_strip_names_that_rows_recording() {
         assert_eq!(geo.surface_at(wave_y_row1), Surface::WaveStrip, "row 1 has one too");
 
         // The scope a drag from there gets, and the recording it names — off the ROW, never a placeholder.
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         let sound = cut_select_press::sound_scope(&geo, Surface::WaveStrip, &cut_, wave_y);
         let expected = cut_select_press::camera_for_row(&cut_, 0).expect("row 0 has a camera");
         assert_eq!(sound.as_deref(), Some(expected.as_str()), "row 0's strip names row 0's camera");
@@ -387,7 +387,7 @@ fn s3_the_lane_windows_the_file_and_reopens_with_it() {
             }],
             ..Default::default()
         };
-        ui::seed_review_cut(&window, &seeded);
+        ui::seed_review_cut(&seeded);
         // A recording that does NOT open at 0:00 — the only case where `off` can be told from 0.
         ui::set_session_recordings(&[Recording {
             base: "mic".to_string(),
@@ -407,7 +407,7 @@ fn s3_the_lane_windows_the_file_and_reopens_with_it() {
         let status = ui::press_lane(&window);
         println!("f2_9 lane press: {status}");
 
-        let lanes = ui::review_lanes(&window);
+        let lanes = ui::review_lanes();
         let fresh = lanes.last().expect("the new row");
         assert_eq!(fresh.at, 44.0, "the row starts at the line");
         assert_eq!(fresh.dur, 6.0, "and runs the copied length");

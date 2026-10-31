@@ -126,7 +126,7 @@ fn round(app: &adw::Application) {
             "and that row reads ×0.5, matching the number it stands for"
         );
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "a PRESS records nothing: until the rate is answered there is no effect to place"
         );
         RAN_BAND.store(true, Ordering::SeqCst);
@@ -283,7 +283,7 @@ fn round(app: &adw::Application) {
         choose(&window, "speed-field-rate", speed::rate_index(0.0));
         entry(&window, "speed-field-length").set_text("0.2");
         click(&window, "speed-apply-button");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(cut_.fx.len(), 1, "Apply put exactly one record on the cut");
         let fx = &cut_.fx[0];
         assert_eq!(fx.kind, "speed");
@@ -309,14 +309,14 @@ fn round(app: &adw::Application) {
         // Custom… typed 0.01: below P.eng.minRate, over 1 s of marked footage.
         choose(&window, "speed-field-rate", speed::RATES.len());
         assert!(
-            ui::speed_custom_rate_visible(&window),
+            ui::speed_custom_rate_visible(),
             "the typed rate box is live only while `Custom…` shows -- two live controls for one question \
              would be two answers on screen"
         );
         entry(&window, "speed-field-custom").set_text("0.01");
         entry(&window, "speed-field-length").set_text("1");
         click(&window, "speed-apply-button");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(cut_.fx.len(), 1, "one record placed");
         let fx = &cut_.fx[0];
         assert!(
@@ -339,7 +339,7 @@ fn round(app: &adw::Application) {
         mark_band(&window, 60.0, 70.0);
         click(&window, "effect-item-speed");
         click(&window, "speed-apply-button");
-        let stored = ui::review_cut_of(&window)
+        let stored = ui::window_preview::newest_review_cut()
             .fx
             .last()
             .cloned()
@@ -352,7 +352,7 @@ fn round(app: &adw::Application) {
         );
         click(&window, "undo-button");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "one ↶ took the speed back -- it went in through `record_edit`, not `seed_review_cut`"
         );
 
@@ -362,7 +362,7 @@ fn round(app: &adw::Application) {
         ui::set_line_position(&window2, naivepost::cut_line::LinePos { t: 12.0 });
         click(&window2, "effect-item-speed");
         click(&window2, "speed-apply-button");
-        let placed = ui::review_cut_of(&window2)
+        let placed = ui::window_preview::newest_review_cut()
             .fx
             .last()
             .cloned()
@@ -402,7 +402,7 @@ fn round(app: &adw::Application) {
         assert!(form_visible(&window), "the form is open to cancel");
         click(&window, "speed-cancel-button");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "Cancel places no speed"
         );
         assert!(!form_visible(&window), "and closes the form");

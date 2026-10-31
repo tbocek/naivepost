@@ -123,7 +123,7 @@ pub fn thumb_size() -> (u32, u32) {
         &crate::ui::cut_folds::page_recordings(),
     );
     let aspect = produce_page::held_window()
-        .map(|window| crate::ui::window::review_cut_of(&window).aspect)
+        .map(|_| crate::ui::window_preview::newest_review_cut().aspect)
         .unwrap_or_default();
     crate::produce_screen::thumb_box(&aspect, w.max(1) as u32, h.max(1) as u32)
 }
@@ -188,7 +188,7 @@ pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
 
 /// **6** ↻ redraw: one sd.cpp call, nothing rewritten.
 pub fn redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
-    let run = produce_page::press_run(window);
+    let run = produce_page::press_run();
     let out = crate::produce_presses::press_redraw_thumbnail(
         &legs(),
         || with_run(run.as_ref(), crate::ui::produce_languages::redraw_half),
@@ -199,7 +199,7 @@ pub fn redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
 
 /// **8** ↻ beside Title: the title and the description together; images, instruction and picture stay.
 pub fn reword(window: &adw::ApplicationWindow) -> String {
-    let run = produce_page::press_run(window);
+    let run = produce_page::press_run();
     let out = crate::produce_presses::press_reword(
         &legs(),
         || with_run(run.as_ref(), crate::ui::produce_languages::reword_half),
@@ -304,14 +304,18 @@ fn legs() -> crate::produce_presses::Legs {
     let mut pressed = crate::ui::produce_languages::legs(
         || {
             produce_page::held_window()
-                .map(|w| !crate::ui::window::review_cut_of(&w).segs.is_empty())
+                .map(|_| {
+                    !crate::ui::window_preview::newest_review_cut()
+                        .segs
+                        .is_empty()
+                })
                 .unwrap_or(false)
         },
         // §08 "⤓ Save video and ↻ Transcode both refuse while a render runs": asked of the run bar itself; the
         // page state's flag was set by nothing but tests.
         || {
-            produce_page::held_window().is_some_and(|w| {
-                crate::ui::window_doors::running_step(&w) == Some(crate::run::Step::Produce)
+            produce_page::held_window().is_some_and(|_| {
+                crate::ui::window_doors::running_step() == Some(crate::run::Step::Produce)
             })
         },
         produce_page::container_word,
@@ -335,10 +339,14 @@ struct Found {
 /// Take [`Found`] on the window thread, asking exactly what [`legs`] asks at call time.
 fn found() -> Found {
     let has_cut = produce_page::held_window()
-        .map(|w| !crate::ui::window::review_cut_of(&w).segs.is_empty())
+        .map(|_| {
+            !crate::ui::window_preview::newest_review_cut()
+                .segs
+                .is_empty()
+        })
         .unwrap_or(false);
-    let rendering = produce_page::held_window().is_some_and(|w| {
-        crate::ui::window_doors::running_step(&w) == Some(crate::run::Step::Produce)
+    let rendering = produce_page::held_window().is_some_and(|_| {
+        crate::ui::window_doors::running_step() == Some(crate::run::Step::Produce)
     });
     Found { has_cut, rendering }
 }
@@ -402,7 +410,7 @@ fn land_outcome(window: &adw::ApplicationWindow, out: crate::produce_presses::Ou
 
 /// **8** ↻ beside Title, as the button fires it: [`reword`] on a worker.
 pub fn reword_from_button(window: &adw::ApplicationWindow) {
-    let run = produce_page::press_run(window);
+    let run = produce_page::press_run();
     on_worker(
         window,
         "title-suggest",
@@ -420,7 +428,7 @@ pub fn reword_from_button(window: &adw::ApplicationWindow) {
 }
 
 pub fn redraw_from_button(window: &adw::ApplicationWindow) {
-    let run = produce_page::press_run(window);
+    let run = produce_page::press_run();
     on_worker(
         window,
         "thumbnail-redraw",

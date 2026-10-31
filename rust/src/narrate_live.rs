@@ -8,7 +8,7 @@ use crate::narrate_call::Request;
 use crate::narrate_pass;
 use crate::requests::{Request as TimedRow, Service};
 use crate::services;
-use crate::settings::{self, Conf, Paths};
+use crate::settings::{self, Conf};
 use crate::tool_loop::{self, Turn};
 use crate::tools::Tool;
 use serde_json::json;
@@ -16,12 +16,6 @@ use serde_json::json;
 /// The step name this job's timed rows carry. §3.8 is the section; `narrate` is what a person reads in
 /// `requests.tsv` and in the run's per-service summary line (§09 §10).
 pub const STEP: &str = "narrate";
-
-/// The settings folder, re-read from the environment on every ask so a change made while a run is going
-/// is honoured by its next request (§02-services#1).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
-}
 
 /// What one round of the narration conversation came to.
 #[derive(Debug, Clone, PartialEq)]
@@ -81,7 +75,7 @@ pub fn ask_round(
     thinking: bool,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Round, String> {
-    let conf = match current_paths().as_ref().map(settings::read) {
+    let conf = match settings::from_environment().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         Some(Err(reason)) => {
             // An unreadable settings file is reported the way a down server is: the run says why

@@ -121,10 +121,10 @@ fn sec_04_prepare_1_screen_s_inputs_readout_names_both_arms() {
 /// (`P.machine.describeFramesPerReq`) and 25 lines per fixer block.
 #[test]
 fn sec_04_prepare_1_screen_s_inputs_divisors_are_the_named_parameters() {
-    assert_eq!(prepare::vision_calls(4), 1);
-    assert_eq!(prepare::vision_calls(8), 2);
+    assert_eq!(naivepost::roles::vision_batches(4), 1);
+    assert_eq!(naivepost::roles::vision_batches(8), 2);
     assert_eq!(
-        prepare::vision_calls(9),
+        naivepost::roles::vision_batches(9),
         3,
         "// P.machine.describeFramesPerReq"
     );

@@ -72,9 +72,9 @@ fn round(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &one_scene_cut());
-    ui::reopen_history_on(&window, &ui::review_cut_of(&window));
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::seed_review_cut(&one_scene_cut());
+    ui::reopen_history_on(&ui::window_preview::newest_review_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     settle();
 
     // THE CLICK, and the socket it opens.
@@ -132,7 +132,7 @@ fn round(app: &adw::Application) {
         "the status row reports the suggestion, not a previous press: {said}"
     );
     assert!(
-        !ui::review_cut_of(&window).segs.is_empty(),
+        !ui::window_preview::newest_review_cut().segs.is_empty(),
         "a cut landed on the page"
     );
     RAN.store(true, std::sync::atomic::Ordering::SeqCst);

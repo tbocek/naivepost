@@ -537,7 +537,7 @@ fn f2_4_s4_restore_keeps_only_a_line_a_recording_still_covers() {
     std::fs::remove_dir_all(&edge).ok();
 }
 
-/// F2.4 S1b/S3 through the UI's held-state seam: `held_now` answers in the order the spec steps —
+/// F2.4 S1b/S3 through the UI's held-state seam: `cut_hand::held_kind` answers in the order the spec steps —
 /// edge, then clip, then effect — so a frame step nudges the narrowest thing in hand rather than the
 /// largest. This is the state `wire_line_keys` reads instead of the hardcoded `None` that stood there
 /// before, which made S2's nudge branch unreachable from any real key press.
@@ -549,12 +549,16 @@ fn f2_4_s3_held_now_answers_edge_then_clip_then_effect() {
     ui::set_held_edge(None);
     ui::set_held_clip(None);
     ui::set_held_effect(None);
-    assert_eq!(ui::held_now(), None, "an empty hand holds nothing");
+    assert_eq!(
+        naivepost::ui::cut_hand::held_kind(),
+        None,
+        "an empty hand holds nothing"
+    );
 
     // An effect alone is the last of the three.
     ui::set_held_effect(Some(naivepost::cut::Fx::default()));
     assert_eq!(
-        ui::held_now(),
+        naivepost::ui::cut_hand::held_kind(),
         Some(Held::Effect),
         "only an effect held -> Effect"
     );
@@ -562,7 +566,7 @@ fn f2_4_s3_held_now_answers_edge_then_clip_then_effect() {
     // A clip outranks it: S2 lists edge, clip, effect in that order.
     ui::set_held_clip(Some(naivepost::cut::Seg::default()));
     assert_eq!(
-        ui::held_now(),
+        naivepost::ui::cut_hand::held_kind(),
         Some(Held::Clip),
         "a clip outranks an effect"
     );
@@ -570,7 +574,7 @@ fn f2_4_s3_held_now_answers_edge_then_clip_then_effect() {
     // And an edge outranks both -- the tightest thing in hand is what the frames move.
     ui::set_held_edge(Some(naivepost::cut::Seg::default()));
     assert_eq!(
-        ui::held_now(),
+        naivepost::ui::cut_hand::held_kind(),
         Some(Held::Edge),
         "an edge outranks clip and effect"
     );
@@ -895,21 +899,27 @@ fn f2_4_s1b_apply_pick_puts_the_edge_in_the_edge_slot_and_the_clip_in_the_clip_s
     // Within the 12 px reach -> the edge is what the hand holds, not the clip.
     ui::apply_pick(line::first_press_pick(6.0, true), Some(seg.clone()));
     assert!(
-        ui::held_edge().is_some(),
+        naivepost::ui::cut_hand::held_edge().is_some(),
         "an edge pick fills the edge slot"
     );
-    assert!(ui::held_clip().is_none(), "and leaves the clip alone");
-    assert_eq!(ui::held_now(), Some(Held::Edge));
+    assert!(
+        naivepost::ui::cut_hand::held_clip().is_none(),
+        "and leaves the clip alone"
+    );
+    assert_eq!(naivepost::ui::cut_hand::held_kind(), Some(Held::Edge));
 
     // Further in: a whole-clip/border pick takes the clip, and the edge slot is left clear.
     ui::set_held_edge(None);
     ui::apply_pick(line::first_press_pick(80.0, true), Some(seg.clone()));
     assert!(
-        ui::held_clip().is_some(),
+        naivepost::ui::cut_hand::held_clip().is_some(),
         "a border/clip pick fills the clip slot"
     );
-    assert!(ui::held_edge().is_none(), "and not the edge slot");
-    assert_eq!(ui::held_now(), Some(Held::Clip));
+    assert!(
+        naivepost::ui::cut_hand::held_edge().is_none(),
+        "and not the edge slot"
+    );
+    assert_eq!(naivepost::ui::cut_hand::held_kind(), Some(Held::Clip));
 
     ui::set_held_edge(None);
     ui::set_held_clip(None);

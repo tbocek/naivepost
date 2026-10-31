@@ -1,7 +1,6 @@
 //! F1.1 ▶ Prepare — the step's own start flow, as plain data and rules.
 
 use std::fs;
-use std::path::Path;
 
 use crate::layout::Tree;
 use crate::prepare;
@@ -262,12 +261,6 @@ pub fn ending_status(ending: &Ending) -> String {
     }
 }
 
-/// S2: save the project before anything runs, so a crash mid-run leaves a project that still knows
-/// what it was pointed at.
-pub fn save_project(project: &Project, dir: &Path) -> Result<(), String> {
-    crate::project::save(project, dir)
-}
-
 /// The whole start sequence, S1 through S4, as one call the UI can make and a test can drive
 /// without a window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,7 +283,7 @@ pub fn begin(project: &Project, tree: &Tree) -> Start {
         return Start::Refused { log, status };
     }
     // S2: the project is saved before the first stage touches disk.
-    if let Err(error) = save_project(project, tree.dir()) {
+    if let Err(error) = crate::project::save(project, tree.dir()) {
         return Start::SaveFailed { error };
     }
     let armed = crate::stop_legs::take_describe_restart();

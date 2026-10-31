@@ -25,15 +25,11 @@ thread_local! {
 
 /// The session's filmed seconds: the takes' own spans merged, so dropped stretches still count (§B:
 /// a fold is a view, not an edit). Read through `cut_folds`, which already holds this window's takes.
-fn filmed_seconds() -> f64 {
+pub fn filmed_seconds() -> f64 {
     timeline::filmed_runs(&cut_folds::page_recordings())
         .iter()
         .map(|(start, end)| end - start)
         .sum()
-}
-
-pub fn filmed_seconds_for_test() -> f64 {
-    filmed_seconds()
 }
 
 pub fn surface_width(window: &adw::ApplicationWindow) -> f64 {
@@ -135,8 +131,7 @@ pub fn strip_clip_boxes_for_test() -> Vec<crate::cut_trim::Box_> {
 
 /// The kept scenes as the REAL band draws them, hand corrections applied (§B's `shift`) — what `cut_tracks`
 /// paints its green bars from, so a check reads exactly that geometry. Test-only reader, hence the name.
-pub fn band_clip_boxes_for_test(window: &adw::ApplicationWindow) -> Vec<crate::cut_trim::Box_> {
-    let _ = window;
+pub fn band_clip_boxes_for_test() -> Vec<crate::cut_trim::Box_> {
     let cut_ = crate::ui::window::newest_review_cut();
     crate::ui::cut_tracks::clip_boxes_shifted(&cut_.segs, &cut_.shift, pps())
 }
@@ -178,12 +173,6 @@ pub fn drag_gear(total: f64, view: f64, bar_px: f64) -> Option<f64> {
     }
     let geared = view / DRAG_PER_SCREENFUL_PX;
     (total / bar_px > geared).then_some(geared)
-}
-
-/// Pan by an eighth of the view (§A's Shift+wheel and a trackpad swipe). Delegates so the fraction is
-/// spelled once, in `cut_screen::pan_px`.
-pub fn pan_eighth(view: f64) -> f64 {
-    cut_screen::pan_px(view)
 }
 
 /// Scroll by a pixel delta, returning the new clamped origin.
@@ -278,16 +267,16 @@ pub fn follow_playhead(window: &adw::ApplicationWindow, at: f64) {
     let view = view_px(surface_width(window));
     let total = total_px(filmed_seconds(), pps());
     let runs = timeline::filmed_runs(&cut_folds::page_recordings());
-    let folds = crate::ui::window::review_cut_of(window).folds;
+    let folds = crate::ui::window_preview::newest_review_cut().folds;
     reveal_playhead(line_px(&runs, &folds, pps(), at), total, view);
     repaint_page(window);
 }
 
 pub fn keep_line_through_layout(window: &adw::ApplicationWindow, layout: impl FnOnce()) {
-    let at = crate::ui::window::line_position(window).t;
+    let at = crate::ui::window::line_position().t;
     let view = view_px(surface_width(window));
     let runs = timeline::filmed_runs(&cut_folds::page_recordings());
-    let folds = crate::ui::window::review_cut_of(window).folds;
+    let folds = crate::ui::window_preview::newest_review_cut().folds;
     let on_screen = (origin()..=origin() + view).contains(&line_px(&runs, &folds, pps(), at));
     layout();
     settle_view(window);
@@ -299,7 +288,7 @@ pub fn keep_line_through_layout(window: &adw::ApplicationWindow, layout: impl Fn
 /// The band got its real width, or the takes landed: a view scrolled while the page was unmeasured may stand past
 /// the tape's end, and an unchosen zoom is fitted again.
 pub fn settle_view(window: &adw::ApplicationWindow) {
-    open_zoom(window);
+    open_zoom();
     let view = view_px(surface_width(window));
     if FITS_THE_BAND.with(std::cell::Cell::get) {
         PPS.with(|cell| cell.set(floor_pps(view).min(cut_screen::ZOOM_MAX)));
@@ -316,12 +305,12 @@ pub fn hold_open_zoom_for_test(held: bool) {
 }
 
 /// The first look at a project: its saved zoom, or the fit.
-fn open_zoom(window: &adw::ApplicationWindow) {
+fn open_zoom() {
     if OPEN_ZOOM_HELD.load(std::sync::atomic::Ordering::SeqCst) {
         return;
     }
     let Some(tree) =
-        crate::ui::window::line_root(window).and_then(|dir| crate::layout::Tree::new(dir).ok())
+        crate::ui::window::line_root().and_then(|dir| crate::layout::Tree::new(dir).ok())
     else {
         return;
     };
@@ -508,8 +497,8 @@ fn apply_wheel_result(
         cut_screen::Wheel::Zoom { factor, at_x } => {
             // The red line stays where it stands while it is on screen, as the −/+ buttons keep it. Off screen the
             // zoom goes around `at_x`, the pointer on the band in page pixels; 0.0 (no pointer known) is the middle.
-            let folds = crate::ui::window::review_cut_of(window).folds;
-            let at = crate::ui::window::line_position(window).t;
+            let folds = crate::ui::window_preview::newest_review_cut().folds;
+            let at = crate::ui::window::line_position().t;
             let line = line_px(&runs, &folds, pps(), at);
             let anchor = if (origin()..=origin() + view).contains(&line) {
                 line - origin() + gutter_px()
@@ -542,7 +531,7 @@ pub fn repaint_page(window: &adw::ApplicationWindow) {
     };
     // §1's band is a row per camera AND a row per cut lane, and it was sized before the page had a cut, so
     // every redraw asks first whether the scene it is about to paint still fits the surfaces it has.
-    crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for(window));
+    crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for());
     for name in repaint_targets() {
         if let Some(band) = find_widget_by_name(&content, name) {
             band.queue_draw();
@@ -568,7 +557,7 @@ pub fn paint_scrollbar(bar: &gtk::Scrollbar, total: f64, view: f64) {
         origin(),
         0.0,
         total.max(view),
-        pan_eighth(view),
+        cut_screen::pan_px(view),
         view * 0.9,
         view,
     );
@@ -611,7 +600,7 @@ pub fn refresh_page_scrollbar(window: &adw::ApplicationWindow) {
     };
     // Same door as [`repaint_page`]: a zoom or a scroll can change what the scene costs, and the bar beside it
     // is repainted from those same numbers.
-    crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for(window));
+    crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for());
     if let Some(bar) = find_widget_by_name(&content, "track-scrollbar")
         .and_then(|bar| bar.downcast::<gtk::Scrollbar>().ok())
     {
@@ -636,19 +625,17 @@ fn naivepost_length_of(bar: &gtk::Widget, window: &adw::ApplicationWindow) {
 /// This window's band scene, from state the page already keeps: the newest review cut, this page's takes,
 /// the newest window's selection and red line — the same newest-slot doors every other Cut-page reader
 /// uses, so the band cannot paint an older window's marks. Lives here because `window.rs` is at its budget.
-pub fn band_scene_for(window: &adw::ApplicationWindow) -> crate::ui::cut_tracks::Scene {
+pub fn band_scene_for() -> crate::ui::cut_tracks::Scene {
     use crate::ui::cut_tracks;
     let recordings = cut_folds::page_recordings();
-    let cut_ = crate::ui::window::review_cut_of(window);
-    let held = crate::ui::window::selection(window);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
+    let held = crate::ui::window::selection();
     cut_tracks::scene_from(
         &cut_,
         &recordings,
         held.map(|band| (band.start, band.end)),
         crate::ui::window::watched_row(),
-        crate::ui::window::preview_player(window)
-            .playhead
-            .unwrap_or(0.0),
+        crate::ui::window::preview_player().playhead.unwrap_or(0.0),
     )
 }
 

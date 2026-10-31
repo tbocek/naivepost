@@ -54,7 +54,7 @@ fn check_the_run_refuses_new(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     ui::window::clear_logs_for_test();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
     assert!(
         !before.is_empty(),
         "the fixture has sources a new project would take away"
@@ -83,7 +83,7 @@ fn check_the_run_refuses_new(app: &adw::Application) {
         "S1's sentence reaches the status line from the click"
     );
     assert_eq!(
-        ui::session_sources(&window),
+        ui::session_sources(),
         before,
         "S1: nothing was emptied — a new project would pull the run's inputs out"
     );
@@ -307,7 +307,7 @@ fn empty_session_goes_straight_to_naming(app: &adw::Application) {
     );
     assert!(ui::window_logs().is_empty(), "{:?}", ui::window_logs());
     assert!(
-        ui::session_sources(&window).is_empty(),
+        ui::session_sources().is_empty(),
         "an empty session stayed empty"
     );
     std::fs::remove_dir_all(&root).ok();
@@ -404,10 +404,7 @@ fn press_asks_for_a_name_before_anything_changes(app: &adw::Application) {
     );
     // And the press itself changed nothing: creating waits for the answer.
     assert_eq!(ui::state(&window).status, "", "naming says nothing yet");
-    assert!(
-        ui::session_sources(&window).is_empty(),
-        "the session stayed empty"
-    );
+    assert!(ui::session_sources().is_empty(), "the session stayed empty");
     assert!(ui::window_logs().is_empty(), "{:?}", ui::window_logs());
     window.close();
     std::fs::remove_dir_all(&blank).ok();
@@ -447,7 +444,7 @@ fn refused_name_is_not_applied(app: &adw::Application) {
     let model = naivepost::project::load(&fixture).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
     assert!(!before.is_empty(), "the fixture has sources to keep");
 
     let root = common::temp_dir_tagged("refused");
@@ -458,7 +455,7 @@ fn refused_name_is_not_applied(app: &adw::Application) {
     naivepost::project::save(&naivepost::project::Project::default(), &taken).unwrap();
 
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     ui::window::clear_logs_for_test();
     ui::window::name_chosen(&root, Some(&taken), &status, &session);
     // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
@@ -469,7 +466,7 @@ fn refused_name_is_not_applied(app: &adw::Application) {
         new_project::already_there("jan.naivepost"),
         "S5's sentence reaches the status line from the answer"
     );
-    assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
+    assert_eq!(ui::session_sources(), before, "nothing half-applied");
     assert!(
         ui::window_logs().is_empty(),
         "a refusal writes no log line: {:?}",
@@ -497,13 +494,13 @@ fn typed_name_is_applied(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     assert!(
-        !ui::session_sources(&window).is_empty(),
+        !ui::session_sources().is_empty(),
         "the fixture has sources to lose"
     );
 
     let root = common::temp_dir_tagged("typed");
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     ui::window::clear_logs_for_test();
     // Typed as `fresh`, standing in `elsewhere`: the suffix is the rule's, not the sheet's.
     let typed = root.join("elsewhere/fresh");
@@ -517,7 +514,7 @@ fn typed_name_is_applied(app: &adw::Application) {
         "S6 wrote the blank project where the typed name pointed"
     );
     assert!(
-        ui::session_sources(&window).is_empty(),
+        ui::session_sources().is_empty(),
         "the blank project became the session"
     );
     assert_eq!(
@@ -569,7 +566,7 @@ fn choosers_follow_a_project_outside_the_root(app: &adw::Application) {
     let model = naivepost::project::load(&fixture).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
     let root = common::temp_dir_tagged("follow");
 
@@ -628,7 +625,7 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
     let model = naivepost::project::load(&fixture).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
     assert!(!before.is_empty(), "the fixture has sources to lose");
 
     let root = common::temp_dir("applied");
@@ -645,7 +642,7 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
     );
 
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
-    let session = ui::session_handle(&window);
+    let session = ui::session_handle();
     ui::window::clear_logs_for_test();
     naivepost::ui::new_apply::apply(&created, &session, &status);
     // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
@@ -653,7 +650,7 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
 
     // The swap: the pages read this same handle, so an empty list here IS the refreshed page.
     assert!(
-        ui::session_sources(&window).is_empty(),
+        ui::session_sources().is_empty(),
         "the blank project became the session"
     );
     assert_eq!(
@@ -720,7 +717,7 @@ fn already_there_is_not_applied(app: &adw::Application) {
     let model = naivepost::project::load(&fixture).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    let before = ui::session_sources(&window);
+    let before = ui::session_sources();
     assert!(!before.is_empty(), "the fixture has sources to keep");
 
     let root = common::temp_dir("already");
@@ -740,10 +737,10 @@ fn already_there_is_not_applied(app: &adw::Application) {
     // The refusal arm of the chooser's callback, through the window's own door (`name_chosen`), not by
     // writing the status by hand: the status says it, and the session is untouched.
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
-    ui::window::name_chosen(&root, Some(&taken), &status, &ui::session_handle(&window));
+    ui::window::name_chosen(&root, Some(&taken), &status, &ui::session_handle());
     // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
     let window = ui::window::main_window();
     assert_eq!(ui::state(&window).status, refused);
-    assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
+    assert_eq!(ui::session_sources(), before, "nothing half-applied");
     std::fs::remove_dir_all(&root).ok();
 }

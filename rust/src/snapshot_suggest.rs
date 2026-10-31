@@ -14,8 +14,8 @@ pub fn stage() -> Option<crate::layout::Tree> {
 }
 
 /// Press ▶ in the MODEL mode through the window's own door and answer what the status row shows.
-pub fn press_through_page(window: &adw::ApplicationWindow, busy: bool) -> String {
-    let landed = crate::ui::cut_suggest_model_run::press(window, busy);
+pub fn press_through_page(window: &adw::ApplicationWindow) -> String {
+    let landed = crate::ui::cut_suggest_model_run::press();
     crate::ui::window::set_status_line(window, &landed.said);
     landed.said
 }

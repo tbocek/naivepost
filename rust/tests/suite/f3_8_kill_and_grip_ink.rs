@@ -313,10 +313,10 @@ fn f3_8_s3_the_cross_in_a_bar_is_the_button_that_removes_it(app: &adw::Applicati
     }
 
     // Press it: the state the logic test checks, not a painted pixel.
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     common::click(&window, "fx-remove-0");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before - 1,
         "the ✕ removed nothing"
     );
@@ -327,7 +327,7 @@ fn f3_8_s3_the_cross_in_a_bar_is_the_button_that_removes_it(app: &adw::Applicati
     );
     common::click(&window, "undo-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "one ↶ did not bring it back"
     );

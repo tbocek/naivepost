@@ -53,7 +53,7 @@ fn round(app: &adw::Application) {
         choose(&window, "speed-field-sound", own_row);
         let before = ui::window::window_logs().len();
         click(&window, "speed-apply-button");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(cut_.fx.len(), 1, "Apply placed exactly one record");
         assert_eq!(
             cut_.fx[0].snd, "own",
@@ -96,7 +96,7 @@ fn round(app: &adw::Application) {
             "the refusal names the moment and why: {said:?}"
         );
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "a refused stop wrote nothing to the lane"
         );
         RAN_REFUSED_STOP.store(true, Ordering::SeqCst);

@@ -217,8 +217,7 @@ pub fn paint_dimmed(cr: &cairo::Context, spans: &[(f64, f64)], top: f64, height:
 }
 
 /// S5: run the cut preview's tick loop while ▶✂ is the preview. Started once per window from `build_window`; every [`crate::preview::TICK_MS`] it asks [`tick`] where the line goes, moves the playhead, arms the spare ([`arm_spare`]) and writes the CUT's time to the status line ([`cut_play::cut_clock_note`]; no clock widget exists yet). No-op unless the preview is the plain cut.
-pub fn start_cut_preview_tick(window: &adw::ApplicationWindow, page: Rc<dyn CutPreviewPage>) {
-    let _ = window;
+pub fn start_cut_preview_tick(page: Rc<dyn CutPreviewPage>) {
     glib::timeout_add_local(
         std::time::Duration::from_millis(crate::preview::TICK_MS),
         move || {

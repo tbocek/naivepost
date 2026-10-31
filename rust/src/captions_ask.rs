@@ -202,7 +202,12 @@ pub fn ask_at(
         // ANSWERING round's text (§6: an unchanged batch must not open a socket again), which for a tool answer
         // is the call list re-spelled as the envelope the round arrived in — the one shape `read_back` reads.
         if asks_for_anything(&second) {
-            llm_cache::store(tree, STEP, &parts, &chat_envelope(&second).to_string());
+            llm_cache::store(
+                tree,
+                STEP,
+                &parts,
+                &crate::clip_rules_tools_leg::answering_envelope(&second).to_string(),
+            );
         }
         return Asked {
             calls,
@@ -303,7 +308,12 @@ pub fn ask_at(
     // The answer is the call list. Prose beside it is the model talking, not asking: a round with calls is not an
     // answer (§2), and an empty list after the rounds simply means the model asked for nothing.
     if asks_for_anything(&reply) {
-        llm_cache::store(tree, STEP, &parts, &chat_envelope(&reply).to_string());
+        llm_cache::store(
+            tree,
+            STEP,
+            &parts,
+            &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string(),
+        );
     }
     Asked {
         calls: calls_out,
@@ -427,12 +437,6 @@ fn asks_for_anything(reply: &llm_request::Reply) -> bool {
         .tool_calls
         .iter()
         .any(|call| call.name != Tool::Finish.name())
-}
-
-/// The chat envelope a round answered with, rebuilt for the cache — the shared door, so all three §3.7 passes
-/// keep what they read in one shape.
-fn chat_envelope(reply: &llm_request::Reply) -> serde_json::Value {
-    crate::clip_rules_tools_leg::answering_envelope(reply)
 }
 
 pub fn parse_captions(answer: &str) -> Result<Vec<Call>, String> {

@@ -180,7 +180,7 @@ pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx 
                 ..Default::default()
             };
             debug_assert!(
-                crate::effect_overlap::suggested_volume_reaches_the_bed(&placed),
+                crate::fx_record::rides_whole_bed(&placed),
                 "a proposed volume must duck the whole bed"
             );
             placed
@@ -193,7 +193,7 @@ pub const MAX_PROPOSED_EFFECTS: usize = 1000;
 
 /// How much one kind of effect counts against [`MAX_PROPOSED_EFFECTS`].
 pub fn counts_against_effect_cap(kind: crate::cut::EffectKind) -> usize {
-    if crate::cut_suggest::exempt_from_decorations_cap(kind) {
+    if crate::cut_suggest::is_speed_effect(kind) {
         0
     } else {
         1

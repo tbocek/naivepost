@@ -131,7 +131,7 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s3_every_job_names_reads_alongside_
         );
     }
     // The policy pair §5 names as the only read the old jobs had really is context + set_policy.
-    let pair = gaps::policy_pair();
+    let pair = naivepost::tools::policy_tools();
     assert_eq!(pair.len(), 2);
     assert!(pair.contains(&Tool::GetContext));
     assert!(pair.contains(&Tool::SetPolicy));
@@ -305,15 +305,15 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s7_title_reprints_and_at_has_one_cl
     // One clock, read once: lands_at is output_seconds whatever the rate.
     for (at, rate) in [(2.0, 1.0), (2.0, 4.0), (10.0, 2.5), (1.5, 0.0)] {
         assert_eq!(
-            gaps::lands_at(at, rate),
+            narration::output_seconds(at, rate),
             narration::output_seconds(at, rate),
             "at={at} rate={rate}"
         );
     }
     // A sped-up clip keeps the line on the same picture: output seconds shrink with the rate.
-    assert!(gaps::lands_at(4.0, 2.0) < gaps::lands_at(4.0, 1.0));
+    assert!(narration::output_seconds(4.0, 2.0) < narration::output_seconds(4.0, 1.0));
     // A stop divides nothing: the line stays where its own clock puts it.
-    assert_eq!(gaps::lands_at(3.0, 0.0), 3.0);
+    assert_eq!(narration::output_seconds(3.0, 0.0), 3.0);
     assert!(
         Defect::AtThreeReadings.decided_in().contains("own clock"),
         "the row says the line keeps its own clock"
@@ -354,7 +354,7 @@ fn sec_12_decisions_5_gaps_this_audit_closed_cited_ids_answer_from_the_catalogue
             .into_iter()
             .chain(naivepost::params::cut())
             .chain(naivepost::params::effects())
-            .chain(naivepost::params::narrate())
+            .chain(naivepost::params_narrate::rows())
             .chain(naivepost::params::produce())
             .filter(|row| row.id == id)
             .collect::<Vec<_>>();

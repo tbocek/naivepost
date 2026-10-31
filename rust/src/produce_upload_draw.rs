@@ -8,7 +8,7 @@ use crate::layout::Tree;
 use crate::produce_upload::{self as upload, DrawnJob, PollState};
 use crate::server_leg;
 use crate::services::{self, Kind, Server};
-use crate::settings::{self, Conf, Paths};
+use crate::settings::{self, Conf};
 
 pub const STEP: &str = "thumbnail";
 
@@ -18,13 +18,8 @@ pub fn poll_interval() -> Duration {
         .unwrap_or(Duration::from_secs(1))
 }
 
-/// Settings folder, read from the environment for EVERY request so an address edited mid-draw is honoured (§02-services#1).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
-}
-
 fn endpoint() -> Result<services::Endpoint, String> {
-    let conf = match current_paths().as_ref().map(settings::read) {
+    let conf = match settings::from_environment().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         Some(Err(reason)) => return Err(format!("settings could not be read: {reason}")),
         None => Conf::default(),

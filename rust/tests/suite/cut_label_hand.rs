@@ -326,7 +326,7 @@ fn f3_7_s5_placed_it_is_marked_never_rendered() {
 
     // Drawn as a tag on the lane even while paused -- the opposite of a volume, which is heard and not seen.
     assert!(
-        fx_label::drawn_as_a_tag(EffectKind::Label),
+        fx_lane::drawn_paused(EffectKind::Label),
         "§A.7's grey-white tag, tick and dashed line"
     );
     assert!(fx_lane::drawn_paused(EffectKind::Label));

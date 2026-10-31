@@ -210,7 +210,7 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
     // before this check turns the main loop again.
     play.emit_clicked();
     assert_eq!(
-        ui::running_step(&window),
+        ui::running_step(),
         Some(run::Step::Prepare),
         "press 1 opened Prepare's run"
     );
@@ -252,11 +252,7 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
         naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
         "the press's worker answered"
     );
-    assert_eq!(
-        ui::running_step(&window),
-        None,
-        "the run closed when it ended"
-    );
+    assert_eq!(ui::running_step(), None, "the run closed when it ended");
 }
 
 /// S2 → S3 → S4 through the button: the project is saved first, the dead Describe middle is

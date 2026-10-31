@@ -6,7 +6,6 @@ use crate::cut::{EffectKind, Fx, Seg};
 use crate::cut_cam;
 use crate::cut_effects_pass;
 use crate::cut_hear;
-use crate::fx_record;
 
 /// §9 (`A zoom SHOULD carry `cam`...`; `Over inserts: none`): which scene an effect draws on. Only a zoom has a camera (its fractions are of one camera's frame); everything else is composed after the camera or heard, so it acts on every scene including a card.
 pub fn acts_on_scene(fx: &Fx, scene: &Seg) -> bool {
@@ -14,11 +13,6 @@ pub fn acts_on_scene(fx: &Fx, scene: &Seg) -> bool {
         return true;
     }
     !scene.is_insert() && cut_cam::shown_from(fx.cam, cut_cam::scene_row(scene))
-}
-
-/// §9 (`A stop … SHOULD be refused when placed`): a stop is a speed whose rate is 0.
-pub fn is_a_stop(fx: &Fx) -> bool {
-    crate::fx_record::is_stop(fx)
 }
 
 /// §9 (`Over inserts: none`; MUST row `the render MUST apply a volume over a card's own sound`): the effects a scene carries, minus what [`acts_on_scene`] excludes. A zoom framed on a camera stops at a splice; a volume rides over it.
@@ -178,9 +172,4 @@ pub fn suggested_scene_cam_of(scene: &Seg, rows: &[i32]) -> i32 {
 /// §9 (`suggested zooms are always centred at height 0.6`): the framing a model proposes, aimed at no picture. The height is [`cut_effects_pass::ZOOM_HEIGHT`], shared with §F3.11 and `effects.proposedZoomHeight`.
 pub fn suggested_zoom_is_centred() -> (f64, f64, f64) {
     (0.5, 0.5, cut_effects_pass::ZOOM_HEIGHT)
-}
-
-/// §9 (`a proposed volume hits the whole bed`): what a decoration pass asks for when proposing a volume. Read from [`fx_record::rides_whole_bed`] so they cannot drift.
-pub fn suggested_volume_reaches_the_bed(fx: &Fx) -> bool {
-    fx_record::rides_whole_bed(fx)
 }

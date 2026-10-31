@@ -81,7 +81,7 @@ fn cut_window(app: &adw::Application, tag: &str, seeded: &Cut) -> adw::Applicati
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -109,7 +109,7 @@ fn f2_7_s1_a_verb_press_writes_cut_json(_app: &adw::Application) {
 
     // Start from a file the doors have already written once, so "changed" is compared against a real file
     // rather than against an absent one.
-    ui::save_seed_for_test(&window, &seeded);
+    ui::window_insert::save_insert_cut(&seeded);
     let before = cut_bytes();
     assert!(
         !before.is_empty(),
@@ -197,7 +197,7 @@ fn f2_7_s1_the_live_snap_list_carries_borders_the_line_and_wave_edges(_app: &adw
     put_line(&window, 33.0);
     let band = ui::draw_selection(&window, Surface::Ruler, None, 26.0, 44.0);
     settle();
-    let points = cut_verb_press::add_snap_points(&window, band.as_ref());
+    let points = cut_verb_press::add_snap_points(band.as_ref());
     println!("SNAPPOINTS {points:?}");
     assert!(
         points.contains(&30.0) && points.contains(&40.0),
@@ -304,7 +304,7 @@ fn f2_7_s2_a_split_at_the_line_hands_over_the_right_half(_app: &adw::Application
     };
     let window = cut_window(_app, "hand", &seeded);
     assert!(
-        ui::selection(&window).is_none(),
+        ui::selection().is_none(),
         "no band: Split works at the line"
     );
     put_line(&window, 20.0);

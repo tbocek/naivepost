@@ -112,7 +112,7 @@ fn f4_1_s6_verdicts_match_the_classification() {
         line(20.0, 40.0, "   "),
         line(40.0, 60.0, "three"),
     ];
-    let decisions = narrate_run::speak_pass("narrator1", &entries, |entry| entry.s == 40.0);
+    let decisions = narrate_run::speak_pass(&entries, |entry| entry.s == 40.0);
     assert_eq!(
         decisions,
         vec![Speak::Synthesize, Speak::SkippedBlank, Speak::SkippedCached],

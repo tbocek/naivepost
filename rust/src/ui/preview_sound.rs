@@ -28,7 +28,7 @@ pub fn report_mute_change(
 }
 
 /// Put the stream volume back to full, once per process, through the element this app owns.
-pub fn reset_stream_volume_once(window: &adw::ApplicationWindow) {
+pub fn reset_stream_volume_once() {
     if !preview::volume_is_app_owned() {
         return;
     }
@@ -38,14 +38,14 @@ pub fn reset_stream_volume_once(window: &adw::ApplicationWindow) {
     // drift apart unnoticed.
     debug_assert_eq!(gain, RESET_TO, "the reset writes the level it was told to");
     STREAM_RESET.with(|done| done.set(true));
-    crate::ui::cut_cut_play::hand_gain(window, gain, crate::ui::line_position(window).t);
+    crate::ui::cut_cut_play::hand_gain(gain, crate::ui::line_position().t);
 }
 
 /// What the gain a built window carries after the build-time reset — a read for a check, not a door the
 /// program uses: it reads the same player state a press reads, so a test measures the reset rather than this
 /// module's intention.
-pub fn stream_gain_for_test(window: &adw::ApplicationWindow) -> Option<f64> {
-    crate::ui::window::preview_player(window).volume
+pub fn stream_gain_for_test() -> Option<f64> {
+    crate::ui::window::preview_player().volume
 }
 
 /// The full level §8 requires the stream volume be put at once: named here so the value the reset writes and
@@ -54,8 +54,8 @@ pub const RESET_TO: f64 = preview::STREAM_VOLUME;
 
 /// What the mix's footage answer was before this tick, which is the `heard_before` half of
 /// [`report_mute_change`]. Kept here so `apply_mix` stays one line of wiring.
-pub fn heard_before(window: &adw::ApplicationWindow) -> bool {
-    crate::ui::window::live_player(window)
+pub fn heard_before() -> bool {
+    crate::ui::window::live_player()
         .map(|player| !player.borrow().footage_muted)
         .unwrap_or(true)
 }

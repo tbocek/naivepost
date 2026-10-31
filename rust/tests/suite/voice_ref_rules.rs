@@ -86,12 +86,26 @@ fn f4_6_s1_a_tagged_narrator_and_a_folder_file_are_both_accepted_with_their_own_
 
 #[test]
 fn f4_6_s1_narrator_slot_ids_parse_and_a_file_name_does_not() {
-    assert_eq!(voice_ref::narrator_slot("narrator1"), Some(1));
-    assert_eq!(voice_ref::narrator_slot("narrator4"), Some(4));
-    assert_eq!(voice_ref::narrator_slot("own"), Some(1), "`own` IS slot 1");
-    assert_eq!(voice_ref::narrator_slot("narrator0"), None, "no slot 0");
-    assert_eq!(voice_ref::narrator_slot("narratorX"), None);
-    assert_eq!(voice_ref::narrator_slot("warm.wav"), None);
+    assert_eq!(
+        naivepost::narrate_rules::narrator_slot("narrator1"),
+        Some(1)
+    );
+    assert_eq!(
+        naivepost::narrate_rules::narrator_slot("narrator4"),
+        Some(4)
+    );
+    assert_eq!(
+        naivepost::narrate_rules::narrator_slot("own"),
+        Some(1),
+        "`own` IS slot 1"
+    );
+    assert_eq!(
+        naivepost::narrate_rules::narrator_slot("narrator0"),
+        None,
+        "no slot 0"
+    );
+    assert_eq!(naivepost::narrate_rules::narrator_slot("narratorX"), None);
+    assert_eq!(naivepost::narrate_rules::narrator_slot("warm.wav"), None);
     // Slot 0 is not a slot the picker offers, so it refuses rather than choosing nothing.
     assert!(matches!(
         voice_ref::pick_voice("narrator0", 2, &files(&[]), "/v"),
@@ -519,8 +533,8 @@ fn f4_6_s3_a_ref_without_a_base_is_renamed_to_the_base() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost/narrate")).expect("narrate/");
     let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
-    let served = narrate_data::served_reference(&tree);
-    let base = narrate_data::base_reference(&tree);
+    let served = tree.voice_ref_wav();
+    let base = tree.voice_ref_base_wav();
     std::fs::write(&served, wav_bytes(1, 48_000)).expect("write a ref with no base");
 
     let renamed = voice_ref::adopt_existing_reference(&tree);
@@ -641,8 +655,8 @@ fn f4_6_s4_changing_takes_pitch_or_voice_drops_the_shifted_reference() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost/narrate")).expect("narrate/");
     let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
-    let base = narrate_data::base_reference(&tree);
-    let served = narrate_data::served_reference(&tree);
+    let base = tree.voice_ref_base_wav();
+    let served = tree.voice_ref_wav();
     std::fs::write(&base, b"base").expect("base");
     std::fs::write(&served, b"served").expect("served");
 
@@ -1007,7 +1021,7 @@ fn f4_6_s3_a_lone_voice_ref_wav_is_adopted_as_the_base_before_anything_is_cut() 
     let root = recut_root("adopt");
     let (tree, source) = recut_session(&root, true, true);
     let (script, _log) = fake_ffmpeg(&root);
-    let served = naivepost::narrate_data::served_reference(&tree);
+    let served = tree.voice_ref_wav();
     std::fs::create_dir_all(served.parent().expect("narrate/")).expect("narrate made");
     std::fs::write(&served, b"old bytes from an earlier build").expect("lone ref written");
 
@@ -1146,9 +1160,8 @@ fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_spans_the_recor
     // off the cwd), which a unit test cannot stand up — an earlier round's snapshot leaves a 45 s reference
     // in `rust/session.naivepost/`, and here it would be read as this test's own.
     let session = std::env::current_dir().unwrap().join("session.naivepost");
-    let reference = naivepost::narrate_data::base_reference(
-        &naivepost::layout::Tree::new(&session).expect("the program's session folder"),
-    );
+    let reference = (naivepost::layout::Tree::new(&session).expect("the program's session folder"))
+        .voice_ref_base_wav();
     let _ = std::fs::remove_file(&reference);
     assert!(
         naivepost::voice_ref::wav_header(&reference).is_none(),

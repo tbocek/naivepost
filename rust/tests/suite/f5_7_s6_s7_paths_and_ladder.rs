@@ -91,7 +91,7 @@ fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
 }
 
 /// A cut so no press refuses for want of one, and the row at its §A defaults.
-fn seed_live_cut(window: &adw::ApplicationWindow) {
+fn seed_live_cut() {
     let first = naivepost::cut::Seg {
         s: 0.0,
         e: 9.5,
@@ -102,14 +102,11 @@ fn seed_live_cut(window: &adw::ApplicationWindow) {
         e: 30.0,
         ..Default::default()
     };
-    ui::seed_review_cut(
-        window,
-        &Cut {
-            segs: vec![first, second],
-            aspect: "16:9".to_string(),
-            ..Default::default()
-        },
-    );
+    ui::seed_review_cut(&Cut {
+        segs: vec![first, second],
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    });
     let row = naivepost::produce_screen::defaults();
     let mut page = ui::produce_page::read_state();
     page.container = row[0].1.to_string();
@@ -341,7 +338,7 @@ fn check_export_button(_root: &Path) {
     );
     // The refusal still comes first: with no picture on disk the button names both ways out.
     let window = produce_window(&app_in_round());
-    seed_live_cut(&window);
+    seed_live_cut();
     let said = press_answering(&window, "thumbnail-export", "export", |w| {
         ui::produce_choosers::answer_export(w, &ui::produce_press_wiring::offered_export_name());
     });
@@ -367,7 +364,7 @@ fn check_save_uses_the_door(root: &Path) {
     let chosen = root.join("elsewhere/my-cut.mp4");
     std::fs::create_dir_all(chosen.parent().unwrap()).expect("the chosen folder");
     let window = produce_window(&app_in_round());
-    seed_live_cut(&window);
+    seed_live_cut();
     let picked = chosen.to_string_lossy().to_string();
     let said = press_answering(&window, "transcode-save", "save-video", |w| {
         ui::produce_choosers::answer_save_video(w, &picked);
@@ -395,7 +392,7 @@ fn check_save_default_name(root: &Path) {
     std::fs::create_dir_all(video.parent().unwrap()).expect("produce folder");
     std::fs::write(&video, vec![5u8; 4096]).expect("a rendered video to copy");
     let window = produce_window(&app_in_round());
-    seed_live_cut(&window);
+    seed_live_cut();
     ui::produce_press_wiring::answer_path(None);
 
     assert_eq!(

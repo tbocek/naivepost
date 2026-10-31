@@ -39,7 +39,7 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
     // as the door it fires, and its sensitivity still says whether there is anything to clear.
     let cross = ui::clear_selection_button(&window).expect("the Cut page carries clear-selection");
     assert!(
-        !ui::cut_band_marks::placed_on(&window)
+        !ui::cut_band_marks::placed_on()
             .iter()
             .any(|placed| placed.mark == ui::cut_band_marks::Mark::SelectionCross),
         "no band, so the band draws no selection cross"
@@ -48,10 +48,7 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
         !cross.is_sensitive(),
         "with no band there is nothing to clear"
     );
-    assert!(
-        ui::selection(&window).is_none(),
-        "a fresh window holds no band"
-    );
+    assert!(ui::selection().is_none(), "a fresh window holds no band");
     assert_eq!(
         ui::selection_readout(&window)
             .expect("the Cut page carries selection-readout")
@@ -64,7 +61,7 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
     // The placeholder drag surface still carries its gesture (the painted band carries its own, F2.6 on the
     // tape); it is driven here the toolkit's way.
     ui::select_surface(&window).expect("the Cut page carries select-surface");
-    let gesture = ui::selection_gesture(&window).expect("the surface carries a drag gesture");
+    let gesture = ui::selection_gesture().expect("the surface carries a drag gesture");
 
     // Fire the drag the way the toolkit does. The handler converts x to session seconds at PPS, so a
     // drag out to 160 px means 40 s -- and the assertion below compares against the rule itself, not
@@ -76,7 +73,7 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
 
     let expected = cut_select::draw(Surface::Ruler, None, 0.0, 160.0 / PPS)
         .expect("the rule itself accepts this surface and span");
-    let band = ui::selection(&window).expect("the drag drew a band");
+    let band = ui::selection().expect("the drag drew a band");
     assert_eq!(
         band, expected,
         "the widget path returns exactly what cut_select::draw returns for the same surface and seconds"
@@ -113,10 +110,7 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
     // S2: press the real cross.
     cross.emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(
-        ui::selection(&window).is_none(),
-        "the cross cleared the band"
-    );
+    assert!(ui::selection().is_none(), "the cross cleared the band");
     assert!(
         !cross.is_sensitive(),
         "and the cross went insensitive again -- the sensitivity tracks the state"
@@ -224,7 +218,7 @@ fn f2_6_s1_and_s2_a_drag_selects_and_the_cross_clears_through_real_widgets() {
 fn check_a_real_drag_scopes_to_the_surface_under_the_pointer(app: &adw::Application) {
     let window = cut_window(app);
     settle();
-    let gesture = ui::selection_gesture(&window).expect("the page wired a drag gesture");
+    let gesture = ui::selection_gesture().expect("the page wired a drag gesture");
     // The band table the wiring itself uses, so the ys below are taken from the same numbers rather than
     // from a copy that could drift away from it.
     let bands = cut_select::PLACEHOLDER_BANDS;
@@ -253,7 +247,7 @@ fn check_a_real_drag_scopes_to_the_surface_under_the_pointer(app: &adw::Applicat
     for (label, press_y, want_surface, want_scope) in cases {
         // A clean slate per case: the previous band must not be what the assertion lands on.
         ui::clear_selection(&window);
-        assert!(ui::selection(&window).is_none(), "{label}: start cleared");
+        assert!(ui::selection().is_none(), "{label}: start cleared");
 
         // drag-begin carries (sequence, x, y) on gtk::GestureDrag; the handler reads the y only, to
         // decide the scope once, then drag-update's x becomes the band's end.
@@ -261,12 +255,11 @@ fn check_a_real_drag_scopes_to_the_surface_under_the_pointer(app: &adw::Applicat
         gesture.emit_by_name::<()>("drag-update", &[&120.0f64, &press_y]);
 
         assert_eq!(
-            ui::pressed_surface(&window),
+            ui::pressed_surface(),
             Some(want_surface),
             "{label}: the press remembered the ground it started on"
         );
-        let band =
-            ui::selection(&window).unwrap_or_else(|| panic!("{label}: the drag drew no band"));
+        let band = ui::selection().unwrap_or_else(|| panic!("{label}: the drag drew no band"));
         assert_eq!(
             band.scope, want_scope,
             "{label}: the band's scope matches the ground under the pointer"
@@ -294,13 +287,13 @@ fn check_a_real_drag_scopes_to_the_surface_under_the_pointer(app: &adw::Applicat
 fn check_a_press_on_the_effects_lane_puts_a_held_effect_down(app: &adw::Application) {
     let window = cut_window(app);
     settle();
-    let gesture = ui::selection_gesture(&window).expect("the page wired a drag gesture");
+    let gesture = ui::selection_gesture().expect("the page wired a drag gesture");
     let bands = cut_select::PLACEHOLDER_BANDS;
 
     // Lay down something to protect: a ruler-ground band, whose exact span we remember.
     gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &4.0]);
     gesture.emit_by_name::<()>("drag-update", &[&96.0f64, &4.0]);
-    let before = ui::selection(&window).expect("a band exists before the fx press");
+    let before = ui::selection().expect("a band exists before the fx press");
     let before_scope = before.scope.clone();
 
     // An effect in hand, as the drag rounds would leave it.
@@ -311,7 +304,7 @@ fn check_a_press_on_the_effects_lane_puts_a_held_effect_down(app: &adw::Applicat
     };
     ui::set_held_effect(Some(held.clone()));
     assert_eq!(
-        ui::held_effect(),
+        ui::cut_hand::held_effect(),
         Some(held),
         "the seam put the effect in hand"
     );
@@ -322,16 +315,16 @@ fn check_a_press_on_the_effects_lane_puts_a_held_effect_down(app: &adw::Applicat
     gesture.emit_by_name::<()>("drag-update", &[&140.0f64, &fx_y]);
 
     assert_eq!(
-        ui::pressed_surface(&window),
+        ui::pressed_surface(),
         Some(Surface::FxLane),
         "the press landed on the effects lane"
     );
     assert_eq!(
-        ui::held_effect(),
+        ui::cut_hand::held_effect(),
         None,
         "the lane released the held effect -- that is all it does"
     );
-    let after = ui::selection(&window).expect("the earlier band survived the fx press");
+    let after = ui::selection().expect("the earlier band survived the fx press");
     assert_eq!(
         (after.start, after.end, after.scope.clone()),
         (before.start, before.end, before_scope.clone()),
@@ -340,8 +333,8 @@ fn check_a_press_on_the_effects_lane_puts_a_held_effect_down(app: &adw::Applicat
     // And a second press with nothing in hand changes nothing either way.
     gesture.emit_by_name::<()>("drag-begin", &[&0.0f64, &fx_y]);
     gesture.emit_by_name::<()>("drag-update", &[&180.0f64, &fx_y]);
-    assert_eq!(ui::held_effect(), None, "still nothing in hand");
-    let again = ui::selection(&window).expect("band still there");
+    assert_eq!(ui::cut_hand::held_effect(), None, "still nothing in hand");
+    let again = ui::selection().expect("band still there");
     assert_eq!(
         (again.start, again.end, again.scope),
         (before.start, before.end, before_scope),

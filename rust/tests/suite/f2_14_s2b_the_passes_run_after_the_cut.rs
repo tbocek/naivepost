@@ -181,37 +181,31 @@ fn press_once(app: &adw::Application, switches: (bool, bool, bool)) -> Vec<Strin
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(
-        &window,
-        &naivepost::cut::Cut {
-            segs: vec![Seg {
-                s: 0.0,
-                e: 60.0,
-                cam: 0,
-                ..Default::default()
-            }],
+    ui::seed_review_cut(&naivepost::cut::Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            cam: 0,
             ..Default::default()
-        },
-    );
-    ui::reopen_history_on(&window, &ui::review_cut_of(&window));
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+        }],
+        ..Default::default()
+    });
+    ui::reopen_history_on(&ui::window_preview::newest_review_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     let (captions, speeds, decorations) = switches;
-    ui::set_session_policy_field(
-        &window,
+    ui::window_policy::write_policy_field(
         "captionsPass",
         if captions { "on" } else { "off" },
         "this test",
         Origin::User,
     );
-    ui::set_session_policy_field(
-        &window,
+    ui::window_policy::write_policy_field(
         "speedPass",
         if speeds { "on" } else { "off" },
         "this test",
         Origin::User,
     );
-    ui::set_session_policy_field(
-        &window,
+    ui::window_policy::write_policy_field(
         "decorationsPass",
         if decorations { "on" } else { "off" },
         "this test",

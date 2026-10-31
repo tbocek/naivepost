@@ -212,16 +212,16 @@ fn sec_04_prepare_4_parameters_used_s4_describe_s_frames_per_call_and_context_si
     assert_eq!(spelled("P.machine.describeFramesPerReq"), "4");
     assert_eq!(roles::VISION_FRAMES_PER_CALL, 4);
     assert_eq!(
-        prepare::vision_calls(12),
+        roles::vision_batches(12),
         3,
         "twelve frames are three calls of four"
     );
     assert_eq!(
-        prepare::vision_calls(9),
+        roles::vision_batches(9),
         3,
         "and a part-call still costs one"
     );
-    assert_eq!(prepare::vision_calls(0), 0);
+    assert_eq!(roles::vision_batches(0), 0);
 
     // P.machine.describeRecentEvents / describeCtxSegs / describeCtxWindowSeconds.
     assert_eq!(

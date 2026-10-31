@@ -87,12 +87,12 @@ fn cap_round(app: &adw::Application) {
 
     // --- (1) a reply the cap allows is placed -----------------------------------------------------------------
     let window = cut_page(app, &many_clips(small));
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     RAN_DOOR.store(true, Ordering::SeqCst);
 
     let said = ui::run_effects_pass_with_reply(&window, &reply(small));
     settle();
-    let after = ui::review_cut_of(&window).fx;
+    let after = ui::window_preview::newest_review_cut().fx;
     assert_eq!(
         after.len(),
         before + small,
@@ -126,7 +126,7 @@ fn cap_round(app: &adw::Application) {
     // halves are here: the small reply above was PLACED because `effect_cap_allows_reply` allowed it, and the list
     // below is refused by that same door before any write.
     let window = cut_page(app, &many_clips(small + 1));
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let over = reply(small + 1);
     // The rule, asked with the very list the page was handed: under the cap, so the page must place it (it did).
     let verdict = pass::effect_cap_allows_reply(&over_effects(small + 1));
@@ -137,7 +137,7 @@ fn cap_round(app: &adw::Application) {
     let said = ui::run_effects_pass_with_reply(&window, &over);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before + small + 1,
         "an allowed reply is written in full, not trimmed"
     );
@@ -190,7 +190,7 @@ fn over_effects(count: usize) -> Vec<naivepost::cut::Fx> {
 fn density_round(app: &adw::Application) {
     // --- (a) past the guide: the sentence names it, and everything still lands ---------------------------
     let window = cut_page(app, &density_cut());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let said = ui::run_effects_pass_with_reply(&window, &reply(6));
     settle();
     assert!(
@@ -202,7 +202,7 @@ fn density_round(app: &adw::Application) {
         "the reply is past the guide for a 300 s cut, so the sentence must say so -- got {said:?}"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before + 6,
         "being past the guide changes what is PLACED in no way at all"
     );
@@ -223,7 +223,7 @@ fn density_round(app: &adw::Application) {
 
     // --- (b) inside the guide: nothing extra is said -----------------------------------------------------
     let window = cut_page(app, &density_cut());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let said = ui::run_effects_pass_with_reply(&window, &reply(2));
     settle();
     assert!(
@@ -235,7 +235,7 @@ fn density_round(app: &adw::Application) {
         "a reply inside (3-4 per five minutes) owes the reader nothing new -- got {said:?}"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before + 2,
         "and both landed"
     );

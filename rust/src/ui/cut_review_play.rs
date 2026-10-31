@@ -44,11 +44,8 @@ pub fn answer_press(
         cut_review::Pressed::Started {
             status, seek_to, ..
         } => {
-            crate::ui::cut_cut_play::cue_running(
-                window,
-                seek_to.unwrap_or_else(|| playhead_of(window)),
-            );
-            begin(cut_review::start(cut_, playhead_of(window)));
+            crate::ui::cut_cut_play::cue_running(window, seek_to.unwrap_or_else(|| playhead_of()));
+            begin(cut_review::start(cut_, playhead_of()));
             status_line.set_text(status)
         }
         cut_review::Pressed::PausedAndEnded { status } => {
@@ -62,8 +59,8 @@ pub fn answer_press(
 }
 
 /// This window's red line, or 0 for a page that has never been clicked.
-fn playhead_of(window: &adw::ApplicationWindow) -> f64 {
-    ui::preview_player(window).playhead.unwrap_or(0.0)
+fn playhead_of() -> f64 {
+    ui::preview_player().playhead.unwrap_or(0.0)
 }
 
 /// Paint the button from the page's state, reading rather than remembering (§5: the UI renders state).
@@ -71,8 +68,10 @@ pub fn paint(window: &adw::ApplicationWindow) {
     let Some(button) = ui::review_cuts_button(window) else {
         return;
     };
-    button.set_sensitive(cut_screen::can_review(&ui::review_cut_of(window)));
-    let player = ui::preview_player(window);
+    button.set_sensitive(cut_screen::can_review(
+        &ui::window_preview::newest_review_cut(),
+    ));
+    let player = ui::preview_player();
     // §2's "one lit" from [`crate::tab_states::preview_lits`], the same decision ▶ and ▶✂ read; the ⏸
     // face additionally needs the transport to be playing, since a parked review owes a ▶.
     let [_recording_lit, _cut_lit, ours_lit] =
@@ -136,14 +135,14 @@ fn say(window: &adw::ApplicationWindow, line: &str) {
 
 /// One tick of the review against THIS window: move the line, then act on what the rules answered.
 pub fn tick_once(window: &adw::ApplicationWindow) {
-    let player = ui::preview_player(window);
+    let player = ui::preview_player();
     if !player.reviewing || !player.transport.playing {
         return;
     }
     let Some(mut review) = held().lock().expect("the review slot").take() else {
         return;
     };
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = ui::window_preview::newest_review_cut();
     // The built-in player says where it is (F2.1 S4's "the line follows the player"); otherwise the line's own.
     let from = crate::ui::cut_record_play::playing_second()
         .or(player.playhead)
@@ -164,7 +163,6 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
         }
         Outcome::Finished { status } => {
             ui::set_preview_state(
-                window,
                 true,
                 false,
                 crate::run::Transport {
@@ -178,7 +176,6 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
         }
         Outcome::LineMoved { status } => {
             ui::set_preview_state(
-                window,
                 true,
                 false,
                 crate::run::Transport {

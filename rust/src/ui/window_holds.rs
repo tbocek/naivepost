@@ -23,10 +23,6 @@ pub fn set_held_effect(effect: Option<cut::Fx>) {
     };
 }
 
-pub fn held_effect() -> Option<cut::Fx> {
-    crate::ui::cut_hand::held_effect()
-}
-
 /// What ⌦ takes next: the clip in hand, `the only way to remove a spliced card` (§J rule 8). A seam as above.
 pub fn set_held_clip(seg: Option<cut::Seg>) {
     match seg {
@@ -37,16 +33,6 @@ pub fn set_held_clip(seg: Option<cut::Seg>) {
     };
 }
 
-/// Read side of [`set_held_clip`]: a WHOLE clip, as opposed to one of its edges.
-pub fn held_clip() -> Option<cut::Seg> {
-    crate::ui::cut_hand::held_clip()
-}
-
-/// The segment in hand either way (whole clip or held edge), for doors that move a segment without asking which.
-pub fn held_segment() -> Option<cut::Seg> {
-    crate::ui::cut_hand::held_clip_or_edge()
-}
-
 /// F2.4 S1b: put a picked clip EDGE in the hand (the 12 px reach, `// layout.lineReachPx`).
 pub fn set_held_edge(seg: Option<cut::Seg>) {
     match seg {
@@ -55,16 +41,6 @@ pub fn set_held_edge(seg: Option<cut::Seg>) {
         }
         None => crate::ui::cut_hand::clear_all(),
     };
-}
-
-pub fn held_edge() -> Option<cut::Seg> {
-    crate::ui::cut_hand::held_edge()
-}
-
-/// F2.4 S2/S3: what the line is holding, in the spec's order: edge, then whole clip, then an effect.
-/// What a frame-step or arrow press asks.
-pub fn held_now() -> Option<cut_line::Held> {
-    crate::ui::cut_hand::held_kind()
 }
 
 /// F2.4 S1b: turn what the first left press picked into the hold it means. An edge goes to the edge slot so

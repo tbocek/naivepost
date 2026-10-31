@@ -68,9 +68,9 @@ pub fn footage_second(cut: &Cut, at: f64) -> f64 {
     if let Some(recording) = recording_under(cut, scene, at) {
         let start =
             (scene.s - recording.start + crate::timeline::shift_of(cut, &recording.base)).max(0.0);
-        return start + (at - scene.s).max(0.0) * narrate_preview::seek_rate(&cut.fx, at);
+        return start + (at - scene.s).max(0.0) * cut_hear::rate_under(&cut.fx, at);
     }
-    let travelled = (at - scene.s).max(0.0) * narrate_preview::seek_rate(&cut.fx, at);
+    let travelled = (at - scene.s).max(0.0) * cut_hear::rate_under(&cut.fx, at);
     (travelled + scene.ss.max(0.0)).max(0.0)
 }
 

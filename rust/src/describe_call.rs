@@ -21,11 +21,6 @@ use crate::tools::Tool;
 /// The step name for cache entries and timed rows, same as `describe::STEP`.
 pub const STEP: &str = describe::STEP;
 
-/// Asks allowed per chunk: §3.2 gives describe no budget, so this takes the fixer's (`P.machine.fixTries`).
-fn attempts() -> u32 {
-    crate::fix_transcripts::attempts()
-}
-
 /// The describe stage of the Prepare walk: one row per footage source.
 /// A dial (`program: VISION_TASK`), not a spawn. Comes after the frames stage in [`crate::run_stages::plan`]; a source with nothing extracted is left out (§F1.7).
 pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
@@ -73,7 +68,7 @@ pub fn planned_requests(task: &crate::run_stages::Task) -> usize {
     let Some(source) = task.args.first() else {
         return 0;
     };
-    match Tree::new(session_dir()) {
+    match Tree::new(crate::startup::open_dir()) {
         Ok(tree) => describe::planned_requests(&tree, &crate::audio_task::source_lane(source)),
         Err(_) => 0,
     }
@@ -195,7 +190,7 @@ pub fn run_task(
 ) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
-    let session = session_dir();
+    let session = crate::startup::open_dir();
     let tree = Tree::new(&session).map_err(|_| {
         format!(
             "{}: not a project folder to describe into",
@@ -223,11 +218,6 @@ fn user_context(tree: &Tree) -> String {
     crate::project::load(tree.dir())
         .map(|project| project.context.clone())
         .unwrap_or_default()
-}
-
-/// The working folder's session, resolved like every other dial (§1).
-fn session_dir() -> std::path::PathBuf {
-    crate::startup::open_dir()
 }
 
 /// The row a cache-served chunk hands [`crate::request_timing::record_cached`]. `started` is empty on purpose: the door stamps the read time.
@@ -364,7 +354,7 @@ fn run_chunk(
         return answer;
     }
     let mut refusal: Option<String> = None;
-    for attempt in 0..attempts() {
+    for attempt in 0..crate::fix_transcripts::attempts() {
         if let Some(cached) = describe::cached_reply(tree, &key) {
             crate::request_timing::record_cached(tree, cache_row(&conf.model));
             let answered = apply_and_write(tree, lane, batch, interval, &history, &cached)?;
@@ -450,7 +440,7 @@ fn run_chunk(
     }
     Err(format!(
         "{lane}: describe: the model answered {} attempts without an EVENT for every frame of the chunk starting {start:.1}s",
-        attempts()
+        crate::fix_transcripts::attempts()
     ))
 }
 
@@ -471,7 +461,7 @@ pub fn system_message(paths: &Paths, context: &str) -> String {
 
 /// The wording reader every ask uses: the shipped file, or the settings copy of it (§04-prepare#6).
 fn wording(paths: &Paths, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
 }
 
@@ -640,7 +630,7 @@ fn tool_calls_of(reply: &llm_request::Reply) -> Vec<(String, serde_json::Value)>
 ///
 /// `get_events`, `get_frames` and `get_context` come from [`tool_reads::dispatch`] with THIS chunk's rows and frame seconds, never a fresh session copy.
 /// `speech_around` is answered here: every-source speech is this leg's to gather.
-fn read_answer(
+pub fn read_answer(
     tree: &Tree,
     lane: &str,
     user_context: &str,
@@ -676,19 +666,6 @@ fn read_answer(
         frames: batch,
     };
     tool_reads::dispatch(&ctx, &asked)
-}
-
-/// The live leg's `read_answer`, reachable from a test without a session on disk.
-pub fn read_answer_for_test(
-    tree: &Tree,
-    lane: &str,
-    user_context: &str,
-    rows: &[describe::EventRow],
-    batch: &[f64],
-    name: &str,
-    args: &serde_json::Value,
-) -> Option<String> {
-    read_answer(tree, lane, user_context, rows, batch, name, args)
 }
 
 /// The calls as the cached reply stores them, each with its answer; `apply_and_write` reads only `0`/`1`, so the extra field costs a replay nothing.

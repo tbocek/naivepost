@@ -663,7 +663,7 @@ fn f1_9_s7_the_marks_round_trip_through_the_file_cut_reads() {
     let texts = vec!["the first attempt".to_string(), "the second".to_string()];
     let written = retakes::write_marks(&tree, &marks, &texts, &[3.0, 0.0]).expect("written");
     assert_eq!(written, 2, "two rows");
-    let read = retakes::read_marks(&tree.retakes_tsv()).expect("read back");
+    let read = naivepost::textfmt::read_retakes(&tree.retakes_tsv()).expect("read back");
     assert_eq!(read.len(), 2, "{read:?}");
     assert_eq!(read[0].s, 1.0);
     assert_eq!(read[0].e, 2.5);
@@ -687,7 +687,9 @@ fn f1_9_s7_a_refused_pass_leaves_an_empty_file_too() {
     assert!(tree.retakes_tsv().exists());
     assert_eq!(fs::read_to_string(tree.retakes_tsv()).unwrap(), "");
     // ...and reading that file gives no marks rather than an error.
-    assert!(retakes::read_marks(&tree.retakes_tsv()).unwrap().is_empty());
+    assert!(naivepost::textfmt::read_retakes(&tree.retakes_tsv())
+        .unwrap()
+        .is_empty());
 }
 
 // ---- the gate --------------------------------------------------------------

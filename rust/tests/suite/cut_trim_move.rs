@@ -609,8 +609,6 @@ fn drawn_box(index: usize) -> trim::Box_ {
     }
 }
 
-const PPS: f64 = 10.0;
-
 /// F2.8 S2: every band of the placeholder strip maps to itself, top to bottom.
 #[test]
 fn f2_8_s2_band_at_maps_the_strips_bands() {
@@ -664,7 +662,7 @@ fn f2_8_s2_a_press_on_a_wave_strip_targets_that_one_recording() {
     let b = trim::PLACEHOLDER_STRIP_BANDS;
     let y = b.wave.0 + (b.wave.1 - b.wave.0) / 2.0;
     let boxes = [drawn_box(0)];
-    let (recorders, wave, on_border) = trim::press_targets(y, 90.0, &boxes, PPS, Some("cam1"));
+    let (recorders, wave, on_border) = trim::press_targets(y, 90.0, &boxes, Some("cam1"));
     assert_eq!(
         wave.as_deref(),
         Some("cam1"),
@@ -696,7 +694,7 @@ fn f2_8_s2_a_press_on_the_bar_is_not_on_a_band() {
     // Recorders or Wave -- which is exactly why this test drives the ruler, the one non-band ground that
     // exists today. `f2_8_s2_band_at_maps_the_strips_bands` pins the shared span itself.
     for y in [0.0, 5.0, trim::RULER_H - 0.5] {
-        let (recorders, wave, _) = trim::press_targets(y, 90.0, &boxes, PPS, Some("cam0"));
+        let (recorders, wave, _) = trim::press_targets(y, 90.0, &boxes, Some("cam0"));
         assert_eq!(
             recorders, None,
             "y={y}: the ruler is not the recorders' band"
@@ -723,20 +721,19 @@ fn f2_8_s2_on_border_is_answered_from_the_drawn_boxes() {
     let b = trim::PLACEHOLDER_STRIP_BANDS;
     let boxes = [drawn_box(7)];
     // On the drawn start edge (x=40): border.
-    let (_, _, on_start_edge) =
-        trim::press_targets(b.wave.0 + 1.0, 40.0, &boxes, PPS, Some("cam0"));
+    let (_, _, on_start_edge) = trim::press_targets(b.wave.0 + 1.0, 40.0, &boxes, Some("cam0"));
     assert!(on_start_edge, "x right on the clip's start is a border");
     // Just inside the grab reach (40 + 5 <= 40+6): still the border.
-    let (_, _, near_start) = trim::press_targets(b.wave.0 + 1.0, 45.0, &boxes, PPS, Some("cam0"));
+    let (_, _, near_start) = trim::press_targets(b.wave.0 + 1.0, 45.0, &boxes, Some("cam0"));
     assert!(
         near_start,
         "within EDGE_GRAB_PX of the start is still the border"
     );
     // Mid-clip (x=90, 50 px from either edge): no border, so a slide may happen.
-    let (_, _, mid) = trim::press_targets(b.wave.0 + 1.0, 90.0, &boxes, PPS, Some("cam0"));
+    let (_, _, mid) = trim::press_targets(b.wave.0 + 1.0, 90.0, &boxes, Some("cam0"));
     assert!(!mid, "mid-clip is not a border");
     // Nothing drawn at all: no border anywhere, even at the same x.
-    let (_, _, nothing) = trim::press_targets(b.wave.0 + 1.0, 40.0, &[], PPS, Some("cam0"));
+    let (_, _, nothing) = trim::press_targets(b.wave.0 + 1.0, 40.0, &[], Some("cam0"));
     assert!(!nothing, "no painted box means no border to grab");
 }
 

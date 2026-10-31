@@ -126,12 +126,12 @@ fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s3_a_se
                 "{kind:?} is not the kind a rate means"
             );
             assert!(
-                !suggest::exempt_from_decorations_cap(kind),
+                !suggest::is_speed_effect(kind),
                 "{kind:?} counts against the ceiling; only a rate does not"
             );
         }
     }
-    assert!(suggest::exempt_from_decorations_cap(cut::EffectKind::Speed));
+    assert!(suggest::is_speed_effect(cut::EffectKind::Speed));
 
     // The reading that makes it an effect: one speed spanning the segment answers that segment's seconds, which is
     // what a rate written on the segment would have had to answer.

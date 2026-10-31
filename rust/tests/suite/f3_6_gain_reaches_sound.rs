@@ -112,8 +112,8 @@ fn wait_for_volume(log: &Path, want: &str) {
 
 /// The gain the slider holds by default: full, i.e. `cut_hear::VOLUME_DEFAULT`, so a passage untouched by any
 /// volume record is asked for at exactly that number.
-fn slider_gain(window: &adw::ApplicationWindow) -> f64 {
-    ui::preview_volume(window)
+fn slider_gain() -> f64 {
+    ui::preview_volume()
 }
 
 /// How the player must be asked for a gain: three decimals, the app's own rounding.
@@ -152,13 +152,13 @@ fn round(app: &adw::Application) {
     // door, and the transport is left NOT playing, which is the state §S5 names.
     let window = cut_page(app, &Cut::default());
     assert!(
-        !ui::preview_player(&window).transport.playing,
+        !ui::preview_player().transport.playing,
         "this check is about the PAUSED case, so the transport must be still"
     );
     let tape_text = tape.display().to_string();
     cue_footage(&tape_text, AT);
     play_back::forget_volume_for_test();
-    let flat = spoken(slider_gain(&window));
+    let flat = spoken(slider_gain());
     // Baseline: with nothing over the second the ask is the slider's own level, and moving the line costs an ask
     // even there — otherwise the later assertions could pass on a stale stamp.
     ui::set_line_position(&window, LinePos { t: AT });
@@ -166,9 +166,9 @@ fn round(app: &adw::Application) {
     wait_for_volume(&log, &flat);
     let before = asked_volumes(&log).len();
 
-    let mut cut_ = ui::review_cut_of(&window);
+    let mut cut_ = ui::window_preview::newest_review_cut();
     cut_.fx.push(volume(200.0, 4.0));
-    ui::seed_review_cut(&window, &cut_);
+    ui::seed_review_cut(&cut_);
     // The line moves INSIDE the raised passage while paused: this is the press §S5 is about.
     ui::set_line_position(&window, LinePos { t: AT });
     settle();
@@ -182,13 +182,13 @@ fn round(app: &adw::Application) {
     // --- S5: overlapping gains MULTIPLY ---------------------------------------------------------------
     // A second record over the same seconds, deliberately starting earlier so the line's move alone cannot be
     // what changes the answer: 200 % × 150 % is 3.0, not 2.5 and not whichever was placed last.
-    let mut both = ui::review_cut_of(&window);
+    let mut both = ui::window_preview::newest_review_cut();
     both.fx.push({
         let mut second = volume(150.0, 8.0);
         second.t = AT - 4.0;
         second
     });
-    ui::seed_review_cut(&window, &both);
+    ui::seed_review_cut(&both);
     ui::set_line_position(&window, LinePos { t: AT });
     settle();
     let product = fx_volume::DEFAULT_GAIN * fx_volume::gain_of_percent(150.0);
@@ -207,9 +207,9 @@ fn round(app: &adw::Application) {
 
     // --- S5: the ceiling is playbin's, not the multiplication's --------------------------------------
     // Two big lifts would multiply past what the volume property takes; the ask stops at `cut_hear::MAX_GAIN`.
-    let mut huge = ui::review_cut_of(&window);
+    let mut huge = ui::window_preview::newest_review_cut();
     huge.fx.push(volume(1000.0, 6.0));
-    ui::seed_review_cut(&window, &huge);
+    ui::seed_review_cut(&huge);
     ui::set_line_position(&window, LinePos { t: AT });
     settle();
     wait_for_volume(&log, &spoken(cut_hear::MAX_GAIN));
@@ -218,9 +218,9 @@ fn round(app: &adw::Application) {
     // --- S5: silence is an ask too ---------------------------------------------------------------------
     // A passage recorded too loudly is turned down to nothing; §A.6 counts 0 % as silence, and silence that
     // never reaches the player is just a quieter bug.
-    let mut quiet = ui::review_cut_of(&window);
+    let mut quiet = ui::window_preview::newest_review_cut();
     quiet.fx = vec![volume(0.0, 6.0)];
-    ui::seed_review_cut(&window, &quiet);
+    ui::seed_review_cut(&quiet);
     ui::set_line_position(&window, LinePos { t: AT });
     settle();
     wait_for_volume(&log, "0.000");
@@ -229,9 +229,9 @@ fn round(app: &adw::Application) {
     // --- S5: ↶ puts the recorded loudness back ---------------------------------------------------------
     // Undo took the record away, so the second is the slider's own again. Asked through the same move-the-line
     // door, because that is the only way a person finds out.
-    let mut plain = ui::review_cut_of(&window);
+    let mut plain = ui::window_preview::newest_review_cut();
     plain.fx.clear();
-    ui::seed_review_cut(&window, &plain);
+    ui::seed_review_cut(&plain);
     ui::set_line_position(&window, LinePos { t: AT });
     settle();
     wait_for_volume(&log, &flat);
@@ -270,7 +270,7 @@ fn round(app: &adw::Application) {
         );
         // The record exists (Apply's job) and the line lands inside it (this file's job): the percent typed into
         // the field is the number the player is asked for, multiplied by the slider it was applied under.
-        let placed_cut = ui::review_cut_of(&wired);
+        let placed_cut = ui::window_preview::newest_review_cut();
         let placed = placed_cut
             .fx
             .iter()
@@ -278,7 +278,7 @@ fn round(app: &adw::Application) {
             .expect("Apply put a volume record on the cut");
         ui::set_line_position(&wired, LinePos { t: AT });
         settle();
-        let expected = cut_hear::mix_gain(slider_gain(&wired), placed.gain);
+        let expected = cut_hear::mix_gain(slider_gain(), placed.gain);
         wait_for_volume(&log, &spoken(expected));
         assert!(
             (placed.gain - fx_volume::gain_of_percent(typed)).abs() < 1e-9,

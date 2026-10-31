@@ -25,8 +25,7 @@ const SHELL_SHOT_H: i32 = 900;
 
 /// No screen's subject is the picker list: §1's second picture is the PAGE with the list open over it, so
 /// `04-prompt-picker` keeps the plain window shot and [`paint_open_over_window`] adds the list to it.
-pub fn is_picker_subject(screen: &str) -> bool {
-    let _ = screen;
+pub fn is_picker_subject() -> bool {
     false
 }
 

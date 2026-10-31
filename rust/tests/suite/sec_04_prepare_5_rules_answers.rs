@@ -337,7 +337,7 @@ fn sec_04_prepare_5_rules_b4_an_empty_marks_file_means_asked_none() {
     // Read back as the "asked, none" it means: an Ok of nothing, distinguishable from never-asked only
     // by the file existing.
     assert_eq!(
-        retakes::read_marks(&tree.retakes_tsv()).expect("parses"),
+        textfmt::read_retakes(&tree.retakes_tsv()).expect("parses"),
         Vec::<textfmt::Retake>::new(),
         "asked, none"
     );

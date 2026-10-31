@@ -9,8 +9,8 @@ use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
-    live_form_refused, log_line, paste_line, record_edit, refresh_effects_lane, review_cut_of,
-    save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
+    live_form_refused, log_line, record_edit, refresh_effects_lane, save_insert_cut, selection,
+    trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 /// This window's volume-form holder name. Only the Cut tab's instance is ever drawn into or read from —
@@ -33,11 +33,11 @@ fn volume_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
 /// is something to settle. NOTHING is recorded on this press: the record happens in [`press_volume_apply`],
 /// because until someone gives the percent there is no loudness to place.
 pub fn press_volume_item(window: &adw::ApplicationWindow) -> String {
-    let band = selection(window)
+    let band = selection()
         .filter(|band| band.length() > 0.0)
         .map(|band| (band.start, band.end));
     let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    let line = known.then(|| paste_line(window));
+    let line = known.then(|| crate::ui::cut_lane::paste_line());
     match fx_volume::press(band, line) {
         fx_volume::Pressed::Refused => {
             close_volume_form(window);
@@ -86,10 +86,17 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     }
     LAST_VOLUME_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
     let fx = &{
-        let answered = crate::fx_volume::lane_answer(&review_cut_of(window).lanes, &fx.lane);
+        let answered = crate::fx_volume::lane_answer(
+            &crate::ui::window_preview::newest_review_cut().lanes,
+            &fx.lane,
+        );
         cut::Fx {
             lane: if answered.is_empty() {
-                crate::fx_volume::lane_for_press(&review_cut_of(window).lanes, fx.t, fx.dur)
+                crate::fx_volume::lane_for_press(
+                    &crate::ui::window_preview::newest_review_cut().lanes,
+                    fx.t,
+                    fx.dur,
+                )
             } else {
                 answered
             },
@@ -280,7 +287,7 @@ pub fn press_volume_apply(window: &adw::ApplicationWindow) -> String {
             return reason;
         }
     };
-    let mut cut_ = review_cut_of(window);
+    let mut cut_ = crate::ui::window_preview::newest_review_cut();
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
     // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
@@ -384,6 +391,6 @@ pub(crate) fn wire_volume_esc(window: &adw::ApplicationWindow) {
     window.add_controller(controller);
 }
 
-pub fn paused_preview_gain(window: &adw::ApplicationWindow, t: f64) -> f64 {
-    fx_volume::heard_while_paused(&review_cut_of(window).fx, t)
+pub fn paused_preview_gain(t: f64) -> f64 {
+    fx_volume::heard_while_paused(&crate::ui::window_preview::newest_review_cut().fx, t)
 }

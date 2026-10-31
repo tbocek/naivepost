@@ -37,22 +37,18 @@ fn f0_12_where_it_runs_the_copy_returns_with_the_run_open() {
 
         assert!(ui::add_files(&window, &[file]), "the copy started");
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             Some(naivepost::run::Step::Prepare),
             "the copy stands as the run while its bytes go down"
         );
         assert!(
-            ui::session_sources(&window).is_empty(),
+            ui::session_sources().is_empty(),
             "no row before its file has landed"
         );
         common::settle_workers();
+        assert_eq!(ui::running_step(), None, "the copy ended its own run");
         assert_eq!(
-            ui::running_step(&window),
-            None,
-            "the copy ended its own run"
-        );
-        assert_eq!(
-            ui::session_sources(&window),
+            ui::session_sources(),
             ["project:sources/2026-10-18 19-21-52.mkv"],
             "the row came with its file"
         );

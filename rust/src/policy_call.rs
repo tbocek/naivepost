@@ -41,19 +41,12 @@ impl Round {
     }
 }
 
-/// The settings folder, read from this process's environment each time an ask is built so a change
-/// made while a run is going is honoured by its next request (§02-services#1: settings are re-read
-/// per request).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
-}
-
 fn session_tree() -> Option<Tree> {
     Tree::new(startup::open_dir()).ok()
 }
 
 pub fn answer_round(context: &str, refusals: &[String], policy: &Policy) -> Round {
-    let conf = match current_paths().as_ref().map(settings::read) {
+    let conf = match settings::from_environment().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         Some(Err(reason)) => {
             return Round::failure(format!("settings could not be read: {reason}"));
@@ -76,7 +69,7 @@ pub fn answer_at(
 ) -> Round {
     let req = policy::request(&crate::prompt_assembly::without_script(context));
     let model = conf.model.clone();
-    let paths = current_paths();
+    let paths = settings::from_environment();
     let system = policy_system(paths.as_ref(), &req);
     let user = user_turn(&req, refusals);
     let parts = cache_parts(&system, &user, &model, refusals.len());
@@ -311,7 +304,7 @@ fn policy_system(paths: Option<&Paths>, req: &DerivationRequest) -> String {
 
 /// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
 fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
+    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     match paths {
         Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
         None => fallback,

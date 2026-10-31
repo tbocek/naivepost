@@ -84,8 +84,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
         .emit_by_name::<()>("clicked", &[]);
     // Open the history on what the page opens with, then show it -- the order build_window uses, so a pick
     // is one Undo away from THIS baseline rather than from a stale one.
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -183,7 +183,7 @@ fn round(app: &adw::Application) {
         // with the string index 0 stands for proves the reported branch leaves both fields alone on the real cut.
         let said = ui::press_aspect(&window, fx_aspect::SOURCE);
         settle();
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert!(
             cut_.aspect.is_empty(),
             "and on the page's own cut, still nothing stored"
@@ -198,7 +198,7 @@ fn round(app: &adw::Application) {
     {
         let window = cut_page(app, &Cut::default());
         pick(&window, "9:16");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(
             status_text(&window),
             "aspect 9:16 \u{2014} a \u{2295} zoom at 0:00 holds the whole frame, centred",
@@ -240,7 +240,7 @@ fn round(app: &adw::Application) {
         let before = seeded.fx.len();
         let window = cut_page(app, &seeded);
         pick(&window, "1:1");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(
             cut_.fx.len(),
             before,
@@ -265,7 +265,11 @@ fn round(app: &adw::Application) {
         let seeded = Cut::default();
         let window = cut_page(app, &seeded);
         pick(&window, "9:16");
-        assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "the pick landed");
+        assert_eq!(
+            ui::window_preview::newest_review_cut().fx.len(),
+            1,
+            "the pick landed"
+        );
         // Undo through the REAL button, so the repaint that follows is the app's, not a test calling the
         // seam directly. `press_undo`'s own return is checked too -- the history states what it unwound.
         ui::line_step_button(&window, "undo-button")
@@ -274,7 +278,7 @@ fn round(app: &adw::Application) {
         settle();
         let said = ui::press_undo(&window);
         settle();
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert!(
             cut_.aspect.is_empty(),
             "one ↶ took the SHAPE back too ({said}) -- aspect and zoom went in as one snapshot"

@@ -166,7 +166,7 @@ fn press_folds_the_file(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     // The session's tape: a dropped stretch only exists inside a run longer than the clips kept in it,
     // so without this there are no gaps and the gutter badge has nothing to fold (same fixture
     // `tests/suite/fold_rows_widgets.rs` builds).

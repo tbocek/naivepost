@@ -462,7 +462,7 @@ fn check_an_unreadable_file_is_kept_as_bad(paths: &Paths) {
         Some("{ not json"),
         "{ITEM} bad: the unreadable file is kept as servers.json.bad"
     );
-    let said = ui::settings::dialog_log(&main_window());
+    let said = ui::settings::dialog_log();
     assert!(
         said.contains("could not be read") && said.contains(&bad.display().to_string()),
         "{ITEM} bad: the dialog says what happened and where the file went: {said}"
@@ -567,13 +567,6 @@ fn read_file(paths: &Paths) -> server_entries::Servers {
     let text =
         std::fs::read_to_string(server_entries::path(paths)).expect("servers.json is written");
     serde_json::from_str(&text).expect("servers.json parses")
-}
-
-fn main_window() -> adw::ApplicationWindow {
-    gtk::Window::list_toplevels()
-        .into_iter()
-        .find_map(|w| w.downcast::<adw::ApplicationWindow>().ok())
-        .expect("the main window")
 }
 
 fn need<T: IsA<gtk::Widget>>(name: &str) -> T {

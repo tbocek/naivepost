@@ -183,9 +183,9 @@ pub fn set_card_snapshot_dir(dir: &std::path::Path) {
 /// Put a card's frames where the preview can use them: the project's own preview folder beside the session,
 /// which is where a card's frames belong (the project's work product, not the camera's). A window with no
 /// folder open writes beside the temp root instead, because a headless run has no project and must not fail.
-pub fn frame_dir_for(window: &adw::ApplicationWindow, card_path: &str) -> PathBuf {
-    let root = crate::ui::line_root(window)
-        .or_else(|| SNAPSHOT_CARDS_DIR.with(|slot| slot.borrow().clone()));
+pub fn frame_dir_for(card_path: &str) -> PathBuf {
+    let root =
+        crate::ui::line_root().or_else(|| SNAPSHOT_CARDS_DIR.with(|slot| slot.borrow().clone()));
     match root {
         Some(root) => frame_dir(&root, card_path),
         None => std::env::temp_dir().join("naivepost-preview"),
@@ -194,11 +194,11 @@ pub fn frame_dir_for(window: &adw::ApplicationWindow, card_path: &str) -> PathBu
 
 /// The card's own frames, on the panel. Answers the sentence the page prints, or `None` when the line is on
 /// footage — the caller then shows the session's own frame as it always has.
-pub fn show_card_frame(window: &adw::ApplicationWindow, cut_: &Cut, t: f64) -> Option<CardFrame> {
+pub fn show_card_frame(cut_: &Cut, t: f64) -> Option<CardFrame> {
     // A spliced card costs no session time, so the picture stands still while the wall clock runs: worth
     // saying because everywhere else on this page the picture moves when the clock does. `held` is that fact.
     let card = card_under(cut_, t)?;
-    let dir = frame_dir_for(window, &card.ins);
+    let dir = frame_dir_for(&card.ins);
     let kind = cut_insert::kind(&card.ins);
     let animated = svg_is_animated(Path::new(card.ins.split(['?']).next().unwrap_or_default()));
     let length = card.dur.max(card.e - card.s);
@@ -261,12 +261,8 @@ pub struct CardFrame {
 /// F2.12 S7: the door the page calls. With the line on a card, its nearest rendered frame goes on the panel
 /// and the sentence about the held footage comes back to be printed; with the line on footage, `None`, and the
 /// caller shows the session's own frame as it always has.
-pub fn card_frame(
-    window: &adw::ApplicationWindow,
-    cut_: &Cut,
-    t: f64,
-) -> Option<(PathBuf, Option<String>)> {
-    let shown = show_card_frame(window, cut_, t)?;
+pub fn card_frame(cut_: &Cut, t: f64) -> Option<(PathBuf, Option<String>)> {
+    let shown = show_card_frame(cut_, t)?;
     let card = card_under(cut_, t)?;
     Some((
         shown.path,

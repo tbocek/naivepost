@@ -123,7 +123,7 @@ fn p_eng_preloadleadseconds_s6_catalogued_once_in_the_cut_page() {
     for other in [
         params::prepare(),
         params::effects(),
-        params::narrate(),
+        naivepost::params_narrate::rows(),
         params::produce(),
     ] {
         assert_eq!(

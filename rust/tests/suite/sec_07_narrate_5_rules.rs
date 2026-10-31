@@ -423,7 +423,7 @@ fn run_bar_follows_the_page(app: &adw::Application) {
     let window = narrate_window(app, &footage_project());
     // Fresh window: the slot exists (the page registered it) but says the preview never started.
     assert!(
-        !rules::bar_serves_the_preview(ui::preview_player(&window).transport),
+        !rules::bar_serves_the_preview(ui::preview_player().transport),
         "a Narrate window nobody has played leaves ▶ as the step's button"
     );
     assert!(
@@ -469,14 +469,14 @@ fn run_bar_follows_the_page(app: &adw::Application) {
     ui::set_state(playing);
     ui::refresh(&window);
     settle();
-    ui::press_narrate_play(&window);
+    ui::narrate_page_transport::press_preview_picture(&window);
     settle();
     assert!(
         ui::read_state().playing,
         "▶ played the cut (or this check proves nothing)"
     );
     assert!(
-        rules::bar_serves_the_preview(ui::preview_player(&window).transport),
+        rules::bar_serves_the_preview(ui::preview_player().transport),
         "once the preview started the bar answers for it"
     );
     // §1's transport "▶/⏸": the page's own button says the same as the bar.
@@ -495,7 +495,7 @@ fn run_bar_follows_the_page(app: &adw::Application) {
     naivepost::ui::narrate_page::press_preview_stop(&window);
     settle();
     assert_eq!(face(), "\u{25b6}", "and \u{25b6} again once it stopped");
-    let after = ui::preview_player(&window).transport;
+    let after = ui::preview_player().transport;
     assert!(!after.playing, "⏹ stopped both players");
     assert!(
         !rules::bar_serves_the_preview(after),

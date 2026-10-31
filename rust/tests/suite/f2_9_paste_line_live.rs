@@ -46,7 +46,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         segs: vec![clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     settle();
     window
 }
@@ -56,7 +56,6 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 fn park(window: &adw::ApplicationWindow, at: f64) {
     ui::set_playhead(window, at);
     ui::set_preview_state(
-        window,
         false,
         false,
         Transport {
@@ -64,7 +63,7 @@ fn park(window: &adw::ApplicationWindow, at: f64) {
             started: true,
         },
     );
-    let player = ui::preview_player(window);
+    let player = ui::preview_player();
     assert_eq!(
         player.playhead,
         Some(at),
@@ -108,14 +107,14 @@ fn s2_a_band_click_moves_where_the_paste_goes_while_the_preview_is_parked() {
         // Press the band through its own gesture, at a second the parked playhead does not name. Same x/y
         // arithmetic tests/suite/cut_line_place_step_widgets.rs uses: gutter + scroll + seconds * pps, y inside row
         // 0's picture half off the bands the painter lays out.
-        let gesture = naivepost::ui::window::band_line_gesture_for_test(&window)
+        let gesture = naivepost::ui::window::band_line_gesture_for_test()
             .expect("the painted band carries the line-click gesture");
         let pps = cut_view::pps();
         let origin = cut_view::origin();
         let pressed_at = 44.0;
         let x = origin + cut_view::gutter_px() + pressed_at * pps;
         let bands = naivepost::ui::cut_tracks::bands_for(naivepost::fx_lane::row_count(
-            &ui::review_cut_of(&window).fx,
+            &ui::window_preview::newest_review_cut().fx,
         ));
         let y = bands.first_picture + bands.row_height / 2.0;
         gesture.emit_by_name::<()>("released", &[&1i32, &x, &y]);
@@ -123,14 +122,14 @@ fn s2_a_band_click_moves_where_the_paste_goes_while_the_preview_is_parked() {
 
         // (a) The press really moved the stored line, and with it the preview's playhead: §1 has ONE red line,
         // so a click that moves it re-seats the parked preview too.
-        let placed = ui::line_position(&window).t;
+        let placed = ui::line_position().t;
         assert!(
             (placed - pressed_at).abs() < 0.2,
             "the band press put the line at {} s (asked for {pressed_at})",
             placed
         );
         assert_eq!(
-            ui::preview_player(&window).playhead,
+            ui::preview_player().playhead,
             Some(placed),
             "the preview's playhead is the line the click placed"
         );
@@ -195,7 +194,6 @@ fn s2_a_playing_preview_leads_the_paste() {
         // Then the preview runs, standing at 12.0.
         ui::set_playhead(&window, 12.0);
         ui::set_preview_state(
-            &window,
             false,
             false,
             Transport {
@@ -204,7 +202,7 @@ fn s2_a_playing_preview_leads_the_paste() {
             },
         );
         assert!(
-            ui::preview_player(&window).transport.playing,
+            ui::preview_player().transport.playing,
             "the preview is playing"
         );
         settle();

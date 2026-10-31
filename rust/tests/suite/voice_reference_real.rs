@@ -82,7 +82,7 @@ fn new_takes_replace_the_old_parts_and_a_shift_builds() {
     let dir = tree.dir().to_path_buf();
     pick(&tree, "one", &[(1.0, 4.0), (6.0, 9.0)]);
     build_missing_reference(&tree).expect("two takes build");
-    let first = voice_ref::wav_seconds(&narrate_data::served_reference(&tree)).unwrap();
+    let first = voice_ref::wav_seconds(&tree.voice_ref_wav()).unwrap();
 
     // Same parts, other sound: a part left standing would still read as the old tone.
     tone(1200, 20, &dir.join("one.wav"));

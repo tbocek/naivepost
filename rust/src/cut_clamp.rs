@@ -29,8 +29,8 @@ pub fn clamp_to_cut(cut: &Cut) -> Clamped {
     for fx in &cut.fx {
         let Some(kept) = clamp_one(fx, &cut.segs) else {
             out.dropped += 1;
-            out.dropped_lines.push(crate::cut_clamp_line::note(fx));
-            if crate::effect_overlap::is_a_stop(fx) {
+            out.dropped_lines.push(crate::cut_clamp_line::describe(fx));
+            if fx_record::is_stop(fx) {
                 out.dropped_stops.push(fx.clone());
             }
             continue;

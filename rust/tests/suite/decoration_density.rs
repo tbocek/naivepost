@@ -133,7 +133,7 @@ fn p_policy_decorationdensity_row_points_at_the_prompt_clause() {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .filter(|row| row.id == "P.policy.decorationDensity")
         .collect::<Vec<_>>();

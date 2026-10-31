@@ -1,8 +1,6 @@
 //! Repair the joins — spec/04-prepare.md F1.10: the seam where one recording stopped and the next
 //! started, and the stumble either side of it that the video has to run over as one piece of speech.
 
-use std::path::Path;
-
 use crate::edges::{self, AlignedWord};
 use crate::hand_edit;
 use crate::layout::Tree;
@@ -12,8 +10,8 @@ use crate::prompts;
 use crate::seam_retries;
 use crate::textfmt::{self, Retake};
 use crate::tools::textedit::{
-    self, Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS, SEAM_NOISE_WORDS,
-    SEAM_REACH_WORDS, SEAM_SNAP_WORDS,
+    Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS, SEAM_NOISE_WORDS, SEAM_REACH_WORDS,
+    SEAM_SNAP_WORDS,
 };
 use crate::word_list::{self, Word};
 
@@ -283,13 +281,6 @@ pub fn refusal_line(k: usize, reason: &str, tail: &str) -> String {
     format!("!!! text edit: join {k}: {reason} -- {tail}")
 }
 
-/// S3: the cache slot for one ask about one join. The retry has to key elsewhere than the answer it
-/// is retrying, or the refusal comes back from the cache and the retry buys nothing — the whole
-/// reason `P.machine.seamRetries` needed a parameter round in the first place.
-pub fn ask_slot(base: &str, attempt: u32) -> String {
-    seam_retries::ask_slot(base, attempt)
-}
-
 pub fn session_lanes(tree: &Tree, words: &[Word]) -> Vec<crate::edges::Lane> {
     let bases = distinct_sources(words);
     let offsets = crate::fix_transcripts::placement(
@@ -338,12 +329,6 @@ fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
         .ok()?
         .as_secs() as i64;
     Some((meta.len() as i64, mtime))
-}
-
-/// S4: at every join still standing, a saying repeated straight across the cut loses its EARLIER
-/// copy, up to [`JOIN_REACH_WORDS`] words either side.
-pub fn dedupe_across(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -> Vec<String> {
-    textedit::dedupe_joins(words, times, kept)
 }
 
 /// S5: the dropped runs as marks, their edges placed by the sound.
@@ -636,11 +621,6 @@ fn lane_of(source: &crate::project::Source) -> String {
         Some((stem, _)) => stem.to_string(),
         None => name.to_string(),
     }
-}
-
-/// Read the marks this pass wrote, for a caller that wants to show or re-check them.
-pub fn read_marks(path: &Path) -> Result<Vec<Retake>, String> {
-    textfmt::read_retakes(path)
 }
 
 /// The numbers this module's rules count with, exposed so a test can assert the parameter ids rather

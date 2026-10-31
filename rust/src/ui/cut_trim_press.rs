@@ -93,7 +93,7 @@ pub fn press_targets_at(
     // `seam` stands in for THAT row only. A row that WAS drawn answers only from the plate under x.
     let drawn = painted_bands(cut_, &filmed);
     let no_lane_row = cut_.lanes.is_empty();
-    match band_at(y, &drawn) {
+    match cut_trim::band_at(y, &drawn) {
         Band::Recorders => (
             lane_at_x(cut_, x, pps)
                 .or_else(|| no_lane_row.then(|| seam.map(str::to_string)).flatten()),
@@ -103,11 +103,6 @@ pub fn press_targets_at(
         Band::Wave => (None, wave_answer(cut_, &filmed, x, pps, seam), on_border),
         Band::Ruler | Band::Bar => (None, None, on_border),
     }
-}
-
-/// `cut_trim::band_at` over THIS strip's bands, so the page never passes the placeholder const by accident.
-fn band_at(y: f64, bands: &StripBands) -> Band {
-    cut_trim::band_at(y, bands)
 }
 
 /// The strip's bands as a PRESS must read them: like [`bands`] except that a press may only resolve a row that
@@ -190,7 +185,7 @@ pub(crate) fn press_move_scaled(
     let scene = if recorders_band.is_some()
         || wave_strip.is_some()
         || on_border
-        || press_falls_inside(window::selection(window).as_ref(), press_second)
+        || press_falls_inside(window::selection().as_ref(), press_second)
     {
         None
     } else {
@@ -218,7 +213,7 @@ fn press_move_core(
     let cut_ = MOVE_OPEN
         .with(|cell| cell.borrow().clone())
         .unwrap_or_else(window::newest_review_cut);
-    let band = window::selection(window);
+    let band = window::selection();
     let band_name = recorders_band
         .clone()
         // The shift lands on whichever recording the press took; a wave-strip press names it in `wave_strip`,
@@ -531,7 +526,7 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
                 .folds
                 .retain(|fold| !(fold[0] < span[1] && fold[1] > span[0]));
         }
-        crate::ui::window::seed_review_cut(window, &cut_open);
+        crate::ui::window::seed_review_cut(&cut_open);
         crate::ui::cut_folds::refresh_fold_badges(window);
         cut_ = cut_open;
     }
@@ -632,15 +627,14 @@ pub fn edge_second(index: usize, border: cut_trim::Border) -> f64 {
 /// `cut_play_back::cue_clips` (the leg the `NAIVEPOST_PLAYER` seam records). Answers whether anything was
 /// re-seeked: with no preview running there is no picture to scrub. The release calls this too, so the LAST
 /// edge always reaches the picture despite the [`crate::cut_trim::SCRUB_MS`] throttle.
-pub fn scrub_picture(window: &adw::ApplicationWindow, at_secs: f64) -> bool {
-    if !crate::ui::window::preview_player(window).transport.playing {
+pub fn scrub_picture(at_secs: f64) -> bool {
+    if !crate::ui::window::preview_player().transport.playing {
         return false;
     }
     if crate::cut_play_back::playing_pid().is_none() {
         return false;
     }
-    let files =
-        crate::ui::cut_record_play::files_for(window, &crate::ui::cut_record_play::runs_now());
+    let files = crate::ui::cut_record_play::files_for(&crate::ui::cut_record_play::runs_now());
     if files.is_empty() {
         return false;
     }
@@ -649,7 +643,7 @@ pub fn scrub_picture(window: &adw::ApplicationWindow, at_secs: f64) -> bool {
 }
 
 /// F2.8 S1 with the drag in hand remembered: `first` says whether THIS move is the hold's first, the only one
-/// that spends an Undo step (§7; [`cut_trim::pushes_undo`], `crate::cut_hand::picking_up`). Mid-drag updates
+/// that spends an Undo step (§7; [`cut_trim::pushes_undo`], `cut_rules::picking_up_edits`). Mid-drag updates
 /// write and persist the cut but leave history alone, so one ↶ takes back a whole drag.
 pub fn press_border_move(
     window: &adw::ApplicationWindow,
@@ -684,14 +678,14 @@ pub fn press_border_move(
         .get(index)
         .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
         .unwrap_or_default();
-    if crate::ui::cut_hand::picking_up(first) {
+    if crate::cut_rules::picking_up_edits(first) {
         window::record_edit(window, &cut_);
     } else {
         // The drag's own Undo step is amended.
         crate::ui::window_history_zoom::amend_edit(window, &cut_);
     }
     // S1: the picture follows the edge, at the second the cut now holds (a clamp may stop short of the pointer).
-    scrub_picture(window, edge_second(index, border));
+    scrub_picture(edge_second(index, border));
     if !status.is_empty() {
         if let Some(status_line) = window::find_status(window.upcast_ref()) {
             status_line.set_text(&status);

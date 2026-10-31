@@ -200,15 +200,10 @@ fn asr_db() -> f64 {
     crate::asr::QUIET_DB
 }
 
-/// S3: one chunk cut out of the decode, named by its index (the numbering [`crate::asr::part`] uses).
-pub fn chunk_name(index: usize) -> String {
-    crate::asr::part(index)
-}
-
 /// The chunk's file name as the split uses it: `lecture-c00.wav`, not `c00.wav`. The name lands in
 /// `requests.tsv`'s job column and the upload's filename header, so it must say which recording it is of.
 pub fn chunk_file(lane: &str, index: usize) -> String {
-    format!("{lane}-{}", chunk_name(index))
+    format!("{lane}-{}", crate::asr::part(index))
 }
 
 /// S3: cut `[from, to)` out of the decode. `-ss` before `-i` is [`crate::asr::cut_plan`]'s rule and exact

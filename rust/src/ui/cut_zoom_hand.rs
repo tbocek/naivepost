@@ -9,7 +9,7 @@ use crate::cut::Cut;
 use crate::fx_text;
 use crate::fx_zoom;
 use crate::ui::cut_preview_frame;
-use crate::ui::window::{self, record_edit, review_cut_of, selection, set_held_effect};
+use crate::ui::window::{self, record_edit, selection, set_held_effect};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pressed {
@@ -34,7 +34,7 @@ pub fn preview_press(
     if zoom_armed() {
         return Pressed::Silent;
     }
-    let cut_ = review_cut_of(win);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     // "a drag takes the zoom in force": the hand goes on the existing record so §F3.8's hold, grip and nudge work it. No write, no Undo step.
     if let Some(index) = box_under_pointer {
         if let Some(effect) = cut_.fx.get(index) {
@@ -46,7 +46,7 @@ pub fn preview_press(
             return Pressed::Held { status: said };
         }
     }
-    let paused = !window::preview_player(win).transport.playing;
+    let paused = !window::preview_player().transport.playing;
     match fx_zoom::preview_press(true, paused, true, None) {
         Some(fx_zoom::PressPreview::DrawsNew) => {}
         _ => return Pressed::Silent,
@@ -54,7 +54,7 @@ pub fn preview_press(
     let Some(drawn) = drawn else {
         return Pressed::Silent;
     };
-    let marked = marked_band_at(win, at);
+    let marked = marked_band_at(at);
     let form = fx_zoom::form_from_drag(
         drawn,
         PREVIEW_PANEL_W,
@@ -75,9 +75,9 @@ pub fn preview_press(
 
 /// F3.1, after S5: the release of a preview drag, the page's caller for [`preview_press`]; `at` is the second a zoom drawn there would run from. Returns the status sentence, or empty when this is not a framing question (playing, or under the floor), so the page falls back to its §S2 refusal.
 pub fn press_on_release(win: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) -> String {
-    let cut_ = review_cut_of(win);
-    let at = window::paste_line(win);
-    let fit = cut_preview_frame::fit_size_of(win, PREVIEW_PANEL_W, PREVIEW_PANEL_H);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
+    let at = crate::ui::cut_lane::paste_line();
+    let fit = cut_preview_frame::fit_size_of(PREVIEW_PANEL_W, PREVIEW_PANEL_H);
     let drawn = fx_zoom::free_rectangle(from, to);
     match preview_press(win, at, box_under_pointer(&cut_, at, fit, from), drawn) {
         Pressed::Silent => String::new(),
@@ -128,14 +128,14 @@ pub fn zoom_box_edit_on_release(
     from: (f64, f64),
     to: (f64, f64),
 ) -> Option<String> {
-    if zoom_armed() || window::held_effect().is_some() {
+    if zoom_armed() || crate::ui::cut_hand::held_effect().is_some() {
         return None;
     }
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
         return None;
     }
-    let cut_ = review_cut_of(window);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let index = box_under_pointer(&cut_, at, fit, from)?;
     let record = cut_.fx.get(index)?;
     let box_px = cut_preview_frame::camera_rect_px(&fx_zoom::rect_of(record), fit);
@@ -197,7 +197,7 @@ pub const PLATE_NAME: &str = "preview-zoom-plate";
 
 /// F3.1 §2 (`rect stroked white WITH A PLATE`): the zoom's plate beside the box, worded by `fx_zoom::zoom_plate`. Built once into the panel's overlay stack and reused (a plate per refresh trips `gtk_box_append`'s parent assertion). Returns whether a plate is showing.
 pub fn settle_plate(win: &adw::ApplicationWindow, at: f64) -> bool {
-    let cut_ = crate::ui::review_cut_of(win);
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let Some(effect) = cut_
         .fx
         .iter()
@@ -220,7 +220,6 @@ pub fn settle_plate(win: &adw::ApplicationWindow, at: f64) -> bool {
     plate.set_label(&text);
     // Beside the box, clamped onto the panel so a full-frame zoom cannot push the plate off the right edge.
     let fit = cut_preview_frame::fit_size_of(
-        win,
         crate::ui::window::PREVIEW_PANEL_W,
         crate::ui::window::PREVIEW_PANEL_H,
     );
@@ -280,8 +279,8 @@ fn hide_plate(win: &adw::ApplicationWindow) {
 }
 
 /// The marked stretch covering `at` (as §S3's default length): a marked band outranks the line. Asked through `window::selection`, as §F3.3's speed press does.
-fn marked_band_at(win: &adw::ApplicationWindow, at: f64) -> Option<(f64, f64)> {
-    let band = selection(win)?;
+fn marked_band_at(at: f64) -> Option<(f64, f64)> {
+    let band = selection()?;
     if band.start <= at && at < band.end {
         return Some((band.start, band.end));
     }
@@ -317,7 +316,7 @@ pub fn press_zoom_item(window: &adw::ApplicationWindow) -> String {
     let known = ZOOM_LINE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
         || crate::ui::window::INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
     let line = if known {
-        Some(ui::paste_line(window))
+        Some(crate::ui::cut_lane::paste_line())
     } else {
         None
     };
@@ -378,7 +377,7 @@ pub fn zoom_drag_ended_with_source(
     source: (f64, f64),
 ) -> String {
     if !zoom_armed() {
-        if ui::held_effect().is_some() {
+        if crate::ui::cut_hand::held_effect().is_some() {
             return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
         }
         let threshold = f64::from(window.settings().gtk_dnd_drag_threshold());
@@ -403,8 +402,8 @@ pub fn zoom_drag_ended_with_source(
             fx_zoom::DRAG_MIN_PX
         );
     }
-    let at = ui::paste_line(window);
-    let cut_ = review_cut_of(window);
+    let at = crate::ui::cut_lane::paste_line();
+    let cut_ = crate::ui::window_preview::newest_review_cut();
     let box_ = match fx_zoom::free_rectangle(from, to) {
         Some(box_) => box_,
         None => return "too small to zoom \u{2014} a box has to be at least {:.0} px".to_string(),
@@ -604,7 +603,7 @@ pub fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
     // §A's pinned heading names the open form and carries its ✕, as for the insert form.
     crate::ui::cut_form_frame::set_pinned(
         window,
-        crate::ui::cut_form_frame::open_form_title(window).as_deref(),
+        crate::ui::cut_form_frame::open_form_title().as_deref(),
     );
 }
 
@@ -693,9 +692,8 @@ thread_local! {
 }
 
 /// F3.1 S2: the box's size in the picture's pixels. The panel is pinned at [`PREVIEW_PANEL_W`] x [`PREVIEW_PANEL_H`] but only `set_halign(Start)`, so GTK reports a natural size far larger (1815 x 1809 measured) and an unrealized width of 0. The pin IS the answer; never `natural.max(...)`, which would hand back an hf at the clamp floor.
-pub fn preview_picture_px(window: &adw::ApplicationWindow) -> (f64, f64) {
+pub fn preview_picture_px() -> (f64, f64) {
     // Always the PINNED frame, never the realized allocation: it differs between an isolated test (135 px) and a loaded suite (~2000 px), putting hf on the clamp depending on scheduler luck.
-    let _ = window;
     (PREVIEW_PANEL_W, PREVIEW_PANEL_H)
 }
 
@@ -719,6 +717,6 @@ pub fn zoom_drag_ended(
     from: (f64, f64),
     to: (f64, f64),
 ) -> String {
-    let source = preview_picture_px(window);
+    let source = preview_picture_px();
     zoom_drag_ended_with_source(window, from, to, source)
 }

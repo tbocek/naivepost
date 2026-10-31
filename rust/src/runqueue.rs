@@ -270,18 +270,13 @@ pub fn bump_cancel_context(bar: &mut RunBar) -> u64 {
     }
     bar.cancelled = false;
     // Open the matching [`crate::cancel_leg`] switch at the SAME generation, so a leg that captured this epoch is cancellable by the next ⏹ only.
-    cancel_switch(cancel_epoch(bar));
+    crate::cancel_leg::reset_to(cancel_epoch(bar));
     bar.run_epoch
 }
 
 /// The generation of the cancel context a leg rides; a flow hands it to [`crate::cancel_leg::cancel_check`] at request start so a stop cancels THIS run's legs only (F0.5 S1).
 pub fn cancel_epoch(bar: &RunBar) -> u64 {
     bar.run_epoch
-}
-
-/// Keep the shared cancel switch on the bar's epoch counter, so [`crate::cancel_leg::cancelled_at`] means what [`is_cancelled`] means.
-pub fn cancel_switch(epoch: u64) {
-    crate::cancel_leg::reset_to(epoch);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

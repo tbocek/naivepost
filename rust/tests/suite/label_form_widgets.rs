@@ -131,7 +131,7 @@ fn label_round(app: &adw::Application) {
         );
         assert!(ui::label_form_open().is_none(), "no form is held either");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "the generic `fx_record::record_into` path must be unreachable for Label: a refused press adds no \
              record, least of all an unnamed one"
         );
@@ -307,7 +307,7 @@ fn label_round(app: &adw::Application) {
         );
         assert!(form_visible(&window), "still on screen, still editable");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "\"nothing is placed until then\" means NOTHING"
         );
 
@@ -320,7 +320,7 @@ fn label_round(app: &adw::Application) {
             "spaces are trimmed away and leave no name"
         );
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "and still nothing was placed"
         );
         RAN_NO_NAME.store(true, Ordering::SeqCst);
@@ -354,7 +354,7 @@ fn label_round(app: &adw::Application) {
             "the name was not thrown away"
         );
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "and it wrote nothing"
         );
         RAN_FLOOR.store(true, Ordering::SeqCst);
@@ -367,7 +367,7 @@ fn label_round(app: &adw::Application) {
         entry(&window, "label-field-name").set_text("the reveal");
         entry(&window, "label-field-length").set_text("3");
         click(&window, "label-apply-button");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(cut_.fx.len(), 1, "Apply put exactly one mark on the cut");
         let fx = &cut_.fx[0];
         assert_eq!(fx.kind, "label");
@@ -414,7 +414,7 @@ fn label_round(app: &adw::Application) {
         // F2.13's ↶: the mark went on the history via `record_edit`, never `seed_review_cut`.
         click(&window, "undo-button");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "one ↶ takes the whole mark back"
         );
         RAN_APPLY_UNDO.store(true, Ordering::SeqCst);
@@ -461,7 +461,7 @@ fn label_round(app: &adw::Application) {
         );
         assert!(!form_visible(&window), "and hid the holder");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "Cancel records nothing"
         );
         assert_eq!(

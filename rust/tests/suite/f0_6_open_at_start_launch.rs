@@ -237,13 +237,13 @@ fn launch_round() {
 
 /// Fold what the window shows into the slot for the launch that just ran.
 fn remember_sources(id: usize, app: &adw::Application, paths: &Paths) {
-    let window = app
+    let _window = app
         .active_window()
         .or_else(|| app.windows().first().cloned())
         .expect("the launch presented a window")
         .downcast::<adw::ApplicationWindow>()
         .expect("an adwaita window");
-    let sources = ui::session_sources(&window);
+    let sources = ui::session_sources();
     record(id, |slot| slot.sources = sources);
     capture(id, paths);
     // The window stays open on purpose: closing it would end the round before the later scenarios run.

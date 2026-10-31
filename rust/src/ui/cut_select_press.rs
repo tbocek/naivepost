@@ -31,9 +31,9 @@ pub struct Geometry {
 impl Geometry {
     /// The live page's geometry: the zoom and scroll the band paints with, the row count the cut says, and
     /// the lane depth the lane paints with.
-    pub fn of(window: &adw::ApplicationWindow) -> Self {
+    pub fn of() -> Self {
         let cut_ = ui::newest_review_cut();
-        let scene = cut_view::band_scene_for(window);
+        let scene = cut_view::band_scene_for();
         Geometry {
             pps: scene.pps,
             origin: scene.origin,
@@ -234,14 +234,14 @@ fn held_drag() -> Option<Drag> {
 
 /// S1/S2 at drag-begin: decide the scope or the grabbed part, and handle the effects lane there and once.
 pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
-    let scene = crate::ui::cut_view::band_scene_for(window);
+    let scene = crate::ui::cut_view::band_scene_for();
     let rows = crate::ui::cut_tracks::rows_for_press(&scene);
     if crate::ui::cut_band_marks::mark_at(&scene, rows, x_px, y_px).is_some() {
         *current_drag().borrow_mut() = None;
         return Press::Click;
     }
-    let geo = Geometry::of(window);
-    let held = ui::selection(window);
+    let geo = Geometry::of();
+    let held = ui::selection();
     let press = press_at(&geo, x_px, y_px, held.as_ref());
     match &press {
         Press::Draws { from, surface } => {
@@ -261,7 +261,7 @@ pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
         Press::Adjusts { part } => {
             *current_drag().borrow_mut() = Some(Drag {
                 from: held.map(|band| band.start).unwrap_or(0.0),
-                surface: ui::selection_surface(window),
+                surface: ui::selection_surface(),
                 part: Some(*part),
                 start_x: x_px,
             });
@@ -287,7 +287,7 @@ pub fn update(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) {
     if !cut_select::is_drag((x_px - drag.start_x).abs()) {
         return;
     }
-    let geo = Geometry::of(window);
+    let geo = Geometry::of();
     let at = geo.second_at(x_px);
     if let Some(part) = drag.part {
         ui::nudge_selection(window, part, at, geo.pps);
@@ -308,13 +308,9 @@ pub fn end(window: &adw::ApplicationWindow) {
 }
 
 /// The recording name a wave-strip or lane selection is scoped to.
-pub fn recording_for_surface(
-    window: &adw::ApplicationWindow,
-    surface: Surface,
-    y_px: f64,
-) -> Option<String> {
+pub fn recording_for_surface(surface: Surface, y_px: f64) -> Option<String> {
     let cut_ = ui::newest_review_cut();
-    sound_scope(&Geometry::of(window), surface, &cut_, y_px)
+    sound_scope(&Geometry::of(), surface, &cut_, y_px)
 }
 
 /// Attach this window's selection drag to the PAINTED band and store it for a test to fire.
@@ -360,9 +356,6 @@ thread_local! {
 }
 
 /// The PAINTED band's selection gesture ([`attach`]), for a test that fires it the way GTK does.
-pub fn band_selection_gesture_for_test(
-    window: &adw::ApplicationWindow,
-) -> Option<gtk::GestureDrag> {
-    let _ = window;
+pub fn band_selection_gesture_for_test() -> Option<gtk::GestureDrag> {
     BAND_SELECT_GESTURES.with(|cell| cell.borrow().clone())
 }

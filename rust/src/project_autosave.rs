@@ -38,7 +38,7 @@ thread_local! {
 }
 
 /// The newest slot, created empty on first use so `start` always has somewhere to put a session.
-fn newest_slot() -> Rc<RefCell<Ticker>> {
+pub fn newest_slot() -> Rc<RefCell<Ticker>> {
     SLOTS.with(|slots| {
         let mut slots = slots.borrow_mut();
         if let Some(slot) = slots.last() {
@@ -56,12 +56,6 @@ pub fn slot_for_test(session: &Rc<RefCell<Project>>, dir: &Path) -> Rc<RefCell<T
         dir: dir.to_path_buf(),
         autosave: project::Autosave::new(),
     }))
-}
-
-/// The working copy's folder: `session.naivepost` beside the working root, the same stand-in Rescan,
-/// New, Save and the tab-switch flush use, so every flow agrees on where the session lives (§1).
-pub fn session_dir() -> PathBuf {
-    crate::startup::open_dir()
 }
 
 pub fn write_session_now(project: &Project, dir: &Path) -> bool {
@@ -133,12 +127,6 @@ pub fn flush_on_close(project: &Project, dir: &Path) -> bool {
             false
         }
     }
-}
-
-/// The newest slot, the one `install` and every flow write go through — named `_for_test` because only
-/// a test reads it back; the program reaches it through `tick`'s own timeout.
-pub fn newest_slot_for_test() -> Rc<RefCell<Ticker>> {
-    newest_slot()
 }
 
 pub fn install(session: Session, dir: PathBuf) {

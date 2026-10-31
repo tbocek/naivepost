@@ -44,7 +44,7 @@ fn project(root: &Path) -> std::path::PathBuf {
     .unwrap();
     // A built reference of 3 s: the band must not take its seconds from this.
     let tree = naivepost::layout::Tree::new(&dir).unwrap();
-    let reference = naivepost::narrate_data::base_reference(&tree);
+    let reference = tree.voice_ref_base_wav();
     std::fs::create_dir_all(reference.parent().unwrap()).unwrap();
     let wav = Command::new("ffmpeg")
         .args([

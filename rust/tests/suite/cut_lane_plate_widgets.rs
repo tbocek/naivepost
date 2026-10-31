@@ -63,10 +63,10 @@ fn check_the_live_band_scene_carries_the_lane_plate(app: &adw::Application) {
         off: 0.0,
         dur: 45.0,
     });
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     settle();
 
-    let scene = ui::cut_view::band_scene_for(&window);
+    let scene = ui::cut_view::band_scene_for();
     assert_eq!(
         scene.lanes.len(),
         1,

@@ -49,11 +49,11 @@ fn speeds_round(app: &adw::Application) {
     // F3.10 has no control: it is a job of the run after the cut, so the door `run_after_cut` walks is what
     // is driven here.
     let window = cut_page(app, &common::three_clips_cut());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let started = ui::run_speeds_pass(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "with no proposal from the model no rate is invented into the cut"
     );
@@ -69,7 +69,7 @@ fn speeds_round(app: &adw::Application) {
 
     // --- (2) placed / refused / ignored, all three branches, through the SAME route --------------
     let window = cut_page(app, &three_clips_captioned());
-    let seeded_fx = ui::review_cut_of(&window).fx.len();
+    let seeded_fx = ui::window_preview::newest_review_cut().fx.len();
     let calls = [
         Call { clip: 1, rate: 2.0 },
         // Clip 3 carries a caption: a fast rate over it is REFUSED per call, and the reason MUST be said.
@@ -78,7 +78,7 @@ fn speeds_round(app: &adw::Application) {
         Call { clip: 2, rate: 1.0 },
     ];
     let said = ui::run_speeds_pass_with_reply(&window, &calls);
-    let fx: Vec<Fx> = ui::review_cut_of(&window).fx.clone();
+    let fx: Vec<Fx> = ui::window_preview::newest_review_cut().fx.clone();
     let added: Vec<&Fx> = fx.iter().skip(seeded_fx).collect();
     assert_eq!(
         added.len(),
@@ -138,7 +138,7 @@ fn speeds_round(app: &adw::Application) {
     let window = cut_page(app, &gap_cut);
     let calls = [Call { clip: 1, rate: 2.0 }, Call { clip: 3, rate: 2.0 }];
     let _ = ui::run_speeds_pass_with_reply(&window, &calls);
-    let after: Vec<Fx> = ui::review_cut_of(&window).fx.clone();
+    let after: Vec<Fx> = ui::window_preview::newest_review_cut().fx.clone();
     let placed_now: Vec<Fx> = after.into_iter().filter(|e| e.kind == "speed").collect();
     // Raw, unmerged, the two runs start 13 s apart and each is 10 s long, so the second begins 3 s after the
     // first ends -- inside the gap.
@@ -194,13 +194,17 @@ fn speeds_round(app: &adw::Application) {
     // No control greys out any more — F3.10 is a job of the run after the cut, not a button — so what the
     // switch owns is the refusal itself, the same predicate `cut_suggest_passes::order` filters on.
     let window = cut_page(app, &common::three_clips_cut());
-    ui::set_speeds_pass_for_test(&window, false);
+    ui::set_speeds_pass_for_test(false);
     let refused = ui::run_speeds_pass(&window);
     assert!(
         refused.contains("off"),
         "the pass itself refuses, got {refused}"
     );
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "and places nothing");
+    assert_eq!(
+        ui::window_preview::newest_review_cut().fx.len(),
+        0,
+        "and places nothing"
+    );
     // Also with a scripted reply: the gate is checked in the shared body, so no door gets around it.
     let still_refused = ui::run_speeds_pass_with_reply(&window, &[Call { clip: 1, rate: 3.0 }]);
     assert!(
@@ -208,7 +212,7 @@ fn speeds_round(app: &adw::Application) {
         "nor does the with_reply seam, got {still_refused}"
     );
     // An off switch refuses every door into the pass, so the state check is that both still say "off".
-    ui::set_speeds_pass_for_test(&window, true);
+    ui::set_speeds_pass_for_test(true);
     let reopened = ui::run_speeds_pass_with_reply(&window, &[Call { clip: 1, rate: 3.0 }]);
     assert!(
         !reopened.contains("off"),
@@ -231,7 +235,7 @@ fn speeds_round(app: &adw::Application) {
     // ADJACENT clips at DIFFERENT rates are two decisions and do not merge (§F3.10's rule as written in
     // `merge`: only same-rate stretches fold), so both are on the lane before the undo.
     assert_eq!(
-        ui::review_cut_of(&window)
+        ui::window_preview::newest_review_cut()
             .fx
             .iter()
             .filter(|e| e.kind == "speed")
@@ -242,7 +246,7 @@ fn speeds_round(app: &adw::Application) {
     ui::press_undo(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "one ↶ undoes the whole pass -- it went through record_edit, not seed_review_cut"
     );
@@ -270,7 +274,7 @@ fn speeds_round(app: &adw::Application) {
         "EM dash and all, matching the spec's bytes"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "an unusable reply changes nothing -- a cut at 1x is a cut, not a failed run"
     );

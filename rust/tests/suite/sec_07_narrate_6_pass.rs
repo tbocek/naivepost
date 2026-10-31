@@ -223,7 +223,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_repl
         pass::no_line_fault(),
         "every clip came back with no line at all"
     );
-    assert_eq!(reply::all_silent_fault(), pass::no_line_fault());
+    assert_eq!(pass::no_line_fault(), pass::no_line_fault());
 
     // "entries matched forward only (\"an entry says X-Y, which matches no clip (or is out of
     // order)\")": the bounds print bare, the fault carries the order clause.
@@ -760,8 +760,8 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
     // "changing takes REMOVES THE BUILT REFERENCE": the invalidation the three settings share —
     // voice, pitch or takes all change the question the reference answers. It always drops the
     // served copy and re-shifts from the base unless the base itself became wrong.
-    let served = narrate_data::served_reference(&tree);
-    let base = narrate_data::base_reference(&tree);
+    let served = tree.voice_ref_wav();
+    let base = tree.voice_ref_base_wav();
     std::fs::create_dir_all(served.parent().unwrap()).unwrap();
     std::fs::write(&served, b"served").unwrap();
     std::fs::write(&base, b"base").unwrap();

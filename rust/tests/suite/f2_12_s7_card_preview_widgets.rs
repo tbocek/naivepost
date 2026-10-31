@@ -66,7 +66,7 @@ fn cut_page(app: &adw::Application, seeded: &cut::Cut) -> adw::ApplicationWindow
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     // The snapshot bench's own door for a folder: the copied fixture, a real `.naivepost` folder on disk,
     // so the card's frames land beside a real session rather than in a bare temp directory.
     ui::cut_picture::set_snapshot_dir(project_dir());

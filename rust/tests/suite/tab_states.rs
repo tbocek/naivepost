@@ -28,31 +28,28 @@ fn project(footage: bool) -> Project {
 fn sec_11_flow_index_2_tab_states_s1_three_tabs_open_always_and_cut_waits_for_footage() {
     assert_eq!(ITEM, "§11-flow-index#2-tab-states");
     // Prepare: "always" — it is where the sources get added, so an empty project must open it.
+    assert_eq!(shell::lock(shell::Page::Prepare, &Project::default()), None);
     assert_eq!(
-        tab_states::opens(shell::Page::Prepare, &Project::default()),
-        None
-    );
-    assert_eq!(
-        tab_states::opens(shell::Page::Prepare, &project(false)),
+        shell::lock(shell::Page::Prepare, &project(false)),
         None,
         "Prepare opens with nothing filmed"
     );
 
     // Cut: "once a source is footage", and the reason names where to go.
     let no_footage = project(false);
-    let reason = tab_states::opens(shell::Page::Cut, &no_footage).expect("Cut waits for footage");
+    let reason = shell::lock(shell::Page::Cut, &no_footage).expect("Cut waits for footage");
     assert_eq!(reason, shell::CUT_LOCK);
     assert!(
         reason.contains("Add footage on the Prepare step first"),
         "the bounce says where the footage goes: {reason}"
     );
-    assert_eq!(tab_states::opens(shell::Page::Cut, &project(true)), None);
+    assert_eq!(shell::lock(shell::Page::Cut, &project(true)), None);
 
     // Narrate and Produce: "always" — with footage or without.
     for page in [shell::Page::Narrate, shell::Page::Produce] {
         for footage in [false, true] {
             assert_eq!(
-                tab_states::opens(page, &project(footage)),
+                shell::lock(page, &project(footage)),
                 None,
                 "{} opens whatever the state",
                 page.label()
@@ -148,7 +145,7 @@ fn sec_11_flow_index_2_tab_states_s3_cut_runs_suggest_until_the_preview_starts_t
 
     // The two columns stay separate: a Cut page with no footage is refused at the TAB level, not by
     // ▶ — `play` has nothing to say about footage, because the tab was never entered.
-    assert!(tab_states::opens(shell::Page::Cut, &project(false)).is_some());
+    assert!(shell::lock(shell::Page::Cut, &project(false)).is_some());
     assert_eq!(
         tab_states::play(shell::Page::Cut, false, run::Transport::default()).1,
         None,

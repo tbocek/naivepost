@@ -15,7 +15,7 @@ pub fn on_play(
     }
     let answer = crate::ui::cut_suggest_land::suggest_press(
         window,
-        &crate::ui::window::session_policy(window),
+        &crate::ui::window_policy::live_session_policy(),
         busy,
     );
     if answer.refused {

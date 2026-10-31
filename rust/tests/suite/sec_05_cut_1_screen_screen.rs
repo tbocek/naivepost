@@ -93,7 +93,7 @@ fn cut_page_with_a_lane(app: &adw::Application) -> adw::ApplicationWindow {
         }],
         ..Default::default()
     };
-    naivepost::ui::seed_review_cut(&window, &seeded);
+    naivepost::ui::seed_review_cut(&seeded);
     naivepost::ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     settle();
     // …and the page redraws once more now that it HAS a cut: `cut_view::repaint_page` is what grows the band's
@@ -199,7 +199,7 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
         let _ = origin;
         edges_in(&window.clone().upcast::<gtk::Widget>(), widget)
     };
-    let scene = naivepost::ui::cut_view::band_scene_for(&window);
+    let scene = naivepost::ui::cut_view::band_scene_for();
     assert!(
         !scene.lanes.is_empty(),
         "the seeded lane reached the band's scene"
@@ -308,7 +308,7 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
 
 /// Badge **31**, BOTH branches of §A's rule ("hidden when everything fits"), plus the gearing
 /// (§B: "thumb geared at high zoom so one screenful is always 40 px of drag"). Driven through the
-/// page's own zoom door `press_zoom`, which ends in `repaint_scrollbar` → `cut_view::refresh_page_scrollbar`.
+/// page's own zoom door `press_zoom`, which ends in `cut_view::refresh_page_scrollbar` → `cut_view::refresh_page_scrollbar`.
 fn check_the_scrollbar_shows_and_hides(app: &adw::Application) {
     let window = cut_page_with_a_lane(app);
     let bar = common::find_named(&window, "track-scrollbar")

@@ -99,7 +99,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         off: 0.0,
         dur: 30.0,
     }];
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     ui::refresh_camera_rows(&window);
     settle();
     window
@@ -109,19 +109,19 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// press on the band there mutes both scenes, leaves the lane's `quiet` alone and says so on the status line.
 fn check_the_row_switch_is_pressed_in_the_gutter(app: &adw::Application) {
     let window = cut_window(app);
-    let switch = |window: &adw::ApplicationWindow| {
-        ui::cut_band_marks::placed_on(window)
+    let switch = || {
+        ui::cut_band_marks::placed_on()
             .into_iter()
             .find(|placed| matches!(placed.mark, ui::cut_band_marks::Mark::RowSound(0, _)))
             .expect("row 1's sound switch is drawn on the band")
     };
-    let at = switch(&window);
+    let at = switch();
     assert_eq!(
         at.mark,
         ui::cut_band_marks::Mark::RowSound(0, true),
         "the row's sound plays at first, so the switch stands ON"
     );
-    let strip = ui::cut_tracks::row_wave_top(&window, 0);
+    let strip = ui::cut_tracks::row_wave_top(0);
     assert!(
         at.x < naivepost::cut_screen::GUTTER_PX,
         "the switch sits in the gutter, x = {}",
@@ -134,10 +134,10 @@ fn check_the_row_switch_is_pressed_in_the_gutter(app: &adw::Application) {
     );
 
     // A real press on the band where the switch is drawn, through the band's own click gesture.
-    let gesture = ui::window::band_line_gesture_for_test(&window).expect("the band takes clicks");
+    let gesture = ui::window::band_line_gesture_for_test().expect("the band takes clicks");
     gesture.emit_by_name::<()>("released", &[&1i32, &at.x, &at.y]);
     settle();
-    let segs = ui::review_cut_segs(&window);
+    let segs = ui::review_cut_segs();
     assert!(
         segs.iter().all(|seg| seg.mute),
         "every scene from the row is muted: {segs:?}"
@@ -152,7 +152,7 @@ fn check_the_row_switch_is_pressed_in_the_gutter(app: &adw::Application) {
         status_text(&window)
     );
     assert_eq!(
-        switch(&window).mark,
+        switch().mark,
         ui::cut_band_marks::Mark::RowSound(0, false),
         "and the switch reads OFF"
     );

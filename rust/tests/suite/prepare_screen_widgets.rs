@@ -409,14 +409,11 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         "lecture.mkv is not a split product, so the toggle answers"
     );
     assert!(separate.is_sensitive(), "and it is live on this row");
-    assert!(
-        !session_of(&window).borrow().sources[0].sepvoice,
-        "it starts off"
-    );
+    assert!(!session_of().borrow().sources[0].sepvoice, "it starts off");
     separate.emit_clicked();
     settle();
     assert!(
-        session_of(&window).borrow().sources[0].sepvoice,
+        session_of().borrow().sources[0].sepvoice,
         "pressing it wrote Source::sepvoice on the session the window holds"
     );
 
@@ -726,10 +723,8 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 }
 
 /// The window's own session — the state every row press writes through.
-fn session_of(
-    window: &adw::ApplicationWindow,
-) -> std::rc::Rc<std::cell::RefCell<naivepost::project::Project>> {
-    ui::session_handle(window)
+fn session_of() -> std::rc::Rc<std::cell::RefCell<naivepost::project::Project>> {
+    ui::session_handle()
 }
 
 /// The window's own settings folder, the one its bench writes into.

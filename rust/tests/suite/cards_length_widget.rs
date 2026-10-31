@@ -54,7 +54,7 @@ fn cut_page(
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     ui::set_session_recordings(tape);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     ui::set_held_clip(None);
     ui::clear_selection(&window);
     ui::note_place(false);
@@ -202,7 +202,7 @@ fn apply_says_what_the_logic_would_say(app: &adw::Application) {
     button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
-    let after = cut_of(&window);
+    let after = cut_of();
     let placed: &Seg = after
         .segs
         .iter()
@@ -258,7 +258,7 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
     field_entry(&window, "insert-field-title").set_text("Best maps");
     button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
     settle();
-    let placed = cut_of(&window)
+    let placed = cut_of()
         .segs
         .into_iter()
         .find(|seg| seg.is_insert())
@@ -320,7 +320,7 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
     settle();
     button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
     settle();
-    let bare = cut_of(&window)
+    let bare = cut_of()
         .segs
         .into_iter()
         .find(|seg| seg.is_insert())
@@ -423,10 +423,10 @@ fn all_names(root: &gtk::Widget) -> Vec<String> {
 }
 
 /// This window's cut as a whole, so its length is measured the way the page measures it.
-fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
+fn cut_of() -> cut::Cut {
     cut::Cut {
-        segs: ui::review_cut_segs(window),
-        lanes: ui::review_lanes(window),
+        segs: ui::review_cut_segs(),
+        lanes: ui::review_lanes(),
         ..Default::default()
     }
 }

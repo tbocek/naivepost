@@ -227,12 +227,12 @@ fn f2_14_s2b_target_window_present_and_absent() {
     // P.policy.targetLengthSeconds
     assert!(suggest::has_target(300.0));
     assert_eq!(
-        suggest::target_window(300.0),
+        cutpass::footage_window(300.0),
         cutpass::footage_window(300.0)
     );
     assert!(!suggest::has_target(0.0));
     assert_eq!(
-        suggest::target_window(0.0),
+        cutpass::footage_window(0.0),
         (0.0, 0.0),
         "no target collapses the window"
     );
@@ -247,8 +247,8 @@ fn f2_14_s2b_the_target_block_spells_both_forms() {
         with,
         format!(
             "KEEP between {} and {} seconds of footage, in at most {} segments.",
-            cutpass::clock(suggest::target_window(300.0).0),
-            cutpass::clock(suggest::target_window(300.0).1),
+            tools::mm_ss(cutpass::footage_window(300.0).0),
+            tools::mm_ss(cutpass::footage_window(300.0).1),
             cutpass::max_segments(300.0)
         )
     );
@@ -339,9 +339,9 @@ fn f2_14_s2b_the_words_mode_never_offers_the_model_cut() {
 #[test]
 fn f2_14_s2b_three_attempts_then_it_stops() {
     // P.eng.llmAttempts 3
-    assert!(!suggest::attempts_exhausted(1));
-    assert!(!suggest::attempts_exhausted(2));
-    assert!(suggest::attempts_exhausted(3));
+    assert!(!naivepost::roles::cut_attempts_exhausted(1));
+    assert!(!naivepost::roles::cut_attempts_exhausted(2));
+    assert!(naivepost::roles::cut_attempts_exhausted(3));
     assert_eq!(suggest::NO_VALID_CUT, "no valid cut after 3 attempts");
 }
 

@@ -129,21 +129,21 @@ fn check_exactly_one_preview_is_lit(window: &adw::ApplicationWindow) {
         [true, false, false],
         "the page opens on the recording, so \u{25b6} is lit"
     );
-    ui::set_preview_state(window, true, false, Default::default());
+    ui::set_preview_state(true, false, Default::default());
     ui::cut_record_play::light_lit(window);
     assert_eq!(
         all(),
         [false, true, false],
         "under \u{2702} the cut's \u{25b6} is lit"
     );
-    ui::set_preview_state(window, true, true, Default::default());
+    ui::set_preview_state(true, true, Default::default());
     ui::cut_record_play::light_lit(window);
     assert_eq!(
         all(),
         [false, false, true],
         "a review lights \u{25b6}\u{2702}\u{2702}"
     );
-    ui::set_preview_state(window, false, false, Default::default());
+    ui::set_preview_state(false, false, Default::default());
     ui::cut_record_play::light_lit(window);
     assert_eq!(all(), [true, false, false], "and back");
 }
@@ -180,10 +180,10 @@ fn check_play_and_pause_faces_are_one_size(window: &adw::ApplicationWindow) {
             playing,
             started: true,
         };
-        ui::set_preview_state(window, cut_only, reviewing, transport(false));
+        ui::set_preview_state(cut_only, reviewing, transport(false));
         paint();
         let resting = size(name);
-        ui::set_preview_state(window, cut_only, reviewing, transport(true));
+        ui::set_preview_state(cut_only, reviewing, transport(true));
         paint();
         assert!(
             face(name).starts_with('\u{23f8}'),
@@ -212,7 +212,7 @@ fn check_play_and_pause_faces_are_one_size(window: &adw::ApplicationWindow) {
             );
         }
     }
-    ui::set_preview_state(window, false, false, Default::default());
+    ui::set_preview_state(false, false, Default::default());
     paint();
 }
 

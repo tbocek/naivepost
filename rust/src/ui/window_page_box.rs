@@ -31,7 +31,7 @@ use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
 use crate::ui::source_rows;
 use crate::ui::window::{press_effect_item, session_reads, STRIP_HEIGHT, STRIP_WIDTH};
-use crate::ui::window_bench::{bench_box, bench_paths};
+use crate::ui::window_bench::bench_box;
 use crate::ui::window_doors::find_widget_by_name;
 use crate::ui::window_policy::main_window;
 use crate::ui::window_project::{ADD_LABEL, COPY_LABEL};
@@ -119,7 +119,7 @@ pub(crate) fn page_box(
         left.set_hexpand(true);
         left.set_hexpand_set(true);
 
-        let (heading, bench_scroller) = bench_box(session, &bench_paths());
+        let (heading, bench_scroller) = bench_box(session, &crate::settings::from_environment());
         let right = gtk::Box::new(gtk::Orientation::Vertical, 6);
         right.set_widget_name("prepare-right");
         right.set_vexpand(true);
@@ -336,15 +336,13 @@ pub(crate) fn page_box(
         )));
         box_.insert_child_after(&surface_group, Some(&previous));
         previous = surface_group.upcast();
-        // §05-cut#1-screen: `cut_tracks::install` builds the band, the red playhead layer and the scrollbar; draw
-        // callbacks outlive this call, hence the clone.
-        let held = window.clone();
+        // §05-cut#1-screen: `cut_tracks::install` builds the band, the red playhead layer and the scrollbar.
         // Frames come from the folder the WINDOW works on, or in a headless shot the bench's fixture (`cut_picture::snapshot_frame_tree`).
         previous = cut_tracks::install(
             window,
             &box_,
             &previous,
-            move || crate::ui::cut_view::band_scene_for(&held),
+            move || crate::ui::cut_view::band_scene_for(),
             || crate::ui::cut_picture::snapshot_frame_tree().or_else(|| session_reads().0),
         )
         .upcast();
@@ -469,7 +467,7 @@ pub(crate) fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
             {
                 popover.popdown();
             }
-            let Some(kind) = cut::Fx::parse_kind(&kind_id) else {
+            let Some(kind) = cut::EffectKind::parse(&kind_id) else {
                 return;
             };
             let say = press_effect_item(&owner, kind);

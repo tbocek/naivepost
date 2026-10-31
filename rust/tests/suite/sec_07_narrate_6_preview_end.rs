@@ -174,7 +174,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
         }
     };
     let spawn: &mut Spawn = &mut spawn_fn;
-    let said = leg::start_running(&session.tree, &cut, &entries, 0.0, 1.0, 1.0, spawn)
+    let said = leg::start_running(&session.tree, &cut, 0.0, 1.0, 1.0, spawn)
         .expect("the preview starts over the session's own footage");
     assert!(said.contains("playing"), "started: {said}");
     let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, spawn);
@@ -270,7 +270,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
         }
     };
     let spawn: &mut Spawn = &mut spawn_fn;
-    let said = leg::start_running(&session.tree, &cut, &entries, 0.0, 1.0, 1.0, spawn)
+    let said = leg::start_running(&session.tree, &cut, 0.0, 1.0, 1.0, spawn)
         .expect("the preview starts over the session's own footage");
     assert!(said.contains("playing"), "started: {said}");
     // The take needs the voice player to appear, and it only does once the tick walks into the line.

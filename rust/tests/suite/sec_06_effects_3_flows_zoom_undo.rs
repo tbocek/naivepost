@@ -59,8 +59,8 @@ fn pin_cwd(tag: &str) {
 }
 
 /// How many zoom records the page's cut holds right now.
-fn zoom_count(window: &adw::ApplicationWindow) -> usize {
-    ui::review_cut_of(window)
+fn zoom_count() -> usize {
+    ui::window_preview::newest_review_cut()
         .fx
         .iter()
         .filter(|effect| effect.kind == "zoom")
@@ -75,8 +75,8 @@ fn nothing_behind_undo(window: &adw::ApplicationWindow) -> bool {
 /// Fire the preview panel's own drag the way the toolkit does (`zoom_drag_widgets.rs`'s recipe): begin at the
 /// press position, then release with the OFFSET that signal carries — GTK's state machine has no event sequence
 /// behind an emitted signal, so both go in one go with no `settle()` between them.
-fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
-    let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+fn drag_panel(from: (f64, f64), to: (f64, f64)) {
+    let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
@@ -116,7 +116,7 @@ fn open_zoom_form(app: &adw::Application, tag: &str) -> adw::ApplicationWindow {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 81.0 });
     let said = ui::press_zoom_item(&window);
     assert!(ui::zoom_armed(), "⊕ Zoom did not arm -- {said}");
-    drag_panel(&window, (90.0, 70.0), (40.0, 30.0));
+    drag_panel((90.0, 70.0), (40.0, 30.0));
     let form = ui::zoom_form_open().expect("the drag landed a form");
     assert_eq!(
         form.at, 81.0,
@@ -136,7 +136,7 @@ fn set_entry(name: &str, value: &str) {
 /// S4 + §F3.8 S5: the refusal writes nothing and spends nothing.
 fn a_refused_apply_spends_no_undo_entry(app: &adw::Application) {
     let window = open_zoom_form(app, "refused");
-    let before = zoom_count(&window);
+    let before = zoom_count();
     assert!(
         nothing_behind_undo(&window),
         "a page that has taken no edit starts with nothing behind ↶"
@@ -151,11 +151,7 @@ fn a_refused_apply_spends_no_undo_entry(app: &adw::Application) {
         said.contains(&format!("{}", fx_zoom::MIN_SECONDS)),
         "the refusal names the floor it broke: {said}"
     );
-    assert_eq!(
-        zoom_count(&window),
-        before,
-        "a refused Apply wrote no record"
-    );
+    assert_eq!(zoom_count(), before, "a refused Apply wrote no record");
     assert!(form_visible(&window), "and leaves the form open to correct");
     assert!(
         nothing_behind_undo(&window),
@@ -170,7 +166,7 @@ fn a_refused_apply_spends_no_undo_entry(app: &adw::Application) {
     let applied = ui::press_zoom_apply(&window);
     settle();
     assert_eq!(
-        zoom_count(&window),
+        zoom_count(),
         before + 1,
         "the corrected Apply placed one zoom ({applied})"
     );
@@ -188,11 +184,11 @@ fn a_refused_apply_spends_no_undo_entry(app: &adw::Application) {
 /// The record's own fields belong to `zoom_drag_widgets.rs`; only the history step is asked here.
 fn an_accepted_apply_earns_the_undo_it_promises(app: &adw::Application) {
     let window = open_zoom_form(app, "accepted");
-    let before = zoom_count(&window);
+    let before = zoom_count();
     let applied = ui::press_zoom_apply(&window);
     settle();
     assert_eq!(
-        zoom_count(&window),
+        zoom_count(),
         before + 1,
         "Apply landed one zoom ({applied})"
     );
@@ -209,7 +205,7 @@ fn an_accepted_apply_earns_the_undo_it_promises(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(
-        zoom_count(&window),
+        zoom_count(),
         before,
         "↶ pressed on the toolbar took the zoom back"
     );

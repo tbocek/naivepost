@@ -112,12 +112,6 @@ pub fn offer_seconds(path: &str) -> Option<f64> {
     card.length.filter(|seconds| *seconds > 0.0)
 }
 
-/// Fill one document from a scope, through the same door [`draw`] uses. Exposed so a test pins the escaping, the
-/// fallback and the comment rule against the caller rather than only against `cut_cards::fill`.
-pub fn join_for_test(doc: &str, scope: &[(String, String)]) -> String {
-    cards::fill(doc, scope)
-}
-
 /// One animation plus the tag it animates and the byte range of the animation tag itself — what [`frame`] writes a
 /// value against, and what it cuts out of every frame.
 struct Bound {

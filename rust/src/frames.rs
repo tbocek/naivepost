@@ -48,8 +48,7 @@ pub fn already_log(base: &str, grid: f64, threshold: f64) -> String {
 }
 
 /// S2: ffmpeg's arguments for the whole-video scene pass.
-pub fn scene_pass_plan(threshold: f64) -> Vec<String> {
-    let _ = threshold;
+pub fn scene_pass_plan() -> Vec<String> {
     // The threshold is deliberately not passed to ffmpeg: `scdet=threshold=0` reports every frame's
     // score, and [`scene_changes`] applies `P.machine.sceneThreshold` to those scores.
     vec![

@@ -1,6 +1,6 @@
 //! F4.5 Preview the cut with narration — `spec/07-narrate.md` F4.5, steps S1–S6.
 
-use crate::cut::{Cut, Fx, Seg};
+use crate::cut::{Cut, Seg};
 use crate::cut_hear;
 use crate::narrate_screen::AUDITION_LEAD_SECONDS;
 use crate::narration::Entry;
@@ -242,11 +242,6 @@ impl Failed {
     }
 }
 
-/// S2 (`a failed line is sticky per wav until its own ▶ retries it, which first clears the failure`):
-pub fn retry_line(failed: &mut Failed, line_wav_key: &str) -> bool {
-    failed.retry(line_wav_key)
-}
-
 // --- S3 the sound is the render's ------------------------------------------------------------------------------
 
 /// S3 (`ducked by the game volume`): how loud the whole clip is while a line speaks.
@@ -264,11 +259,6 @@ pub fn lanes_heard(cut: &Cut, t: f64) -> Vec<String> {
         Some(scene) => cut_hear::hush(scene).to_vec(),
         None => Vec::new(),
     }
-}
-
-/// S3 (`speed effects apply at seeks`): the rate to seek and play at for this second.
-pub fn seek_rate(fx: &[Fx], t: f64) -> f64 {
-    cut_hear::rate_under(fx, t)
 }
 
 // --- S4 seeks land on the cut --------------------------------------------------------------------------------
@@ -312,11 +302,6 @@ pub fn snap_seek(t: f64, segs: &[Seg], forward: bool) -> f64 {
 
 // --- S5 the rows follow the picture, and the picture follows the rows ----------------------------------------
 
-/// S5 (`row selection follows the playhead`): which row is blue right now.
-pub fn selected_row(t: f64, entries: &[Entry]) -> Option<usize> {
-    line_at(t, entries)
-}
-
 /// S5 (`selecting a row seeks to its line's lead-in`): where ▶ drops the picture so the line can be seen to
 /// land — [`AUDITION_LEAD_SECONDS`] ahead of it, never back before the clip starts (there is no video there),
 /// and not into another line's seconds either: those belong to whoever is speaking, so this line starts the
@@ -326,7 +311,7 @@ pub fn lead_in(target: usize, entries: &[Entry]) -> f64 {
     let start = entry.s + entry.at;
     let ahead = start - AUDITION_LEAD_SECONDS;
     let before = ahead.max(entry.s);
-    match selected_row(before, entries) {
+    match line_at(before, entries) {
         Some(other) if other != target => start,
         _ => before,
     }

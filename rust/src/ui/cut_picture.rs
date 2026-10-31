@@ -150,13 +150,12 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     // F2.12 S7 first: a card is not the session's own picture, so a line standing on one shows the
     // card's rendered frame and nothing else.
     if let Some((frame, held)) = crate::ui::cut_card_preview::card_frame(
-        window,
         &ui::window::newest_review_cut(),
         // The FRAME's second, not the clock's: a line standing on a stop keeps showing that stop's
         // first frame (§F3.3 S4), and a card cannot be re-timed anyway.
         crate::cut_speed_play::picture_second(
             &ui::window::newest_review_cut().fx,
-            ui::line_position(window).t,
+            ui::line_position().t,
         ),
     ) {
         // The held sentence belongs to the frame it explains: say it while the card is on the
@@ -164,18 +163,16 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         if let (Some(line), Some(status)) = (held, ui::find_status(window.upcast_ref())) {
             status.set_text(&line);
         }
-        release_video(window);
+        release_video();
         if frame.as_os_str().is_empty() {
             return true;
         }
         return show_frame(window, Some(&frame));
     }
-    if video_shown()
-        && crate::ui::cut_record_play::follow_in_video(window, ui::line_position(window).t)
-    {
+    if video_shown() && crate::ui::cut_record_play::follow_in_video(window, ui::line_position().t) {
         return true;
     }
-    release_video(window);
+    release_video();
     let colouring = crate::ui::cut_cameras::row_spans(&ui::window::newest_review_cut());
     let recordings = if colouring.is_empty() {
         ui::page_recordings()
@@ -187,10 +184,10 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     }
     // The preview's row (the watched one, or the one the scene's lens picks) is a ROW of the
     // colouring, and a row holds every file one camera filmed one after another.
-    let row = ui::preview_row(window);
+    let row = ui::preview_row();
     let t = crate::cut_speed_play::picture_second(
         &ui::window::newest_review_cut().fx,
-        ui::line_position(window).t,
+        ui::line_position().t,
     );
     // A snapshot names the session it is rendering (`snapshot.rs`), because its folder is the
     // fixture and not the working copy a real session writes frames into.
@@ -203,7 +200,7 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         return show_frame(window, None);
     };
     let base = recording.base.clone();
-    let Some(tree) = session_tree(window) else {
+    let Some(tree) = session_tree() else {
         return show_frame(window, None);
     };
     // The frames on disk carry the FILE's own stamps, so the line's session second has to be
@@ -213,7 +210,7 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         // second asked for.
         crate::cut_speed_play::picture_second(
             &ui::window::newest_review_cut().fx,
-            ui::line_position(window).t,
+            ui::line_position().t,
         ),
         recording.start,
         0.0,
@@ -235,17 +232,15 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         .and_then(crate::clock::read_frame)
         .unwrap_or(0.0);
     let found = cut_tracks::frame_near(&paths, zero + at);
-    let agreed = crate::effect_overlap::source_frame(
-        first_footage_shape(window),
-        shown_shape(found.as_deref()),
-    );
-    set_plate_shape(window, agreed);
+    let agreed =
+        crate::effect_overlap::source_frame(first_footage_shape(), shown_shape(found.as_deref()));
+    note_plate_shape(agreed);
     // §8 (`unrenderable still ">>> the stop frame at m:ss cannot be shown in the preview: <err>"`):
     // a stop holds a frame, and when the search above finds none the preview owes that sentence.
     crate::ui::cut_stop_frame::say_missing_still(
         window,
         &ui::window::newest_review_cut().fx,
-        ui::line_position(window).t,
+        ui::line_position().t,
         found.is_some(),
     );
     show_frame(window, found.as_deref())
@@ -271,8 +266,7 @@ pub fn video_shown() -> bool {
     VIDEO_SHOWN.with(|cell| cell.get())
 }
 
-fn release_video(window: &adw::ApplicationWindow) {
-    let _ = window;
+fn release_video() {
     if VIDEO_SHOWN.with(|cell| cell.replace(false)) {
         crate::play_built_in::stop();
     }
@@ -280,10 +274,7 @@ fn release_video(window: &adw::ApplicationWindow) {
 
 /// The recording the picture shows at session second `t` (the preview's row, as [`refresh`] chooses
 /// it) and that second on the recording's own clock.
-pub fn picture_source(
-    window: &adw::ApplicationWindow,
-    t: f64,
-) -> Option<(timeline::Recording, f64)> {
+pub fn picture_source(t: f64) -> Option<(timeline::Recording, f64)> {
     let cut_ = ui::window::newest_review_cut();
     let colouring = crate::ui::cut_cameras::row_spans(&cut_);
     let recordings = if colouring.is_empty() {
@@ -291,7 +282,7 @@ pub fn picture_source(
     } else {
         colouring
     };
-    let recording = recording_at(&recordings, ui::preview_row(window), t)?.clone();
+    let recording = recording_at(&recordings, ui::preview_row(), t)?.clone();
     let local = timeline::local_at(
         t,
         recording.start,
@@ -334,11 +325,11 @@ pub fn recording_at(
     })
 }
 
-fn session_tree(window: &adw::ApplicationWindow) -> Option<layout::Tree> {
+fn session_tree() -> Option<layout::Tree> {
     if let Some(dir) = snapshot_tree() {
         return layout::Tree::new(&dir).ok();
     }
-    let dir = ui::line_root(window)?;
+    let dir = ui::line_root()?;
     layout::Tree::new(&dir).ok()
 }
 
@@ -383,11 +374,10 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-fn first_footage_shape(window: &adw::ApplicationWindow) -> Option<(i32, i32)> {
-    let _ = window;
+fn first_footage_shape() -> Option<(i32, i32)> {
     let recordings = ui::page_recordings();
     let first = recordings.first()?;
-    let tree = session_tree(window)?;
+    let tree = session_tree()?;
     shown_shape(
         crate::ui::cut_picture_cache::frames_of(&tree, &first.base)
             .first()
@@ -396,8 +386,7 @@ fn first_footage_shape(window: &adw::ApplicationWindow) -> Option<(i32, i32)> {
 }
 
 /// What the plate and every overlay on it are fitted to, as §9 says both sides must be.
-pub fn plate_shape(window: &adw::ApplicationWindow) -> (i32, i32) {
-    let _ = window;
+pub fn plate_shape() -> (i32, i32) {
     PLATE_SHAPE
         .with(|slot| *slot.borrow())
         .unwrap_or(FALLBACK_SHAPE)
@@ -412,16 +401,11 @@ thread_local! {
     static PLATE_SHAPE: std::cell::RefCell<Option<(i32, i32)>> = const { std::cell::RefCell::new(None) };
 }
 
-fn set_plate_shape(window: &adw::ApplicationWindow, shape: (i32, i32)) {
-    note_plate_shape(window, shape)
-}
-
 /// The same note for a caller that knows the plate's shape from a file rather than from the page's
 /// own search: a snapshot staging its own frame (`snapshot_preview`) has the JPEG on disk and can
 /// say what it measures, instead of leaving the plate on `FALLBACK_SHAPE` and letting one set of
 /// fractions mean two different boxes in px.
-pub fn note_plate_shape(window: &adw::ApplicationWindow, shape: (i32, i32)) {
-    let _ = window;
+pub fn note_plate_shape(shape: (i32, i32)) {
     PLATE_SHAPE.with(|slot| *slot.borrow_mut() = Some(shape));
 }
 

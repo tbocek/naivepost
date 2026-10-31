@@ -142,7 +142,7 @@ fn volume_round(app: &adw::Application) {
         );
         assert!(ui::volume_form_open().is_none(), "no form is held either");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "the generic `fx_record::record_into` path must be unreachable for Volume: a refused press adds no \
              record"
         );
@@ -334,7 +334,7 @@ fn volume_round(app: &adw::Application) {
         let window = open_over_band(app, 10.0, 25.0);
         entry(&window, "volume-field-percent").set_text("500");
         click(&window, "volume-apply-button");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(cut_.fx.len(), 1, "Apply put exactly one record on the cut");
         let fx = &cut_.fx[0];
         assert_eq!(fx.kind, "volume");
@@ -369,7 +369,7 @@ fn volume_round(app: &adw::Application) {
         // F2.13's ↶: the addition went on the history via `record_edit`, never `seed_review_cut`.
         click(&window, "undo-button");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "one ↶ takes the whole volume back"
         );
         RAN_APPLY_UNDO.store(true, Ordering::SeqCst);
@@ -402,7 +402,7 @@ fn volume_round(app: &adw::Application) {
         );
         assert!(form_visible(&window), "still on screen, still editable");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "and it wrote nothing"
         );
 
@@ -414,7 +414,7 @@ fn volume_round(app: &adw::Application) {
         );
         assert!(!form_visible(&window), "and hid the holder");
         assert!(
-            ui::review_cut_of(&window).fx.is_empty(),
+            ui::window_preview::newest_review_cut().fx.is_empty(),
             "Cancel records nothing"
         );
         RAN_FLOOR.store(true, Ordering::SeqCst);
@@ -425,25 +425,21 @@ fn volume_round(app: &adw::Application) {
     {
         let window = open_over_band(app, 10.0, 25.0);
         click(&window, "volume-apply-button");
-        let cut_ = ui::review_cut_of(&window);
+        let cut_ = ui::window_preview::newest_review_cut();
         assert_eq!(cut_.fx.len(), 1, "the default 200 % volume is on the cut");
         let fx = &cut_.fx;
 
         // Mid-band, fades long done: the page asks the SAME function the playing preview asks, so a
         // parked red line gives what will play -- the only way the fades can be judged without motion.
         let mid = 17.0;
-        assert_close(
-            "heard paused mid-band",
-            ui::paused_preview_gain(&window, mid),
-            2.0,
-        );
+        assert_close("heard paused mid-band", ui::paused_preview_gain(mid), 2.0);
         assert_eq!(
-            ui::paused_preview_gain(&window, mid),
+            ui::paused_preview_gain( mid),
             fx_volume::heard_while_paused(fx, mid),
             "`paused_preview_gain` is `fx_volume::heard_while_paused` over THIS window's cut, nothing more"
         );
         assert_eq!(
-            ui::paused_preview_gain(&window, mid),
+            ui::paused_preview_gain( mid),
             cut_hear::gain_under(fx, mid),
             "...which is `cut_hear::gain_under` by another name, so the preview and the render cannot grow \
              separate answers"
@@ -453,7 +449,7 @@ fn volume_round(app: &adw::Application) {
         // statement about a live envelope rather than about a constant. With a 0.25 s ramp, half a second
         // in is past the ramp, so take a point a quarter of the way up it: 10.0625 s.
         let ramped = 10.0625;
-        let at_ramp = ui::paused_preview_gain(&window, ramped);
+        let at_ramp = ui::paused_preview_gain(ramped);
         assert!(
             (at_ramp - 2.0).abs() > EPS,
             "inside the fade the loudness is still climbing ({at_ramp}), not yet the full 2.0 -- so the \

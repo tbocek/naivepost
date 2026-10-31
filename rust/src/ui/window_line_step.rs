@@ -74,13 +74,11 @@ pub enum Step {
 }
 
 /// The project root this window's line file lives under, or `None` when the page was built outside a project.
-pub fn line_root(window: &adw::ApplicationWindow) -> Option<std::path::PathBuf> {
-    let _ = window;
+pub fn line_root() -> Option<std::path::PathBuf> {
     LINE_ROOTS.with(|slots| slots.borrow().last().cloned())
 }
 
-pub fn line_position(window: &adw::ApplicationWindow) -> cut_line::LinePos {
-    let _ = window;
+pub fn line_position() -> cut_line::LinePos {
     ui::LINE_STATES
         .with(|slots| slots.borrow().last().map(|slot| slot.borrow().0))
         .unwrap_or(cut_line::LinePos { t: 0.0 })
@@ -114,12 +112,11 @@ pub(crate) fn hold_line_at(t: f64) {
 /// Set this window's line WITHOUT saving, the test/setup entry point: a setup call that consumed the throttle
 /// would make the next real move silently unwritable for a second.
 pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos) {
-    let _ = window;
     // F2.12 S1: a placed line IS a target for Insert; this is where the page learns one exists.
     note_place(true);
     hold_line_at(pos.t);
     // The other slot of the one red line: the player's, which ▶ plays from and the band paints.
-    if let Some(player) = crate::ui::window_preview::live_player(window) {
+    if let Some(player) = crate::ui::window_preview::live_player() {
         player.borrow_mut().playhead = Some(pos.t);
     }
     crate::ui::window_preview::show_playhead_reading(window, pos.t);
@@ -127,8 +124,8 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
     // loudness to sound now. `note_place(true)` says "a person put the line down"; `set_line_position` is also
     // the setup door, and a gain ask for a second nobody chose would be the app speaking for a user. While
     // TRANSPORT runs the tick hands the same number, so this asks only of a still frame.
-    if place_known() && !ui::preview_player(window).transport.playing {
-        crate::ui::cut_volume_hear::apply_paused_gain(window, pos.t);
+    if place_known() && !ui::preview_player().transport.playing {
+        crate::ui::cut_volume_hear::apply_paused_gain(pos.t);
     }
     release_held_effect_off_band(window, pos.t);
 }
@@ -137,7 +134,7 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
 /// through. [`fx_band::hold_survives`] owns the rule; on a miss the record is put down as Esc does: clear the
 /// hold, redraw the lane without its outline, say §A.9's one word.
 pub fn release_held_effect_off_band(window: &adw::ApplicationWindow, line_t: f64) {
-    let Some(held) = ui::held_effect() else {
+    let Some(held) = crate::ui::cut_hand::held_effect() else {
         return;
     };
     if fx_band::hold_survives(line_t, held.t, held.dur) {
@@ -156,7 +153,7 @@ pub fn move_line_and_save(
     now_ms: u64,
 ) -> bool {
     // A root reaches the page (`line_root`), so a move writes through the writer's one-second rule.
-    let root = line_root(window);
+    let root = line_root();
     let wrote = ui::LINE_STATES.with(|slots| {
         let Some(slot) = slots.borrow().last().cloned() else {
             return false;
@@ -181,15 +178,15 @@ pub fn move_line_and_save(
 /// F2.4 S4: the close path. `LineWriter::flush` asks `may_write_line(.., closing: true)`, so a position
 /// reached 10 ms after the last save still lands (`lineSaveMs` caps MOVES, not the close). Returns whether
 /// bytes went out.
-pub fn flush_line_on_close(window: &adw::ApplicationWindow) -> bool {
-    let Some(root) = line_root(window) else {
+pub fn flush_line_on_close() -> bool {
+    let Some(root) = line_root() else {
         return false;
     };
     ui::LINE_STATES.with(|slots| {
         let Some(slot) = slots.borrow().last().cloned() else {
             return false;
         };
-        let pos = line_position(window);
+        let pos = line_position();
         // Bound to a `let` so the RefMut drops before `slot` does (as a tail expression its temporary outlives the binding).
         let wrote = slot.borrow_mut().1.flush(pos, &root, now_ms());
         wrote
@@ -241,7 +238,7 @@ pub fn step_the_line(
         nudge_held(window, held, frames, fps);
         return Step::Nudged { frames };
     }
-    let from = line_position(window).t;
+    let from = line_position().t;
     let to = cut_line::step_line(from, frames, fps);
     move_line_and_save(window, cut_line::LinePos { t: to }, now_ms);
     // S2's "then pause": stepping is looking at a frame, not watching a run.
@@ -292,11 +289,11 @@ fn nudge_held_segment(
     held: cut_line::Held,
     delta: f64,
 ) -> Option<String> {
-    let seg = ui::held_segment()?;
+    let seg = crate::ui::cut_hand::held_clip_or_edge()?;
     let mut cut_ = ui::newest_review_cut();
     let index = cut_.segs.iter().position(|candidate| *candidate == seg)?;
     if held == cut_line::Held::Edge {
-        let line = line_position(window).t;
+        let line = line_position().t;
         let border = if (line - seg.s).abs() <= (line - seg.e).abs() {
             crate::cut_trim::Border::Start
         } else {
@@ -344,13 +341,15 @@ pub fn space_toggles(window: &adw::ApplicationWindow, text_focus: bool) -> bool 
     let toggle = cut_line::space_toggles_preview(text_focus);
     if toggle && !text_focus {
         // S2: an empty cut refuses this way in and leaves the transport where it was.
-        if let Some(refusal) = cut_play_leg::other_way_in(&ui::review_cut_of(window)) {
+        if let Some(refusal) =
+            cut_play_leg::other_way_in(&crate::ui::window_preview::newest_review_cut())
+        {
             if let Some(status) = ui::find_status(window.upcast_ref()) {
                 status.set_text(refusal);
             }
             return false;
         }
-        if let Some(player) = ui::live_player(window) {
+        if let Some(player) = ui::live_player() {
             let mut held = player.borrow_mut();
             held.transport.playing = !held.transport.playing;
             held.transport.started = held.transport.playing || held.transport.started;
@@ -368,8 +367,7 @@ pub fn line_step_button(window: &adw::ApplicationWindow, name: &str) -> Option<g
 
 /// This window's key controller for the line (F2.4 S2/S3): ‹‹f ‹f f› ›› step one or five frames,
 /// ← / → move only while something is held, Space toggles play.
-pub fn line_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
-    let _ = window;
+pub fn line_key_controller() -> Option<gtk::EventControllerKey> {
     LINE_KEYS.with(|cell| cell.borrow().clone())
 }
 
@@ -389,12 +387,12 @@ pub(crate) fn wire_line_step(button: &gtk::Button, window: &adw::ApplicationWind
 
 /// Move the line by a signed number of frames and pause (F2.4 S2). The rate comes from [`crate::cut_fps`] (ffprobe), not a constant.
 pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
-    if let Some(held) = ui::held_now() {
-        nudge_held(window, held, frames, crate::cut_fps::session_fps(window));
+    if let Some(held) = crate::ui::cut_hand::held_kind() {
+        nudge_held(window, held, frames, crate::cut_fps::session_fps());
         return Step::Nudged { frames };
     }
-    let from = line_position(window).t;
-    let to = cut_line::step_line(from, frames, crate::cut_fps::session_fps(window));
+    let from = line_position().t;
+    let to = cut_line::step_line(from, frames, crate::cut_fps::session_fps());
     move_line_and_save(window, cut_line::LinePos { t: to }, now_ms());
     pause_for_step(window);
     // The frame the user sees is Prepare's JPEG nearest the new second (as a click cues); the view moves if the step passed three quarters of it.
@@ -407,7 +405,7 @@ pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
 /// paused this way is over (F2.3 S5), and the three faces are painted from what is left.
 pub(crate) fn pause_for_step(window: &adw::ApplicationWindow) {
     let mut ended_review = false;
-    if let Some(player) = ui::live_player(window) {
+    if let Some(player) = ui::live_player() {
         let mut held = player.borrow_mut();
         held.transport.playing = false;
         ended_review = std::mem::replace(&mut held.reviewing, false);
@@ -439,10 +437,10 @@ pub(crate) fn wire_line_keys(window: &adw::ApplicationWindow) {
     controller.connect_key_pressed(move |_ctrl, key, _code, mods| {
         let shift = mods.contains(gtk::gdk::ModifierType::SHIFT_MASK);
         // S2/S3: the hold comes from the window's own held state; a hardcoded `None` could never take S2's nudge branch.
-        let held = ui::held_now();
+        let held = crate::ui::cut_hand::held_kind();
         // F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): with an effect in hand the steps move that record.
         // One read of the session's rate per press.
-        let fps = crate::cut_fps::session_fps(&win);
+        let fps = crate::cut_fps::session_fps();
         let response = match key {
             gtk::gdk::Key::Left => arrow_steps(&win, shift, true, held, fps, now_ms()),
             gtk::gdk::Key::Right => arrow_steps(&win, shift, false, held, fps, now_ms()),

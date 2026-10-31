@@ -91,9 +91,9 @@ pub fn paint_track_area(window: &adw::ApplicationWindow, out: &Path) -> Result<S
     use adw::prelude::*;
     let layers = crate::ui::find_source_widget(window, "track-layers")
         .ok_or("the Cut page drew no track-layers overlay")?;
-    let scene = crate::ui::cut_view::band_scene_for(window);
+    let scene = crate::ui::cut_view::band_scene_for();
     // The band's laid-out height from the SAME door the installed band paints from (frames included), so a row an edit added is counted even if GTK has not caught up.
-    let tall = cut_tracks::band_height_for_window(window).max(1);
+    let tall = cut_tracks::band_height_for_window().max(1);
     let wide = layers.width().max(1);
     let (x, y) = crate::snapshot_face::widget_offset(window, &layers)?;
     // The whole stack is PAINTED at its own row geometry, not cropped: a crop came out 132 px tall (no waveform strip) because GTK clips a `DrawingArea` to what the page was given,

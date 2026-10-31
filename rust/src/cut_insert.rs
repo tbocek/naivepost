@@ -2,13 +2,12 @@
 //! Placed BETWEEN footage (video longer, no session time), OVER it (takes those seconds like － Remove), or on a
 //! LANE (a row, cuts nothing). A sound is only laid over kept footage. No UI here; one flag, [`crate::cut::Seg::mute`], carries the sound question (see [`tick_label`]).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cut::{Cut, Lane, Seg};
 use crate::cut_copy::{footage_stretches, lane_name};
 use crate::cut_screen;
 use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
-use crate::layout;
 use crate::tools;
 
 // --- S1: a line or a selection -------------------------------------------------------------------------------
@@ -40,11 +39,6 @@ pub fn chooser_title(selection: Option<&Selection>) -> &'static str {
         Some(band) if matches!(band.scope, Scope::Sound { .. }) => CHOOSER_TITLE_SOUND,
         _ => CHOOSER_TITLE,
     }
-}
-
-/// F2.12 S2: the folder the chooser opens at ([`layout::assets_dir`]'s rule).
-pub fn chooser_dir(root: &Path) -> PathBuf {
-    layout::assets_dir(root)
 }
 
 /// F2.12 S2: the note written beside the cards, documenting the hole format.
@@ -144,14 +138,11 @@ pub const DEFAULT_SECONDS: f64 = 4.0;
 /// F2.12 S3: how long an insert runs when nothing has been typed yet.
 ///
 /// `file_seconds` is `None` for a still, an SVG without `@keyframes` (drawn as a still), or a failed probe.
-pub fn default_length(file_seconds: Option<f64>, animated_svg: bool) -> f64 {
+pub fn default_length(file_seconds: Option<f64>) -> f64 {
     match file_seconds {
         Some(seconds) if seconds > 0.0 => seconds,
         // No animation: a still, so there was no length to find.
-        _ => {
-            let _ = animated_svg;
-            DEFAULT_SECONDS
-        }
+        _ => DEFAULT_SECONDS,
     }
 }
 
@@ -770,7 +761,6 @@ pub fn form_plan(
     path: &str,
     selection: Option<&Selection>,
     file_seconds: Option<f64>,
-    animated_svg: bool,
     _silent: bool,
     file_has_sound: bool,
     footage_under_has_sound: bool,
@@ -778,7 +768,7 @@ pub fn form_plan(
     let file_kind = kind(path);
     let (splice, selected) = default_modes(selection);
     let mode = if splice { Mode::Between } else { Mode::Over };
-    let seconds = selected.unwrap_or_else(|| default_length(file_seconds, animated_svg));
+    let seconds = selected.unwrap_or_else(|| default_length(file_seconds));
     FormPlan {
         kind: file_kind,
         seconds,

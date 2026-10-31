@@ -118,9 +118,8 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
     // The recording preview, line at 5 s -- inside the first join's window (P.policy.reviewPadSeconds
     // spans 10 s either side of the join at 10 s, clamped to the clips).
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -131,7 +130,7 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
     ui::set_playhead(&window, 5.0);
 
     button.emit_by_name::<()>("clicked", &[]);
-    let after = ui::preview_player(&window);
+    let after = ui::preview_player();
     assert!(after.reviewing, "S2: the review is running");
     assert!(
         after.cut_only,
@@ -153,7 +152,6 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
     // press and clears on a PausedAndEnded one itself, which is what the next two presses exercise.
     naivepost::ui::cut_review_play::clear();
     ui::set_preview_state(
-        &window,
         true,
         true,
         Transport {
@@ -162,7 +160,7 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
         },
     );
     button.emit_by_name::<()>("clicked", &[]);
-    let ended = ui::preview_player(&window);
+    let ended = ui::preview_player();
     assert!(
         !ended.reviewing,
         "pressing \u{25b6}\u{2702}\u{2702} while it runs ends the review"
@@ -202,7 +200,7 @@ fn check_s1_refuses_with_one_clip(app: &adw::Application) {
         "one clip has no join between two clips"
     );
 
-    ui::seed_review_cut(&window, &one_clip);
+    ui::seed_review_cut(&one_clip);
     match ui::press_review_cuts(&window, &one_clip) {
         cut_review::Pressed::Refused(reason) => assert_eq!(
             reason,
@@ -216,7 +214,7 @@ fn check_s1_refuses_with_one_clip(app: &adw::Application) {
         "and the refusal is what the status line says"
     );
     assert!(
-        !ui::preview_player(&window).reviewing,
+        !ui::preview_player().reviewing,
         "a refused press starts nothing"
     );
     window.close();
@@ -254,9 +252,8 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     let window = cut_window(app);
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -279,7 +276,7 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
         other => panic!("the review must start, got {other:?}"),
     }
     assert!(
-        ui::preview_player(&window).reviewing,
+        ui::preview_player().reviewing,
         "and the window says a review is running"
     );
     assert!(
@@ -296,7 +293,7 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     // still holds this press's process — what the review owes is a RUNNING player, not its teardown.
     button.emit_by_name::<()>("clicked", &[]);
     assert!(
-        !ui::preview_player(&window).reviewing,
+        !ui::preview_player().reviewing,
         "and the second press ends the review"
     );
     naivepost::cut_play_back::halt();
@@ -323,9 +320,8 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
         }],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &one_clip);
+    ui::seed_review_cut(&one_clip);
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -343,7 +339,7 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
 
     // Two clips: clickable again, still the shipped face while nothing of ours runs.
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     naivepost::ui::cut_review_play::paint(&window);
     assert!(
         button.is_sensitive(),
@@ -352,7 +348,6 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
 
     // The ⏸ face arrives ONLY with a running review (the other two buttons give theirs back at once).
     ui::set_preview_state(
-        &window,
         true,
         true,
         Transport {
@@ -367,7 +362,6 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
         "while a review runs the button wears ⏸"
     );
     ui::set_preview_state(
-        &window,
         true,
         false,
         Transport {
@@ -454,9 +448,8 @@ fn check_s3_the_tick_drives_the_review(app: &adw::Application) {
     let window = cut_window(app);
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -476,7 +469,7 @@ fn check_s3_the_tick_drives_the_review(app: &adw::Application) {
         "\u{25b6}\u{2702}\u{2702} wears \u{23f8} while its own review runs (exactly one is lit)"
     );
     assert!(
-        ui::preview_player(&window).reviewing,
+        ui::preview_player().reviewing,
         "and the preview is the review"
     );
     assert!(
@@ -504,9 +497,8 @@ fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
     let window = cut_window(app);
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
     let cut = three_clips();
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -519,7 +511,7 @@ fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
 
     button.emit_by_name::<()>("clicked", &[]);
     assert!(
-        ui::preview_player(&window).reviewing,
+        ui::preview_player().reviewing,
         "the press started the review"
     );
 
@@ -530,7 +522,7 @@ fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
     // the wire around it: pausing out of a review hands the button's face back.
     button.emit_by_name::<()>("clicked", &[]);
     assert!(
-        !ui::preview_player(&window).reviewing,
+        !ui::preview_player().reviewing,
         "pressing \u{25b6}\u{2702}\u{2702} again ends the review"
     );
     assert_eq!(

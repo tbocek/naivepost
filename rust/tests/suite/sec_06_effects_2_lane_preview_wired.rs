@@ -155,7 +155,7 @@ fn the_frame_paints_the_paused_scene(app: &adw::Application) {
     settle();
     click(&window, "text-apply-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "Apply placed the caption"
     );
@@ -165,10 +165,10 @@ fn the_frame_paints_the_paused_scene(app: &adw::Application) {
     // the two answers cannot agree — the line at 12.0 is the record's first second (alpha 0) and at 14.0 the
     // fade is finished (alpha 1), so neither of those ever produced a mid-fade number to compare.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 13.0 });
-    let cut = ui::review_cut_of(&window);
+    let cut = ui::window_preview::newest_review_cut();
     let held = cut_preview_frame::held_frame(&cut, None);
-    let fit = cut_preview_frame::fit_size_of(&window, FIT.0, FIT.1);
-    let frame = cut_preview_frame::describe(&window, fit, &held);
+    let fit = cut_preview_frame::fit_size_of(FIT.0, FIT.1);
+    let frame = cut_preview_frame::describe(fit, &held);
     let seen = cut_preview_frame::observe(&frame, None);
     // The line stands one second INTO a caption that fades in over two (t 12.0, trans 2.0), so its own alpha
     // is halfway up. `paused_scene` is asked at the SAME seconds the painter reads off the page (13.0), or the
@@ -216,7 +216,7 @@ fn the_held_overlay_is_full_and_outlined(app: &adw::Application) {
     let window = cut_page(app, &seeded);
     tape();
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 12.0 });
-    let cut = ui::review_cut_of(&window);
+    let cut = ui::window_preview::newest_review_cut();
     // Hold the SECOND caption — the index must be the record's own position in this cut, not the first match.
     ui::set_held_effect(Some(caption(20.0, "second")));
     let held = cut_preview_frame::held_frame(&cut, None);
@@ -225,7 +225,7 @@ fn the_held_overlay_is_full_and_outlined(app: &adw::Application) {
         Some(1),
         "the record in hand is addressed by its index in THIS cut"
     );
-    let seen = cut_preview_frame::observe(&cut_preview_frame::describe(&window, FIT, &held), None);
+    let seen = cut_preview_frame::observe(&cut_preview_frame::describe(FIT, &held), None);
     assert!(seen.held.held_full, "the one in hand draws full (§2)");
     assert!(
         seen.held.held_outline_dashed,
@@ -241,7 +241,7 @@ fn the_held_overlay_is_full_and_outlined(app: &adw::Application) {
     );
     // Put it down the way the app does and the full-alpha answer goes with it.
     ui::press_fx_lane(&window);
-    let after = cut_preview_frame::held_frame(&ui::review_cut_of(&window), None);
+    let after = cut_preview_frame::held_frame(&ui::window_preview::newest_review_cut(), None);
     assert_eq!(after.index, None, "the lane took the effect out of hand");
     RAN_HELD.store(true, Ordering::SeqCst);
     window.close();
@@ -256,14 +256,14 @@ fn the_box_is_dashed_only_while_armed(app: &adw::Application) {
     assert!(!ui::zoom_armed(), "starts disarmed");
     click(&window, "effect-item-zoom");
     assert!(ui::zoom_armed(), "⊕ Zoom armed the drag");
-    let cut = ui::review_cut_of(&window);
+    let cut = ui::window_preview::newest_review_cut();
     let armed = cut_preview_frame::held_frame(&cut, Some(box_));
     assert_eq!(
         armed.box_px,
         Some(box_),
         "the box under the hand reaches the frame"
     );
-    let seen = cut_preview_frame::observe(&cut_preview_frame::describe(&window, FIT, &armed), None);
+    let seen = cut_preview_frame::observe(&cut_preview_frame::describe(FIT, &armed), None);
     assert!(seen.held.box_dashed, "an unfinished box is dashed (§2)");
     // A second deliberate press disarms; the box is no longer anyone's to draw.
     click(&window, "effect-item-zoom");
@@ -292,7 +292,6 @@ fn the_playing_half_is_mask_plus_titles(app: &adw::Application) {
     tape();
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 3.0 });
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -300,9 +299,9 @@ fn the_playing_half_is_mask_plus_titles(app: &adw::Application) {
             started: true,
         },
     );
-    let cut = ui::review_cut_of(&window);
+    let cut = ui::window_preview::newest_review_cut();
     let held = cut_preview_frame::held_frame(&cut, None);
-    let frame = cut_preview_frame::describe(&window, FIT, &held);
+    let frame = cut_preview_frame::describe(FIT, &held);
     assert!(frame.playing, "the transport the page holds says playing");
     let seen = cut_preview_frame::observe(&frame, Some(3.7));
     let kinds: Vec<EffectKind> = seen.titles.iter().map(|(_, kind, _)| *kind).collect();
@@ -364,7 +363,7 @@ fn a_stops_still_borrows_the_scene_camera(app: &adw::Application) {
     let mut stop = fx(EffectKind::Speed, 5.0, 2.0);
     stop.rate = 0.0;
     assert!(naivepost::fx_record::is_stop(&stop), "rate 0 is the stop");
-    assert!(lane::still_come_from_scene_camera(&stop));
+    assert!(naivepost::fx_record::is_stop(&stop));
     let zoomed = {
         let mut z = fx(EffectKind::Zoom, 4.0, 6.0);
         z.cx = Some(0.3);
@@ -532,7 +531,7 @@ fn only_the_scene_end_sound_gets_a_tail(app: &adw::Application) {
         "the scene-end bar wears the dashed tail"
     );
     seeded.fx[0].snd = "own".into();
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     ui::refresh_effects_lane(&window);
     settle();
     assert!(
@@ -618,7 +617,7 @@ fn the_playing_half_rides_the_pages_tick(app: &adw::Application) {
     );
     // Paused: there is no live clock, so the camera falls back to the line.
     assert_eq!(
-        cut_preview_frame::live_of(&window),
+        cut_preview_frame::live_of(),
         None,
         "paused, so nothing is running"
     );
@@ -629,7 +628,6 @@ fn the_playing_half_rides_the_pages_tick(app: &adw::Application) {
     );
     // ▶ through the page's own door, then a tick's worth of playhead through the door the tick uses.
     ui::set_preview_state(
-        &window,
         false,
         false,
         Transport {
@@ -638,7 +636,7 @@ fn the_playing_half_rides_the_pages_tick(app: &adw::Application) {
         },
     );
     ui::set_playhead(&window, 6.0);
-    let live = cut_preview_frame::live_of(&window).expect("playing, so the clock is live");
+    let live = cut_preview_frame::live_of().expect("playing, so the clock is live");
     assert!(
         live >= 6.0,
         "the live clock starts at the tick's playhead and runs on: {live}"
@@ -658,8 +656,8 @@ fn the_playing_half_rides_the_pages_tick(app: &adw::Application) {
         "paused still reads the line"
     );
     // The frame the draw func builds rides the same answers: playing, and its camera is the one at the clock.
-    let held = cut_preview_frame::held_frame(&ui::review_cut_of(&window), None);
-    let frame = cut_preview_frame::describe(&window, FIT, &held);
+    let held = cut_preview_frame::held_frame(&ui::window_preview::newest_review_cut(), None);
+    let frame = cut_preview_frame::describe(FIT, &held);
     assert!(frame.playing, "the transport the page holds says playing");
     let seen = cut_preview_frame::observe(&frame, Some(live));
     assert_eq!(

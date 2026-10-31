@@ -163,10 +163,6 @@ pub fn joined(container: &str) -> String {
     format!("joined.{container}")
 }
 
-pub fn clear(dir: &std::path::Path) -> Result<usize, String> {
-    render::clear_scratch(dir)
-}
-
 pub const UNDETERMINED_TAG: &str = "und";
 
 pub fn language_tag(spoken: &str, list: &[Language]) -> (String, String) {
@@ -179,17 +175,6 @@ pub fn language_tag(spoken: &str, list: &[Language]) -> (String, String) {
         Some(language) => (language.tag.clone(), language.name.clone()),
         None => (UNDETERMINED_TAG.to_string(), spoken.to_uppercase()),
     }
-}
-
-pub fn mux(
-    video: &std::path::Path,
-    audio: &std::path::Path,
-    tracks: &[(&str, &std::path::Path)],
-    settings: &Produce,
-    out: &std::path::Path,
-    languages: &[crate::roles::Language],
-) -> Vec<String> {
-    render::mux_command(video, audio, tracks, settings, out, languages)
 }
 
 pub const WEBM_SRT_LOG: &str =
@@ -541,27 +526,9 @@ pub fn copies_plain_bytes(words: &str) -> bool {
     words.trim().is_empty()
 }
 
-pub fn tracks_from_disk(dir: &std::path::Path) -> Vec<String> {
-    embed::list_vtt(dir)
-}
-
 /// The page's own file, beside the video — [`embed::paths`]' third answer.
 pub fn page_path(tree: &crate::layout::Tree, container: project::Container) -> std::path::PathBuf {
     embed::paths(tree, container).2
-}
-
-/// Both web notes are [`embed::web_unplayable`]'s; named here so §6's two sentences have one test target.
-pub fn web_note(container: project::Container, codec: project::Codec) -> Option<&'static str> {
-    embed::web_unplayable(container, codec)
-}
-
-pub fn poster_unwritable_log(path: &str) -> String {
-    embed::unwritable_log(path)
-}
-
-/// Why there is no poster at all, in the log's own words.
-pub fn poster_missing_reason() -> &'static str {
-    embed::no_poster_reason()
 }
 
 pub fn stamp_unwritable_log(why: &str) -> String {

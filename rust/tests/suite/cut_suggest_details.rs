@@ -248,9 +248,9 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s3_a_rate_i
     }
     // Exempt exactly where it is a speed: the cap counts what the decoration pass adds, not how long the cut
     // decided to run.
-    assert!(suggest::exempt_from_decorations_cap(EffectKind::Speed));
-    assert!(!suggest::exempt_from_decorations_cap(EffectKind::Text));
-    assert!(!suggest::exempt_from_decorations_cap(EffectKind::Volume));
+    assert!(suggest::is_speed_effect(EffectKind::Speed));
+    assert!(!suggest::is_speed_effect(EffectKind::Text));
+    assert!(!suggest::is_speed_effect(EffectKind::Volume));
 
     // The names the model writes, read through cut.rs rather than re-parsed here: `speed`, and a stop, which is
     // the same kind at rate 0.
@@ -264,10 +264,10 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s3_a_rate_i
         t: 5.0,
         ..Default::default()
     };
-    assert!(suggest::exempt_from_decorations_cap(
+    assert!(suggest::is_speed_effect(
         speed.effect_kind().expect("speed is a kind")
     ));
-    assert!(suggest::exempt_from_decorations_cap(
+    assert!(suggest::is_speed_effect(
         stop.effect_kind().expect("a stop is a speed")
     ));
     let caption = naivepost::cut::Fx {
@@ -275,7 +275,7 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s3_a_rate_i
         t: 5.0,
         ..Default::default()
     };
-    assert!(!suggest::exempt_from_decorations_cap(
+    assert!(!suggest::is_speed_effect(
         caption.effect_kind().expect("text is a kind")
     ));
 }

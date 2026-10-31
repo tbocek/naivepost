@@ -36,7 +36,7 @@ pub fn all_rows() -> Vec<params::Param> {
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
-        .chain(params::narrate())
+        .chain(naivepost::params_narrate::rows())
         .chain(params::produce())
         .collect()
 }
@@ -441,8 +441,8 @@ pub fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow 
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     ui::refresh_effects_lane(&window);
     settle();
     window
@@ -622,8 +622,8 @@ pub fn cut_page_unpainted(app: &adw::Application, seeded: &Cut) -> adw::Applicat
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -643,8 +643,8 @@ pub fn cut_page_settled_first(app: &adw::Application, seeded: &Cut) -> adw::Appl
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     window
 }
@@ -743,7 +743,7 @@ pub fn cut_page_empty(app: &adw::Application) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, &Cut::default());
+    ui::reopen_history_on(&Cut::default());
     settle();
     window
 }

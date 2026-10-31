@@ -116,7 +116,7 @@ fn check_the_preview_shows_a_frame(app: &adw::Application) {
         }],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     let picture =
         common::find_named(&window, "preview-picture").expect("§A's GtkPicture is on the panel");
     let picture = picture.downcast::<gtk::Picture>().expect("it is a Picture");
@@ -175,7 +175,7 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
         }],
         ..Default::default()
     };
-    ui::seed_review_cut(&window, &seeded);
+    ui::seed_review_cut(&seeded);
     write_frame(&tree, "lecture", 0.0);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 0.0 });
     naivepost::ui::cut_picture::refresh(&window);
@@ -185,7 +185,7 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
         "the workers answered"
     );
     assert!(
-        !ui::preview_player(&window).transport.playing,
+        !ui::preview_player().transport.playing,
         "a fresh preview is not playing"
     );
 
@@ -194,13 +194,13 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        ui::preview_player(&window).transport.playing,
+        ui::preview_player().transport.playing,
         "the click started the preview"
     );
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
-        !ui::preview_player(&window).transport.playing,
+        !ui::preview_player().transport.playing,
         "the same click again paused it \u{2014} toggle, not restart"
     );
     RAN_CLICK.store(true, std::sync::atomic::Ordering::SeqCst);

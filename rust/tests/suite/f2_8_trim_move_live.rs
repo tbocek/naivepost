@@ -156,7 +156,7 @@ fn cut_window(
         "the Cut tab is live with footage"
     );
     ui::set_session_recordings(recordings);
-    ui::seed_review_cut(&window, seeded);
+    ui::seed_review_cut(seeded);
     ui::set_press_scene(None);
     ui::set_press_band(None);
     settle();
@@ -382,20 +382,20 @@ fn f2_8_s2_one_undo_per_gesture_on_the_move_path(app: &adw::Application) {
     ui::set_press_band(Some("lecture".to_string()));
     let press_y = wave_y(&cut_, &tape);
     ui::set_press_x(px(20.0));
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     mover.emit_by_name::<()>("drag-begin", &[&px(20.0), &press_y]);
     let mut seen = Vec::new();
     for offset in [12.0, 24.0] {
         mover.emit_by_name::<()>("drag-update", &[&offset, &press_y]);
         settle();
-        let shift = ui::review_cut_shift(&window);
+        let shift = ui::review_cut_shift();
         println!("SHIFT AFTER UPDATE +{offset}px: {shift:?}");
         seen.push(shift.values().sum::<f64>());
     }
     mover.emit_by_name::<()>("drag-end", &[&36.0, &press_y]);
     settle();
 
-    let after = ui::review_cut_shift(&window).values().sum::<f64>();
+    let after = ui::review_cut_shift().values().sum::<f64>();
     // A third update of the same hold must add no further correction on top of the second's: each update
     // reports where the pointer got to FROM THE PRESS, and one gesture is one act of the hand.
     assert!(
@@ -408,7 +408,7 @@ fn f2_8_s2_one_undo_per_gesture_on_the_move_path(app: &adw::Application) {
     );
 
     let said = ui::press_undo(&window);
-    let back = ui::review_cut_shift(&window).values().sum::<f64>();
+    let back = ui::review_cut_shift().values().sum::<f64>();
     println!("UNDO SAID: {said} → shift {back}");
     assert!(
         back.abs() < 1e-9,
@@ -430,17 +430,17 @@ fn f2_8_s2_folds_near_the_grab_open_for_the_drag_and_refold_after(app: &adw::App
     let band = ui::draw_selection(&window, Surface::PictureRow(0), None, 20.0, 50.0)
         .expect("a band draws, so its start is the grab");
     assert_eq!((band.start, band.end), (20.0, 50.0));
-    let folds_at_open = ui::review_cut_of(&window).folds.clone();
+    let folds_at_open = ui::window_preview::newest_review_cut().folds.clone();
     println!("FOLDS BEFORE: {folds_at_open:?}");
 
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     mover.emit_by_name::<()>("drag-begin", &[&px(20.0), &NO_BAND_Y]);
     let travel_px = px(24.0);
     mover.emit_by_name::<()>("drag-update", &[&travel_px, &NO_BAND_Y]);
     settle();
 
     let open_now = ui::open_folds(&window);
-    let during = ui::review_cut_of(&window).folds.clone();
+    let during = ui::window_preview::newest_review_cut().folds.clone();
     println!("DURING DRAG: open={open_now:?} folds={during:?}");
     assert!(
         open_now.contains(&0),
@@ -453,7 +453,7 @@ fn f2_8_s2_folds_near_the_grab_open_for_the_drag_and_refold_after(app: &adw::App
 
     mover.emit_by_name::<()>("drag-end", &[&travel_px, &NO_BAND_Y]);
     settle();
-    let after = ui::review_cut_of(&window).folds.clone();
+    let after = ui::window_preview::newest_review_cut().folds.clone();
     println!(
         "AFTER RELEASE: open={:?} folds={after:?}",
         ui::open_folds(&window)
@@ -487,13 +487,13 @@ fn f2_8_s3_an_unmoved_right_press_is_a_click_and_says_this_one(app: &adw::Applic
     let cut_ = lanes_cut();
     let tape = tape();
     let (window, _pps) = cut_window(app, "click", &cut_, &tape);
-    let before_segs = ui::review_cut_segs_count(&window);
-    let before_shift = ui::review_cut_shift(&window);
-    let before_line = ui::line_position(&window).t;
+    let before_segs = ui::review_cut_segs_count();
+    let before_shift = ui::review_cut_shift();
+    let before_line = ui::line_position().t;
 
     // The strip really carries the gesture the page wired; the click below is asked through `press_move_at`,
     // the same door the release uses, so nothing here can move.
-    let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
+    let mover = ui::move_gesture().expect("the strip carries the move gesture");
     let _ = mover;
     // S3 lives at the press, and the press's position is what `press_move_at` reads — so the click is asked
     // through the same door the drag's release uses, with no travel: 0 px of offset.
@@ -513,20 +513,12 @@ fn f2_8_s3_an_unmoved_right_press_is_a_click_and_says_this_one(app: &adw::Applic
         cut_trim_press::CLICK_STATUS
     );
     assert_eq!(
-        ui::review_cut_segs_count(&window),
+        ui::review_cut_segs_count(),
         before_segs,
         "and a click cuts nothing"
     );
-    assert_eq!(
-        ui::review_cut_shift(&window),
-        before_shift,
-        "nor shifts anything"
-    );
-    assert_eq!(
-        ui::line_position(&window).t,
-        before_line,
-        "nor moves the line"
-    );
+    assert_eq!(ui::review_cut_shift(), before_shift, "nor shifts anything");
+    assert_eq!(ui::line_position().t, before_line, "nor moves the line");
     assert!(
         matches!(gesture, cut_trim::Gesture::Click),
         "and the rule answers a click: {gesture:?}"

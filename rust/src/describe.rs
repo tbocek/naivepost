@@ -508,11 +508,6 @@ pub fn chunk_plan(frames: &[f64], per_req: usize) -> Vec<usize> {
     (0..frames.len()).step_by(per_req).collect()
 }
 
-/// How many requests these frames take.
-pub fn requests_for(frames: usize) -> usize {
-    crate::prepare::vision_calls(frames)
-}
-
 /// Whether a frame opens a scene: it is the first frame of the take, or a change falls between it
 /// and the frame before.
 pub fn is_new_scene(at: f64, previous: Option<f64>, changes: &[f64]) -> bool {
@@ -529,7 +524,7 @@ pub fn pick_log(base: &str, frames: &[f64]) -> String {
     format!(
         ">>> [{base}] describe: {} frames -> {} requests",
         frames.len(),
-        requests_for(frames.len())
+        crate::roles::vision_batches(frames.len())
     )
 }
 

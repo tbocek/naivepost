@@ -172,10 +172,6 @@ pub fn is_speed_effect(kind: EffectKind) -> bool {
     matches!(kind, EffectKind::Speed)
 }
 
-pub fn exempt_from_decorations_cap(kind: EffectKind) -> bool {
-    is_speed_effect(kind)
-}
-
 pub fn streamed(text: &str, key: &str) -> Option<(usize, Option<f64>)> {
     let marker = format!("\"{key}\": [");
     let open = text.rfind(&marker)? + marker.len();

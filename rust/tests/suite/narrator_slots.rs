@@ -41,7 +41,7 @@ fn p_policy_narratorslots_s1_four_slots_and_the_policy_family() {
         "unrowed by design; see NARRATOR_SLOTS' doc comment"
     );
     // A sibling policy value IS rowed, so the omission reads as deliberate rather than missing.
-    let caption_floor = params::narrate()
+    let caption_floor = naivepost::params_narrate::rows()
         .into_iter()
         .chain(params::cut())
         .find(|param| param.id == "P.policy.captionMinSeconds");

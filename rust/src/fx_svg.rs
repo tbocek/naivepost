@@ -2,13 +2,11 @@
 //! A drawing is a text with ink, so most of it is [`crate::fx_text`]'s (box, 0.3 s fades and floor, `clampFades`). Differences: ▨ SVG asks for the file FIRST, before arming, and an untouched drawing lands in the middle. The widget layer holds no rule: `window.rs` routes ▨ SVG via `press_svg_item` (→ [`press`]), the dialog via `svg_chosen` (→ [`chose`]), the drag via `svg_drag_ended_with_source` (→ [`place`]), the form via `show_svg_form` and `press_svg_apply` (→ [`apply`] + `record_edit`, one ↶).
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use crate::cut::Fx;
 use crate::cut_speed;
 use crate::fx_text::{self, BoxChoice, Box_};
 use crate::fx_zoom;
-use crate::layout;
 use crate::tools;
 
 /// F3.5 S1 (`no line? → "click a track first — the drawing needs a moment to appear at"`): its own wording beside [`fx_zoom::NO_LINE`], [`crate::cut_copy::NO_LINE_YET`] and `crate::cut_insert::NO_LANE_LINE_YET`; deliberately not zoom's sentence, and a test keeps them apart.
@@ -19,11 +17,6 @@ pub const CHOOSE_TITLE: &str = "Choose a drawing to lay over the video";
 
 /// F3.5 S1 (§A.5 `filter svg`): the chooser filter name; only suffix `svg` (prototype `extFilter("SVG drawing", "svg")`).
 pub const CHOOSE_FILTER: &str = "SVG drawing";
-
-/// F3.5 S1 (§A.5 `assets folder`): the chooser opens at the root-level shared cards ([`layout::assets_dir`], as [`crate::cut_insert::chooser_dir`]).
-pub fn chooser_dir(root: &Path) -> std::path::PathBuf {
-    layout::assets_dir(root)
-}
 
 /// F3.5 S1: what pressing ▨ SVG did. No `Armed` (unlike [`fx_zoom::Press`]): nothing is picked yet, so it opens a dialog or refuses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,11 +73,6 @@ pub const MIDDLE: Box_ = Box_ {
     wf: 0.6,
     hf: 0.6,
 };
-
-/// F3.5 S3 (`Camera layer stays up`): a drawing's box is on the output frame, as in [`fx_text`]; opposite of ⊕ Zoom's [`fx_zoom::whole_source_shown`].
-pub fn camera_layer_stays_up() -> bool {
-    fx_text::camera_layer_stays_up()
-}
 
 /// F3.5 S4 (`Form "SVG at m:ss"`): titled via [`tools::mm_ss`], the one spelling of a second.
 pub fn form_title(t: f64) -> String {

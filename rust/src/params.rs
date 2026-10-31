@@ -1010,11 +1010,6 @@ pub fn effects() -> Vec<Param> {
     ]
 }
 
-/// Rows live in [`crate::params_narrate`].
-pub fn narrate() -> Vec<Param> {
-    crate::params_narrate::rows()
-}
-
 /// §08 Produce's rows (§10): the five numbers that build a cue and the size of one translation request.
 pub fn produce() -> Vec<Param> {
     vec![

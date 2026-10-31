@@ -179,7 +179,7 @@ where
             continue;
         }
         if written.iter().all(|line| line.text.trim().is_empty()) {
-            last_problem = narrate_reply::all_silent_fault();
+            last_problem = narrate_pass::no_line_fault();
             reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
             continue;
         }
@@ -281,7 +281,7 @@ where
             })
             .collect();
         if written.iter().all(|line| line.text.trim().is_empty()) {
-            last_problem = narrate_reply::all_silent_fault();
+            last_problem = narrate_pass::no_line_fault();
             reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
             continue;
         }

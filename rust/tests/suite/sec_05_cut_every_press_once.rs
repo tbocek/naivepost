@@ -35,8 +35,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     ui::refresh_effects_lane(&window);
     settle();
     window
@@ -81,7 +81,7 @@ fn check_one_kill_removes_one_effect(app: &adw::Application) {
     }
     common::click(&window, "fx-remove-0");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         2,
         "one click on the ✕ removes ONE effect, however often the lane was redrawn"
     );
@@ -100,16 +100,16 @@ fn check_comma_steps_back_and_period_forward(app: &adw::Application) {
     let window = cut_page(app, &seeded);
     ui::set_held_clip(None);
     ui::set_line_position(&window, LinePos { t: 10.0 });
-    let frame = 1.0 / naivepost::cut_fps::session_fps(&window);
-    let keys = ui::line_key_controller(&window).expect("the window wired its line keys");
+    let frame = 1.0 / naivepost::cut_fps::session_fps();
+    let keys = ui::line_key_controller().expect("the window wired its line keys");
     fire_key(&keys, gtk::gdk::Key::comma);
-    let back = ui::line_position(&window).t;
+    let back = ui::line_position().t;
     assert!(
         (back - (10.0 - frame)).abs() < 1e-6,
         "`,` steps one frame BACK: 10 -> {back} (a frame is {frame} s)"
     );
     fire_key(&keys, gtk::gdk::Key::period);
-    let forth = ui::line_position(&window).t;
+    let forth = ui::line_position().t;
     assert!(
         (forth - 10.0).abs() < 1e-6,
         "`.` steps one frame forward again: {back} -> {forth}"
@@ -141,25 +141,25 @@ fn check_a_held_clip_or_edge_is_nudged(app: &adw::Application) {
         },
     ];
     let window = cut_page(app, &seeded);
-    let frame = 1.0 / naivepost::cut_fps::session_fps(&window);
+    let frame = 1.0 / naivepost::cut_fps::session_fps();
     ui::set_line_position(&window, LinePos { t: 25.0 });
     ui::set_held_clip(Some(clip.clone()));
-    let keys = ui::line_key_controller(&window).expect("the window wired its line keys");
+    let keys = ui::line_key_controller().expect("the window wired its line keys");
     fire_key(&keys, gtk::gdk::Key::Right);
-    let moved = ui::review_cut_of(&window).segs[1].clone();
+    let moved = ui::window_preview::newest_review_cut().segs[1].clone();
     assert!(
         (moved.s - (20.0 + frame)).abs() < 1e-6 && (moved.e - (30.0 + frame)).abs() < 1e-6,
         "→ slid the held clip one frame later, its length kept: {moved:?}"
     );
     assert!(
-        (ui::line_position(&window).t - 25.0).abs() < 1e-9,
+        (ui::line_position().t - 25.0).abs() < 1e-9,
         "and the line stayed where it was"
     );
     fire_key(&keys, gtk::gdk::Key::Left);
-    let back = ui::review_cut_of(&window).segs[1].clone();
+    let back = ui::window_preview::newest_review_cut().segs[1].clone();
     assert!((back.s - 20.0).abs() < 1e-6, "← slid it back: {back:?}");
     common::click(&window, "undo-button");
-    let undone = ui::review_cut_of(&window).segs[1].clone();
+    let undone = ui::window_preview::newest_review_cut().segs[1].clone();
     assert!(
         (undone.s - (20.0 + frame)).abs() < 1e-6,
         "each nudge is its own ↶: {undone:?}"
@@ -168,11 +168,11 @@ fn check_a_held_clip_or_edge_is_nudged(app: &adw::Application) {
 
     // An edge: the line sits by the END border, so f› moves the end, not the start.
     let window = cut_page(app, &seeded);
-    let frame = 1.0 / naivepost::cut_fps::session_fps(&window);
+    let frame = 1.0 / naivepost::cut_fps::session_fps();
     ui::set_line_position(&window, LinePos { t: 29.9 });
     ui::set_held_edge(Some(clip.clone()));
     common::click(&window, "line-step-forward");
-    let trimmed = ui::review_cut_of(&window).segs[1].clone();
+    let trimmed = ui::window_preview::newest_review_cut().segs[1].clone();
     assert!(
         (trimmed.e - (30.0 + frame)).abs() < 1e-6 && (trimmed.s - 20.0).abs() < 1e-9,
         "f› with the end edge held moved that border one frame: {trimmed:?}"

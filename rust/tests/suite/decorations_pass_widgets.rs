@@ -87,11 +87,14 @@ fn decorations_round(app: &adw::Application) {
     // pass gets no calls, so nothing is invented into the cut while all three are still reached.
     let window = cut_page(app, &common::three_clips_cut());
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "the seeded cut holds nothing to confuse the count"
     );
-    let lines =
-        naivepost::cut_suggest_passes::run_after_cut(&window, &ui::session_policy(&window), |_| {});
+    let lines = naivepost::cut_suggest_passes::run_after_cut(
+        &window,
+        &ui::window_policy::live_session_policy(),
+        |_| {},
+    );
     assert!(
         lines.is_empty(),
         "with no model dialled no pass claims to have placed anything -- got {lines:?}"
@@ -111,7 +114,7 @@ fn decorations_round(app: &adw::Application) {
     // (`Reply::usable()` true, no fault), so the honest line is the empty-result one; `pass::no_answer()`
     // belongs to block (6), where a reply actually faults twice.
     let window = cut_page(app, &common::three_clips_cut());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let said = ui::run_effects_pass(&window);
     settle();
     eprintln!("DECO block 2 (no model) done: {said}");
@@ -121,7 +124,7 @@ fn decorations_round(app: &adw::Application) {
         "the pass run with no model dialled never ran"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "nothing was written when nothing was proposed"
     );
@@ -134,7 +137,7 @@ fn decorations_round(app: &adw::Application) {
     // A 3 s zoom on clip 1 (§F3.11's 2–4 s), a stop on clip 2, a ducking volume on clip 3, plus a volume
     // whose gain means "no change" and a kind this build does not know.
     let window = cut_page(app, &common::three_clips_cut());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     let said = ui::run_effects_pass_with_reply(
         &window,
         &[
@@ -156,7 +159,7 @@ fn decorations_round(app: &adw::Application) {
         said.len() > placed_line.len(),
         "the skipped gain-1 / unknown-kind calls are SAID, not silently dropped -- got {said:?}"
     );
-    let cut_after = ui::review_cut_of(&window);
+    let cut_after = ui::window_preview::newest_review_cut();
     assert_eq!(
         cut_after.fx.len(),
         before + 3,
@@ -240,14 +243,14 @@ fn decorations_round(app: &adw::Application) {
         "the pass reported its result, got {said:?}"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "the decoration is on the cut before the undo"
     );
     ui::press_undo(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "one ↶ undoes the whole pass -- it went through record_edit, not seed_review_cut"
     );
@@ -260,14 +263,14 @@ fn decorations_round(app: &adw::Application) {
     // No control greys out any more — F3.11 is a job of the run after the cut, not a button — so what the
     // switch owns is the refusal itself, the same predicate `cut_suggest_passes::order` filters on.
     let window = cut_page(app, &common::three_clips_cut());
-    ui::set_decorations_pass_for_test(&window, false);
+    ui::set_decorations_pass_for_test(false);
     let refused = ui::run_effects_pass(&window);
     assert!(
         refused.contains("decorations are off"),
         "the pass itself refuses, not only the paint -- got {refused:?}"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "a gated pass writes nothing at all"
     );
@@ -278,7 +281,7 @@ fn decorations_round(app: &adw::Application) {
         still_refused.contains("decorations are off"),
         "nor does the with_reply seam, got {still_refused:?}"
     );
-    ui::set_decorations_pass_for_test(&window, true);
+    ui::set_decorations_pass_for_test(true);
     let reopened = ui::run_effects_pass_with_reply(&window, &[call(1, "zoom", 1.0, 4.0, None)]);
     assert!(
         !reopened.contains("decorations are off"),
@@ -309,7 +312,7 @@ fn decorations_round(app: &adw::Application) {
         "ASCII -- and all, matching the spec's bytes"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "not even the good clip 1 zoom survived the rejected reply"
     );

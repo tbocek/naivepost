@@ -282,7 +282,7 @@ fn sec_08_produce_every_surface_answers_real_input() {
         let play = ui::play_button(&window).expect("the run bar's \u{25b6}");
         real_click_centre(&play);
         assert_eq!(
-            ui::running_step(&window),
+            ui::running_step(),
             Some(naivepost::run::Step::Produce),
             "a real click on \u{25b6} opened the Produce run (status \"{}\")",
             status(&window)
@@ -296,7 +296,7 @@ fn sec_08_produce_every_surface_answers_real_input() {
         );
         common::settle();
         assert!(
-            ui::running_step(&window).is_none()
+            ui::running_step().is_none()
                 && status(&window) == naivepost::produce_render::stopped_log(),
             "a real click on \u{23f9} stopped the run: \"{}\"",
             status(&window)

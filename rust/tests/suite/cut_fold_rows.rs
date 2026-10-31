@@ -519,7 +519,7 @@ fn f2_11_s2_an_emptied_bottom_row_stays_until_its_cross() {
     assert_eq!(rows, vec![0, 1], "two cameras, two rows");
 
     assert_eq!(
-        fold::bottom_row_survives(&recordings, &cut),
+        timeline::row_count(&recordings, &cut),
         3,
         "the floor holds a third row open"
     );
@@ -562,7 +562,7 @@ fn f2_11_s2_the_cross_takes_the_row_and_spends_the_floor() {
         Some(&1),
         "and the camera above came down with it"
     );
-    assert_eq!(fold::bottom_row_survives(&recordings, &cut), 2);
+    assert_eq!(timeline::row_count(&recordings, &cut), 2);
 }
 
 /// F2.11 (Folds and rows) S2 — only an EMPTY row has this way off the band: a row with a recording on it, or one a
@@ -626,7 +626,7 @@ fn f2_11_s2_the_last_row_survives_being_empty() {
     cut.nrows = 1;
     let nothing: Vec<Recording> = vec![];
     assert_eq!(
-        fold::bottom_row_survives(&nothing, &cut),
+        timeline::row_count(&nothing, &cut),
         1,
         "one row is still drawn"
     );

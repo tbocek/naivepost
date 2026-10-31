@@ -222,14 +222,14 @@ mod window_bench;
 mod window_history_zoom;
 mod window_holds;
 /// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply.
-mod window_insert;
+pub mod window_insert;
 /// F4.1 ▶ Write and speak — the window seam of one narration run: what a press is refused, the bar
 /// it paints, and the status lines it leaves.
 pub(crate) mod window_line_step;
 /// §1 badge **15** — the Outputs folder button's own rules (window.rs is past its size budget).
 pub(crate) mod window_outputs;
 /// §05-cut#1-screen — the selection band, the held effect and its live form, the preview's volume.
-mod window_policy;
+pub mod window_policy;
 pub mod window_reset;
 /// §1's run-bar row, made to fit at the minimum size: the job buttons get a box of their own.
 pub mod window_run_bar_fit;
@@ -303,7 +303,7 @@ mod window_close;
 /// §1 — the page and the bottom bar as two halves of a draggable divider.
 pub mod window_divider;
 /// §1's widget doors — the named lookups, readouts and tooltip readers.
-mod window_doors;
+pub mod window_doors;
 /// §06-effects#1-record — the effect dropdown's record door (`press_effect_item`).
 mod window_effect_item;
 pub mod window_log;
@@ -313,7 +313,7 @@ mod window_narrate;
 mod window_page_box;
 /// §F2.1–§F2.3 / §F2.5 S6 / §F2.8–§F2.9 — the preview player and the review cut: the named widget
 /// doors, the reads a test asserts against, and the ▶ / ▶✂ / ▶✂✂ presses.
-mod window_preview;
+pub mod window_preview;
 /// §F0.9 / §F0.10 / §F0.12 — the project dialogs: ＋ New, Open, Save, Rescan and Add sources, plus
 /// the import run they drive.
 mod window_project;
@@ -330,32 +330,25 @@ pub use settings::badge;
 // F3.5 ▨ SVG drawing by hand: the doors this shell and the widget tests call, under the `ui::`
 // names they always had (they lived in `window.rs` until they moved to `cut_svg`).
 pub use cut_svg::{
-    make_here, press_svg_apply, press_svg_cancel, press_svg_choose, press_svg_esc, press_svg_item,
-    raster_dir, raster_of, release_svg_arm_only, svg_armed, svg_chooser_asks_for_test, svg_chosen,
-    svg_chosen_file, svg_drag_ended, svg_drag_ended_with_source, svg_form_open, svg_raster_state,
-    swap_svg_file,
+    press_svg_apply, raster_of, release_svg_arm_only, svg_armed, svg_chooser_asks_for_test,
+    svg_chosen, svg_chosen_file, svg_drag_ended, svg_drag_ended_with_source, svg_form_open,
+    svg_raster_state, swap_svg_file,
 };
 // §07-narrate#1-screen — the page's seams: the state it renders, the refresh that paints it, and
 // one function per press so a widget test can compare what the click printed with what the rule
 // answered.
 pub use narrate_page::{
-    press_back, press_forward, press_line_reroll, press_line_speak, press_narrate_add_line,
-    press_narrate_play, press_pitch, press_sample_play, press_sample_reroll, press_sample_stop,
-    press_take_add, press_take_remove, press_voice, read_state, refresh, set_state, NarrateState,
+    press_line_speak, press_pitch, press_take_add, press_take_remove, press_voice, read_state,
+    refresh, set_state, NarrateState,
 };
-// F4.7's row edits live in their own file; re-exported here so `ui::press_line_*` resolves as
-// before.
-pub use narrate_lines::{press_line_add_below, press_line_move, press_line_remove};
 // F4.7 (**Text**): the box's parse-and-write seam, reached from the row's `changed` handler and
 // from the two flush doors (window close, Produce's read).
-pub use narrate_text::{apply_box, flush_owed, note_typing};
+pub use narrate_text::note_typing;
 pub use settings::dialog_log;
 pub use settings::dialog_log_open;
 pub use settings::dialog_open;
 pub use settings::entry;
 pub use settings::open_with as open_settings;
-pub use settings::press_all;
-pub use settings::press_test;
 pub use settings::settings_button;
 pub use settings::test_button;
 pub use shell_beats::run_bar;
@@ -365,7 +358,7 @@ pub use window::run_queue;
 // outside `ui`.
 pub use crate::ui::log_paint::log_view;
 pub use crate::ui::log_paint::note_exchange_line;
-pub use shell_beats::{advance_clock_for_test, needs_timer, pulse_standing_for_test, should_pulse};
+pub use shell_beats::{pulse_standing_for_test, should_pulse};
 pub use window::add_chooser_shown_count;
 pub use window::add_files;
 pub use window::add_sources_button;
@@ -381,15 +374,12 @@ pub use window::line_root;
 pub use window::line_step_button;
 pub use window::log_expander;
 pub use window::main_window;
-pub use window::marking_pass;
-pub use window::move_line_and_save;
 pub use window::new_button;
 pub use window::new_project_confirm;
 pub use window::new_tooltip;
 pub use window::open_button;
 pub use window::open_folder;
 pub use window::open_from;
-pub use window::open_tooltip;
 pub use window::place_line_press;
 pub use window::play_button;
 pub use window::play_tooltip;
@@ -398,7 +388,6 @@ pub use window::press_play_cut;
 pub use window::press_review_cuts;
 pub use window::progress_bar;
 pub use window::progress_tooltip;
-pub use window::project_title;
 pub use window::rescan_button;
 pub use window::rescan_tooltip;
 pub use window::reset_add_chooser_shown;
@@ -406,18 +395,15 @@ pub use window::running_step;
 pub use window::save_button;
 pub use window::save_tooltip;
 pub use window::session_handle;
-pub use window::session_policy;
 pub use window::session_sources;
 pub use window::set_bench_open_row;
 pub use window::set_line_position;
 pub use window::set_marking_pass;
 pub use window::set_policy_sender_for_tests;
 pub use window::set_session_context;
-pub use window::set_session_policy_field;
 pub use window::space_toggles;
 pub use window::state;
 pub use window::step_frames_of;
-pub use window::step_the_line;
 pub use window::stop_button;
 pub use window::Step;
 /// §1's tab row / page stack, and the §1 badges 6/15 doors that read the ⓘ's tooltip, the Outputs
@@ -432,16 +418,27 @@ pub use window::apply_mix;
 pub use window::clamp_effects_to_cut;
 pub use window::clear_selection;
 pub use window::clear_selection_button;
+/// F2.7: the write-to-cut.json door, so a check can start from a file on disk (every editing press
+/// already uses it; this only makes it reachable from outside `ui`).
+// F2.8: the strip's recording bound, so a test compares against the same wall the seam used.
+pub use window::copy_esc_controller;
+pub use window::copy_hand;
 pub use window::draw_selection;
 pub use window::nudge_selection;
 pub use window::play_cut_button;
 pub use window::play_recording_button;
+pub use window::press_copy;
 pub use window::press_fx_lane;
+pub use window::press_lane;
+pub use window::press_paste;
 pub use window::press_play_recording;
 pub use window::pressed_surface;
 pub use window::preview_volume;
 pub use window::preview_volume_scale;
+pub use window::review_cut_segs;
+pub use window::review_cut_segs_count;
 pub use window::review_cuts_button;
+pub use window::review_lanes;
 pub use window::seed_review_cut;
 pub use window::selection;
 pub use window::selection_gesture;
@@ -449,73 +446,48 @@ pub use window::selection_readout;
 pub use window::selection_surface;
 pub use window::selection_verbs;
 pub use window::set_preview_volume;
-/// F2.7: the write-to-cut.json door, so a check can start from a file on disk (every editing press
-/// already uses it; this only makes it reachable from outside `ui`).
-pub use window_insert::save_seed_for_test;
-// F2.8: the strip's recording bound, so a test compares against the same wall the seam used.
-pub use window::copy_esc_controller;
-pub use window::copy_hand;
-pub use window::press_copy;
-pub use window::press_lane;
-pub use window::press_paste;
-pub use window::review_cut_segs;
-pub use window::review_cut_segs_count;
-pub use window::review_lanes;
 pub use window::TRACK_REC_END;
 pub use window::TRACK_STRIP_PPS;
 // F2.7: the three verb buttons, the ⌦ key and the two "what is in hand" seams.
 pub use cut_cameras::{
-    camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_lens_scene,
-    press_speaker_badge, press_watch_row, preview_row, refresh_camera_rows, toggle_button,
-    SPEAKER_GLYPH,
+    camera_rows_box, camera_watch, hand_preview_back, press_gutter_switch, press_watch_row,
+    preview_row, refresh_camera_rows, toggle_button,
 };
 pub use window::apply_pick;
 pub use window::find_status;
-pub use window::held_clip;
-pub use window::held_edge;
-pub use window::held_now;
 /// The segment in hand either way — whole clip or held edge — for doors that move a segment without
 /// asking which the hand took.
-pub use window::held_segment;
 pub use window::set_held_edge;
 pub use window::set_watched_row;
 pub use window::watched_row;
 // F2.10: the row list itself, rebuilt from the live cut by every refresh above.
 /// F2.12 S7: the card preview pass, called from `cut_picture::refresh` (the panel's one frame
 /// door).
-pub use cut_card_preview::{card_hearing, card_tick, set_card_snapshot_dir};
+pub use cut_card_preview::card_tick;
 pub use cut_folds::{
-    fold_badges_box, fold_gaps, fold_overlay, folded_gap_at, page_recordings, press_fold_all,
-    press_fold_gap, press_lane_cross, press_row_cross, refresh_fold_badges, review_fold_rows,
-    set_session_recordings, unfold_fold_for_playback,
+    fold_badges_box, fold_gaps, fold_overlay, folded_gap_at, page_recordings, press_fold_gap,
+    refresh_fold_badges, set_session_recordings,
 };
 /// F2.1's tick: the line following the player at 10 Hz, walk-on and folds opening under ▶.
 pub mod cut_record_tick;
 pub use window::delete_key_controller;
-pub use window::held_effect;
 pub use window::line_click_gesture;
 // F2.12: the insert button's wire, the form's seams and its read-back for tests.
 /// F3.7 Label by hand — the form's doors, so a test can press them the way the dropdown row does.
-pub use cut_label_hand::{
-    label_form_open, press_label_apply, press_label_cancel, press_label_esc, press_label_item,
-};
+pub use cut_label_hand::{label_form_open, press_label_item};
 pub use cut_speed_hand::{
-    band_esc_controller, press_speed_apply, press_speed_cancel, press_speed_esc, press_speed_item,
-    speed_custom_rate_visible, speed_form_open,
+    band_esc_controller, press_speed_item, speed_custom_rate_visible, speed_form_open,
 };
 /// F3.6 Volume by hand — the form's doors, so a test can press them the way the dropdown row does.
-pub use cut_volume_hand::{
-    paused_preview_gain, press_volume_apply, press_volume_cancel, press_volume_esc,
-    press_volume_item, volume_form_open,
-};
+pub use cut_volume_hand::{paused_preview_gain, press_volume_item, volume_form_open};
 pub use window::note_place;
 pub use window::press_effect_item;
 pub use window::press_zoom;
 pub use window::press_zoom_item;
 pub use window_insert::{
-    answer_logos, close_insert_form, insert_asks_for_test, insert_chosen,
-    insert_chosen_with_length, insert_open, logo_asks_for_test, place_known, press_insert,
-    press_insert_apply, refresh_insert_button, visible_insert_form,
+    answer_logos, close_insert_form, insert_asks_for_test, insert_chosen_with_length, insert_open,
+    logo_asks_for_test, press_insert, press_insert_apply, refresh_insert_button,
+    visible_insert_form,
 };
 // F3.9 Captions proposed by the model: the pass's seams.
 pub use window::run_captions_pass;
@@ -532,8 +504,8 @@ pub use cut_effects_pass::run_effects_pass_with_reply;
 /// name.
 pub use cut_text_hand::{
     drag_text_edge, nudge_text_box, press_aspect, press_text_apply, press_text_cancel,
-    press_text_esc, press_text_item, release_text_arm_only, text_armed, text_drag_ended,
-    text_drag_ended_with_source, text_form_open, text_type_words,
+    press_text_item, text_armed, text_drag_ended, text_drag_ended_with_source, text_form_open,
+    text_type_words,
 };
 pub use window::narrate_pulsed;
 pub use window::narrate_script_loaded;
@@ -545,18 +517,13 @@ pub use window::press_narrate_run;
 pub use window::press_zoom_apply;
 pub use window::press_zoom_cancel;
 pub use window::press_zoom_esc;
-pub use window::pull_half_typed;
 pub use window::refresh_effects_lane;
 pub use window::refuse_narrate_run;
 pub use window::set_decorations_pass_for_test;
 pub use window::set_narrate_script;
 pub use window::set_narrate_script_slow;
 pub use window::set_zoom_armed;
-pub use window::show_narrate_progress;
-pub use window::show_narrate_stage;
 pub use window::zoom_armed;
-pub use window::zoom_drag_ended;
-pub use window::zoom_drag_ended_with_source;
 pub use window::zoom_form_open;
 pub use window::zoom_gesture;
 pub use window::CaptionBatch;
@@ -564,16 +531,13 @@ pub use window::PREVIEW_PANEL_H;
 pub use window::PREVIEW_PANEL_W;
 // F3.1's module-level seams: the press on the paused preview, and the plate beside the rect.
 pub use cut_verb_press::{press_add, press_delete_key, press_remove, press_split};
-pub use cut_zoom_hand::plate_shown_for_test as zoom_plate_shown;
 pub use window::effects_lane_box;
 pub use window::history_key_controller;
 pub use window::note_edit;
 pub use window::press_clear_cut;
-pub use window::press_redo;
 pub use window::press_revert;
 pub use window::press_undo;
 pub use window::reopen_history_on;
-pub use window::review_cut_of;
 pub use window::set_held_clip;
 pub use window::set_held_effect;
 // F2.8: the trim/move strip, its two gestures, and the seams that feed a right-press's ground.
@@ -585,10 +549,8 @@ pub use window::outputs_folder_button;
 pub use window::outputs_label;
 pub use window::outputs_readout;
 pub use window::outputs_sentence;
-pub use window::press_band;
 pub use window::press_move;
 pub use window::press_move_at;
-pub use window::press_position;
 pub use window::press_scene;
 pub use window::press_trim_border;
 pub use window::preview_player;
@@ -615,13 +577,12 @@ pub use window::SELECT_SURFACE_PPS;
 // and read the effect back through the same state the logic tests check.
 /// F3.8: the bar gesture's own doors — `wire_bar` is called from `refresh_effects_lane`, and the
 /// two state readers are what `drag_held_band` asks about the drag in flight.
-pub use cut_band_press::{band_drag_in_flight, bar_gesture_for_test, take_history_step, wire_bar};
+pub use cut_band_press::bar_gesture_for_test;
 pub use window::cut_bar_width_px;
 pub use window::drag_held_band;
 pub use window::live_form_answer_is_undo;
 pub use window::live_form_refused;
 pub use window::nudge_held_effect;
-pub use window::open_effect_form;
 pub use window::press_band_esc;
 pub use window::press_edit_effect;
 pub use window::press_effect_bar;
@@ -629,6 +590,5 @@ pub use window::remove_effect_at;
 pub use window::remove_held_effect;
 /// §1 badge **15**: the Outputs folder button's own module (its press, its opener seam).
 pub use window_outputs::{
-    folder_for, folder_now, press as press_outputs_folder, wire as wire_outputs_folder,
-    wire_with as wire_outputs_folder_with, Opener as OutputsOpener,
+    folder_now, wire_with as wire_outputs_folder_with, Opener as OutputsOpener,
 };

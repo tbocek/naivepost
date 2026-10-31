@@ -836,7 +836,7 @@ fn f1_8_s7_a_row_is_labelled_by_voice() {
     );
     assert_eq!(fix::label(BASE, "   ", ""), "SPEAKER");
     assert_eq!(fix::label(BASE, "SPEAKER_02", ""), "SPEAKER_02");
-    assert_eq!(fix::stamp(65.0), "01:05");
+    assert_eq!(naivepost::tools::mm_ss(65.0), "01:05");
     assert_eq!(fix::stamp_span(0.0, 4.0), "00:00-00:04");
 }
 
@@ -887,7 +887,7 @@ fn f1_8_s7_a_marked_stretch_folds_to_one_line() {
 fn f1_8_s7_session_txt_is_written_as_the_cut_reads_it() {
     let tree = tree("txt");
     let rows = vec![session(0.0, 2.0, BASE, "SPEAKER_00", "one thing")];
-    fix::write_session_text(&tree, &fix::session_text(&rows, "", &[])).unwrap();
+    fix::write_session_text(&tree, &fix::labelled(&rows, "", &[])).unwrap();
     assert_eq!(
         std::fs::read_to_string(tree.session_txt()).unwrap(),
         "[0s-2s | 00:00] SPEAKER_00: one thing\n"
@@ -952,7 +952,7 @@ fn f1_8_s7_a_run_places_fixes_merges_and_writes_every_file() {
     let rows = textfmt::read_session(&tree.session_tsv()).unwrap();
     assert_eq!(
         std::fs::read_to_string(tree.session_txt()).unwrap(),
-        fix::session_text(&rows, "", &[])
+        fix::labelled(&rows, "", &[])
     );
     assert!(!outcome.marked);
 

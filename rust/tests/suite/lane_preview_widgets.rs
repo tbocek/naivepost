@@ -68,8 +68,8 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
         .emit_by_name::<()>("clicked", &[]);
     // The order build_window uses: open the history on what the page opens with, then show it, so a recorded
     // effect is one Undo away from THIS baseline rather than from a stale one.
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     settle();
     let _ = tape;
     window
@@ -160,13 +160,13 @@ fn lane_preview_round(app: &adw::Application) {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 12.0 });
     click(&window, "effect-item-volume");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "the press alone adds no record -- the loudness is still an unanswered question"
     );
     click(&window, "volume-apply-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "Apply put one record on the cut"
     );
@@ -210,7 +210,7 @@ fn lane_preview_round(app: &adw::Application) {
     ui::refresh_effects_lane(&window);
     settle();
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "the lane took the effect out of hand"
     );
     assert!(
@@ -232,7 +232,7 @@ fn lane_preview_round(app: &adw::Application) {
     );
     click(&window, "undo-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         0,
         "Undo took the record back"
     );

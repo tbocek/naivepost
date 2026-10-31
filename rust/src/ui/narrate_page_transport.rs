@@ -49,7 +49,6 @@ pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
                 if let Err(why) = narrate_preview_leg::start_running(
                     &tree,
                     &cut,
-                    &s.entries,
                     from,
                     narrate_preview_leg::PreviewPage::game_volume(&driver),
                     narrate_preview_leg::PreviewPage::volume(&driver),
@@ -77,11 +76,6 @@ pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// The preview's play/pause, through the picture's door: inventory §A.3/§A.4 are one toggle wearing two faces.
-pub fn press_narrate_play(window: &adw::ApplicationWindow) -> String {
-    press_preview_picture(window)
-}
-
 /// Whether the preview is running now; the run bar asks before reading ⏹ as the end of a run (F4.5 S6).
 pub fn narrate_preview_playing() -> bool {
     narrate_page::read_state().playing
@@ -91,13 +85,10 @@ pub fn narrate_preview_playing() -> bool {
 pub(crate) fn publish_transport() {
     let s = narrate_page::read_state();
     let window = crate::ui::window::main_window();
-    crate::ui::window::publish_preview_transport(
-        &window,
-        crate::run::Transport {
-            playing: s.playing,
-            started: s.started,
-        },
-    );
+    crate::ui::window::publish_preview_transport(crate::run::Transport {
+        playing: s.playing,
+        started: s.started,
+    });
     // The page's own ▶ shows the same answer as the bar: ⏸ while the preview plays (§1's "▶/⏸").
     narrate_page::paint_play_face(&window, s.playing);
     crate::ui::window_bench::repaint_run_bar(&window);

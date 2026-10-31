@@ -68,8 +68,8 @@ fn named(window: &adw::ApplicationWindow, name: &str) -> gtk4::Widget {
     common::find_named(window, name).unwrap_or_else(|| panic!("the page has {name}"))
 }
 
-fn source(window: &adw::ApplicationWindow, index: usize) -> Source {
-    ui::session_handle(window).borrow().sources[index].clone()
+fn source(index: usize) -> Source {
+    ui::session_handle().borrow().sources[index].clone()
 }
 
 #[test]
@@ -115,16 +115,16 @@ fn sec_04_prepare_every_surface_answers_real_input() {
         let footage = named(&window, "footage-0");
         real_click_centre(&footage);
         assert!(
-            !source(&window, 0).footage && status(&window).ends_with("not footage"),
+            !source(0).footage && status(&window).ends_with("not footage"),
             "a real click on 🎥 took footage off: \"{}\"",
             status(&window)
         );
         real_click_centre(&footage);
-        assert!(source(&window, 0).footage, "a second click put it back");
+        assert!(source(0).footage, "a second click put it back");
 
         // 🎤: a click moves the row to the next voice and the face shows its number.
         real_click_centre(&named(&window, "narrator-0"));
-        let voice = source(&window, 0).narrator;
+        let voice = source(0).narrator;
         let face = named(&window, "narrator-face-0")
             .downcast::<gtk4::Label>()
             .expect("the face's number");
@@ -138,12 +138,12 @@ fn sec_04_prepare_every_surface_answers_real_input() {
         let split = named(&window, "separate-0");
         real_click_centre(&split);
         assert!(
-            source(&window, 0).sepvoice,
+            source(0).sepvoice,
             "a real click on 🗣 asked for the split: \"{}\"",
             status(&window)
         );
         real_click_centre(&split);
-        assert!(!source(&window, 0).sepvoice, "a second click took it back");
+        assert!(!source(0).sepvoice, "a second click took it back");
 
         // The track menu of the two-stream file: a click opens it, a click on the second tick hears both.
         let menu = named(&window, "track-0");
@@ -167,7 +167,7 @@ fn sec_04_prepare_every_surface_answers_real_input() {
         assert!(tick.is_mapped(), "a real click on the track menu opened it");
         real_click_centre(&tick);
         assert_eq!(
-            source(&window, 0).tracks,
+            source(0).tracks,
             vec![0, 1],
             "a real click on the second tick added its stream"
         );
@@ -185,7 +185,7 @@ fn sec_04_prepare_every_surface_answers_real_input() {
         // 🗑: a click takes the second recording out of the session.
         real_click_centre(&named(&window, "remove-1"));
         assert_eq!(
-            ui::session_handle(&window).borrow().sources.len(),
+            ui::session_handle().borrow().sources.len(),
             1,
             "a real click on 🗑 removed the row: \"{}\"",
             status(&window)
@@ -200,7 +200,7 @@ fn sec_04_prepare_every_surface_answers_real_input() {
         );
         common::settle();
         assert!(
-            status(&window) != before && ui::running_step(&window).is_none(),
+            status(&window) != before && ui::running_step().is_none(),
             "a real click on \u{25b6} reached Prepare and its refusal closed the bar: \"{}\"",
             status(&window)
         );

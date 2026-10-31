@@ -56,7 +56,7 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     ]);
     let mut cut = Cut::default();
     cut.segs = vec![film(10.0, 40.0, 0), film(60.0, 100.0, 0)];
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     ui::set_held_clip(None);
     ui::set_line_position(&window, LinePos { t: 20.0 });
     ui::cut_view::repaint_page(&window);
@@ -65,31 +65,31 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 }
 
 /// The mark the band draws that `pick` accepts.
-fn mark(window: &adw::ApplicationWindow, pick: impl Fn(&Mark) -> bool) -> Placed {
-    ui::cut_band_marks::placed_on(window)
+fn mark(pick: impl Fn(&Mark) -> bool) -> Placed {
+    ui::cut_band_marks::placed_on()
         .into_iter()
         .find(|placed| pick(&placed.mark))
         .unwrap_or_else(|| {
             panic!(
                 "no such mark on the band: {:?}",
-                ui::cut_band_marks::placed_on(window)
+                ui::cut_band_marks::placed_on()
             )
         })
 }
 
 /// A real click on the band where `placed` is drawn.
-fn press(window: &adw::ApplicationWindow, placed: &Placed) {
-    let gesture = ui::window::band_line_gesture_for_test(window).expect("the band takes clicks");
+fn press(placed: &Placed) {
+    let gesture = ui::window::band_line_gesture_for_test().expect("the band takes clicks");
     gesture.emit_by_name::<()>("released", &[&1i32, &placed.x, &placed.y]);
     settle();
 }
 
-fn check_the_marks_stand_where_section_1_puts_them(window: &adw::ApplicationWindow) {
+fn check_the_marks_stand_where_section_1_puts_them() {
     let band_y = naivepost::cut_trim::RULER_H + tracks::SELECTION_BAND_PX / 2.0;
-    let scene = ui::cut_view::band_scene_for(window);
+    let scene = ui::cut_view::band_scene_for();
     // Badge 25: a ✕ in the middle of each green bar, in the selection band.
     for index in 0..2 {
-        let cross = mark(window, |m| *m == Mark::SceneCross(index));
+        let cross = mark(|m| *m == Mark::SceneCross(index));
         let (x, w) = tracks::band_span_px(&scene, scene.segs[index].s, scene.segs[index].e);
         assert!(
             (cross.x - (x + w / 2.0 - scene.origin)).abs() < 0.5 && (cross.y - band_y).abs() < 0.5,
@@ -97,16 +97,13 @@ fn check_the_marks_stand_where_section_1_puts_them(window: &adw::ApplicationWind
         );
     }
     // Badge 26: the dropped 40..60 s between them wears a − (it is open).
-    let fold = mark(
-        window,
-        |m| matches!(m, Mark::Fold(gap, false) if gap.0 == 40.0),
-    );
+    let fold = mark(|m| matches!(m, Mark::Fold(gap, false) if gap.0 == 40.0));
     assert!((fold.y - band_y).abs() < 0.5, "in the selection band");
     // Badge 23 at the gutter's top, and badge 29 per row, both pinned in the gutter.
     for placed in [
-        mark(window, |m| matches!(m, Mark::FoldAll(false))),
-        mark(window, |m| matches!(m, Mark::RowSound(0, true))),
-        mark(window, |m| matches!(m, Mark::RowSound(1, _))),
+        mark(|m| matches!(m, Mark::FoldAll(false))),
+        mark(|m| matches!(m, Mark::RowSound(0, true))),
+        mark(|m| matches!(m, Mark::RowSound(1, _))),
     ] {
         assert!(
             placed.pinned && placed.x < naivepost::cut_screen::GUTTER_PX,
@@ -115,25 +112,22 @@ fn check_the_marks_stand_where_section_1_puts_them(window: &adw::ApplicationWind
     }
     // The scene under the line was filmed by both cameras, so it wears a lens per row, lit on the row it is shown
     // from; and its own sound's speaker on its wave strip.
-    mark(window, |m| *m == Mark::Lens(0, true));
-    mark(window, |m| *m == Mark::Lens(1, false));
-    mark(window, |m| *m == Mark::SceneSound(true));
+    mark(|m| *m == Mark::Lens(0, true));
+    mark(|m| *m == Mark::Lens(1, false));
+    mark(|m| *m == Mark::SceneSound(true));
 }
 
 fn check_a_press_on_a_mark_does_its_job_and_leaves_the_line(window: &adw::ApplicationWindow) {
     // The fold badge folds its gap; the line stays where it was.
-    let fold = mark(
-        window,
-        |m| matches!(m, Mark::Fold(gap, false) if gap.0 == 40.0),
-    );
-    press(window, &fold);
+    let fold = mark(|m| matches!(m, Mark::Fold(gap, false) if gap.0 == 40.0));
+    press(&fold);
     assert!(
-        ui::review_cut_of(window)
+        ui::window_preview::newest_review_cut()
             .folds
             .iter()
             .any(|[s, e]| *s <= 40.5 && *e >= 59.5),
         "the − folded the 40..60 s gap: {:?}",
-        ui::review_cut_of(window).folds
+        ui::window_preview::newest_review_cut().folds
     );
     assert!(
         status_text(window).starts_with("folded"),
@@ -141,26 +135,23 @@ fn check_a_press_on_a_mark_does_its_job_and_leaves_the_line(window: &adw::Applic
         status_text(window)
     );
     assert_eq!(
-        ui::line_position(window).t,
+        ui::line_position().t,
         20.0,
         "a press on a mark places no line"
     );
     // The folded gap now wears a +, which opens it again.
-    let unfold = mark(
-        window,
-        |m| matches!(m, Mark::Fold(gap, true) if gap.0 == 40.0),
-    );
-    press(window, &unfold);
+    let unfold = mark(|m| matches!(m, Mark::Fold(gap, true) if gap.0 == 40.0));
+    press(&unfold);
     assert!(
-        ui::review_cut_of(window).folds.is_empty(),
+        ui::window_preview::newest_review_cut().folds.is_empty(),
         "the + opened it"
     );
 
     // The lens on row 2 shows the scene from camera 2.
-    let lens = mark(window, |m| *m == Mark::Lens(1, false));
-    press(window, &lens);
+    let lens = mark(|m| *m == Mark::Lens(1, false));
+    press(&lens);
     assert_eq!(
-        ui::review_cut_segs(window)[0].cam,
+        ui::review_cut_segs()[0].cam,
         1,
         "the scene is shown from row 2 now"
     );
@@ -179,19 +170,19 @@ fn check_a_press_on_a_mark_does_its_job_and_leaves_the_line(window: &adw::Applic
         90.0,
     );
     ui::cut_view::repaint_page(window);
-    let cross = mark(window, |m| *m == Mark::SelectionCross);
-    press(window, &cross);
+    let cross = mark(|m| *m == Mark::SelectionCross);
+    press(&cross);
     assert!(
-        ui::selection(window).is_none(),
+        ui::selection().is_none(),
         "the \u{2715} cleared the selection"
     );
-    assert_eq!(ui::review_cut_segs(window).len(), 2, "and removed no scene");
+    assert_eq!(ui::review_cut_segs().len(), 2, "and removed no scene");
 
     // The second scene's ✕ drops that scene.
-    let cross = mark(window, |m| *m == Mark::SceneCross(1));
-    press(window, &cross);
+    let cross = mark(|m| *m == Mark::SceneCross(1));
+    press(&cross);
     assert_eq!(
-        ui::review_cut_segs(window).len(),
+        ui::review_cut_segs().len(),
         1,
         "the \u{2715} took scene 2 out of the cut"
     );
@@ -202,7 +193,7 @@ fn sec_05_cut_1_screen_the_band_draws_its_marks_and_answers_a_press_on_them() {
     common::pin_private_cwd();
     common::one_app_round(|app| {
         let window = cut_window(app);
-        check_the_marks_stand_where_section_1_puts_them(&window);
+        check_the_marks_stand_where_section_1_puts_them();
         check_a_press_on_a_mark_does_its_job_and_leaves_the_line(&window);
         window.close();
         RAN.store(true, Ordering::SeqCst);

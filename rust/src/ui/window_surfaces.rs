@@ -19,8 +19,7 @@ pub const SELECT_SURFACE_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
 
 /// F2.4 S1: the click gesture that places the red line, newest window winning like
 /// [`SELECT_GESTURES`].
-pub fn line_click_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
-    let _ = window;
+pub fn line_click_gesture() -> Option<gtk::GestureClick> {
     LINE_CLICKS.with(|cell| cell.borrow().clone())
 }
 
@@ -63,13 +62,7 @@ pub(crate) fn store_band_line_gesture(gesture: gtk::GestureClick) {
     BAND_LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
 }
 
-/// The millisecond clock the line throttle reads, for the page half that places a line.
-pub fn line_now_ms() -> u64 {
-    now_ms()
-}
-
-pub fn band_line_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureClick> {
-    let _ = window;
+pub fn band_line_gesture_for_test() -> Option<gtk::GestureClick> {
     BAND_LINE_CLICKS.with(|cell| cell.borrow().clone())
 }
 
@@ -92,7 +85,7 @@ pub(crate) fn wire_select_surface(window: &adw::ApplicationWindow) {
     });
     let fx_win = window.clone();
     gesture.connect_drag_update(move |_g, x, y| {
-        let surface = pressed_surface(&fx_win).unwrap_or_else(|| {
+        let surface = pressed_surface().unwrap_or_else(|| {
             let (bands, rows) = placeholder_surface_bands();
             cut_select::surface_at(y, &bands, rows)
         });
@@ -106,7 +99,7 @@ pub(crate) fn wire_select_surface(window: &adw::ApplicationWindow) {
         draw_selection(
             &fx_win,
             surface,
-            crate::ui::cut_select_press::recording_for_surface(&fx_win, surface, y).as_deref(),
+            crate::ui::cut_select_press::recording_for_surface(surface, y).as_deref(),
             from,
             x / SELECT_SURFACE_PPS,
         );

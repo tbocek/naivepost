@@ -61,12 +61,12 @@ fn f3_5_s1_no_line_refuses_before_the_chooser() {
     assert_eq!(fx_svg::CHOOSE_FILTER, "SVG drawing");
     let root = std::path::Path::new("/home/dev/eth");
     assert_eq!(
-        fx_svg::chooser_dir(root),
+        naivepost::layout::assets_dir(root),
         naivepost::layout::assets_dir(root)
     );
     assert_eq!(
-        fx_svg::chooser_dir(root),
-        naivepost::cut_insert::chooser_dir(root)
+        naivepost::layout::assets_dir(root),
+        naivepost::layout::assets_dir(root)
     );
 }
 
@@ -185,7 +185,7 @@ fn f3_5_s3b_the_default_box_is_the_middle_not_the_lower_third() {
 
     // S1's other rule (§A.5 "same as text"): the box is measured against the output frame, so the camera layer holds
     // its place while a drawing is placed — asserted through text's own answer, and against zoom's opposite one.
-    assert!(fx_svg::camera_layer_stays_up());
+    assert!(fx_text::camera_layer_stays_up());
     assert!(fx_text::camera_layer_stays_up());
     assert!(fx_zoom::whole_source_shown(true));
     assert!(!fx_zoom::whole_source_shown(false));

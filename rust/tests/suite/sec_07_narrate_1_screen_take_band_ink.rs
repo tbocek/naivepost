@@ -179,11 +179,7 @@ fn round(app: &adw::Application) {
         // prints its "reading the recording…" sentence — grey (191,199,204), which fails the r >= 200 filter
         // below and so cannot be mistaken for glyph ink.
         let tree = naivepost::ui::window::narrate_session_tree().expect("a session folder");
-        write_wav(
-            &naivepost::narrate_data::base_reference(&tree),
-            16_000,
-            45 * 16_000,
-        );
+        write_wav(&tree.voice_ref_base_wav(), 16_000, 45 * 16_000);
         ui::refresh(&window);
         settle();
         let width = 500i32;
@@ -259,7 +255,7 @@ fn round(app: &adw::Application) {
         // that is not on this machine): the 16 kHz decode marker short-circuits `decode_audio::ensure`, and
         // `wave_build::ensure` does the real fold into `cache/waves/<lane>.wave`. No ffmpeg runs here.
         let tree = naivepost::ui::window::narrate_session_tree().expect("a session folder");
-        let reference = naivepost::narrate_data::base_reference(&tree);
+        let reference = tree.voice_ref_base_wav();
         // 16 kHz is the decode's own rate, so `wave_build::SAMPLES_PER_BUCKET` divides it exactly.
         write_wav(&reference, 16_000, 45 * 16_000);
         let lane = format!("voice:{}", naivepost::narrate_data::take_base(&reference));
@@ -269,7 +265,7 @@ fn round(app: &adw::Application) {
             .expect("the wave cache is folded from the staged decode");
         ui::refresh(&window);
         settle();
-        let peaks = match ui::narrate_band::envelope_report_for_test(&ui::read_state()) {
+        let peaks = match ui::narrate_band::envelope_attempt(&ui::read_state()) {
             Ok((hz, peaks)) => {
                 assert!(
                     hz > 0.0,
@@ -319,7 +315,7 @@ fn round(app: &adw::Application) {
         scratch_root("ink-bare");
         let window = narrate_page(app, base_state());
         assert!(
-            ui::narrate_band::envelope_report_for_test(&ui::read_state()).is_err(),
+            ui::narrate_band::envelope_attempt(&ui::read_state()).is_err(),
             "nothing is staged, so the walk refuses rather than answering with an empty wave"
         );
         // Painting is what turns that refusal into a log line: §1 gives the lane one public sentence, so the

@@ -125,7 +125,7 @@ fn p_eng_suggestfallbacksegments_s6_no_row_lives_with_the_rule_instead() {
         params::prepare(),
         params::cut(),
         params::effects(),
-        params::narrate(),
+        naivepost::params_narrate::rows(),
         params::produce(),
     ] {
         assert_eq!(

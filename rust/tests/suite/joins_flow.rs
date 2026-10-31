@@ -540,8 +540,8 @@ fn f1_10_s3_the_refusal_line_names_the_join_the_reason_and_the_tail() {
 fn f1_10_s3_a_retry_gets_its_own_cache_slot() {
     // Without a distinct slot per attempt the retry is served straight back the refusal it was meant
     // to escape -- which is why P.machine.seamRetries needed a round of its own.
-    let base = joins::ask_slot("join-23-request", 0);
-    let retry = joins::ask_slot("join-23-request", 1);
+    let base = naivepost::seam_retries::ask_slot("join-23-request", 0);
+    let retry = naivepost::seam_retries::ask_slot("join-23-request", 1);
     assert_ne!(base, retry, "the retry must key elsewhere");
     assert_eq!(
         base, "join-23-request",
@@ -564,7 +564,7 @@ fn f1_10_s4_a_saying_repeated_across_the_cut_loses_its_earlier_copy() {
     let mut kept = vec![true; words.len()];
     // Drop the "again" (index 5) that sits between the two sayings of "up fast".
     kept[5] = false;
-    let notes = joins::dedupe_across(&words, &times, &mut kept);
+    let notes = naivepost::tools::textedit::dedupe_joins(&words, &times, &mut kept);
     assert_eq!(notes.len(), 1, "one join fixed: {notes:?}");
     assert!(
         notes[0].contains("said again straight after the cut -- the earlier one goes"),

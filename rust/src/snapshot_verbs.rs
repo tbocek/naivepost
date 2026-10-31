@@ -48,7 +48,7 @@ fn seeded() -> cut::Cut {
 /// the badge's presence is printed instead (`cut_fold::badges` draws one per gap wide enough to fold).
 pub fn stage(window: &adw::ApplicationWindow, screen: &str, dir: &Path) -> Vec<String> {
     ui::set_session_recordings(&tape());
-    ui::seed_review_cut(window, &seeded());
+    ui::seed_review_cut(&seeded());
     // Deepen the zoom through the toolbar's own + door: at 4 px/s the split borders are hairlines; §A's ladder stops at 15 px/s where every box has real width.
     for _ in 0..6 {
         ui::press_zoom(window, true);
@@ -85,7 +85,7 @@ pub fn stage(window: &adw::ApplicationWindow, screen: &str, dir: &Path) -> Vec<S
             said.push(say(&ui::press_remove(window)));
             ui::set_line_position(window, crate::cut_line::LinePos { t: 15.0 });
             // The gap this opened, counted through the page's own badge table (`refresh_fold_badges` ran inside `report_verb`): whether it wears a − badge is geometry (§B: under `cut_fold::FOLD_MIN_PX` gets none), so the number goes to stdout.
-            let gaps = ui::fold_gaps(window).len();
+            let gaps = ui::fold_gaps().len();
             println!("snapshot: 05-remove fold badges over the new gap = {gaps}");
         }
         other => return vec![format!("no F2.7 staging for {other}")],

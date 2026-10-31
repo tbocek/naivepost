@@ -9,8 +9,7 @@ use crate::layout;
 use crate::narration;
 
 /// Write the owed narration for `window`, then settle the flag so nothing writes it twice.
-pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
-    let _ = window;
+pub(crate) fn flush_held_narration() {
     let owed = crate::ui::window::WINDOW_SHELLS.with(|shells| {
         shells
             .borrow()

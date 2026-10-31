@@ -191,8 +191,7 @@ fn even(side: u32) -> u32 {
 // ---- S4: Re-ask ------------------------------------------------------------------
 
 /// S4: the ask-again button hands back an empty box, never the text it is replacing: this press says those words were wrong.
-pub fn re_ask(text: &str) -> String {
-    let _ = text;
+pub fn re_ask() -> String {
     String::new()
 }
 

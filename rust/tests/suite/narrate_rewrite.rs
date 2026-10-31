@@ -133,8 +133,8 @@ fn p_policy_narrationrewrite_s4_the_reason_names_the_cause() {
 fn p_policy_narrationrewrite_s5_the_silent_list_is_untouched_either_way() {
     let mut n = narration();
     n.sort();
-    assert!(rw::silent_kept(&n, B.0, B.1), "B is marked silent by hand");
-    assert!(!rw::silent_kept(&n, A.0, A.1));
+    assert!(n.is_silent(B.0, B.1), "B is marked silent by hand");
+    assert!(!n.is_silent(A.0, A.1));
 
     let before = n.clone();
     // Deciding what to write reads the narration and changes none of it — off ...
@@ -149,7 +149,7 @@ fn p_policy_narrationrewrite_s5_the_silent_list_is_untouched_either_way() {
         n, before,
         "even a rewrite-everything pass leaves the markers alone"
     );
-    assert!(rw::silent_kept(&n, B.0, B.1));
+    assert!(n.is_silent(B.0, B.1));
     // A silent clip is still written for when it has no line: it needs a caption even with no voice on
     // it, so silence is not a filter on this list.
     assert!(off.contains(&B));
@@ -166,7 +166,7 @@ fn p_policy_narrationrewrite_s5_the_silent_list_is_untouched_either_way() {
 fn p_policy_narrationrewrite_s6_rowed_as_off_and_absent_reads_as_off() {
     // `params::find` answers Prepare's rows only, so the Narrate section is searched directly — as
     // every other narrate/produce row's test does.
-    let row = params::narrate()
+    let row = naivepost::params_narrate::rows()
         .into_iter()
         .find(|param| param.id == "P.policy.narrationRewrite")
         .expect("§10's row exists");

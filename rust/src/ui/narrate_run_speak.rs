@@ -32,7 +32,7 @@ pub fn speak_lines<F>(entries: &[Entry], cached: impl Fn(&Entry) -> bool, mut sp
 where
     F: FnMut(&Entry) -> Result<std::path::PathBuf, String>,
 {
-    let decisions = narrate_run::speak_pass("", entries, cached);
+    let decisions = narrate_run::speak_pass(entries, cached);
     let mut lines = Vec::with_capacity(entries.len());
     let mut stopped = false;
     for (entry, decision) in entries.iter().zip(decisions) {

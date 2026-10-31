@@ -63,8 +63,8 @@ fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     // The lane's bars — and the gesture each one carries — exist only after a refresh, which is what every real
     // page path does. Without this there is no `fx-bar-0` for a press to land on.
     ui::refresh_effects_lane(&window);
@@ -152,16 +152,16 @@ fn gesture_round(app: &adw::Application) {
         "a 2 px press on the bar opened the ZOOM form \u{2014} the click reached `open_effect_form`"
     );
     assert!(
-        ui::held_effect().is_none(),
+        ui::cut_hand::held_effect().is_none(),
         "a click never picks the band up"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx[0].t,
+        ui::window_preview::newest_review_cut().fx[0].t,
         20.0,
         "a click wrote nothing to the record"
     );
     assert_eq!(
-        ui::review_cut_of(&window).fx[0].dur,
+        ui::window_preview::newest_review_cut().fx[0].dur,
         10.0,
         "nor changed its length"
     );
@@ -174,7 +174,7 @@ fn gesture_round(app: &adw::Application) {
     let pps = ui::SELECT_SURFACE_PPS;
     let bar = bar_gesture(&window);
     drag_middle(&bar, 8.0);
-    let moved = &ui::review_cut_of(&window).fx[0];
+    let moved = &ui::window_preview::newest_review_cut().fx[0];
     assert_eq!(
         moved.t,
         20.0 + 8.0 / pps,
@@ -187,16 +187,12 @@ fn gesture_round(app: &adw::Application) {
         "the ending the spec promises printed FROM THE PAGE"
     );
     assert!(
-        ui::held_effect().is_some(),
+        ui::cut_hand::held_effect().is_some(),
         "S2: the hold outlives the release \u{2014} it drops when the line walks off or Esc says so"
     );
     // The line rode with the band (otherwise the refresh would have read the old line against the new
     // position and dropped the hold as "walked off the band").
-    assert_eq!(
-        ui::line_position(&window).t,
-        moved.t,
-        "the line sits on the band"
-    );
+    assert_eq!(ui::line_position().t, moved.t, "the line sits on the band");
     // §7's one writer: the RELEASE is where `cut.json` gets the answer, so the disk agrees with the page.
     let on_disk = naivepost::cut::load(&session_tree()).expect("cut.json was written");
     assert_eq!(
@@ -220,7 +216,7 @@ fn gesture_round(app: &adw::Application) {
     // start, INSIDE the 8 px reach, so the snapped answer is that landmark rather than the raw pixel. What
     // must hold either way is S2's rule: an end grip changes the LENGTH and leaves the untouched stop alone.
     drag_end_of(&bar, true, 5.0);
-    let resized = &ui::review_cut_of(&window).fx[0];
+    let resized = &ui::window_preview::newest_review_cut().fx[0];
     assert_eq!(
         status_text(&window),
         fx_band::resized("Zoom"),
@@ -265,7 +261,7 @@ fn gesture_round(app: &adw::Application) {
     let window = cut_page(app, &snapped_cut);
     let bar = bar_gesture(&window);
     drag_middle(&bar, 8.0);
-    let landed = &ui::review_cut_of(&window).fx[0];
+    let landed = &ui::window_preview::newest_review_cut().fx[0];
     assert_eq!(
         landed.t,
         24.0,
@@ -289,7 +285,7 @@ fn gesture_round(app: &adw::Application) {
     bar.gesture
         .emit_by_name::<()>("drag-end", &[&32.0, &0.0f64]);
     settle();
-    let dragged = ui::review_cut_of(&window).fx[0].t;
+    let dragged = ui::window_preview::newest_review_cut().fx[0].t;
     assert!(
         dragged > 20.0,
         "the eight-tick drag moved the band, got {dragged}"
@@ -299,7 +295,7 @@ fn gesture_round(app: &adw::Application) {
     ui::press_undo(&window);
     settle();
     assert_eq!(
-        ui::review_cut_of(&window).fx[0].t,
+        ui::window_preview::newest_review_cut().fx[0].t,
         20.0,
         "one Undo undid all eight ticks \u{2014} the drag owned a single step"
     );

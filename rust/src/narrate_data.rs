@@ -1,4 +1,4 @@
-//! §07-narrate#3-data: the other files in `narrate/`, one rule per item: the previous record generation ([`keep_previous`]), the one-line settings ([`read_voice`]/[`write_voice`], [`read_pitch`]/[`write_pitch`]), the take set ([`load_takes`]/[`save_takes`]/[`clean_takes`]), the reference wavs and their invalidation ([`served_reference`], [`base_reference`], [`drop_reference`]), and the sample cache names ([`sample_path`]).
+//! §07-narrate#3-data: the other files in `narrate/`, one rule per item: the previous record generation ([`keep_previous`]), the one-line settings ([`read_voice`]/[`write_voice`], [`read_pitch`]/[`write_pitch`]), the take set ([`load_takes`]/[`save_takes`]/[`clean_takes`]), the reference wavs and their invalidation ([`Tree::voice_ref_wav`], [`Tree::voice_ref_base_wav`], [`drop_reference`]), and the sample cache names ([`sample_path`]).
 //! Not here: `narration.json`'s record ([`crate::narration`]), a take's seconds floor ([`crate::narrate_screen`]), building the reference (F4.6), speaking (F4.4), which voice made a take (F4.6/F4.7).
 //! Where §3 is silent the rule follows the Go prototype in `go/`; items cite the function they mirror. Paths come from [`crate::layout::Tree`].
 
@@ -188,11 +188,6 @@ pub const REF_SAMPLE_RATE: &str = "48000";
 /// The level the voice reference is written at (§10 `P.eng.refLoudness`, "I -16, TP -1.5, LRA 7"; `params::narrate()` rows it from this constant). Single-pass `loudnorm` since takes come from different minutes, tight LRA for one speaker.
 pub const REF_LOUDNESS: &str = "loudnorm=I=-16:TP=-1.5:LRA=7";
 
-/// The file the audio server is handed: one fixed path, so a pitch shift writes a copy here (byte-identical to the base at 0 semitones; prototype `shiftRef`).
-pub fn served_reference(tree: &Tree) -> PathBuf {
-    tree.voice_ref_wav()
-}
-
 /// One stitched, levelled piece of the voice reference under `narrate/reference/`.
 pub fn reference_part(tree: &Tree, index: usize) -> PathBuf {
     tree.reference_dir().join(format!("ref_part_{index}.wav"))
@@ -200,11 +195,6 @@ pub fn reference_part(tree: &Tree, index: usize) -> PathBuf {
 
 pub fn reference_list(tree: &Tree) -> PathBuf {
     tree.reference_dir().join("ref_parts.txt")
-}
-
-/// The unshifted reference, kept apart from [`served_reference`] so a pitch change costs a re-shift, not a re-cut.
-pub fn base_reference(tree: &Tree) -> PathBuf {
-    tree.voice_ref_base_wav()
 }
 
 /// Is there a base with no shifted copy? The state a shift rebuilds from.
@@ -216,10 +206,10 @@ pub fn reference_needs_shift(base: &Path, served: &Path) -> bool {
 pub fn drop_reference(tree: &Tree, keep_base: bool) -> usize {
     REFERENCE_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut dropped = 0;
-    if remove_if_there(&served_reference(tree)) {
+    if remove_if_there(&tree.voice_ref_wav()) {
         dropped += 1;
     }
-    if !keep_base && remove_if_there(&base_reference(tree)) {
+    if !keep_base && remove_if_there(&tree.voice_ref_base_wav()) {
         dropped += 1;
     }
     dropped

@@ -88,7 +88,7 @@ pub fn labels_in_menu_order() -> Vec<String> {
         .collect()
 }
 
-/// The dropdown entry's kind id for an [`EffectKind`] — the word `cut::Fx::parse_kind` accepts, which is what
+/// The dropdown entry's kind id for an [`EffectKind`] — the word `cut::EffectKind::parse` accepts, which is what
 /// each row's `tip` holds.
 fn effect_id(kind: &EffectKind) -> &'static str {
     match kind {

@@ -244,7 +244,7 @@ pub fn render_half(
             translate: &crate::ui::produce_page_rows::translate_leg(),
             // §F5.2 S5's size question over the real wire: ffprobe beside the configured ffmpeg. No ffprobe gives
             // `None` everywhere and the run says nothing about sizes.
-            probe: &crate::produce_probe::probe,
+            probe: &crate::produce_probe::size_of,
             sources: &|| snap.sources.clone(),
             // §8 bullet 4: does this session have tape at all.
             on_recording: snap.on_recording,

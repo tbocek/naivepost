@@ -81,9 +81,9 @@ fn round(app: &adw::Application) {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    ui::seed_review_cut(&window, &one_scene_cut());
-    ui::reopen_history_on(&window, &ui::review_cut_of(&window));
-    ui::set_session_policy_field(&window, "cutMode", "model", "this test", Origin::User);
+    ui::seed_review_cut(&one_scene_cut());
+    ui::reopen_history_on(&ui::window_preview::newest_review_cut());
+    ui::window_policy::write_policy_field("cutMode", "model", "this test", Origin::User);
     settle();
 
     // §S3's persist, on the file the NEXT open reads — which is the session folder the press resolved
@@ -143,7 +143,7 @@ fn round(app: &adw::Application) {
         &second.body[..2000.min(second.body.len())]
     );
 
-    let on_screen = ui::review_cut_of(&window);
+    let on_screen = ui::window_preview::newest_review_cut();
     assert!(
         !on_screen.segs.is_empty(),
         "a suggestion landed on the page: {:?}",

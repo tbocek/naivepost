@@ -607,19 +607,6 @@ fn diar_file_ask(
     diar_answer(&parse_json(&body)?)
 }
 
-/// The `diarize` [`crate::transcribe::run`] wants: this source's diarization out, collecting what
-/// [`diar_scan`] says into `said` for the caller's log.
-pub fn diar_ask<'a>(
-    tree: &'a Option<Tree>,
-    paths: &'a crate::settings::Paths,
-    source: &'a str,
-    model: &'a str,
-    duration: f64,
-    said: &'a std::cell::RefCell<Vec<String>>,
-) -> impl FnOnce() -> Result<Vec<Turn>, String> + 'a {
-    diar_scan(tree, paths, source, model, duration, said)
-}
-
 /// The `asr` [`crate::transcribe::run`] wants: this source's `words.json` document out.
 #[allow(clippy::too_many_arguments)]
 pub fn transcribe_asr<'a, L>(
@@ -848,17 +835,7 @@ fn scratch_dir() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_default().join("scratch")
 }
 
-pub fn write_scratch_for_test(
-    tree: &Option<Tree>,
-    source: &str,
-    file: &str,
-    plan: &[String],
-    body: &serde_json::Value,
-) -> Result<(), String> {
-    write_scratch(tree, source, file, plan, body)
-}
-
-fn write_scratch(
+pub fn write_scratch(
     tree: &Option<Tree>,
     source: &str,
     file: &str,
@@ -1024,7 +1001,7 @@ pub fn transcribe_source(
         transcribe_asr(
             &held, paths, source, &asr_model, language, duration, &silences, log,
         ),
-        diar_ask(&held, paths, source, &diar_model, duration, &diar_lines),
+        diar_scan(&held, paths, source, &diar_model, duration, &diar_lines),
     )?;
     passage.logs.extend(align_lines.borrow().iter().cloned());
     passage.logs.extend(diar_lines.borrow().iter().cloned());

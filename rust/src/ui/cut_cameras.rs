@@ -16,7 +16,7 @@ use crate::cut_verbs::{self, Badge};
 use crate::ui::cut_folds::{press_lane_cross, press_row_cross, CROSS_GLYPH};
 use crate::ui::cut_verb_press::press_badge;
 use crate::ui::window::{
-    find_status, find_widget_by_name, held_segment, line_position, newest_review_cut, record_edit,
+    find_status, find_widget_by_name, line_position, newest_review_cut, record_edit,
     set_watched_row, watched_row,
 };
 
@@ -40,8 +40,7 @@ pub fn toggle_button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk:
 
 /// F2.10 S3: this window's [`cut_cam::Watch`], created on first ask so a page that was never
 /// clicked still has an empty one to hand to ▶.
-pub fn camera_watch(window: &adw::ApplicationWindow) -> Rc<RefCell<cut_cam::Watch>> {
-    let _ = window;
+pub fn camera_watch() -> Rc<RefCell<cut_cam::Watch>> {
     CAM_WATCHES.with(|slots| {
         let mut slots = slots.borrow_mut();
         if let Some(latest) = slots.last() {
@@ -54,23 +53,23 @@ pub fn camera_watch(window: &adw::ApplicationWindow) -> Rc<RefCell<cut_cam::Watc
 }
 
 /// The session second the red line stands on — the `t` every F2.10 sentence is about.
-fn line_second(window: &adw::ApplicationWindow) -> f64 {
-    line_position(window).t
+fn line_second() -> f64 {
+    line_position().t
 }
 
-fn badge_scene(window: &adw::ApplicationWindow) -> Option<usize> {
+fn badge_scene() -> Option<usize> {
     cut_cam::held_or_line_scene(
         &newest_review_cut(),
-        Some(line_second(window)),
-        held_segment().as_ref(),
+        Some(line_second()),
+        crate::ui::cut_hand::held_clip_or_edge().as_ref(),
     )
 }
 
 /// §9 (`While an effect form is open, the preview MUST show the lens camera`): which row the
 /// picture panel draws.
-pub fn preview_row(window: &adw::ApplicationWindow) -> usize {
+pub fn preview_row() -> usize {
     let cut_ = newest_review_cut();
-    let lens = badge_scene(window)
+    let lens = badge_scene()
         .map(|scene| cut_cam::scene_row(&cut_.segs[scene]))
         .unwrap_or(0);
     crate::effect_overlap::preview_camera(
@@ -87,9 +86,9 @@ pub fn preview_row(window: &adw::ApplicationWindow) -> usize {
 /// a row's name plate forwards to.
 pub fn press_watch_row(window: &adw::ApplicationWindow, row: i32) -> Option<String> {
     let cut_ = newest_review_cut();
-    let at = line_second(window);
+    let at = line_second();
     let said = {
-        let watch = camera_watch(window);
+        let watch = camera_watch();
         let mut watch = watch.borrow_mut();
         cut_cam::click_row(&mut watch, row, &cut_.segs, Some(at))
     };
@@ -191,8 +190,8 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
     let total = crate::timeline::row_count(&recordings, &cut_);
     let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
     // F2.10 S2: the badges answer about a CHOSEN scene.
-    let scene = badge_scene(window);
-    let at = line_second(window);
+    let scene = badge_scene();
+    let at = line_second();
     let watched = watched_row();
 
     let drawn = rows_box.observe_children().n_items() as usize;
@@ -351,7 +350,7 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         if let Some(layer) = crate::ui::cut_tracks::gutter_row_switches(window) {
             let switch_name = format!("row-switch-{}", index + 1);
             let heard = cut_hear::row_is_heard_anywhere(&cut_, row);
-            let y = crate::ui::cut_tracks::row_wave_top(window, index)
+            let y = crate::ui::cut_tracks::row_wave_top(index)
                 + (crate::ui::cut_tracks::row_wave_px() - ROW_SWITCH_PX) / 2.0;
             match find_widget_by_name(layer.upcast_ref(), &switch_name)
                 .and_then(|found| found.downcast::<gtk::ToggleButton>().ok())
@@ -604,7 +603,7 @@ pub fn press_lens_scene(window: &adw::ApplicationWindow, scene: usize) -> Option
 /// F2.10 S2 (`🔈 speaker badge per lane: does this scene hear that lane`): the seam a badge forwards
 /// to.
 pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Option<String> {
-    let scene = badge_scene(window)?;
+    let scene = badge_scene()?;
     let mut cut_ = newest_review_cut();
     let said = cut_hear::toggle_heard(&mut cut_, scene, lane)?;
     record_edit(window, &cut_);
@@ -618,7 +617,7 @@ pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Optio
 /// F2.10 S2 for the scene's OWN sound: the speaker badge on the badge scene's wave strip, off or on
 /// for that scene (its `mute`, the property F2.5 S2 hushes the footage by).
 pub fn press_scene_sound(window: &adw::ApplicationWindow) -> Option<String> {
-    let scene = badge_scene(window)?;
+    let scene = badge_scene()?;
     let mut cut_ = newest_review_cut();
     let recordings = session_recordings(&cut_);
     let rows = crate::timeline::rows_for(&recordings, &cut_);
@@ -638,7 +637,7 @@ pub fn press_scene_sound(window: &adw::ApplicationWindow) -> Option<String> {
 }
 
 pub fn press_lens_row(window: &adw::ApplicationWindow, row: usize) -> Option<String> {
-    let scene = badge_scene(window)?;
+    let scene = badge_scene()?;
     let mut cut_ = newest_review_cut();
     if cut_.segs.get(scene)?.cam == row as i32 {
         return None;
@@ -686,7 +685,7 @@ pub fn press_gutter_switch(window: &adw::ApplicationWindow, lane: &str) -> Strin
 /// separate so a test can count how many times the watch was released without a real ▶.
 pub fn hand_preview_back(window: &adw::ApplicationWindow) -> Option<String> {
     let was = {
-        let watch = camera_watch(window);
+        let watch = camera_watch();
         let mut watch = watch.borrow_mut();
         watch.play_hands_back()
     };

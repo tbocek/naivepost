@@ -47,8 +47,7 @@ pub(crate) fn cut_history(
     fresh
 }
 
-pub fn reopen_history_on(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
-    let _ = window;
+pub fn reopen_history_on(cut_: &cut::Cut) {
     CUT_HISTORIES.with(|slot| {
         let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(cut_)));
         let mut slot = slot.borrow_mut();
@@ -182,7 +181,7 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
 }
 
 pub(crate) fn amend_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
-    crate::ui::window::seed_review_cut(window, cut_);
+    crate::ui::window::seed_review_cut(cut_);
     ui::save_insert_cut(cut_);
     cut_history(window).borrow_mut().amend(cut_);
     refresh_history_buttons(window);
@@ -195,9 +194,9 @@ pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
     let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
     let before = crate::ui::cut_view::pps();
     // Where the red line stands on screen before the step, in the band's own pixels.
-    let line = ui::line_position(window).t;
+    let line = ui::line_position().t;
     let gutter = crate::ui::cut_view::gutter_px();
-    let line_x = crate::ui::cut_tracks::band_x(&crate::ui::cut_view::band_scene_for(window), line)
+    let line_x = crate::ui::cut_tracks::band_x(&crate::ui::cut_view::band_scene_for(), line)
         - crate::ui::cut_view::origin();
     let (next, _) = crate::ui::cut_view::zoom_step(
         inward,
@@ -211,7 +210,7 @@ pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
     } else {
         gutter + view / 2.0
     };
-    let after = crate::ui::cut_tracks::band_x(&crate::ui::cut_view::band_scene_for(window), line);
+    let after = crate::ui::cut_tracks::band_x(&crate::ui::cut_view::band_scene_for(), line);
     crate::ui::cut_view::set_origin(
         after - wanted_x,
         crate::ui::cut_view::total_px(filmed, next),
@@ -230,11 +229,6 @@ pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
     };
     ui::log_line(&said);
     said
-}
-
-/// Repaint badge **31** and the band beside it from the live view. Lives in `cut_view`, which owns the bar.
-pub(crate) fn repaint_scrollbar(window: &adw::ApplicationWindow) {
-    crate::ui::cut_view::refresh_page_scrollbar(window);
 }
 
 pub(crate) fn wire_wheel_gestures(window: &adw::ApplicationWindow) {
@@ -374,13 +368,11 @@ thread_local! {
 }
 
 /// This window's history key controller, newest window winning like `line_key_controller`.
-pub fn history_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
-    let _ = window;
+pub fn history_key_controller() -> Option<gtk::EventControllerKey> {
     HISTORY_KEYS.with(|cell| cell.borrow().clone())
 }
 
-pub fn zoom_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    let _ = window;
+pub fn zoom_gesture() -> Option<gtk::GestureDrag> {
     ZOOM_GESTURES.with(|cell| cell.borrow().clone())
 }
 
@@ -411,19 +403,12 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
         // snap to. Asked before the armed dispatch because this is the one left-button gesture on the panel; the
         // door answers `None` for every other press (anything armed or held, no travel, no box under the pointer),
         // so an armed drag still gets only the box the flow that owns it draws.
-        let at = ui::paste_line(&win_update);
-        let fit = crate::ui::cut_preview_frame::fit_size_of(
-            &win_update,
-            ui::PREVIEW_PANEL_W,
-            ui::PREVIEW_PANEL_H,
-        );
-        if let Some(box_) = crate::ui::cut_preview_press::box_edit_preview(
-            &win_update,
-            at,
-            fit,
-            (sx, sy),
-            (sx + dx, sy + dy),
-        ) {
+        let at = crate::ui::cut_lane::paste_line();
+        let fit =
+            crate::ui::cut_preview_frame::fit_size_of(ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
+        if let Some(box_) =
+            crate::ui::cut_preview_press::box_edit_preview(at, fit, (sx, sy), (sx + dx, sy + dy))
+        {
             crate::ui::cut_preview_frame::note_edit(true);
             crate::ui::cut_preview_frame::note_box(Some(box_), &win_update);
             return;
@@ -442,12 +427,9 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
             // placed caption's box edits that caption, and only a release clear of every box is F3.1's framing
             // question. The door refuses anything armed or held, and any press without travel (that is the
             // play/pause toggle), so nothing above or below it changes its answer.
-            let at = ui::paste_line(&win_end);
-            let fit = crate::ui::cut_preview_frame::fit_size_of(
-                &win_end,
-                ui::PREVIEW_PANEL_W,
-                ui::PREVIEW_PANEL_H,
-            );
+            let at = crate::ui::cut_lane::paste_line();
+            let fit =
+                crate::ui::cut_preview_frame::fit_size_of(ui::PREVIEW_PANEL_W, ui::PREVIEW_PANEL_H);
             match crate::ui::cut_preview_press::box_edit_on_release(
                 &win_end,
                 at,
@@ -579,7 +561,7 @@ pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
     // The form is gone, so the pinned heading goes with it (or names whatever else is still open).
     crate::ui::cut_form_frame::set_pinned(
         window,
-        crate::ui::cut_form_frame::open_form_title(window).as_deref(),
+        crate::ui::cut_form_frame::open_form_title().as_deref(),
     );
     fx_zoom::placed_status(effect.t, effect.stay)
 }
@@ -601,7 +583,7 @@ pub fn press_zoom_cancel(window: &adw::ApplicationWindow) -> String {
     }
     crate::ui::cut_form_frame::set_pinned(
         window,
-        crate::ui::cut_form_frame::open_form_title(window).as_deref(),
+        crate::ui::cut_form_frame::open_form_title().as_deref(),
     );
     "left as it was \u{2014} no zoom placed".to_string()
 }

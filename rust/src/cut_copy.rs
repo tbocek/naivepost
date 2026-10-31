@@ -37,7 +37,8 @@ impl Hand {
         matches!(self.scope, Scope::Footage { .. })
     }
 
-    fn recording(&self) -> Option<&str> {
+    /// F2.9: the file a sound copy came from; a footage copy is windowed from it too (S3).
+    pub fn recording(&self) -> Option<&str> {
         match &self.scope {
             Scope::Sound { recording } => Some(recording),
             Scope::Footage { .. } => None,
@@ -50,17 +51,6 @@ impl Hand {
             Scope::Footage { .. } => 0,
             Scope::Sound { .. } => 0,
         }
-    }
-
-    /// F2.9: the same reading as [`Hand::recording`], public so the page can name the file a sound
-    /// copy came from without reaching through the private matching helpers.
-    pub fn recording_public(&self) -> Option<&str> {
-        self.recording()
-    }
-
-    /// F2.9 S3: what a footage copy is windowed *from* — the recording it was taken out of.
-    pub fn source_public(&self) -> Option<&str> {
-        self.recording()
     }
 }
 
@@ -315,12 +305,18 @@ pub fn paste(
         );
     };
     if held.is_footage() {
-        let was = cut_length(cut);
+        let was = crate::cut_screen::cut_seconds(cut);
         cut.segs.push(spliced(held, at));
         let from = held.from;
         let length = held.length;
         *hand = None;
-        return Ok(pasted_status(length, from, at, cut_length(cut), was));
+        return Ok(pasted_status(
+            length,
+            from,
+            at,
+            crate::cut_screen::cut_seconds(cut),
+            was,
+        ));
     }
     let recording = held.recording().unwrap_or_default().to_string();
     if !session.iter().any(|base| base == &recording) {
@@ -333,11 +329,6 @@ pub fn paste(
     }
     *hand = None;
     Ok(laid_status(length, &recording, pieces, at))
-}
-
-/// The cut's own length in seconds — the total the paste reports before and after.
-fn cut_length(cut: &Cut) -> f64 {
-    crate::cut_screen::cut_seconds(cut)
 }
 
 /// F2.9 S2: what a footage paste says — the seconds, where they came from, where they went, and

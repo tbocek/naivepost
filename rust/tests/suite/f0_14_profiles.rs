@@ -242,7 +242,7 @@ fn f0_14_s3_to_s6_prepare_fills_a_profile_in_and_refuses_while_a_required_field_
             !common::find_named(&window, "bench-text").is_some_and(|w| w.is_mapped()),
             "and the template's text box is not"
         );
-        let session = ui::session_handle(&window);
+        let session = ui::session_handle();
         assert_eq!(
             session.borrow().profile.as_ref().map(|p| p.name.as_str()),
             Some("News show")

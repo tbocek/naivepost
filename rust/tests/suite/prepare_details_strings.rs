@@ -402,7 +402,7 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s10_ses
         event_row("lecture", 0.0, 4.0, "a slide changes"),
         speech_row("crowd", 5.0, 9.0, "SPEAKER_00", "welcome everyone"),
     ];
-    let text = fix::session_text(&rows, "crowd", &[]);
+    let text = fix::labelled(&rows, "crowd", &[]);
     assert_eq!(
         text,
         "[0s-4s | 00:00] EVENT: a slide changes\n[5s-9s | 00:05] NARRATOR: welcome everyone\n"

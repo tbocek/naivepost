@@ -847,10 +847,10 @@ fn f5_1_s6_done_logs_the_finished_line() {
 fn f5_1_s6_a_run_that_skipped_the_encode_writes_no_stamp() {
     // F5.3: the stamp lands once the render returns without error. A skipped encode wrote none, so a
     // later change still finds the old stamp and still says why it differs.
-    assert!(!flow::stamp_written(false, false), "skipped: no stamp");
-    assert!(!flow::stamp_written(true, true), "failed: no stamp");
+    assert!(!render::stamp_written(false, false), "skipped: no stamp");
+    assert!(!render::stamp_written(true, true), "failed: no stamp");
     assert!(
-        flow::stamp_written(true, false),
+        render::stamp_written(true, false),
         "encoded clean: the stamp goes down"
     );
 }

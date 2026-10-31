@@ -406,7 +406,7 @@ impl Shell {
                 );
                 crate::narrate_screen::inputs_readout(
                     cut.segs.len(),
-                    cut_seconds(cut),
+                    crate::cut_screen::cut_seconds(cut),
                     tally.unwritten,
                     tally.off_cut,
                     tally.has_timeline,
@@ -427,7 +427,7 @@ impl Shell {
                 };
                 crate::produce_screen::inputs_line(
                     cut.segs.len(),
-                    cut_seconds(cut),
+                    crate::cut_screen::cut_seconds(cut),
                     !counts.narrated,
                     counts.owed,
                     counts.publish_written,
@@ -533,11 +533,6 @@ impl Shell {
 /// from [`Page::tip`] so the tab and the ⓘ can never disagree about what a page is.
 pub fn info_tip(page: Page) -> String {
     format!("{} — {}", page.label(), page.tip())
-}
-
-/// How long the cut is, in output seconds.
-pub fn cut_seconds(cut: &cut::Cut) -> f64 {
-    crate::cut_screen::cut_seconds(cut)
 }
 
 /// Files under `dir`, counting recursively and missing nothing quietly: a folder that is not there

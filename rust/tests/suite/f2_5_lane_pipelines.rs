@@ -447,7 +447,7 @@ fn f2_5_s2_the_footages_own_sound_moves_by_property_not_by_stopping() {
         play_back::volume_ask(&tape, 0.8, again).is_some(),
         "a first ask at a second has to be made before it can be repeated"
     );
-    play_back::note_ask_for_test(0.8, again);
+    play_back::note_ask(0.8, again);
     assert!(
         play_back::volume_ask(&tape, 0.8, again).is_none(),
         "and once that ask has been made, the same one settles to nothing instead of re-seeking every tick"

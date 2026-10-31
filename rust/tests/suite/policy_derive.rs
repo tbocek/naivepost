@@ -35,7 +35,7 @@ fn stored(policy: &Policy, field: &str) -> serde_json::Value {
 fn f0_7_s1_an_empty_context_leaves_every_field_at_its_default() {
     // The prototype's blank-project behaviour: retakes marking, model cut, every pass on. Returned as a
     // whole Policy because with no context there is nothing to derive — the caller stops here.
-    let defaults = policy::defaults();
+    let defaults = Policy::default();
     assert_eq!(defaults.marking_pass.value, MarkingPass::Retakes); // P.policy.markingPass
     assert_eq!(defaults.cut_mode.value, CutMode::Model); // P.policy.cutMode
     assert!(defaults.captions_pass.value); // P.policy.captionsPass

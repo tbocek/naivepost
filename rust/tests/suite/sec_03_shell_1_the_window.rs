@@ -143,7 +143,7 @@ fn s2_header_badges_in_order(app: &adw::Application) {
 fn s4_project_label_names_the_open_project(app: &adw::Application) {
     let root = scratch_root("title");
     let window = window(app, "Prepare");
-    let title = ui::project_title(&window).expect("§1 badge 4 is in the header");
+    let title = ui::window_doors::project_title_of().expect("§1 badge 4 is in the header");
     let shown = title.text().to_string();
     let session = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
     let name = session.file_name().unwrap().to_string_lossy().into_owned();
@@ -746,7 +746,7 @@ fn position_of(names: &[String], name: &str) -> usize {
 /// splits the joined sentence, so the joining is one rule and not a glyph matching in the test.
 fn s2b_info_describes_the_shown_tab(app: &adw::Application) {
     let window = window(app, "Prepare");
-    let (label, help) = ui::tab_info_parts(&window).expect("the header ⓘ carries “label — help”");
+    let (label, help) = ui::tab_info_parts().expect("the header ⓘ carries “label — help”");
     assert_eq!(
         label,
         Page::Prepare.label(),
@@ -762,7 +762,7 @@ fn s2b_info_describes_the_shown_tab(app: &adw::Application) {
         stack.set_visible_child_name("Cut");
         settle();
     }
-    let (label, help) = ui::tab_info_parts(&window).expect("the header \u{24d8} after the switch");
+    let (label, help) = ui::tab_info_parts().expect("the header \u{24d8} after the switch");
     assert_eq!(
         label,
         Page::Cut.label(),

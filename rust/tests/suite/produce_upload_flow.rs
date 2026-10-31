@@ -1141,7 +1141,7 @@ fn check_press_writes_the_upload_text(root: &Path) {
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn());
 
     let window = produce_window(&app_in_round());
-    ui::seed_review_cut(&window, &cut);
+    ui::seed_review_cut(&cut);
     seed_page(&window);
 
     let button =
@@ -1345,10 +1345,10 @@ fn f5_6_s4_spread_skips_inserts_and_freezes() {
         frames::spread_moments(&frozen).is_empty(),
         "nothing kept, nothing to show"
     );
-    // The row spelling is the one the model's own `frame:` line uses, and `frame_at` reuses the ONE nearest
+    // The row spelling is the one the model's own `frame:` line uses, and `produce_upload::nearest` reuses the ONE nearest
     // rule so a spread frame resolves like a picked one.
     assert_eq!(frames::row_entry(12.34), "frame:12.3");
-    assert_eq!(frames::frame_at(&[1.0, 9.0], 8.0), Some(9.0));
+    assert_eq!(up::nearest(&[1.0, 9.0], 8.0), Some(9.0));
     assert_eq!(frames::spread_rows(&plain).len(), 3);
 }
 

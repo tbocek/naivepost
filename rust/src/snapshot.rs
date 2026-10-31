@@ -73,7 +73,7 @@ pub fn run(
             crate::snapshot_bench::stage_edited_row(2);
         }
         // Take the folder on as Open does, before the window exists: `build_window` seeds session spans from it.
-        ui::save_apply::note_open_for_snapshot(&dir);
+        crate::startup::set_open_dir(&dir);
         // `build_window` resets this door, and the Produce plates resolve `project:` paths at paint time.
         crate::ui::produce_paint::note_open_project(&dir);
         if screen_page(&screen) == Some("Narrate") {
@@ -93,7 +93,7 @@ pub fn run(
         let window = ui::build_window(app, &staged_model, page);
         // Seed the project's own `cut/cut.json` over `build_window`'s default; a missing file draws the empty hint.
         if let Some(loaded) = layout::Tree::new(&dir).ok().and_then(|tree| cut::load(&tree).ok()) {
-            ui::seed_review_cut(&window, &loaded);
+            ui::seed_review_cut( &loaded);
             // `build_window` drew the camera rows before the seed landed.
             ui::refresh_camera_rows(&window);
         }
@@ -128,7 +128,7 @@ pub fn run(
                 let _ = std::fs::create_dir_all(folder);
             }
             let _ = write_silence_wav(&wav, 8000, 8000 * 45);
-            ui::seed_review_cut(&window, &lanes_shot);
+            ui::seed_review_cut( &lanes_shot);
             ui::refresh_camera_rows(&window);
             let plates = crate::cut_lanes::plates(&lanes_shot.lanes);
             println!("snapshot: 05-lanes plates | {}", plates.join(" | "));
@@ -141,7 +141,7 @@ pub fn run(
         if screen == "05-lanes" {
             crate::ui::cut_tracks::fit_band_height_for_window(
                 &window,
-                &crate::ui::cut_view::band_scene_for(&window),
+                &crate::ui::cut_view::band_scene_for(),
             );
         }
         if screen == "05-cut" || screen == "05-fold" {
@@ -169,7 +169,7 @@ pub fn run(
                 start: 0.0,
                 end: 120.0,
             }]);
-            ui::seed_review_cut(&window, &folded);
+            ui::seed_review_cut( &folded);
             // Badges are only recorded once drawn, so refresh before pressing a fold.
             ui::refresh_fold_badges(&window);
             ui::press_fold_gap(&window, 1);
@@ -192,7 +192,6 @@ pub fn run(
         if screen == "03-runbar-busy" {
             // Seeded before the tab switch: `run()` seeds the cut slot only after `build_window`.
             ui::seed_review_cut(
-                &window,
                 &cut::Cut {
                     segs: vec![
                         cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
@@ -212,7 +211,7 @@ pub fn run(
                 .emit_by_name::<()>("clicked", &[]);
             // §F0.2 S2: this press is the one thing that repaints the bar; it pauses the preview.
             ui::play_button(&window).expect("the run bar has a ▶").emit_by_name::<()>("clicked", &[]);
-            let parked = ui::preview_player(&window).transport;
+            let parked = ui::preview_player().transport;
             let status = ui::state(&window).status;
             assert!(
                 !parked.playing && parked.started,
@@ -228,7 +227,7 @@ pub fn run(
             assert_eq!(parked_face.1, crate::run::PLAY_TOOLTIP, "and §2's own word for it");
             assert!(parked_face.2, "a parked preview still has something to stop");
             ui::play_button(&window).expect("the run bar has a ▶").emit_by_name::<()>("clicked", &[]);
-            assert!(ui::preview_player(&window).transport.playing, "the second press resumes");
+            assert!(ui::preview_player().transport.playing, "the second press resumes");
             let busy = face_of(&window);
             assert_eq!(busy.0, crate::run::PAUSE_ICON, "a playing preview turns ▶ into ⏸ (§2)");
             assert_eq!(busy.1, crate::run::PAUSE_TOOLTIP, "and the tooltip is §2's own word for it");
@@ -241,7 +240,7 @@ pub fn run(
             let said = crate::snapshot_insert::stage(&window, &dir);
             let words: Vec<String> = said.iter().map(|line| line.replace('|', "/")).collect();
             println!("snapshot: 05-insert | {}", words.join(" | "));
-            println!("snapshot: 05-insert band | {}", crate::snapshot_insert::describe(&window));
+            println!("snapshot: 05-insert band | {}", crate::snapshot_insert::describe());
             ui::cut_view::repaint_page(&window);
             ui::refresh_camera_rows(&window);
         }
@@ -261,12 +260,12 @@ pub fn run(
                 ..Default::default()
             };
             // A sound paste refuses a recording the session's file list does not hold, so add it to the session too.
-            ui::session_handle(&window).borrow_mut().sources.push(crate::project::Source {
+            ui::session_handle().borrow_mut().sources.push(crate::project::Source {
                 path: "mic-lav.wav".to_string(),
                 footage: true,
                 ..Default::default()
             });
-            ui::seed_review_cut(&window, &kept);
+            ui::seed_review_cut( &kept);
             // Deepen the zoom: at 4 px/s a 12 s copy is a smudge.
             for _ in 0..6 {
                 ui::press_zoom(&window, true);
@@ -329,17 +328,17 @@ pub fn run(
                 start: 0.0,
                 end: 62.0,
             }]);
-            ui::set_session_policy_field(&window, "cutMode", "model", "this shot", project::Origin::User);
-            let refused = ui::cut_suggest_land::refuse_suggest_run(&window, true)
+            ui::window_policy::write_policy_field( "cutMode", "model", "this shot", project::Origin::User);
+            let refused = ui::cut_suggest_land::refuse_suggest_run( true)
                 .unwrap_or_else(|| crate::suggest::BUSY.to_string());
             ui::window::set_status_line(&window, &refused);
             // A fresh scratch session folder has no transcript, so §S1's word gate answers before any socket is dialled.
-            let pressed = crate::snapshot_suggest::press_through_page(&window, false);
+            let pressed = crate::snapshot_suggest::press_through_page(&window);
             println!("snapshot: 05-suggest press said: {pressed}");
             let landed = crate::snapshot_suggest::press_landed(&window);
-            let segs = ui::review_cut_segs_count(&window);
+            let segs = ui::review_cut_segs_count();
             let seconds = crate::cut_screen::cut_seconds(&cut::Cut {
-                segs: ui::review_cut_segs(&window),
+                segs: ui::review_cut_segs(),
                 ..Default::default()
             });
             println!("snapshot: 05-suggest | {refused} | {landed} | {segs} segs | {} s", seconds.round());
@@ -364,9 +363,9 @@ pub fn run(
             // The words arm reads footage rows off the project the WINDOW holds, so swap in the staged one, then
             // rescan via `refresh_page_spans` as a real Open does.
             if let Some(project) = project {
-                ui::session_handle(&window).replace(project);
+                ui::session_handle().replace(project);
                 ui::cut_session::refresh_page_spans(&crate::snapshot_words::base_cut());
-                ui::set_session_policy_field(&window, "cutMode", "words", "this shot", project::Origin::User);
+                ui::window_policy::write_policy_field( "cutMode", "words", "this shot", project::Origin::User);
                 // Re-seed the page's cut here: `run`'s early seed read the `--project` fixture's `cut.json`.
                 ui::cut_suggest_land::point_session_at(staged.clone());
                 // Publish through `write_cut_at`, §7's one writer for `cut.json`.
@@ -374,13 +373,13 @@ pub fn run(
                     crate::cut_save::write_cut_at(&crate::snapshot_words::base_cut(), tree)
                         .expect("snapshot: the staged cut.json is writable");
                 }
-                ui::seed_review_cut(&window, &crate::snapshot_words::base_cut());
+                ui::seed_review_cut( &crate::snapshot_words::base_cut());
                 ui::refresh_camera_rows(&window);
                 ui::refresh_fold_badges(&window);
                 let said = crate::snapshot_words::press_through_page(&window);
                 println!(
                     "snapshot: 05-words | {said} | {} segs",
-                    ui::review_cut_segs_count(&window)
+                    ui::review_cut_segs_count()
                 );
                 let written = staged
                     .as_ref()
@@ -495,7 +494,7 @@ pub fn run(
                 let bar = ui::run_bar(&window).expect("the window carries a run bar");
                 let queue = ui::run_queue(&window).expect("the window carries a run queue");
                 // The ending counts from `save_apply::save_target()`, so take the scratch project on first, as Open does.
-                ui::save_apply::note_open_for_snapshot(&session);
+                crate::startup::set_open_dir(&session);
                 // A run has to be OPEN for its ending to be one: `start_run` is what §S7's "fraction 1" and §S4's close act on.
                 let mut exchange = crate::exchanges::RunLog::new();
                 crate::runqueue::start_run(
@@ -518,7 +517,6 @@ pub fn run(
                 crate::ui::run_close::close_step_run(
                     &bar,
                     &queue,
-                    &std::rc::Rc::new(std::cell::RefCell::new(exchange)),
                     &status,
                     &ui::progress_bar(&window).expect("the shell carries a progress bar"),
                     &ui::log_expander(&window).expect("the shell carries the log expander"),
@@ -944,7 +942,7 @@ const SEED_SECONDS: u32 = 45;
 const SAMPLE_RATE: u32 = crate::transcribe::SAMPLE_RATE as u32;
 
 pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
-    let base = crate::narrate_data::base_reference(tree);
+    let base = tree.voice_ref_base_wav();
     let Some(folder) = base.parent() else {
         return false;
     };

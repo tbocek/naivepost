@@ -88,8 +88,8 @@ fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
 
 /// Fire the preview panel's own drag the way the toolkit does: begin at the press position, then release with
 /// the OFFSET that signal carries, so the corners the seam sees are the ones a hand would have drawn.
-fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
-    let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+fn drag_panel(from: (f64, f64), to: (f64, f64)) {
+    let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
@@ -156,7 +156,7 @@ fn f3_4_s3_the_form_buttons_answer_once_through_the_widgets(app: &adw::Applicati
     type_words(&window, "hello world");
     click(&window, "text-apply-button");
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         1,
         "one ▸ Apply, one caption"
     );
@@ -167,7 +167,7 @@ fn f3_4_s3_the_form_buttons_answer_once_through_the_widgets(app: &adw::Applicati
     );
     click(&window, "undo-button");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "one ↶ takes it back: one record step"
     );
     window.close();
@@ -177,7 +177,7 @@ fn f3_4_s3_the_form_buttons_answer_once_through_the_widgets(app: &adw::Applicati
     type_words(&window, "never placed");
     click(&window, "text-cancel-button");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "Cancel places nothing"
     );
     assert!(!form_visible(&window), "and closes the form");
@@ -266,7 +266,7 @@ fn f3_4_s2_a_click_takes_the_lower_third(app: &adw::Application) {
         "the press went to the caption, not the zoom flow"
     );
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "landing a box records nothing: the words come first"
     );
     disarm_text(&window);
@@ -312,7 +312,7 @@ fn f3_4_s2_a_drag_keeps_the_box_and_a_selection_supplies_the_seconds(app: &adw::
 
     // THE DISPATCH PROOF: the panel carries ONE left-button GestureDrag (F3.1's). Fired while TEXT is armed,
     // its drag-end must route to F3.4 and open no zoom form -- see wire_zoom_drag's connect_drag_end.
-    drag_panel(&window, (150.0, 10.0), (220.0, 60.0));
+    drag_panel((150.0, 10.0), (220.0, 60.0));
     assert!(
         ui::text_form_open().is_some(),
         "the real gesture's press reached the caption seam"
@@ -385,7 +385,7 @@ fn f3_4_s3_empty_words_are_not_placed(app: &adw::Application) {
         "the refusal is `fx_text::NO_WORDS` verbatim"
     );
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "nothing was placed: a caption of spaces says nothing on the lane"
     );
     assert!(
@@ -421,7 +421,7 @@ fn f3_4_s3_a_length_under_the_floor_is_refused_naming_it(app: &adw::Application)
         "and quotes the value that was too short, got {said}"
     );
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "a refused Apply places nothing"
     );
     assert!(
@@ -454,7 +454,7 @@ fn f3_4_s3_typing_words_places_the_caption_and_one_undo_takes_it_back(app: &adw:
         fx_record::recorded_status(naivepost::cut::EffectKind::Text),
         "the door behind `text-apply-button` answers with `fx_record`'s own sentence for the kind"
     );
-    let cut_ = ui::review_cut_of(&window);
+    let cut_ = ui::window_preview::newest_review_cut();
     assert_eq!(cut_.fx.len(), 1, "one Apply, one record");
     let fx = &cut_.fx[0];
     assert_eq!(fx.kind, "text", "of kind text");
@@ -475,7 +475,7 @@ fn f3_4_s3_typing_words_places_the_caption_and_one_undo_takes_it_back(app: &adw:
 
     click(&window, "undo-button");
     assert!(
-        ui::review_cut_of(&window).fx.is_empty(),
+        ui::window_preview::newest_review_cut().fx.is_empty(),
         "ONE ↶ takes the caption back -- proof Apply went through record_edit, not seed_review_cut"
     );
     RAN_APPLY_UNDO.store(true, Ordering::SeqCst);

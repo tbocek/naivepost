@@ -60,8 +60,8 @@ fn press_speeds(window: &adw::ApplicationWindow) {
 }
 
 /// The speed effects on the review cut, newest first being the ones this pass added.
-fn speeds(window: &adw::ApplicationWindow) -> Vec<Fx> {
-    ui::review_cut_of(window)
+fn speeds() -> Vec<Fx> {
+    ui::window_preview::newest_review_cut()
         .fx
         .iter()
         .filter(|fx| fx.kind == "speed")
@@ -76,7 +76,7 @@ fn round(app: &adw::Application) {
     let window = cut_page(app, &common::three_clips_cut());
     press_speeds(&window);
 
-    let placed = speeds(&window);
+    let placed = speeds();
     assert_eq!(
         placed.len(),
         1,
@@ -109,18 +109,18 @@ fn round(app: &adw::Application) {
     let llm = FakeLlm::start(vec![speeds_json(&[(2, 2.0)])]);
     point_at(&llm.url());
     let window = cut_page(app, &three_clips_captioned_on_clip2());
-    let before = ui::review_cut_of(&window).fx.len();
+    let before = ui::window_preview::newest_review_cut().fx.len();
     press_speeds(&window);
 
     assert_eq!(
-        ui::review_cut_of(&window).fx.len(),
+        ui::window_preview::newest_review_cut().fx.len(),
         before,
         "a fast rate over a captioned clip adds nothing -- the caption is the only new effect there"
     );
     assert!(
-        speeds(&window).is_empty(),
+        speeds().is_empty(),
         "no speed landed over the captioned clip, got {:?}",
-        speeds(&window)
+        speeds()
     );
     let said = status_text(&window);
     assert!(
@@ -136,15 +136,11 @@ fn round(app: &adw::Application) {
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
     press_speeds(&window);
-    assert_eq!(
-        speeds(&window).len(),
-        1,
-        "the pass placed one speed to undo"
-    );
+    assert_eq!(speeds().len(), 1, "the pass placed one speed to undo");
     ui::press_undo(&window);
     settle();
     assert!(
-        speeds(&window).is_empty(),
+        speeds().is_empty(),
         "one ↶ undoes the whole pass -- it went through record_edit, not seed_review_cut"
     );
     RAN_UNDO.store(true, Ordering::SeqCst);

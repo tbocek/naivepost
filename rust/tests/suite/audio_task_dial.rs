@@ -515,7 +515,7 @@ fn sec_02_services_1_the_four_servers_s1_diarization_and_alignment_ride_the_same
         &bodies::diar_body(services::DIAR_MODEL, &audio),
     )
     .expect("the diarizer answers");
-    // The turns come back through the same reading `diar_ask` applies on its way into
+    // The turns come back through the same reading `audio_task::diar_scan` applies on its way into
     // `transcribe::run`, so what is checked is the reply this dial actually got.
     let turns =
         audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&body).expect("JSON"))
@@ -669,7 +669,7 @@ fn sec_02_services_1_the_four_servers_s1_asr_is_asked_per_chunk_with_its_own_cut
     for index in 0..edges.len() - 1 {
         let file = naivepost::asr::part(index);
         let plan = naivepost::asr::cut_plan(edges[index], edges[index + 1]);
-        audio_task::write_scratch_for_test(
+        audio_task::write_scratch(
             &held,
             "lecture",
             &file,

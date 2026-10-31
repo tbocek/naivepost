@@ -503,7 +503,7 @@ fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on(
         std::env::temp_dir().join(format!("naivepost-pd-s8-{}.naivepost", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a scratch folder");
     let tree = naivepost::layout::Tree::new(&dir).expect("a .naivepost folder is a project");
-    let answered = naivepost::describe_call::read_answer_for_test(
+    let answered = naivepost::describe_call::read_answer(
         &tree,
         "take-a",
         "",

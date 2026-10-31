@@ -29,8 +29,8 @@ static RAN_DISTINCT: AtomicBool = AtomicBool::new(false);
 
 /// The cut this window is living on right now, through the page's public door (`ui::newest_review_cut` is
 /// crate-private, and a test reads what a widget would read).
-fn live_segs(window: &adw::ApplicationWindow) -> Vec<naivepost::cut::Seg> {
-    ui::review_cut_of(window).segs
+fn live_segs() -> Vec<naivepost::cut::Seg> {
+    ui::window_preview::newest_review_cut().segs
 }
 
 /// Fixture seconds for all three shots: two clips with a real 10 s hole (see `snapshot_verbs::seeded`).
@@ -57,8 +57,8 @@ fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
         .emit_by_name::<()>("clicked", &[]);
     // The stage seeds its own session and cut; seeding the same figure first is what lets a check say what
     // changed against the fixture rather than against an empty page.
-    ui::reopen_history_on(&window, &fixture_cut());
-    ui::seed_review_cut(&window, &fixture_cut());
+    ui::reopen_history_on(&fixture_cut());
+    ui::seed_review_cut(&fixture_cut());
     ui::refresh_camera_rows(&window);
     settle();
     window
@@ -142,7 +142,7 @@ fn find_named(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 /// snapshot recipe makes, so the picture cannot drift from the rule. Returns which check ran.
 fn check_add_shot(app: &adw::Application) {
     let window = shot_window(app, "add");
-    let before = live_segs(&window);
+    let before = live_segs();
     assert_eq!(total(&before), 40.0, "the fixture keeps two 20 s clips");
     let dir = fixture_dir();
     let said = naivepost::snapshot_verbs::stage(&window, "05-add", &dir);
@@ -157,7 +157,7 @@ fn check_add_shot(app: &adw::Application) {
         line,
         "and the painted status row says the same thing the stage returned"
     );
-    let after = live_segs(&window);
+    let after = live_segs();
     assert!(
         kept(&after).iter().any(|(s, e)| *s <= 32.0 && *e >= 37.0),
         "the selected stretch of the hole is now kept footage, kept = {:?}",
@@ -187,7 +187,7 @@ fn check_add_shot(app: &adw::Application) {
 /// (that is how the person sees which borders they asked for).
 fn check_split_shot(app: &adw::Application) {
     let window = shot_window(app, "split");
-    let before = live_segs(&window);
+    let before = live_segs();
     let dir = fixture_dir();
     let said = naivepost::snapshot_verbs::stage(&window, "05-split", &dir);
     let line = said.last().cloned().unwrap_or_default();
@@ -201,10 +201,10 @@ fn check_split_shot(app: &adw::Application) {
         "both ends of the band are named, since both were new borders: {line:?}"
     );
     assert!(
-        ui::selection(&window).is_some(),
+        ui::selection().is_some(),
         "Split leaves the selection up on purpose, so the shot can show the band between its borders"
     );
-    let after = live_segs(&window);
+    let after = live_segs();
     assert_eq!(
         total(&after),
         total(&before),
@@ -230,7 +230,7 @@ fn check_split_shot(app: &adw::Application) {
 /// clears, and the new gap is wide enough to wear a fold badge.
 fn check_remove_shot(app: &adw::Application) {
     let window = shot_window(app, "remove");
-    let before = live_segs(&window);
+    let before = live_segs();
     let dir = fixture_dir();
     let said = naivepost::snapshot_verbs::stage(&window, "05-remove", &dir);
     let line = said.last().cloned().unwrap_or_default();
@@ -247,10 +247,10 @@ fn check_remove_shot(app: &adw::Application) {
         "it names the six seconds that went and says the clip became two: {line:?}"
     );
     assert!(
-        ui::selection(&window).is_none(),
+        ui::selection().is_none(),
         "Remove spends the selection — the band it dropped is gone, so nothing should still be drawn"
     );
-    let after = kept(&live_segs(&window));
+    let after = kept(&live_segs());
     assert!(
         after
             .iter()
@@ -267,7 +267,7 @@ fn check_remove_shot(app: &adw::Application) {
         !after.iter().any(|(s, e)| *s < 26.0 && *e > 20.0),
         "nothing kept overlaps the dropped span 20-26: {after:?}"
     );
-    let now = total(&live_segs(&window));
+    let now = total(&live_segs());
     assert!(
         now < total(&before),
         "the cut got shorter: {} -> {}",
@@ -298,7 +298,7 @@ fn check_the_three_shots_differ(app: &adw::Application) {
         let window = shot_window(app, &screen.replace('0', "z"));
         let said = naivepost::snapshot_verbs::stage(&window, screen, &dir);
         lines.push(said.last().cloned().unwrap_or_default());
-        segs.push(kept(&live_segs(&window)));
+        segs.push(kept(&live_segs()));
         window.close();
     }
     println!("THREE statuses: {}", lines.join(" // "));

@@ -1,6 +1,6 @@
 //! Gaps this audit closed — `spec/12-decisions.md` §5.
 
-use crate::narration::{self, Entry, Silent};
+use crate::narration::{Entry, Silent};
 use crate::roles::Job;
 use crate::tools::{self, Tool};
 
@@ -130,12 +130,6 @@ pub fn read_count(job: Job) -> usize {
     tools::offered(job).iter().filter(|t| is_read(**t)).count()
 }
 
-/// The pair F0.7's policy job gets, named here because §5 points at it as the only read the old jobs
-/// had: `get_context` beside `set_policy`.
-pub fn policy_pair() -> Vec<Tool> {
-    tools::policy_tools()
-}
-
 /// Whether a tool reply says more than bare success.
 pub fn result_carries_more_than_ok(reply: &str) -> bool {
     let Ok(body) = serde_json::from_str::<serde_json::Value>(reply) else {
@@ -220,11 +214,6 @@ pub fn silent_survives_entry_rewrite(
     _new_entries: &[Entry],
 ) -> Vec<Silent> {
     silent.to_vec()
-}
-
-/// Where a line lands in the clip's output seconds.
-pub fn lands_at(at: f64, rate: f64) -> f64 {
-    narration::output_seconds(at, rate)
 }
 
 /// Whether a placement comes from the app rather than from translated text.

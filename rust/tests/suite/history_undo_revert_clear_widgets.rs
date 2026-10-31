@@ -56,8 +56,8 @@ fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &Cut) -> adw::Ap
     // is newest at the time, so seeding first would have opened the base on the previous check's cut and
     // left Revert live on a page that has changed nothing. This is the same order `build_window` uses:
     // open the history on what the page opens with, then show it (§2).
-    ui::reopen_history_on(&window, seeded);
-    ui::seed_review_cut(&window, seeded);
+    ui::reopen_history_on(seeded);
+    ui::seed_review_cut(seeded);
     // Nothing left over from the previous check that would answer S1/S2 where this one wants "no".
     ui::set_held_clip(None);
     ui::clear_selection(&window);
@@ -105,7 +105,7 @@ fn f2_13_s1_a_real_add_makes_undo_live_and_a_real_undo_says_what_is_left(app: &a
     // A real edit through the real verb button.
     seed_band(&window, 40.0, 50.0);
     click(&window, "add-button");
-    let after_add = ui::review_cut_segs(&window);
+    let after_add = ui::review_cut_segs();
     assert!(
         after_add.len() > 1,
         "＋ Add kept the band as a scene: {:?}",
@@ -118,7 +118,7 @@ fn f2_13_s1_a_real_add_makes_undo_live_and_a_real_undo_says_what_is_left(app: &a
 
     // And a real Undo walks back to the seeded state, printing the S1 sentence.
     click(&window, "undo-button");
-    let back = ui::review_cut_segs(&window);
+    let back = ui::review_cut_segs();
     assert_eq!(back.len(), 1, "back to the one scene the page opened with");
     assert_eq!(
         status_text(&window),
@@ -142,7 +142,7 @@ fn f2_13_s1_redo_puts_it_back(app: &adw::Application) {
     let window = cut_page(app, &tape(), &seeded);
     seed_band(&window, 40.0, 50.0);
     click(&window, "add-button");
-    let added = ui::review_cut_segs_count(&window);
+    let added = ui::review_cut_segs_count();
     click(&window, "undo-button");
     assert!(
         button(&window, "redo-button").is_sensitive(),
@@ -150,7 +150,7 @@ fn f2_13_s1_redo_puts_it_back(app: &adw::Application) {
     );
 
     click(&window, "redo-button");
-    let forward = ui::review_cut_segs_count(&window);
+    let forward = ui::review_cut_segs_count();
     assert_eq!(forward, added, "Redo put the added scene back");
     assert_eq!(
         status_text(&window),
@@ -177,16 +177,12 @@ fn f2_13_s2_revert_refuses_then_returns_to_the_base(app: &adw::Application) {
         cut::NOTHING_TO_REVERT,
         "S2's refusal, verbatim"
     );
-    assert_eq!(
-        ui::review_cut_segs_count(&window),
-        1,
-        "and the cut is untouched"
-    );
+    assert_eq!(ui::review_cut_segs_count(), 1, "and the cut is untouched");
 
     // A real edit, then the real Revert button.
     seed_band(&window, 60.0, 70.0);
     click(&window, "add-button");
-    let edited = ui::review_cut_segs_count(&window);
+    let edited = ui::review_cut_segs_count();
     assert!(edited > 1, "the edit landed");
     assert!(
         button(&window, "revert-button").is_sensitive(),
@@ -194,7 +190,7 @@ fn f2_13_s2_revert_refuses_then_returns_to_the_base(app: &adw::Application) {
     );
 
     click(&window, "revert-button");
-    let base = ui::review_cut_segs_count(&window);
+    let base = ui::review_cut_segs_count();
     assert_eq!(
         base, 1,
         "back to what the page opened with, which is also the base"
@@ -234,7 +230,7 @@ fn f2_13_s3_clear_takes_scenes_and_effects_and_keeps_the_recordings(app: &adw::A
     seed_band(&window, 50.0, 65.0);
     click(&window, "add-button");
     // Lay one effect and one lane under hand too, so there is something of each kind to lose.
-    let mut with_fx = ui::review_cut_of(&window);
+    let mut with_fx = ui::window_preview::newest_review_cut();
     with_fx.fx.push(Fx {
         kind: "zoom".into(),
         t: 12.0,
@@ -253,31 +249,32 @@ fn f2_13_s3_clear_takes_scenes_and_effects_and_keeps_the_recordings(app: &adw::A
     with_fx.nrows = 2;
     // Hand-laid, not handed in from outside: seed the state, then say it is an edit, the way a door that
     // changed one of the seven things does through `record_edit`.
-    ui::seed_review_cut(&window, &with_fx);
+    ui::seed_review_cut(&with_fx);
     ui::note_edit(&window);
     settle();
 
-    assert!(
-        ui::review_cut_segs_count(&window) >= 3,
-        "three scenes to lose"
+    assert!(ui::review_cut_segs_count() >= 3, "three scenes to lose");
+    assert_eq!(
+        ui::window_preview::newest_review_cut().fx.len(),
+        1,
+        "one effect to lose"
     );
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "one effect to lose");
     assert!(
         button(&window, "clear-cut-button").is_sensitive(),
         "Clear is live with a cut on it"
     );
 
     click(&window, "clear-cut-button");
-    let after = ui::review_cut_of(&window);
+    let after = ui::window_preview::newest_review_cut();
     assert!(after.segs.is_empty(), "every scene is off");
     assert!(after.fx.is_empty(), "and every effect");
     assert_eq!(
-        ui::review_cut_shift(&window),
+        ui::review_cut_shift(),
         BTreeMap::from([("cam2".to_string(), -1.25)]),
         "shifts survive: Clear is not an undo of where a file was parked"
     );
     assert_eq!(after.rows, with_fx.rows, "row pins survive");
-    assert_eq!(ui::review_lanes(&window), with_fx.lanes, "lanes survive");
+    assert_eq!(ui::review_lanes(), with_fx.lanes, "lanes survive");
     assert_eq!(
         after.nrows, 2,
         "and the floor under the row count survives, or the tracks blank out"
@@ -310,10 +307,9 @@ fn f2_13_s4_the_keyboard_reaches_the_same_rules(app: &adw::Application) {
     let window = cut_page(app, &tape(), &seeded);
     seed_band(&window, 40.0, 50.0);
     click(&window, "add-button");
-    let added = ui::review_cut_segs_count(&window);
+    let added = ui::review_cut_segs_count();
 
-    let controller =
-        ui::history_key_controller(&window).expect("the page has a history key controller");
+    let controller = ui::history_key_controller().expect("the page has a history key controller");
     // Ctrl+Z: the same undo the button performs.
     let _ = controller.emit_by_name::<bool>(
         "key-pressed",
@@ -324,7 +320,7 @@ fn f2_13_s4_the_keyboard_reaches_the_same_rules(app: &adw::Application) {
         ],
     );
     settle();
-    let after_chord = ui::review_cut_segs_count(&window);
+    let after_chord = ui::review_cut_segs_count();
     assert_eq!(
         after_chord, 1,
         "Ctrl+Z undid the add the same way the button did"
@@ -349,7 +345,7 @@ fn f2_13_s4_the_keyboard_reaches_the_same_rules(app: &adw::Application) {
     );
     settle();
     assert_eq!(
-        ui::review_cut_segs_count(&window),
+        ui::review_cut_segs_count(),
         added,
         "Ctrl+Shift+Z redid it -- one rule, two doors"
     );

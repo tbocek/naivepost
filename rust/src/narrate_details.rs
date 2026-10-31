@@ -126,11 +126,6 @@ pub fn inputs_tooltip(
 
 // ---- re-roll, sample, reference (F4.3 / F4.7) ------------------------------------
 
-/// Why ▶ refuses to replace a narration someone has heard or edited: the page's own sentence ([`crate::narrate_screen::replace_refusal`]), named here so §6 pins one wording.
-pub fn re_roll_refusal(heard_or_edited: bool, tick_checked: bool) -> Option<&'static str> {
-    crate::narrate_screen::replace_refusal(heard_or_edited, tick_checked)
-}
-
 /// §6 [F4.1]: the run log's continuation line (four leading spaces) naming where the overwritten narration is kept; written only once a valid one came back.
 pub fn previous_kept_log(path: &str) -> String {
     // The spec names the file but not the wording; this line is the app's.

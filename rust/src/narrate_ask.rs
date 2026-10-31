@@ -65,7 +65,7 @@ pub fn run(
         // ladder the render runs (`narrate_screen::mirror_fit` over `produce_render::fit`), with speech
         // estimated the way a row estimates it, since a take written by this run does not exist yet.
         |written| unfitted_clips(&segs, written),
-        log,
+        crate::ui::window::log_line,
     )
 }
 
@@ -100,8 +100,4 @@ pub fn unfitted_clips(segs: &[Seg], written: &[Written]) -> Vec<u32> {
         }
     }
     bad
-}
-
-fn log(line: &str) {
-    crate::ui::window::log_line(line);
 }

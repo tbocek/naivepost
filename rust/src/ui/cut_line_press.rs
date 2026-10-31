@@ -39,8 +39,8 @@ pub fn press_strip(
 
 /// §7 bullet 2 (`a selection is of what it was DRAWN on`) through the PAINTED band: which ground a press y resolves to, off the painter's geometry (lane depth from the effects, row count from the recordings).
 /// A drag and a click both ask this one table.
-pub fn surface_at_band(window: &adw::ApplicationWindow, y_px: f64) -> Surface {
-    let cut_ = ui::review_cut_of(window);
+pub fn surface_at_band(y_px: f64) -> Surface {
+    let cut_ = ui::window_preview::newest_review_cut();
     let bands = cut_tracks::bands_for(crate::fx_lane::row_count(&cut_.fx));
     cut_select::surface_at(
         y_px,
@@ -56,15 +56,15 @@ pub fn press(
     y_px: f64,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = ui::window_preview::newest_review_cut();
     // The band as painted: a press converts through the painter's inverse (`band_t_at`), counting scroll, folds and gaps as the ink was laid down.
-    let scene = cut_view::band_scene_for(window);
+    let scene = cut_view::band_scene_for();
     let at = cut_tracks::band_t_at(&scene, x_px);
     // §B's gutter is the band's left 30 px (row name plates, not tape): a press there sizes rows and moves no line and watches nothing (S1).
     let gutter = x_px < cut_view::gutter_px();
 
     // Which band the y fell in (see [`surface_at_band`]). The lane's row count comes from the same source as its painted height (`Scene::of`, the newest review cut), or rows shift under the pointer.
-    let surface = surface_at_band(window, y_px);
+    let surface = surface_at_band(y_px);
     let on_picture = matches!(surface, Surface::PictureRow(_));
     let row = match surface {
         Surface::PictureRow(row) => row,
@@ -98,7 +98,7 @@ fn press_in(
     gutter: bool,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
-    let cut_ = ui::review_cut_of(window);
+    let cut_ = ui::window_preview::newest_review_cut();
     let recordings = ui::page_recordings();
 
     // "The scene under the click" means its PICTURE: a kept scene covering that second on a picture row. DECISION where §1 and §11.7 differ (see `cut_line`'s module note):
@@ -110,7 +110,7 @@ fn press_in(
         row,
         on_picture,
         on_scene_picture,
-        playing: something_playing(window),
+        playing: something_playing(),
         sources: !recordings.is_empty(),
         gutter,
     };
@@ -136,8 +136,8 @@ fn scene_on_row(
 }
 
 /// Is anything playing? The transport's own flag covers a preview the app drives; the two media legs cover a player process the transport was not told about (F2.1/F2.2).
-fn something_playing(window: &adw::ApplicationWindow) -> bool {
-    ui::preview_player(window).transport.playing
+fn something_playing() -> bool {
+    ui::preview_player().transport.playing
         || play_back::running()
         || cut_play_back::playing_pid().is_some()
 }
@@ -188,7 +188,7 @@ pub fn attach(window: &adw::ApplicationWindow, band: &gtk::Widget) {
         if crate::ui::cut_band_marks::press_at(&win, x, y) {
             return;
         }
-        press(&win, x, y, crate::ui::window::line_now_ms());
+        press(&win, x, y, ui::window_line_step::now_ms());
     });
     band.add_controller(gesture.clone());
     crate::ui::window::store_band_line_gesture(gesture);

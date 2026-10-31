@@ -667,7 +667,7 @@ fn f1_8_s7_session_txt_is_the_text_the_cut_reads() {
 
 /// S7's fold: a stretch a marking pass left in `retakes.tsv` contributes ONE line to the text the cut
 /// reads, however many rows fall inside it. Reading the stored marks back is all §S6 does with them, so
-/// this calls that read-and-fold pair (`fix_session::marks_to_fix` into `fix_transcripts::session_text`)
+/// this calls that read-and-fold pair (`fix_session::marks_to_fix` into `fix_transcripts::labelled`)
 /// over the rows a real walk wrote. Where a mark COMES FROM is §F1.9's own question and belongs to
 /// `tests/suite/retakes_flow.rs`, not here.
 #[test]
@@ -685,7 +685,7 @@ fn f1_8_s7_a_marked_stretch_folds_into_one_line() {
         text: String::new(),
         whole: String::new(),
     }]);
-    let folded = fix_transcripts::session_text(&rows, "", &marks);
+    let folded = fix_transcripts::labelled(&rows, "", &marks);
     assert!(
         folded.contains("abandoned attempt"),
         "the mark is folded into one line: {folded}"

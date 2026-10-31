@@ -148,7 +148,7 @@ pub fn written(tree: &Tree) -> Vec<&'static str> {
     {
         found.push(DATA_FILES[4]);
     }
-    if produce_stamp::stamp_path(tree).is_file() {
+    if tree.final_stamp().is_file() {
         found.push(DATA_FILES[5]);
     }
     // The record's existence *is* the flag — §5: "an existing publish.json means the upload text is
@@ -164,7 +164,7 @@ pub fn resolve(tree: &Tree, rel: &str) -> Option<PathBuf> {
     match rel {
         "clips/final.srt" => Some(scratch_srt(tree)),
         "clips/concat.txt" => Some(concat_path(tree)),
-        produce_stamp::STAMP_FILE => Some(produce_stamp::stamp_path(tree)),
+        produce_stamp::STAMP_FILE => Some(tree.final_stamp()),
         "final.jpg" => Some(tree.final_jpg()),
         "final.html" => Some(tree.final_html()),
         // The record is read through Tree because that is where the legacy spelling of the folder
@@ -180,17 +180,6 @@ pub fn sidecar_files(stem: &str, code: Option<&str>) -> [String; 2] {
     render::sidecar_names(stem, code)
 }
 
-/// The files a run deletes by exact name before writing them again.
-pub fn stale_files(stem: &str, languages: &[&str]) -> Vec<String> {
-    render::stale_sidecars(stem, languages)
-}
-/// Whether this project's `produce/` is the whole story about its video: a stamp that matches lets
-/// ▶ skip the encode ([`produce_stamp::skip_encode`]), and with it the sidecars and the tag stay as
-/// the run before left them.
-pub fn video_is_up_to_date(stored: Option<&str>, current: &str) -> bool {
-    produce_stamp::skip_encode(stored, current)
-}
-
 /// The poster's quality as the spec asks for it (§F5.5's "JPEG 90") and as ffmpeg takes it.
 pub fn poster_quality() -> (u8, &'static str) {
     (
@@ -202,18 +191,6 @@ pub fn poster_quality() -> (u8, &'static str) {
 /// The scratch folder as [`render::clear_scratch`] empties it: every file inside, never the folder.
 pub fn clear_scratch(tree: &Tree) -> Result<usize, String> {
     render::clear_scratch(&tree.clips_dir())
-}
-
-/// §3's `+ .stamp` for the *video*: the file beside it, not the thumbnail's own stamp under
-/// `publish/`, which is [`Kind::State`] and answers to a different question.
-pub fn stamp_path(tree: &Tree) -> PathBuf {
-    produce_stamp::stamp_path(tree)
-}
-
-/// The folder §3 calls `produce/publish/` — read through [`crate::layout::Tree::publish_dir`],
-/// which still finds the legacy spelling beside the project root and never migrates it.
-pub fn publish_folder(tree: &Tree) -> PathBuf {
-    tree.publish_dir()
 }
 
 /// Whether a path is under one of §3's three groups.

@@ -115,9 +115,9 @@ fn bases(recordings: &[naivepost::timeline::Recording]) -> Vec<&str> {
 }
 
 /// The scene under the line in the live cut — read through the same door the painter reads.
-fn scene_at_line(window: &adw::ApplicationWindow) -> naivepost::cut::Seg {
-    let at = ui::line_position(window).t;
-    ui::review_cut_segs(window)
+fn scene_at_line() -> naivepost::cut::Seg {
+    let at = ui::line_position().t;
+    ui::review_cut_segs()
         .into_iter()
         .find(|seg| seg.ins.is_empty() && seg.s <= at && at < seg.e)
         .unwrap_or_else(|| panic!("no kept scene under the line at {at}"))
@@ -163,7 +163,8 @@ fn check_the_two_plates_name_their_own_recordings(app: &adw::Application) {
     );
     // The two rows really are two rows: the stage's two recordings, laid out on different rows by the
     // greedy colouring, and each named by its own base rather than by a row number.
-    let placed = naivepost::timeline::rows_for(&recordings(), &ui::review_cut_of(&window));
+    let placed =
+        naivepost::timeline::rows_for(&recordings(), &ui::window_preview::newest_review_cut());
     assert_ne!(
         placed[0], placed[1],
         "the overlap put the two cameras on different rows"
@@ -230,7 +231,7 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
         "off the row it was on"
     );
     assert!(
-        !ui::camera_watch(&window).borrow().said,
+        !ui::camera_watch().borrow().said,
         "the new watch had nothing to report, so it is not marked as having spoken"
     );
     // The ONCE in "status says ONCE", read off the door rather than the label: watching the row the cut
@@ -244,7 +245,7 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
         "a click onto the cut's own row owes no sentence at all, got {said_again:?}"
     );
     assert!(
-        !ui::camera_watch(&window).borrow().said,
+        !ui::camera_watch().borrow().said,
         "and the watch is not marked as having spoken, so it cannot repeat itself later either"
     );
     // The other half of S3: the play button hands the preview back to the cut. That is `hand_preview_back`'s
@@ -258,7 +259,7 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
         "the play button hands a watched row back to the cut"
     );
     assert_eq!(
-        ui::camera_watch(&window).borrow().row,
+        ui::camera_watch().borrow().row,
         None,
         "and the watch is gone, so the preview is the cut's again"
     );
@@ -267,7 +268,7 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
     // the hand-back. What CAN is which row the panel answers from once nothing is watched -- `preview_row`
     // falls back to the scene's own camera, camera 1, which is exactly "the preview is the cut's again".
     assert_eq!(
-        ui::preview_row(&window),
+        ui::preview_row(),
         0,
         "with no form open and no row watched, the preview stands on the cut's own row"
     );
@@ -281,7 +282,7 @@ fn check_the_lens_badge_moves_the_picture_to_the_other_row(app: &adw::Applicatio
     let window = shot_window(app, "lens");
     snapshot_rows::stage(&window, &fixture_dir());
     settle();
-    let before = scene_at_line(&window).cam;
+    let before = scene_at_line().cam;
     assert_eq!(
         before, 0,
         "badge 6: the one kept scene starts on camera 1's row"
@@ -290,7 +291,7 @@ fn check_the_lens_badge_moves_the_picture_to_the_other_row(app: &adw::Applicatio
         .expect("the scene drew its lens badge")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    let after = scene_at_line(&window).cam;
+    let after = scene_at_line().cam;
     assert_eq!(
         after, 1,
         "the press moved the scene's picture to the row that filmed the overlap"
@@ -311,7 +312,7 @@ fn check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut(app: &adw::Ap
     let window = shot_window(app, "hearing");
     snapshot_rows::stage(&window, &fixture_dir());
     settle();
-    let scene = ui::review_cut_of(&window);
+    let scene = ui::window_preview::newest_review_cut();
     assert!(
         naivepost::cut_hear::lane_is_heard_anywhere(&scene, &[snapshot_rows::MIC]),
         "a fresh cut hears the microphone everywhere"
@@ -320,8 +321,8 @@ fn check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut(app: &adw::Ap
         .expect("the row drew the lane's speaker badge")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    let hushed = ui::review_cut_of(&window);
-    let index = naivepost::cut_hear::scene_at(&hushed.segs, ui::line_position(&window).t)
+    let hushed = ui::window_preview::newest_review_cut();
+    let index = naivepost::cut_hear::scene_at(&hushed.segs, ui::line_position().t)
         .expect("the line stands in the staged scene");
     assert!(
         !hushed.segs[index].hears(snapshot_rows::MIC),
@@ -339,7 +340,7 @@ fn check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut(app: &adw::Ap
         .expect("the row drew the lane's gutter switch")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    let switched = ui::review_cut_of(&window);
+    let switched = ui::window_preview::newest_review_cut();
     // The switch's face is `lane_is_heard_anywhere`'s reading, so pressing it can never contradict what the
     // switch claimed -- which is the wire here. The scene the badge silenced stays silenced either way.
     assert!(
@@ -362,13 +363,13 @@ fn check_add_over_the_same_seconds_on_the_other_camera_adds_nothing(app: &adw::A
     let window = shot_window(app, "add");
     snapshot_rows::stage(&window, &fixture_dir());
     settle();
-    let before = ui::review_cut_segs_count(&window);
+    let before = ui::review_cut_segs_count();
     // 20–37 is exactly badge 3's overlap: camera 2's ground, already kept from camera 1.
     ui::draw_selection(&window, Surface::PictureRow(1), None, 20.0, 37.0);
     let outcome = ui::press_add(&window);
     let status = status_text(&window);
     println!("add over the overlap said: {status}");
-    let after = ui::review_cut_segs_count(&window);
+    let after = ui::review_cut_segs_count();
     match outcome {
         naivepost::cut_verbs::Outcome::Refused(_) => {
             assert_eq!(
@@ -380,7 +381,7 @@ fn check_add_over_the_same_seconds_on_the_other_camera_adds_nothing(app: &adw::A
         // (cut_verbs::add's steal). The kept footage is then the same 0-37 stretch either way -- what may not
         // happen is a second, overlapping piece of footage, which is what "clips never overlap" forbids.
         naivepost::cut_verbs::Outcome::Applied { .. } => {
-            let footage: Vec<(f64, f64)> = ui::review_cut_segs(&window)
+            let footage: Vec<(f64, f64)> = ui::review_cut_segs()
                 .iter()
                 .filter(|seg| seg.ins.is_empty() && seg.e > seg.s)
                 .map(|seg| (seg.s, seg.e))

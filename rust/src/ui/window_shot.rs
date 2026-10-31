@@ -89,10 +89,6 @@ fn find_in_bottom(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     None
 }
 
-pub fn rest_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
-    height_ask(run_row, log)
-}
-
 /// Start the divider so the band is exactly [`height_px`] tall: the handle goes to `total − band`, leaving
 /// the page everything above it. Clamped inside the paned because a tiny window (a test that allocates a
 /// postage stamp) has no room for both halves.

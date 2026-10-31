@@ -107,7 +107,6 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
     // Start from the recording preview with the line parked in a removed stretch, so the snap is
     // observable rather than a no-op.
     ui::set_preview_state(
-        &window,
         false,
         false,
         naivepost::run::Transport {
@@ -151,7 +150,7 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
         other => panic!("expected a switch through the seam, got {other:?}"),
     }
 
-    let player = ui::preview_player(&window);
+    let player = ui::preview_player();
     assert!(
         player.cut_only && !player.reviewing,
         "the preview is now the plain cut"
@@ -171,7 +170,7 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
     // And the widget really fires: emit the signal the way a click does and show the handler is bound
     // to this button rather than to some other object of the same name.
     button.emit_by_name::<()>("clicked", &[]);
-    let after = ui::preview_player(&window);
+    let after = ui::preview_player();
     assert!(
         after.cut_only,
         "the click reached a handler that keeps the preview the cut"
@@ -220,11 +219,10 @@ fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
     settle();
 
     // Publish an empty cut into this window's slot -- the seam the page itself uses.
-    ui::seed_review_cut(&window, &Cut::default());
+    ui::seed_review_cut(&Cut::default());
 
     // Start from a paused recording preview so "did not change" means something.
     ui::set_preview_state(
-        &window,
         false,
         false,
         naivepost::run::Transport {
@@ -232,7 +230,7 @@ fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
             started: false,
         },
     );
-    let before = ui::preview_player(&window);
+    let before = ui::preview_player();
     assert!(
         !before.playhead.unwrap_or(0.0).is_nan(),
         "the player is readable"
@@ -247,7 +245,7 @@ fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
         naivepost::cut_play::EMPTY_CUT_REFUSAL,
         "the status line says what the way-in cannot do -- the same string f2_2_s2 asserts"
     );
-    let after = ui::preview_player(&window);
+    let after = ui::preview_player();
     assert!(
         !after.transport.playing,
         "the refusal left the transport paused"
@@ -260,7 +258,7 @@ fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
 
     // The key controller really is attached to this window -- that is the widget the closure runs in.
     assert!(
-        ui::line_key_controller(&window).is_some(),
+        ui::line_key_controller().is_some(),
         "the Cut window carries the line key controller Space arrives through"
     );
     window.close();
@@ -276,7 +274,6 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
 
     // Idle: a recording preview (or nothing) means the shipped label, never the pause face.
     ui::set_preview_state(
-        &window,
         false,
         false,
         naivepost::run::Transport {
@@ -297,7 +294,6 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
 
     // Ours and running: the ⏸ face, and only here — the button reads the player rather than remembering.
     ui::set_preview_state(
-        &window,
         true,
         false,
         naivepost::run::Transport {
@@ -314,7 +310,6 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
 
     // A review owns the ⏸ instead (§D: exactly one of the three ▶s wears it).
     ui::set_preview_state(
-        &window,
         true,
         true,
         naivepost::run::Transport {
@@ -330,9 +325,8 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
     );
 
     // S1: with no clips the button greys, and its label stays the shipped one (grey is not a relabel).
-    ui::seed_review_cut(&window, &Cut::default());
+    ui::seed_review_cut(&Cut::default());
     ui::set_preview_state(
-        &window,
         false,
         false,
         naivepost::run::Transport {

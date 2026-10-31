@@ -84,10 +84,6 @@ impl Counts {
     }
 }
 
-pub fn vision_calls(frames: usize) -> usize {
-    roles::vision_batches(frames)
-}
-
 /// How many fixer requests `lines` transcript lines take, in blocks of
 /// [`FIX_BLOCK_LINES`].
 pub fn fixer_calls(lines: usize) -> usize {
@@ -100,7 +96,7 @@ pub fn inputs_readout(counts: &Counts) -> String {
     format!(
         "{} frames \u{2192} {} vision \u{b7} {} lines \u{2192} {} fixer",
         counts.frames,
-        vision_calls(counts.frames),
+        roles::vision_batches(counts.frames),
         counts.lines,
         fixer_calls(counts.lines)
     )

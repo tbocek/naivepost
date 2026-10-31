@@ -209,16 +209,16 @@ fn page_with_a_caption(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Fire the panel's OWN button-1 gesture with zero travel: the toolkit's two signals, begin at the point and end
 /// with a zero offset, which is what a click is to GTK. Nothing here calls a rule.
-fn press_the_panel(window: &adw::ApplicationWindow, at: (f64, f64)) {
-    let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+fn press_the_panel(at: (f64, f64)) {
+    let gesture = ui::zoom_gesture().expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&at.0, &at.1]);
     gesture.emit_by_name::<()>("drag-end", &[&0.0f64, &0.0f64]);
     settle();
 }
 
 /// The middle of the caption's box in panel px — the point §S5 says must not be swallowed by the box.
-fn caption_centre(window: &adw::ApplicationWindow) -> (f64, f64) {
-    let cut_ = ui::review_cut_of(window);
+fn caption_centre() -> (f64, f64) {
+    let cut_ = ui::window_preview::newest_review_cut();
     let effect = cut_
         .fx
         .iter()
@@ -233,23 +233,23 @@ fn caption_centre(window: &adw::ApplicationWindow) -> (f64, f64) {
 /// is a non-unwinding abort, which kills the whole test binary and hides which assertion broke).
 fn toggle_check(app: &adw::Application) -> Result<(), String> {
     let window = page_with_a_caption(app);
-    if ui::preview_player(&window).transport.playing {
+    if ui::preview_player().transport.playing {
         return Err("a fresh preview is not playing".into());
     }
-    press_the_panel(&window, caption_centre(&window));
-    if !ui::preview_player(&window).transport.playing {
+    press_the_panel(caption_centre());
+    if !ui::preview_player().transport.playing {
         return Err(format!(
             "a click inside the caption's box never reached the transport \u{2014} status was {:?}, clock {}",
             common::status_text(&window),
-            naivepost::preview::clock(ui::preview_player(&window).playhead)
+            naivepost::preview::clock(ui::preview_player().playhead)
         ));
     }
     // The tick only runs while a real player process exists (`cut_record_tick`'s own guard), and none does in here,
     // so the line has to be put back on filmed ground by hand before the second click: the first one lands it at
     // second 300, past the end of the tape, where §F2.1's S2 refuses to start a preview rather than pretend.
     ui::set_playhead(&window, 11.0);
-    press_the_panel(&window, caption_centre(&window));
-    if ui::preview_player(&window).transport.playing {
+    press_the_panel(caption_centre());
+    if ui::preview_player().transport.playing {
         return Err("the same click again did not pause it \u{2014} toggle, not restart".into());
     }
     Ok(())
@@ -258,13 +258,13 @@ fn toggle_check(app: &adw::Application) -> Result<(), String> {
 /// The same press clear of every overlay box is the same click (§06 F3.1 after S5, §05 F2.1 S2): it plays, and
 /// it frames nothing. The first rewrite kept it §F3.1's framing press, so it opened a zoom form and never played.
 fn clear_check(app: &adw::Application) -> Result<(), String> {
-    let window = page_with_a_caption(app);
+    let _window = page_with_a_caption(app);
     // Top-left corner: outside the lower third, so nothing here belongs to F3.4 S5.
-    press_the_panel(&window, (2.0, 2.0));
-    if !ui::preview_player(&window).transport.playing {
+    press_the_panel((2.0, 2.0));
+    if !ui::preview_player().transport.playing {
         return Err("a press clear of every overlay box did not start the preview".into());
     }
-    if ui::zoom_form_open().is_some() || ui::held_effect().is_some() {
+    if ui::zoom_form_open().is_some() || ui::cut_hand::held_effect().is_some() {
         return Err("a press clear of every overlay box framed a zoom; a click only plays".into());
     }
     Ok(())

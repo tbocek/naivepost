@@ -485,5 +485,5 @@ fn sec_06_effects_9_where_recordings_overlap_s10_the_model_passes_know_no_camera
     let gained = &suggested_volume.effects[0];
     assert!(gained.lane.is_empty(), "a proposed volume names no lane");
     assert_eq!(gained.cam, overlap::SUGGESTED_ROW);
-    assert!(overlap::suggested_volume_reaches_the_bed(gained));
+    assert!(fx_record::rides_whole_bed(gained));
 }

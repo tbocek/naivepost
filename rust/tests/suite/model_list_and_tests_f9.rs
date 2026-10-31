@@ -226,7 +226,7 @@ fn read_box(key: &str) -> String {
 /// program's accessor rather than a widget walk: `ui::dialog_log` is what the dialog paints, and a
 /// hand-written tree walk here would miss whatever the expander has not realised yet.
 fn dialog_log() -> String {
-    naivepost::ui::dialog_log(&last_window())
+    naivepost::ui::dialog_log()
 }
 
 fn find_in(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {

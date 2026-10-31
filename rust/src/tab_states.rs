@@ -3,9 +3,8 @@
 use crate::{
     cut,
     cut_screen::{self, Preview},
-    project::Project,
     run::{self, Step},
-    shell::{self, Page},
+    shell::Page,
 };
 
 /// What the run bar's ▶ means on a page right now (§2's third column).
@@ -17,11 +16,6 @@ pub enum Play {
         resume: bool,
     },
     Refused,
-}
-
-/// Whether the tab opens, `None` meaning it does (§2's second column: "always" for three of them).
-pub fn opens(page: Page, project: &Project) -> Option<&'static str> {
-    shell::lock(page, project)
 }
 
 /// What ▶ means on this page (§2's third column), plus the refusal sentence if there is one.

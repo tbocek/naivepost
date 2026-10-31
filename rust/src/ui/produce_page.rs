@@ -555,20 +555,6 @@ pub fn press_remove_image(window: &adw::ApplicationWindow, index: usize) -> Stri
     say(window, &format!("image removed: {}", short(&path)))
 }
 
-/// **3** Set Thumbnail: this picture as the thumbnail, cropped to the video's shape, no model call (§A).
-pub fn press_set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
-    crate::ui::produce_press_wiring::set_thumbnail(window, index)
-}
-
-pub fn press_redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
-    crate::ui::produce_press_wiring::redraw_thumbnail(window)
-}
-
-/// **8** ↻ suggest: the only press here that asks a model to rewrite text; the picture stays.
-pub fn press_suggest(window: &adw::ApplicationWindow) -> String {
-    crate::ui::produce_press_wiring::reword(window)
-}
-
 fn store_setting(row: &str, value: &str) -> String {
     mutate(|s| store_setting_on(s, row, value))
 }
@@ -1030,7 +1016,7 @@ pub fn load_page(tree: &crate::layout::Tree) -> ProduceState {
         mono: p.mono,
         blurred_edges: p.blurred_edges,
         clips: clips.len(),
-        seconds: crate::shell::cut_seconds(&cut),
+        seconds: crate::cut_screen::cut_seconds(&cut),
         session_language: language_name(&project.policy.language.value),
         cut_line: match (clips.first(), clips.last()) {
             (Some(first), Some(last)) => format!(
@@ -1420,12 +1406,13 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     let s = read_state();
     let project = crate::ui::window::live_project();
     let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok();
-    // S3: the Cut page's own segments win, so an unsaved tweak still renders (`review_cut_of`).
+    // S3: the Cut page's own segments win, so an unsaved tweak still renders (`window_preview::newest_review_cut`).
     let cut = match tree.as_ref() {
-        Some(tree) => {
-            crate::produce_flow::what_is_the_cut(Some(crate::ui::review_cut_of(window)), tree)
-        }
-        None => crate::ui::review_cut_of(window),
+        Some(tree) => crate::produce_flow::what_is_the_cut(
+            Some(crate::ui::window_preview::newest_review_cut()),
+            tree,
+        ),
+        None => crate::ui::window_preview::newest_review_cut(),
     };
     if cut.segs.is_empty() {
         crate::ui::run_close::close_window_run();
@@ -1592,8 +1579,8 @@ fn snapshot_run(
     (snap, run)
 }
 
-pub(crate) fn press_run(window: &adw::ApplicationWindow) -> Option<crate::produce_flow::Run> {
-    let cut = crate::ui::window::review_cut_of(window);
+pub(crate) fn press_run() -> Option<crate::produce_flow::Run> {
+    let cut = crate::ui::window_preview::newest_review_cut();
     if cut.segs.is_empty() {
         return None;
     }
