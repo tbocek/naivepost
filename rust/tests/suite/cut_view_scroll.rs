@@ -239,6 +239,22 @@ fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
 }
 
 /// A wheel zoom leaves a line that is on screen where it stands; with the line off screen it goes around the pointer.
+fn check_a_view_scrolled_before_the_band_was_measured_settles(window: &adw::ApplicationWindow) {
+    cut_view::set_pps(4.0);
+    let film = 600.0 * 4.0;
+    // The opening scrolls to the line over a view far narrower than the page turns out to be.
+    cut_view::set_origin(film, cut_view::total_px(600.0, 4.0), 1.0);
+    let band = common::widget(window, "track-band");
+    band.emit_by_name::<()>("resize", &[&1400i32, &200i32]);
+    common::settle();
+    let view = cut_view::view_px(cut_view::surface_width(window));
+    assert!(
+        cut_view::origin() + view <= film + 1.0,
+        "the tape ends at the band's right edge at most: {} + {view}",
+        cut_view::origin()
+    );
+}
+
 fn check_a_wheel_zoom_stays_on_the_line(window: &adw::ApplicationWindow) {
     use naivepost::cut_screen::WheelOver;
     naivepost::ui::set_session_recordings(&tape(600.0));
@@ -350,6 +366,7 @@ fn wheel_over_tracks_and_transport(app: &adw::Application) {
     common::settle();
     check_the_line_stays_on_screen_when_the_takes_land(&window);
     check_a_wheel_zoom_stays_on_the_line(&window);
+    check_a_view_scrolled_before_the_band_was_measured_settles(&window);
     naivepost::ui::set_playhead(&window, 0.0);
     cut_view::set_pps(8.0);
     let view = cut_view::view_px(cut_view::surface_width(&window));

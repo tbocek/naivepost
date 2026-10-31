@@ -354,6 +354,13 @@ pub fn keep_line_through_layout(window: &adw::ApplicationWindow, layout: impl Fn
     }
 }
 
+/// The band got its real width: a view scrolled while the page was unmeasured may now stand past the tape's end.
+pub fn settle_view(window: &adw::ApplicationWindow) {
+    let view = view_px(surface_width(window));
+    set_origin(origin(), total_px(filmed_seconds(), pps()), view);
+    repaint_page(window);
+}
+
 /// The pixel inside the timeline the line is drawn at: through the span the tape is painted by, where the unfilmed
 /// time between recordings and a folded stretch take no width. The first rewrite followed `second * pps`, which is
 /// right only for one unfolded recording: with gaps it named a pixel far right of the line, and the view jumped

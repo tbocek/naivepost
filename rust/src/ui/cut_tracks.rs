@@ -447,6 +447,12 @@ pub fn install(
     resize.connect_realize(move |_| {
         repaint.queue_draw();
     });
+    let measured = window.clone();
+    band.surface.connect_resize(move |_, _, _| {
+        // Allocation is under way: the bar it would change waits for it to end.
+        let measured = measured.clone();
+        glib::idle_add_local_once(move || crate::ui::cut_view::settle_view(&measured));
+    });
     // F2.12 S6: the hold lives on the band, so it goes on wherever a band is installed — not on the caller,
     // which is `window.rs`, already past its size budget. The band is found by name through [`band_of`], and
     // at THIS point in `install` the freshly built one is not yet in the window's tree (`host.insert_child_after`
