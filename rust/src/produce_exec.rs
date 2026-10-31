@@ -1021,7 +1021,16 @@ where
 
     // S5 — one encode per clip, its command logged before it runs rather than after: the command that
     // hung is the one worth reading, and there is no "after" for it.
-    for encode in &plan.encodes {
+    let clips = plan.encodes.len();
+    for (index, encode) in plan.encodes.iter().enumerate() {
+        crate::run_stages::report_progress(
+            &format!("encoding clip {} of {clips}", index + 1),
+            Some(index as f64 / clips as f64),
+        );
+        if !ask(At::BeforeTools, "between clips") {
+            ran.stopped_at = Some("between clips");
+            return ran;
+        }
         log(&encode.command.log);
         match spawn(&encode.command) {
             Ok(()) => ran.encoded.push(encode.stem.clone()),
@@ -1033,6 +1042,7 @@ where
     }
 
     // S6 — the join, by stream copy, behind the checkpoint that keeps a stop off the middle of it.
+    crate::run_stages::report_progress("joining the clips", Some(1.0));
     if !ask(At::BeforeJoin, render::JOINING) {
         ran.stopped_at = Some(render::JOINING);
         return ran;
@@ -1080,6 +1090,7 @@ where
 
     // S7 + S8 — one checkpoint for both, and the model gate first: the translation is the slow thing,
     // and putting it before the mux is what stops the encoder idling behind it.
+    crate::run_stages::report_progress("writing subtitles and the finished file", Some(1.0));
     if !ask(At::BeforeModelAndMux, "before translate and mux") {
         ran.stopped_at = Some("before translate and mux");
         return ran;

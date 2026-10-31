@@ -289,6 +289,51 @@ pub fn mirror_switches(bar: &run::RunBar) {
     STOPPED.store(bar.stop_flag, Ordering::SeqCst);
 }
 
+/// How often a parked walk looks at ⏸ and ⏹ again (§03-shell §2's "poll 200 ms").
+const PARK_POLL: std::time::Duration = std::time::Duration::from_millis(200);
+
+static PARKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Hold the walk for as long as it is paused. False when it was stopped instead, parked or not.
+pub fn park_while(paused: impl Fn() -> bool, stopped: impl Fn() -> bool) -> bool {
+    use std::sync::atomic::Ordering;
+    while paused() && !stopped() {
+        PARKED.store(true, Ordering::SeqCst);
+        std::thread::sleep(PARK_POLL);
+    }
+    PARKED.store(false, Ordering::SeqCst);
+    !stopped()
+}
+
+/// [`park_while`] on the run's own ⏸ and ⏹: a walk's checkpoint for a step that drives itself.
+pub fn park_at_checkpoint() -> bool {
+    use std::sync::atomic::Ordering;
+    park_while(
+        || PAUSED.load(Ordering::SeqCst),
+        || STOPPED.load(Ordering::SeqCst) || crate::cancel_leg::cancelled(),
+    )
+}
+
+/// Whether the walk is standing at a checkpoint on ⏸, rather than still finishing what it was doing.
+pub fn parked() -> bool {
+    PARKED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// What a step that drives itself is doing, for the window to paint: the sentence and, once there is one to give, how
+/// far along the bar it is.
+static PROGRESS: std::sync::Mutex<Option<(String, Option<f64>)>> = std::sync::Mutex::new(None);
+
+pub fn report_progress(status: &str, fraction: Option<f64>) {
+    if let Ok(mut held) = PROGRESS.lock() {
+        *held = Some((status.to_string(), fraction));
+    }
+}
+
+/// The newest report, taken: the next look finds nothing until the walk says something new.
+pub fn take_progress() -> Option<(String, Option<f64>)> {
+    PROGRESS.lock().ok().and_then(|mut held| held.take())
+}
+
 /// The children a walk on a worker has running, so ⏹ on the window thread can reach them. A child is
 /// listed from the moment it exists until it is reaped ([`spawn_task`]), so a stop never signals a pid that
 /// has since been handed to somebody else.

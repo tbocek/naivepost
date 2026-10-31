@@ -58,6 +58,7 @@ pub(crate) fn render_asked(_at: crate::produce_exec::At, _which: &str) -> bool {
 /// been pressed, so the walk halts between subprocesses and reports where it stopped. Split out only so
 /// `produce_snapshot::render_half` can hand the closure without naming this module's private items.
 pub fn render_checkpoint(_at: crate::produce_exec::At, _which: &str) -> bool {
+    crate::run_stages::park_at_checkpoint();
     render_asked(_at, _which)
 }
 
@@ -74,5 +75,6 @@ pub(crate) fn render_failure_note(render: &crate::produce_flow::Rendered) -> Opt
 /// the model and drives the picture. It reports its own failure; `finish_produce` logs it with the spec's
 /// tail and the render carries on.
 pub(crate) fn words_half(run: &crate::produce_flow::Run) -> Result<(), String> {
+    crate::run_stages::report_progress("writing the upload text and the thumbnail", None);
     crate::ui::produce_languages::upload_half(run)
 }

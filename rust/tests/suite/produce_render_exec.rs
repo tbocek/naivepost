@@ -1468,13 +1468,25 @@ fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
         "",
     );
     let stamp = tree.final_stamp();
-    // No narration lines, so the first checkpoint the walk reaches is the one before the join.
+    // A stop between the two clips: one encoded, the other never started.
+    let between = Spy::new();
+    let made = between.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        Some(2),
+    );
+    assert!(made.stopped);
+    assert_eq!(between.count_step("clip"), 1, "{:?}", between.steps());
+    assert!(!stamp.exists());
+
+    // One checkpoint per clip, then the one before the join.
     let spy = Spy::new();
     let made = spy.run(
         &run,
         &tree,
         &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
-        Some(1),
+        Some(3),
     );
     assert!(made.stopped, "the report says stopped");
     assert!(!made.ok, "and not ok");
@@ -1493,7 +1505,7 @@ fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
         &run,
         &tree,
         &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
-        Some(2),
+        Some(4),
     );
     assert!(made2.stopped, "stopped again, later in the run");
     assert_eq!(

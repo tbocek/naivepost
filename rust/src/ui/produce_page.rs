@@ -1932,6 +1932,9 @@ fn encode_and_finish(
     let carried = crate::ui::produce_worker::Carried::take();
     let settings = settings.clone();
     let w = window.clone();
+    let open = std::rc::Rc::new(std::cell::Cell::new(true));
+    let still_open = std::rc::Rc::clone(&open);
+    crate::ui::produce_progress::follow(window, move || still_open.get());
     crate::ui::background::run(
         "produce",
         move || {
@@ -1968,6 +1971,7 @@ fn encode_and_finish(
             Some(ending)
         },
         move |ending| {
+            open.set(false);
             take_written_publish(&w);
             let Some(ending) = ending else {
                 crate::ui::run_close::close_window_run();

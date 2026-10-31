@@ -61,6 +61,7 @@ pub mod produce_paint;
 /// F5.7 — the wiring that turns a Produce-page click into a `produce_presses` walk: the legs it reads the
 /// page for, and the save path the widget's own default supplies. Also split out of `produce_page`.
 pub mod produce_press_wiring;
+pub mod produce_progress;
 /// §08-produce#1-screen items **2**/**3** — the Images row's slots: each slot's picture, which one is
 /// the base, the crop box the base wears, and its four buttons. Split out of `produce_page`, at its budget.
 pub mod produce_slots;
