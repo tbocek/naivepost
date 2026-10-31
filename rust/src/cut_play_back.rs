@@ -30,7 +30,7 @@
 //! - **rate** cannot be asked of a running player. [`set_rate`] says so honestly: a flat (1.0) rate re-cues
 //!   at the head so no earlier stretch's clock can leak into the flat seconds; any other rate is logged as
 //!   unexpressible and answered `false`. The app's own clock arithmetic is unaffected —
-//!   [`crate::cut_play::cut_time`] does apply rates, and that is the number the person reads.
+//!   [`crate::cut_play::cut_time`] does not apply rates, and that is the number the person reads.
 //! - **still** is expressible: `SIGSTOP` freezes the frame, which is exactly "stops show their still"
 //!   ([`hold_still`]).
 //! - **volume** is not in the argv either, so it never goes through this leg: the preview's one volume door
@@ -231,8 +231,8 @@ pub fn hold_still(hold: bool) -> bool {
 ///   before them cannot leak in. `true` when a process was there to replace.
 /// - any other rate: logged as not expressible through this player's argv and answered `false`.
 ///
-/// The person's clock does not depend on any of this: [`crate::cut_play::cut_time`] applies the cut's rates
-/// to the number printed, so the readout stays the finished video's time whatever the process can do.
+/// The person's clock does not depend on any of this: [`crate::cut_play::cut_time`] reads the kept footage
+/// for the number printed, whatever the process can do.
 /// S5 "speed effects at their flat rate", handed to the player at the head.
 ///
 /// A rate change under a running preview is asked for as a re-cue, and re-cueing on every tick that asks is a

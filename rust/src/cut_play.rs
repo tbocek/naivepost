@@ -265,9 +265,7 @@ pub fn worth_arming(
 /// The cut's own second for a session second: the kept length before it, plus how far into the clip
 /// holding it we are. `None` when the line sits in a removed stretch, where the cut has no time to show.
 ///
-/// Consistent with [`crate::shell::cut_seconds`] by construction: both count only segs with `e > s`,
-/// so the last clip's end maps onto exactly the finished video's length and the clock can never read
-/// past the video it is describing.
+/// The kept footage's own seconds: cards and speed effects are not counted, so this can differ from the finished video.
 pub fn cut_time(segs: &[Seg], session_t: f64) -> Option<f64> {
     let mut out = 0.0;
     for seg in segs.iter().filter(|seg| visible(seg)) {

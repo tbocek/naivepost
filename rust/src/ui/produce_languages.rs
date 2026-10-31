@@ -383,12 +383,20 @@ pub fn redraw_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     Err(why)
 }
 
+/// The clips the render makes of the run's cut, in its order: "clip n" means the same to the model as in the video.
+fn played_clips(run: &crate::produce_flow::Run) -> Vec<crate::cut::Seg> {
+    crate::cut_speed_split::sped_cut(&crate::cut::Cut {
+        segs: crate::cut::spliced(run.cut.segs.clone()),
+        ..run.cut.clone()
+    })
+}
+
 /// The clip starts on the SESSION clock, in the cut's order — the numbers `frame: clip n +s` resolves against
 /// (§3.9: the clip's session start plus the offset its EVENT line is stamped with, the prototype's `frameSecs`),
 /// so the moment it names is the one a frame on disk is named by. The first rewrite counted them on the produced
 /// clock and the frame then read as a session second: the thumbnail came out of the wrong moment.
 fn starts_of(run: &crate::produce_flow::Run) -> Vec<f64> {
-    run.cut.segs.iter().map(|seg| seg.s).collect()
+    played_clips(run).iter().map(|seg| seg.s).collect()
 }
 
 /// A segment's length in OUTPUT seconds: rate applied once (`narration::output_seconds`' own rule), with
@@ -408,9 +416,10 @@ fn brief_clips(
     rows: &[crate::textfmt::SessionLine],
     events: &[crate::textfmt::FrameEvent],
 ) -> Vec<crate::produce_upload::BriefClip> {
-    let mut out = Vec::with_capacity(run.cut.segs.len());
+    let clips = played_clips(run);
+    let mut out = Vec::with_capacity(clips.len());
     let mut at = 0.0;
-    for (index, seg) in run.cut.segs.iter().enumerate() {
+    for (index, seg) in clips.iter().enumerate() {
         let seen: Vec<String> = events
             .iter()
             .filter(|e| overlaps(e.start, e.end, seg.s, seg.e))

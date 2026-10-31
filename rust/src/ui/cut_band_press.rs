@@ -14,7 +14,6 @@ use gtk4 as gtk;
 
 use crate::cut_select;
 use crate::fx_band;
-use crate::shell;
 use crate::ui::{cut_trim_press, window as ui};
 
 /// One drag of one bar, remembered between the toolkit's three signals. GTK gives `drag_begin` the absolute
@@ -167,7 +166,11 @@ fn move_held(window: &adw::ApplicationWindow, dx: f64, drag: BarDrag) {
         // record's start) plus how far inside the bar the press landed — not the pointer's absolute pixel.
         Some(_) => drag.anchor_t + drag.bar_x_px / pps + dx / pps,
     };
-    let session_end = shell::cut_seconds(&cut_).max(held.t + held.dur);
+    let session_end = cut_
+        .segs
+        .iter()
+        .map(|seg| seg.e)
+        .fold(held.t + held.dur, f64::max);
     let marks = band_snap_marks(window, &held);
     ui::drag_held_band(window, to, &marks, pps, session_end, from_end);
 }

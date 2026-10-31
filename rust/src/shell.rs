@@ -621,14 +621,9 @@ pub fn info_tip(page: Page) -> String {
     format!("{} — {}", page.label(), page.tip())
 }
 
-/// How long the cut is, in output seconds: its segments' lengths summed. Cards (`e <= s`) add no
-/// time, which is what makes them not show up as duration.
+/// How long the cut is, in output seconds.
 pub fn cut_seconds(cut: &cut::Cut) -> f64 {
-    cut.segs
-        .iter()
-        .filter(|seg| seg.e > seg.s)
-        .map(|seg| seg.e - seg.s)
-        .sum()
+    crate::cut_screen::cut_seconds(cut)
 }
 
 /// Files under `dir`, counting recursively and missing nothing quietly: a folder that is not there

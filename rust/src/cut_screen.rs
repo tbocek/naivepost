@@ -605,20 +605,12 @@ pub struct Readout {
 /// aspect round (F2.x) replaces it with the real thing.
 pub const ASPECT_DEFAULT: &str = "16:9";
 
-/// The cut's own length: what ▶✂ runs for. A spliced card counts its `dur`, since it owns its
-/// seconds; footage is its span over the speed it plays at — and `rate` absent means 1, because only
-/// produceSegs writes one (§B), so a hand-made scene has never been timed at anything else.
+/// The cut's own length, as the render makes it: each clip it plays for what it shows, a card for its `dur`, footage
+/// over the rate its speed effects give it.
 pub fn cut_seconds(cut: &Cut) -> f64 {
-    cut.segs
+    crate::cut_speed_split::sped_cut(cut)
         .iter()
-        .map(|seg| {
-            if seg.is_insert() {
-                seg.dur
-            } else {
-                let rate = if seg.rate > 0.0 { seg.rate } else { 1.0 };
-                (seg.e - seg.s) / rate
-            }
-        })
+        .map(crate::narrate_pass::on_screen)
         .sum()
 }
 

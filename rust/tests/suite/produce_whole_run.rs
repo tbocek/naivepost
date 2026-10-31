@@ -99,11 +99,11 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
                 "-f",
                 "lavfi",
                 "-i",
-                "color=black:s=320x180:r=25:d=30",
+                "color=black:s=320x180:r=25:d=40",
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=440:duration=30",
+                "sine=frequency=440:duration=40",
                 "-shortest",
             ],
             &dir.join("sources/2026-10-18 19-21-52.mkv"),
@@ -119,12 +119,55 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
             r#"{"segs": [{"s": 0.0, "e": 8.0},
                          {"s": 8.0, "e": 8.0, "dur": 3.0, "ins": "project:card.svg"},
                          {"s": 8.0, "e": 16.0}, {"s": 16.0, "e": 20.0},
-                         {"s": 20.0, "e": 24.0, "ins": "project:quiet.wav"}],
+                         {"s": 20.0, "e": 24.0, "ins": "project:quiet.wav"},
+                         {"s": 24.0, "e": 26.0, "ins": "project:gray.png"},
+                         {"s": 26.0, "e": 28.0, "ins": "project:clip.mp4", "ss": 1.0},
+                         {"s": 28.0, "e": 30.0, "ins": "project:silent.mp4"},
+                         {"s": 30.0, "e": 32.0, "ins": "project:tail.wav", "ss": 3.0}],
                 "fx": [{"kind": "text", "t": 5.0, "dur": 6.0, "text": "WORDS"},
                        {"kind": "speed", "t": 16.0, "dur": 4.0, "rate": 2.0},
                        {"kind": "volume", "t": 12.0, "dur": 3.0, "gain": 0.05}]}"#,
         )
         .unwrap();
+        ffmpeg(
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=gray:s=320x180:d=1",
+                "-frames:v",
+                "1",
+            ],
+            &dir.join("gray.png"),
+        );
+        ffmpeg(
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=white:s=320x180:r=25:d=6",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=48000:cl=mono",
+                "-shortest",
+            ],
+            &dir.join("clip.mp4"),
+        );
+        ffmpeg(
+            &["-f", "lavfi", "-i", "color=white:s=320x180:r=25:d=6", "-an"],
+            &dir.join("silent.mp4"),
+        );
+        // Silent for 3 s, then a tone: seeking 3 s into it is what makes the piece heard.
+        ffmpeg(
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "aevalsrc='if(lt(t,3),0,0.5*sin(2*PI*440*t))':s=48000:d=8",
+            ],
+            &dir.join("tail.wav"),
+        );
         ffmpeg(
             &["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "6"],
             &dir.join("quiet.wav"),
@@ -151,9 +194,9 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
             common::status_text(&window),
             ui::window_logs().iter().rev().take(14).collect::<Vec<_>>()
         );
-        // 8 s, the 3 s card, 8 s, 4 s of footage at 2×, and 4 s under a sound.
+        // 8 s, the 3 s card, 8 s, 4 s of footage at 2×, 4 s under a sound, then a picture, two videos and a sound 2 s each.
         assert!(
-            (seconds(&done) - 25.0).abs() < 0.5,
+            (seconds(&done) - 33.0).abs() < 0.5,
             "{} {:?}",
             seconds(&done),
             ui::window_logs()
@@ -183,6 +226,29 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
         assert!(
             loudest(&done, 21.5, 24.5) < -60.0,
             "the laid sound in its place"
+        );
+        let told = naivepost::cut_screen::cut_seconds(
+            &naivepost::cut::load(&naivepost::layout::Tree::new(&dir).unwrap()).unwrap(),
+        );
+        assert!(
+            (seconds(&done) - told).abs() < 0.5,
+            "the length the page reads: {told}"
+        );
+        let picture = brightest(&done, 25.5);
+        assert!(
+            (100..200).contains(&picture),
+            "the picture holds its slot: {picture}"
+        );
+        assert!(brightest(&done, 26.5) > 100, "and to its end");
+        assert!(brightest(&done, 27.5) > 200, "a video insert");
+        assert!(
+            loudest(&done, 27.2, 28.8) < -60.0,
+            "with its own silent sound"
+        );
+        assert!(brightest(&done, 29.5) > 200, "a video with no sound at all");
+        assert!(
+            loudest(&done, 31.2, 32.8) > -40.0,
+            "a sound seeks into its file"
         );
         RAN.store(true, Ordering::SeqCst);
         window.close();

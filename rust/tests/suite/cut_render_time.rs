@@ -537,3 +537,84 @@ fn a_muted_stretch_is_silent_and_one_keeping_its_own_sound_is_heard_late_in_the_
     assert!(loudest(&out, 1.0, 4.0) > -40.0, "its own sound plays");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_cue_naming_a_lane_ducks_that_lane_and_not_the_clip() {
+    let dir = workspace("lane");
+    let source = moving_footage(&dir);
+    let quiet = dir.join("quiet.mp4");
+    let made = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:s=64x36:r=10:d=12",
+        ])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=stereo",
+            "-shortest",
+        ])
+        .arg(&quiet)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let encode = |gain: f64| {
+        let cue = Fx {
+            kind: "volume".into(),
+            t: 0.0,
+            dur: 10.0,
+            gain,
+            lane: "mic".into(),
+            ..Default::default()
+        };
+        let clip = Clip {
+            no: 1,
+            on_screen: 5.0,
+            rate: 1.0,
+            frame: (640, 360),
+            src: (640, 360),
+            fx: vec![cue],
+            lanes: vec!["mic".into()],
+            lane_files: vec![naivepost::produce_render::LaneFile {
+                name: "mic".into(),
+                path: source.display().to_string(),
+                seek: 0.0,
+                delay: 0.0,
+            }],
+            scratch: dir.clone(),
+            ..Default::default()
+        };
+        let path = quiet.display().to_string();
+        let out = dir.join(format!("lane{gain}.mp4"));
+        let settings = naivepost::project::Produce {
+            blurred_edges: false,
+            ..Default::default()
+        };
+        let argv = naivepost::produce_render::encode_command(
+            &clip,
+            &settings,
+            &[("video", Some(path.as_str()))],
+            None,
+            &out,
+        );
+        let done = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .output()
+            .unwrap();
+        assert!(
+            done.status.success(),
+            "{}",
+            String::from_utf8_lossy(&done.stderr)
+        );
+        loudest(&out, 1.0, 4.0)
+    };
+    let (full, ducked) = (encode(1.0), encode(0.05));
+    assert!(ducked < full - 15.0, "{ducked} against {full}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
