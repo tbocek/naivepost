@@ -55,12 +55,6 @@ fn f2_8_s1_an_insert_is_boxed_and_flagged_never_trimmable() {
         boxes[1].insert,
         "and carries the flag that keeps it out of every trim reach"
     );
-    // A spliced insert sits at one instant (`s == e`), so the box on the strip stands for `dur`: a card
-    // has to be seen and clicked, not drawn as a hairline. 10 s * 4 px/s = 40 px.
-    // `index` is the caller's to fill: this helper draws one card, so it leaves 0 and the painter sets it
-    // from its own slice position.
-    let laid = trim::insert_box(&segs[1], 30.0, PPS);
-    assert_eq!((laid.x, laid.w, laid.insert), (120.0, 40.0, true));
     assert_eq!(boxes[0].x, 0.0, "the footage before it is unaffected");
 
     // Every press on an insert takes nothing at all; the only thing in reach is the footage's own end.

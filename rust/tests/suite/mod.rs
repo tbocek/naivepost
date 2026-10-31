@@ -34,6 +34,7 @@ mod cut_clamped_to_cut;
 mod cut_copy_paste_lane;
 mod cut_copy_paste_lane_widgets;
 mod cut_delete_refusals;
+mod cut_edit_invariants;
 mod cut_effect_decisions;
 mod cut_effects_proposed;
 mod cut_fold_rows;

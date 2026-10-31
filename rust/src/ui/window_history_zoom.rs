@@ -75,10 +75,6 @@ pub(crate) fn cut_history(
 /// returns to is that cut and not whatever was newest when the history happened to be touched first.
 /// Used by `build_window` at project open (against the cut read from `cut/cut.json`) and by tests that
 /// seed a cut into an already-built window — both are "this is what the page opens with".
-/// F2.13: re-open this window's edit history on the cut a caller is about to show, so the base Revert
-/// returns to is that cut and not whatever was newest when the history happened to be touched first.
-/// Used by `build_window` at project open (against the cut read from `cut/cut.json`) and by tests that
-/// seed a cut into an already-built window — both are "this is what the page opens with".
 pub fn reopen_history_on(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     let _ = window;
     CUT_HISTORIES.with(|slot| {
@@ -101,21 +97,14 @@ pub fn press_undo(window: &adw::ApplicationWindow) -> String {
         Some(snapshot) => {
             let mut cut_ = ui::newest_review_cut();
             snapshot.restore(&mut cut_);
-            publish_cut(&cut_);
-            // The lane and the preview refresh with it: a bar left on screen for an effect Undo took away
-            // is a lie about what this cut holds.
-            ui::refresh_effects_lane(window);
-            // ...and so do the timeline readings: Undo changes the segment count, so a `Segments:` row that
-            // still shows the undone answer would be the same kind of lie.
-            refresh_cut_readouts(window);
+            land_history(window, &cut_);
             // S1: the sentence is `cut::undone`'s, not composed here.
             let said = cut::undone(cut_.segs.len());
             ui::log_line(&said);
             said
         }
         None => {
-            let said =
-                "nothing to undo \u{2014} you are at the state this page opened with".to_string();
+            let said = cut::NOTHING_TO_UNDO.to_string();
             ui::log_line(&said);
             said
         }
@@ -130,9 +119,7 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
         Some(snapshot) => {
             let mut cut_ = ui::newest_review_cut();
             snapshot.restore(&mut cut_);
-            publish_cut(&cut_);
-            ui::refresh_effects_lane(window);
-            refresh_cut_readouts(window);
+            land_history(window, &cut_);
             // S1: one walk sentence for both directions (spec F2.13 gives the pair a single line).
             let said = cut::undone(cut_.segs.len());
             ui::log_line(&said);
@@ -163,9 +150,7 @@ pub fn press_revert(window: &adw::ApplicationWindow) -> String {
     let snapshot = history.borrow_mut().revert();
     let mut cut_ = had.clone();
     snapshot.restore(&mut cut_);
-    publish_cut(&cut_);
-    ui::refresh_effects_lane(window);
-    refresh_cut_readouts(window);
+    land_history(window, &cut_);
     let said = cut::reverted(snapshot.segs.len(), had.segs.len());
     ui::log_line(&said);
     said
@@ -184,11 +169,25 @@ pub fn press_clear_cut(window: &adw::ApplicationWindow) -> String {
     let cleared = crate::cut::cleared(&had);
     let history = cut_history(window);
     history.borrow_mut().push(&cleared);
-    publish_cut(&cleared);
-    ui::refresh_effects_lane(window);
+    land_history(window, &cleared);
     let said = cut::cleared_message(had.segs.len(), had.fx.len());
     ui::log_line(&said);
     said
+}
+
+/// A walk through the history landed: on the file, and on everything drawn from the cut.
+fn land_history(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
+    publish_cut(cut_);
+    ui::save_insert_cut(cut_);
+    // What was in hand may be gone from this state.
+    ui::set_held_clip(None);
+    ui::set_held_edge(None);
+    ui::set_held_effect(None);
+    ui::refresh_effects_lane(window);
+    refresh_cut_readouts(window);
+    crate::ui::cut_folds::refresh_fold_badges(window);
+    crate::ui::cut_cameras::refresh_camera_rows(window);
+    refresh_history_buttons(window);
 }
 
 /// Write a cut back as the page's current one, so the readouts, the verbs and every later flow see it.
@@ -214,6 +213,8 @@ pub(crate) fn publish_cut(cut_: &cut::Cut) {
 /// move the pointer or reset the base, and recording them would put the undo itself on the undo stack.
 pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     publish_cut(cut_);
+    // The one door every edit takes, so no edit can reach the screen and miss the file; mid-drag the writer waits.
+    ui::save_insert_cut(cut_);
     // Whether the write was an edit at all is the history's own question (`note_change`), not the door's:
     // a drag released at the second it was already at changes nothing and therefore takes no step.
     cut_history(window).borrow_mut().note_change(cut_);
@@ -228,6 +229,7 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
 /// move took is amended to it ([`cut::History::amend`]), so the drag stays one Undo step that redoes to its end.
 pub(crate) fn amend_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     crate::ui::window::seed_review_cut(window, cut_);
+    ui::save_insert_cut(cut_);
     cut_history(window).borrow_mut().amend(cut_);
     refresh_history_buttons(window);
     refresh_cut_readouts(window);
@@ -747,13 +749,12 @@ pub(crate) fn wire_zoom_esc(window: &adw::ApplicationWindow) {
 pub(crate) fn refresh_history_buttons(window: &adw::ApplicationWindow) {
     let history = cut_history(window);
     let held = history.borrow();
-    let depth = held.depth();
-    // `depth - at - 1` is what lies ahead of the pointer; `at` is private, so the two counts come from
-    // the questions the stack answers rather than from its insides.
     let undo_left = usize::from(held.can_undo());
     let redo_left = usize::from(held.can_redo());
-    let ever_edited = depth > 1 || !held.base_is_the_screen(&ui::newest_review_cut());
-    let live = cut_screen::history_buttons_enabled(undo_left, redo_left, ever_edited);
+    let ever_edited = held.depth() > 1 || !held.base_is_the_screen(&ui::newest_review_cut());
+    let mut live = cut_screen::history_buttons_enabled(undo_left, redo_left, ever_edited);
+    // F2.13: Revert is greyed whenever the screen is the base, including right after a Revert.
+    live[2] = !held.base_is_the_screen(&ui::newest_review_cut());
     for (tool, is_live) in cut_screen::HISTORY_BUTTONS.iter().zip(live) {
         if let Some(button) = ui::line_step_button(window, tool.name) {
             button.set_sensitive(is_live);

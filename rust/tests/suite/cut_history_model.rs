@@ -191,10 +191,7 @@ fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s8_fifty_s
         "the model's answer is the base now"
     );
     assert!(history.base_is_the_screen(&suggested));
-    assert!(
-        !history.can_undo(),
-        "the hand edits Revert threw away are gone from the stack too"
-    );
+    assert!(history.can_undo(), "↶ brings the hand edits back");
 
     // With no suggestion yet, the base is what the page opened with (§2).
     let opened = full_cut(4);

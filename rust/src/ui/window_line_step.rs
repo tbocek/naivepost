@@ -340,6 +340,7 @@ fn nudge_held_segment(
         };
         // `first` = true: a nudge is a whole edit, one ↶ each.
         crate::ui::cut_trim_press::press_border_move(window, index, border, at + delta, true);
+        crate::ui::cut_trim_press::land_trim(window);
         let moved = ui::newest_review_cut().segs.get(index).cloned();
         ui::set_held_edge(moved.clone());
         let moved = moved?;

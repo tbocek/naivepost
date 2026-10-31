@@ -5,7 +5,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use naivepost::cut::{self, cut_segments, Cut, EffectKind, Fx, Lane, Seg, NO_CUT_YET};
+use naivepost::cut::{self, Cut, EffectKind, Fx, Lane, Seg, NO_CUT_YET};
 use naivepost::layout::Tree;
 
 use crate::common;
@@ -581,37 +581,4 @@ fn sec_01_project_and_files_3_cutcutjson_legacy_whole_cut_sound_becomes_per_scen
     let (_root, none) = with_file("legacy-sound-none", Some(r#"{"segs":[{"s":0,"e":1}]}"#));
     let mut silent = cut::load(&none).unwrap();
     assert_eq!(silent.migrate_sound(&recordings), None);
-}
-
-#[test]
-fn sec_01_project_and_files_3_cutcutjson_existing_segments_unlock_narrate_and_produce() {
-    let file = Cut {
-        segs: vec![seg(0.0, 5.0)],
-        ..Default::default()
-    };
-    let editor = [seg(1.0, 2.0)];
-
-    // The live editor's if it has any — even when the file holds a different cut.
-    assert_eq!(cut_segments(Some(&editor), &file).unwrap(), &editor[..]);
-    // An editor holding none is not a cut: fall back to the file's.
-    assert_eq!(cut_segments(Some(&[]), &file).unwrap(), &file.segs[..]);
-    // An unsaved editor with segments does unlock ▶, whatever the file says.
-    let empty = Cut::default();
-    assert_eq!(cut_segments(Some(&editor), &empty).unwrap(), &editor[..]);
-
-    // And when neither has any, the caller's refusal is §3's sentence exactly.
-    assert!(cut_segments(None, &empty).is_none());
-    assert_eq!(NO_CUT_YET, "no cut yet — build one on the Cut step first");
-}
-
-#[test]
-fn sec_01_project_and_files_3_cutcutjson_a_file_with_empty_segs_unlocks_nothing() {
-    // §3's own case: `{"segs":[]}` is a file that says nothing was cut.
-    let (_root, t) = with_file("empty-segs", Some(r#"{"segs":[]}"#));
-    let c = cut::load(&t).unwrap();
-    assert!(c.segs.is_empty());
-    assert_eq!(cut_segments(None, &c), None);
-    // And the shape it saves in is that same file — "segs" always written.
-    cut::save(&c, &t).unwrap();
-    assert!(read(&t).contains("\"segs\": []"), "{}", read(&t));
 }

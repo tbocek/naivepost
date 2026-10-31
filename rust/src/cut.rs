@@ -418,17 +418,6 @@ impl Fx {
     }
 }
 
-/// The segments that unlock the Narrate and Produce ▶: the live editor's if it has any,
-/// else those parsed from `cut.json`. A file holding `{"segs": []}` unlocks nothing; an
-/// unsaved editor holding segments does. The tabs always open — this answers whether ▶
-/// runs, and the refusal is the caller's log line (§3).
-pub fn cut_segments<'a>(editor: Option<&'a [Seg]>, file: &'a Cut) -> Option<&'a [Seg]> {
-    match editor {
-        Some(segs) if !segs.is_empty() => Some(segs),
-        _ => (!file.segs.is_empty()).then_some(file.segs.as_slice()),
-    }
-}
-
 /// §3's refusal, byte for byte.
 pub const NO_CUT_YET: &str = "no cut yet — build one on the Cut step first";
 
@@ -686,11 +675,9 @@ impl History {
         self.base = Snapshot::of(cut);
     }
 
-    /// Back to the base, and the stack rewinds with it so undo cannot walk into the edits Revert just
-    /// threw away — they are gone, and a history that still reached them would be a lie about it.
+    /// Back to the base, as a step of its own: ↶ brings the edits back, as Revert's sentence says.
     pub fn revert(&mut self) -> Snapshot {
-        self.snapshots = vec![self.base.clone()];
-        self.at = 0;
+        self.push_snapshot(self.base.clone());
         self.base.clone()
     }
 

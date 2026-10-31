@@ -163,14 +163,19 @@ fn check_revert_after_a_suggestion_keeps_the_suggestion(app: &adw::Application) 
         2,
         "the landed suggestion is what the page shows"
     );
-    // And the page knows it: Revert went live, because a step was recorded as well as a base moved.
+    // The suggestion IS the base, so there is nothing to revert until a hand edit.
     let revert =
         ui::line_step_button(&window, "revert-button").expect("the toolbar carries revert-button");
-    assert!(revert.is_sensitive(), "Revert is live after a suggestion");
+    assert!(
+        !revert.is_sensitive(),
+        "Revert is greyed on the suggestion itself"
+    );
 
     // A hand edit on top of it, through the same door every hand edit uses (a trim of the second clip).
     let hand = hand_trimmed();
     ui::seed_review_cut(&window, &hand);
+    ui::note_edit(&window);
+    assert!(revert.is_sensitive(), "and live after one");
 
     revert.emit_by_name::<()>("clicked", &[]);
     settle();

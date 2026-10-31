@@ -636,6 +636,7 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         }
         crate::ui::window::seed_review_cut(window, &cut_open);
         crate::ui::cut_folds::refresh_fold_badges(window);
+        cut_ = cut_open;
     }
     // §7's one Undo per drag, in full: the FIRST real move of the hold spends the history step and nothing
     // else does, and the FILE waits for the gesture's end on both paths — a write per mouse-move is I/O in the
@@ -663,6 +664,33 @@ pub fn end_release() {
     // The gesture ends HERE, so the write below is the first one the hold is allowed.
     crate::cut_save::end_gesture();
     window::save_insert_cut(&window::newest_review_cut());
+    land_trim(&window::main_window());
+}
+
+/// S1 on release: what a trim settles once the hand lets go. A neighbour landed against within a frame joins, and
+/// effects over what the trim took away are clamped, both in the step the trim already took. Mid-drag a join would
+/// lose the far side of a border the hand may still pull back.
+pub fn land_trim(window: &adw::ApplicationWindow) {
+    let Some((index, border)) = TRIMMED.with(std::cell::Cell::take) else {
+        return;
+    };
+    let mut cut_ = window::newest_review_cut();
+    if let Some(held) = cut_trim::merge_at_border(&mut cut_.segs, index, border) {
+        crate::ui::window_history_zoom::amend_edit(window, &cut_);
+        if let (Some(seg), Some(status)) = (
+            cut_.segs.get(held),
+            window::find_status(window.upcast_ref()),
+        ) {
+            status.set_text(&cut_trim::joined_status(seg.s, seg.e));
+        }
+        crate::ui::cut_folds::refresh_fold_badges(window);
+    }
+    window::clamp_effects_to_cut(window);
+}
+
+thread_local! {
+    /// The border this hold has moved, settled by [`land_trim`].
+    static TRIMMED: std::cell::Cell<Option<(usize, cut_trim::Border)>> = const { std::cell::Cell::new(None) };
 }
 
 /// F2.8 S2 ("refold after"): the drag released. Put back exactly the folds this drag opened, newest span
@@ -687,6 +715,7 @@ pub fn end_move(window: &adw::ApplicationWindow) {
             cut_.folds.push(*span);
         }
     }
+    cut_.folds.sort_by(|a, b| a[0].total_cmp(&b[0]));
     // `record_edit`, not a bare seed: opening the drag's folds and refolding them is ONE act of the hand,
     // so the refold belongs to the step the move already opened rather than spending one of its own.
     crate::ui::window::record_edit(window, &cut_);
@@ -769,28 +798,18 @@ pub fn press_border_move(
             }
         }
     }
-    // S1 on release: a neighbour landed against within a frame joins back into one scene, and the sentence says
-    // so because putting that border back is the thing a person may want most.
-    let status = if cut_trim::merge_pair(&cut_.segs, index).is_some() {
-        cut_trim::merge(&mut cut_.segs, index)
-            .and_then(|(held, _)| cut_.segs.get(held))
-            .map(|seg| cut_trim::joined_status(seg.s, seg.e))
-            .unwrap_or_default()
-    } else {
-        cut_.segs
-            .get(index)
-            .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
-            .unwrap_or_default()
-    };
+    TRIMMED.with(|held| held.set(Some((index, border))));
+    let status = cut_
+        .segs
+        .get(index)
+        .map(|seg| cut_trim::trim_status(index + 1, seg.s, seg.e))
+        .unwrap_or_default();
     if crate::ui::cut_hand::picking_up(first) {
         window::record_edit(window, &cut_);
     } else {
         // Still writing the cut and still refreshing what reads it; no new step, the drag's own step amended.
         crate::ui::window_history_zoom::amend_edit(window, &cut_);
     }
-    // A trim is an edit either way, so cut.json gets it on both paths: a trim lost on reopen is a trim that
-    // never happened.
-    window::save_insert_cut(&cut_);
     // S1: the picture follows the edge, at the second the cut now holds (not the pixel the pointer reached,
     // which a clamp may have stopped short of).
     scrub_picture(window, edge_second(index, border));

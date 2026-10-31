@@ -65,7 +65,11 @@ pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget
     let gesture = gtk::GestureDrag::new();
     gesture.set_button(1);
     let holder = bar.clone();
+    let upd = slot.window.clone();
+    let done = slot.window.clone();
+    let tagged = slot.clone();
     gesture.connect_drag_begin(move |_g, x, _y| {
+        ACTIVE.with(|cell| *cell.borrow_mut() = Some(slot.window.clone()));
         // The bar's DRAWN width is its size request: `refresh_effects_lane` sets it from the record's own
         // length floored at 48 px, and an unallocated bar reports 0 for `width()`.
         let width_px = f64::from(holder.size_request().0).max(1.0);
@@ -82,7 +86,6 @@ pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget
         HISTORY_SPENT.with(|cell| cell.set(false));
         begin_in_flight();
     });
-    let upd = slot.window.clone();
     gesture.connect_drag_update(move |_g, dx, dy| {
         // Only the NEWEST window's gestures answer: `common::release_last_window` closes a check's window but
         // GTK does not destroy it, so every earlier window's bars still hold live controllers.
@@ -91,7 +94,6 @@ pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget
         }
         update(&upd, dx, dy);
     });
-    let done = slot.window.clone();
     gesture.connect_drag_end(move |_g, _dx, _dy| {
         if !ACTIVE.with(|cell| cell.borrow().as_ref().is_some_and(|live| live == &done)) {
             return;
@@ -99,7 +101,7 @@ pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget
         end(&done);
     });
     bar.add_controller(gesture.clone());
-    GESTURES.with(|cell| cell.borrow_mut().push((slot, gesture)));
+    GESTURES.with(|cell| cell.borrow_mut().push((tagged, gesture)));
 }
 
 /// Which record a wired gesture stands for, kept beside it so a test can ask for THE gesture of one bar rather

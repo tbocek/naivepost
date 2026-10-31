@@ -143,10 +143,11 @@ pub fn add(sel: Option<&Selection>, segs: &[Seg], snap_points: &[f64]) -> Outcom
         Scope::Footage { row } => row,
         Scope::Sound { .. } => unreachable!("a sound selection refused above"),
     };
-    let targets: Vec<usize> = if row == ANY_ROW {
-        distinct_rows(segs)
-    } else {
-        vec![row]
+    // An empty cut has no rows yet: the scene starts the first.
+    let targets: Vec<usize> = match distinct_rows(segs) {
+        rows if row == ANY_ROW && !rows.is_empty() => rows,
+        _ if row == ANY_ROW => vec![0],
+        _ => vec![row],
     };
 
     // Was any OTHER row covering these seconds before the add? Asked on the list as it was, because the
@@ -166,10 +167,10 @@ pub fn add(sel: Option<&Selection>, segs: &[Seg], snap_points: &[f64]) -> Outcom
         if targets.contains(&(seg.cam as usize)) {
             // This row is being added to: keep what lies outside the band, then the kept scene itself.
             if seg.s < start {
-                out.push(clip(seg, seg.s, start));
+                out.push(clip(seg, seg.s, seg.e.min(start)));
             }
             if seg.e > end {
-                out.push(clip(seg, end, seg.e));
+                out.push(clip(seg, seg.s.max(end), seg.e));
             }
             continue;
         }

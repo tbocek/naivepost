@@ -28,9 +28,8 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
     }
     let mut cut_ = before.clone();
     cut_.fx = clamped.kept.clone();
-    // Through `record_edit`, NEVER `publish_cut` alone: one ↶ takes the clamp back exactly as it takes any
-    // other edit back (§F3.12's "same Undo step as the segments").
-    super::window_history_zoom::record_edit(window, &cut_);
+    // Amended onto the step the segments just took: §F3.12's "same Undo step as the segments".
+    super::window_history_zoom::amend_edit(window, &cut_);
     super::cut_lane_rows::refresh_effects_lane(window);
     let said = if clamped.dropped > 0 {
         // S5's line goes to the log, where the count is read with the rest of the run; the status line says

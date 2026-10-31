@@ -621,7 +621,7 @@ pub fn info_tip(page: Page) -> String {
     format!("{} — {}", page.label(), page.tip())
 }
 
-/// How long the cut is, in output seconds: the end of the last segment. Cards (`e <= s`) add no
+/// How long the cut is, in output seconds: its segments' lengths summed. Cards (`e <= s`) add no
 /// time, which is what makes them not show up as duration.
 pub fn cut_seconds(cut: &cut::Cut) -> f64 {
     cut.segs

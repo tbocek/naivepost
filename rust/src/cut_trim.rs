@@ -243,6 +243,29 @@ pub fn merge_pair(segs: &[Seg], held: usize) -> Option<usize> {
 /// identity so the page still calls it clip N.
 pub fn merge(segs: &mut Vec<Seg>, held: usize) -> Option<(usize, usize)> {
     let other = merge_pair(segs, held)?;
+    Some(join(segs, held, other))
+}
+
+/// [`merge`] across the border the hand moved only: the far border's neighbour was not landed against.
+pub fn merge_at_border(segs: &mut Vec<Seg>, held: usize, border: Border) -> Option<usize> {
+    let seg = segs.get(held).filter(|seg| !is_card(seg))?;
+    let at = match border {
+        Border::Start => seg.s,
+        Border::End => seg.e,
+    };
+    let cam = seg.cam;
+    let other = segs.iter().enumerate().position(|(other, seg)| {
+        let touching = match border {
+            Border::Start => seg.e,
+            Border::End => seg.s,
+        };
+        other != held && !is_card(seg) && seg.cam == cam && (touching - at).abs() <= MIN_SECONDS
+    })?;
+    join(segs, held, other);
+    Some(held.min(other))
+}
+
+fn join(segs: &mut Vec<Seg>, held: usize, other: usize) -> (usize, usize) {
     let (first, second) = if held < other {
         (held, other)
     } else {
@@ -254,7 +277,7 @@ pub fn merge(segs: &mut Vec<Seg>, held: usize) -> Option<(usize, usize)> {
     // and it now runs on through where the border was.
     segs[first].split = false;
     segs.remove(second);
-    Some((held, 1))
+    (held, 1)
 }
 
 /// F2.8 S1: what the merge says — with its own Undo sentence, since taking the border back is the thing a
@@ -828,19 +851,6 @@ pub fn box_at(boxes: &[Box_], px: f64) -> Option<(usize, Option<Border>)> {
     trimmable
         .find(|b| px >= b.x && px <= b.x + b.w)
         .map(|b| (b.index, None))
-}
-
-/// F2.8 S1: a spliced insert's box on the strip. Its `s == e` gives it no width of its own, so the card
-/// is drawn standing at `at` (the second it plays from) for as long as its `dur` — otherwise every card
-/// would be a hairline nobody can see or click. Flagged `insert`, so neither its edges nor its body ever
-/// answer a press (`spec/05-cut.md` rule 8).
-pub fn insert_box(seg: &Seg, at: f64, pps: f64) -> Box_ {
-    Box_ {
-        x: at.max(0.0) * pps,
-        w: seg.dur.max(0.0) * pps,
-        index: 0,
-        insert: true,
-    }
 }
 
 /// F2.8 S1: the ruler row above the band — a tick every `every_seconds` up to `rec_end`, each with its

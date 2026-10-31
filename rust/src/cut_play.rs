@@ -271,10 +271,7 @@ pub fn worth_arming(
 pub fn cut_time(segs: &[Seg], session_t: f64) -> Option<f64> {
     let mut out = 0.0;
     for seg in segs.iter().filter(|seg| visible(seg)) {
-        if session_t < seg.s {
-            break;
-        }
-        if session_t < seg.e {
+        if seg.s <= session_t && session_t < seg.e {
             return Some(out + (session_t - seg.s));
         }
         out += seg.e - seg.s;

@@ -553,7 +553,7 @@ pub fn drag_held_band(
     {
         ui::record_edit(window, &cut_);
     } else {
-        ui::seed_review_cut(window, &cut_);
+        crate::ui::window_history_zoom::amend_edit(window, &cut_);
     }
     ui::set_held_effect(Some(cut_.fx[index].clone()));
     // S1 put the line on the band's start when the band was picked up; a drag that moves the band carries the

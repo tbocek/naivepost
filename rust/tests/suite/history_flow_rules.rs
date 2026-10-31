@@ -112,10 +112,7 @@ fn f2_13_s2_revert_goes_to_the_last_suggestion() {
         "reverted to the 3 segment(s) of the last suggestion (\u{21b6} Undo brings your edits back)",
         "a non-empty base is read as the last suggestion's work"
     );
-    assert!(
-        !history.can_undo(),
-        "the edits Revert threw away are gone from the stack too"
-    );
+    assert!(history.can_undo(), "↶ brings the edits back");
 }
 
 /// S2: with an empty base everything that vanishes was hand-made, and the sentence says so instead of
