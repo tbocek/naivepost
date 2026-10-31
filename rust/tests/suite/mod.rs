@@ -84,6 +84,7 @@ mod cut_view_scroll;
 mod cut_view_wheel;
 mod cut_volume_hand;
 mod cut_zoom_by_hand;
+mod cut_zoom_kept;
 mod decision_audit;
 mod decision_homes;
 mod decoration_density;

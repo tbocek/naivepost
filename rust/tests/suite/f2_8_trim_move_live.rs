@@ -570,6 +570,7 @@ fn f2_8_s1_s2_s3_the_page_reads_and_writes_what_a_press_actually_landed_on() {
         .application_id("org.naivepost.F2_8Live")
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
+    naivepost::ui::cut_view::hold_open_zoom_for_test(true);
     app.connect_activate(|app| {
         f2_8_s2_a_press_on_the_recorders_band_names_that_lane(app);
         RAN_LANE_PLATE.store(true, Ordering::SeqCst);

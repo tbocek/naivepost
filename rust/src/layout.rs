@@ -308,6 +308,11 @@ impl Tree {
         self.narrate_dir().join("voice.txt")
     }
 
+    /// The Cut page's last zoom, in pixels a second.
+    pub fn zoom_txt(&self) -> PathBuf {
+        self.dir.join("cut").join("zoom.txt")
+    }
+
     pub fn pitch_txt(&self) -> PathBuf {
         self.narrate_dir().join("pitch.txt")
     }

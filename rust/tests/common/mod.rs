@@ -911,6 +911,7 @@ pub fn one_app_round(checks: impl FnOnce(&adw::Application) + 'static) {
         std::env::set_var("PULSE_SERVER", "unix:/nonexistent");
         std::env::set_var("PIPEWIRE_REMOTE", "nonexistent");
     }
+    naivepost::ui::cut_view::hold_open_zoom_for_test(true);
     static ONCE: std::sync::Once = std::sync::Once::new();
     let checks = std::rc::Rc::new(std::cell::RefCell::new(Some(checks)));
     ONCE.call_once(move || {

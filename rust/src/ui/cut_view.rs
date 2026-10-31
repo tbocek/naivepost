@@ -24,6 +24,13 @@ use crate::{cut_screen, timeline, ui::cut_folds};
 pub const DRAG_PER_SCREENFUL_PX: f64 = 40.0;
 
 thread_local! {
+    /// No zoom was saved for this project and none has been chosen: the session stays fitted to the band.
+    static FITS_THE_BAND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The project the zoom was read from, and where a new one is kept.
+    static ZOOM_PROJECT: std::cell::RefCell<Option<crate::layout::Tree>> = const { std::cell::RefCell::new(None) };
+}
+
+thread_local! {
     /// The band's pixels-per-second, seeded at the open zoom: the one zoom the band paints with, and the one the
     /// toolbar's −/+ and the wheel both step.
     static PPS: std::cell::Cell<f64> = const { std::cell::Cell::new(cut_screen::ZOOM_AT_OPEN) };
@@ -51,8 +58,7 @@ pub fn filmed_seconds_for_test() -> f64 {
 /// The page's own surface width: §1's real band, asked of GTK for its measured allocation rather than trusted
 /// to a constant — the band spans the page column (`set_hexpand`), so it is wider than the 480 px placeholder
 /// packed beside it, and it is the surface the tape, the ruler and the red line are actually drawn on. This is
-/// what the scrollbar's fit rule and §B's reveal are measured over; the zoom ladder's floor is NOT — that one
-/// reads [`zoom_surface_width`], which stays on the strip the ladder has always been sized against.
+/// what the scrollbar's fit rule, §B's reveal and the zoom floor are measured over.
 pub fn surface_width(window: &adw::ApplicationWindow) -> f64 {
     let content = match window.content() {
         Some(content) => content,
@@ -126,6 +132,7 @@ pub fn pps() -> f64 {
 }
 
 pub fn set_pps(pps: f64) {
+    FITS_THE_BAND.with(|cell| cell.set(false));
     PPS.with(|cell| cell.set(pps.max(0.0)));
 }
 
@@ -262,6 +269,7 @@ pub fn zoom_step(inward: bool, runs: &[(f64, f64)], total: f64, view: f64) -> (f
         lowest,
     );
     set_pps(next);
+    keep_zoom();
     (next, set_origin(scrolled, total, view))
 }
 
@@ -302,6 +310,7 @@ pub fn zoom_around(
     // `set_pps` FIRST: the clamped scroll below is measured at the zoom it leaves behind, and reading a
     // stale one here is how a zoom "keeps" a second that has already moved.
     set_pps(next);
+    keep_zoom();
     // `total` was measured at the old zoom: the film's part of it scales with the zoom, the gutter does not. Clamped
     // at the old length, a zoom in near the tape's end moved the view and pushed the anchor away.
     let film = (total - gutter_px()).max(0.0);
@@ -349,16 +358,68 @@ pub fn keep_line_through_layout(window: &adw::ApplicationWindow, layout: impl Fn
     let folds = crate::ui::window::review_cut_of(window).folds;
     let on_screen = (origin()..=origin() + view).contains(&line_px(&runs, &folds, pps(), at));
     layout();
+    settle_view(window);
     if on_screen {
         follow_playhead(window, at);
     }
 }
 
-/// The band got its real width: a view scrolled while the page was unmeasured may now stand past the tape's end.
+/// The band got its real width, or the takes landed: a view scrolled while the page was unmeasured may stand past
+/// the tape's end, and an unchosen zoom is fitted again.
 pub fn settle_view(window: &adw::ApplicationWindow) {
+    open_zoom(window);
     let view = view_px(surface_width(window));
+    if FITS_THE_BAND.with(std::cell::Cell::get) {
+        PPS.with(|cell| cell.set(floor_pps(view).min(cut_screen::ZOOM_MAX)));
+    }
     set_origin(origin(), total_px(filmed_seconds(), pps()), view);
     repaint_page(window);
+}
+
+static OPEN_ZOOM_HELD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A test whose pixels are worked out at a stated zoom keeps it through the page's first layout.
+pub fn hold_open_zoom_for_test(held: bool) {
+    OPEN_ZOOM_HELD.store(held, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The first look at a project: its saved zoom, or the fit.
+fn open_zoom(window: &adw::ApplicationWindow) {
+    if OPEN_ZOOM_HELD.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let Some(tree) =
+        crate::ui::window::line_root(window).and_then(|dir| crate::layout::Tree::new(dir).ok())
+    else {
+        return;
+    };
+    if ZOOM_PROJECT.with(|slot| slot.borrow().as_ref().map(|open| open.dir().to_path_buf()))
+        == Some(tree.dir().to_path_buf())
+    {
+        return;
+    }
+    let saved = std::fs::read_to_string(tree.zoom_txt())
+        .ok()
+        .and_then(|text| text.trim().parse::<f64>().ok())
+        .filter(|zoom| *zoom > 0.0);
+    match saved {
+        Some(zoom) => set_pps(zoom.min(cut_screen::ZOOM_MAX)),
+        None => FITS_THE_BAND.with(|cell| cell.set(true)),
+    }
+    ZOOM_PROJECT.with(|slot| *slot.borrow_mut() = Some(tree));
+}
+
+/// A person's zoom is kept for the next time this project opens.
+fn keep_zoom() {
+    ZOOM_PROJECT.with(|slot| {
+        if let Some(tree) = slot.borrow().as_ref() {
+            let rel = tree.zoom_txt();
+            let rel = rel.strip_prefix(tree.dir()).unwrap_or(&rel).to_path_buf();
+            if let Err(why) = tree.write_file(&rel, format!("{:.4}", pps()).as_bytes()) {
+                crate::ui::window::log_line(&format!("!!! could not save the zoom -- {why}"));
+            }
+        }
+    });
 }
 
 /// The pixel inside the timeline the line is drawn at: through the span the tape is painted by, where the unfilmed
