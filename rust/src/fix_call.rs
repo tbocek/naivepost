@@ -292,10 +292,12 @@ fn ask_once(
         .map_err(|why| format!("{STEP}: {why}"))?;
     let rows = fix_transcripts::answered_rows(reply.answer());
     if rows.is_empty() {
+        let answer = reply.answer().trim();
+        if !answer.is_empty() && !answer.contains('\n') && !answer.contains('\t') {
+            return Ok(vec![Reply::Bare(answer.to_string())]);
+        }
         return Ok(vec![Reply::Unreadable(
-            "the answer held no lines -- answer with the lines asked, start, end, speaker and text \
-             separated by tabs"
-                .to_string(),
+            fix_transcripts::NO_LINES.to_string(),
         )]);
     }
     Ok(rows.into_iter().map(Reply::Row).collect())

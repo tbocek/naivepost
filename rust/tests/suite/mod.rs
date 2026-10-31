@@ -248,6 +248,7 @@ mod f5_7_s5_the_words_box_snaps;
 mod f5_7_s6_s7_paths_and_ladder;
 mod f5_7_where_it_runs_a_press_returns_busy_then_lands;
 mod file_chooser_stays_open;
+mod fix_bare_answer;
 mod fix_call;
 mod fix_transcripts;
 mod fix_tries;

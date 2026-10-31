@@ -379,6 +379,33 @@ pub struct BlockOutcome {
 /// enum: the reason is for a person, and §3 says a flag never decides anything on its own.
 pub const GARBAGE: &str = "cannot be made out";
 
+/// What a model is told when its answer held no rows.
+pub const NO_LINES: &str =
+    "the answer held no lines -- answer with the lines asked, start, end, speaker and text separated by tabs";
+
+/// A one-line block answered with the sentence alone: the time and speaker can only be its own. It must still read as
+/// that line, sharing at least half its words, or a remark about the line would become the line.
+fn bare_row(lines: &[Line], reply: &[Reply]) -> Option<AnsweredRow> {
+    let [line] = lines else { return None };
+    let [Reply::Bare(text)] = reply else {
+        return None;
+    };
+    let words = |text: &str| -> Vec<String> {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let (asked, answered) = (words(&line.text), words(text));
+    let shared = asked.iter().filter(|word| answered.contains(word)).count();
+    (shared * 2 >= asked.len() && answered.len() <= asked.len() * 2).then(|| AnsweredRow {
+        start: line.start,
+        end: line.end,
+        speaker: line.speaker.clone(),
+        text: text.trim().to_string(),
+    })
+}
+
 /// S3: one block through the fixer's tools.
 ///
 /// `ask` is handed [`ask_text`]'s message — with the previous refusal appended when there was one —
@@ -418,6 +445,16 @@ where
             None => message.clone(),
         };
         let mut reply = ask(&ask_with)?;
+        if let Some(row) = bare_row(lines, &reply) {
+            reply = vec![Reply::Row(row)];
+        }
+        if let Some(why) = reply.iter().find_map(|call| match call {
+            Reply::Bare(_) => Some(NO_LINES),
+            _ => None,
+        }) {
+            refusals.push(why.to_string());
+            continue;
+        }
         // A wire answer is the block's rows as the model wrote them; held against the block here, where the
         // block is known. A count, a time or a speaker that moved refuses the answer, as the prototype did.
         let rows: Vec<AnsweredRow> = reply
@@ -607,6 +644,7 @@ pub fn apply_reply(block: &mut Block, reply: &[Reply]) -> Vec<String> {
             Reply::Row(_) => {
                 crate::tools::error("an answered row was not checked against its block")
             }
+            Reply::Bare(_) => crate::tools::error(NO_LINES),
             Reply::Unreadable(why) => crate::tools::error(why),
         })
         .collect()
@@ -615,6 +653,8 @@ pub fn apply_reply(block: &mut Block, reply: &[Reply]) -> Vec<String> {
 /// One call in a reply, as §3's tool surface spells it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reply {
+    /// An answer with no rows: one line of plain text, which only a one-line block can read.
+    Bare(String),
     Fix {
         n: u32,
         text: String,
