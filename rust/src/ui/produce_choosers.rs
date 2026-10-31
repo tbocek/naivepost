@@ -74,7 +74,7 @@ pub fn open_image_chooser(window: &adw::ApplicationWindow, slot: Option<usize>) 
             answer_image(&win, slot, &picked);
         }
     });
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 /// The image chooser's answer: the picked file as the row's entry ([`entry_for`]), added at the end
@@ -138,7 +138,7 @@ fn open_save_dialog(
             answer(&win, &path.display().to_string());
         }
     });
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 /// ⤓ export: a save dialog on `<project>-thumbnail.jpg`, then [`answer_export`].

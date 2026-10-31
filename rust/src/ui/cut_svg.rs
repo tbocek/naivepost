@@ -109,7 +109,7 @@ fn open_svg_chooser(
             status_line.set_text(&said);
         }
     });
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 /// F3.5 S2: the chooser answered. A file arms the gesture and names itself in the arm sentence; no file places

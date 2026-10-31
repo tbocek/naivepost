@@ -38,6 +38,8 @@ pub struct Built {
     pub video: Vec<String>,
     /// Filter text for the sound: the sped-sound answer and the volume cues, in `render_fx::audio_order()`'s order.
     pub audio: Vec<String>,
+    /// Volume cues aimed at one lane, as `(lane name, filter)`: they run on that lane before the mix.
+    pub lane_gains: Vec<(String, String)>,
     /// Pictures laid over the clip, one per entry of `inputs` and in its order.
     pub overlays: Vec<render_fx::Overlay>,
     /// Extra inputs the filters above read, as `(kind, path)` pairs in the order they must appear after `-i` #0 —
@@ -173,15 +175,18 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     // recording can still be taken apart, and the rest ride after it. One list per side
     // is what keeps the order honest — a lane-named duck appended to the summed bed would
     // have no lane to act on any more.
-    let (before, after): (Vec<_>, Vec<_>) = cues.into_iter().partition(|cue| cue.before_the_mix());
+    // A card hears no lane, so a named cue over one rides its own sound (§9's MUST row).
+    let (before, after): (Vec<_>, Vec<_>) = cues
+        .into_iter()
+        .partition(|cue| cue.before_the_mix() && clip.source.is_empty());
     for cue in &before {
-        built
-            .audio
-            .push(render_fx::gain_chain(std::slice::from_ref(cue), &cue.lane));
+        built.lane_gains.extend(
+            render_fx::gain_filters(std::slice::from_ref(cue))
+                .into_iter()
+                .map(|filter| (cue.lane.clone(), filter)),
+        );
     }
-    if !after.is_empty() {
-        built.audio.push(render_fx::gain_chain(&after, "snd"));
-    }
+    built.audio.extend(render_fx::gain_filters(&after));
     built
 }
 
@@ -198,11 +203,15 @@ fn sound_of(clip: &Clip, speed: &Fx) -> Vec<String> {
         // incoming side the other half, so the join as a whole is dipped once.
         "own" | "scene" => match clip.read_head {
             None => render_fx::sound_filters(clip.rate, ""),
-            Some((from, to)) => {
+            Some(_) => {
+                // On the clip's own clock: the sound holds 1× for as long as the picture shows.
                 let half = crate::effect_details::dip_each_side();
                 vec![
-                    format!("afade=t=in:st={from:.3}:d={half}"),
-                    format!("afade=t=out:st={to:.3}:d={half}"),
+                    format!("afade=t=in:st=0:d={half}"),
+                    format!(
+                        "afade=t=out:st={:.3}:d={half}",
+                        (clip.on_screen - half).max(0.0)
+                    ),
                 ]
             }
         },

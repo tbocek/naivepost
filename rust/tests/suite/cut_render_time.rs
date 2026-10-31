@@ -442,3 +442,98 @@ fn a_moving_zoom_encodes_and_moves() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Loudest sample of a clip's sound between two seconds, in dB.
+fn loudest(file: &std::path::Path, from: f64, to: f64) -> f64 {
+    let out = std::process::Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-ss",
+            &format!("{from}"),
+            "-t",
+            &format!("{}", to - from),
+            "-i",
+        ])
+        .arg(file)
+        .args(["-map", "0:a", "-af", "volumedetect", "-f", "null", "-"])
+        .output()
+        .expect("ffmpeg runs");
+    let log = String::from_utf8_lossy(&out.stderr).to_string();
+    log.split("max_volume:")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|db| db.parse().ok())
+        .unwrap_or(f64::NEG_INFINITY)
+}
+
+#[test]
+fn a_volume_cue_changes_the_sound_only_while_it_runs() {
+    let dir = workspace("volume");
+    let source = moving_footage(&dir);
+    let cue = Fx {
+        kind: "volume".into(),
+        t: 3.0,
+        dur: 3.0,
+        gain: 0.1,
+        ..Default::default()
+    };
+    let file = encoded(&dir, &source, 0.0, 1.0, vec![cue]);
+    let (outside, inside) = (loudest(&file, 7.0, 9.0), loudest(&file, 3.5, 5.5));
+    assert!(
+        inside < outside - 15.0,
+        "ducked: {inside} against {outside}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_muted_stretch_is_silent_and_one_keeping_its_own_sound_is_heard_late_in_the_session() {
+    let dir = workspace("snd");
+    let source = moving_footage(&dir);
+    let speed = |snd: &str| Fx {
+        kind: "speed".into(),
+        t: 0.0,
+        dur: 40.0,
+        rate: 2.0,
+        snd: snd.into(),
+        ..Default::default()
+    };
+    let muted = encoded(&dir, &source, 5.0, 2.0, vec![speed("mute")]);
+    assert!(loudest(&muted, 1.0, 4.0) < -60.0, "muted");
+    let clip = Clip {
+        no: 9,
+        seg_s: 15.0,
+        on_screen: 5.0,
+        rate: 2.0,
+        frame: (640, 360),
+        src: (640, 360),
+        fx: vec![speed("own")],
+        read_head: Some((15.0, 25.0)),
+        scratch: dir.clone(),
+        ..Default::default()
+    };
+    let path = source.display().to_string();
+    let out = dir.join("own.mp4");
+    let settings = naivepost::project::Produce {
+        blurred_edges: false,
+        ..Default::default()
+    };
+    let argv = naivepost::produce_render::encode_command(
+        &clip,
+        &settings,
+        &[("video", Some(path.as_str()))],
+        None,
+        &out,
+    );
+    let done = std::process::Command::new(&argv[0])
+        .args(&argv[1..])
+        .output()
+        .unwrap();
+    assert!(
+        done.status.success(),
+        "{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(loudest(&out, 1.0, 4.0) > -40.0, "its own sound plays");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -490,7 +490,7 @@ fn open_logo_chooser(window: &adw::ApplicationWindow, key: &str) {
             .collect();
         answer_logos(&win, &key, &picked);
     });
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 /// The Logo… chooser's answer: the picked files added to the field's entry by [`cut_insert::add_logos`]. Answers
@@ -564,7 +564,7 @@ pub(crate) fn open_insert_chooser(
             },
         );
     });
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 /// F2.12 S3 + S4: the file came back from the chooser — build the plan and draw the form.

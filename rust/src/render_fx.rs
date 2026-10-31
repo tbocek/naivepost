@@ -703,16 +703,22 @@ pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue>
         if to - from < 1.0 / ZOOM_GRID_FPS {
             continue;
         }
+        // As `cut_hear::envelope` reads a band; a fade belongs to the clip holding that end of it.
+        let fin = if start >= 0.0 {
+            (effect.trans.max(0.0) / rate).min(to - from)
+        } else {
+            0.0
+        };
         out.push(Cue {
             from,
             to,
             gain: effect.gain.clamp(0.0, fx_record::gain_ceiling()),
-            fin: effect.trans.max(0.0).min(to - from),
-            fout: effect
-                .tout
-                .max(0.0)
-                .max((to - from) - effect.trans.max(0.0))
-                .min(to - from),
+            fin,
+            fout: if start + dur <= length {
+                (effect.tout.max(0.0) / rate).min(to - from - fin)
+            } else {
+                0.0
+            },
             lane: effect.lane().unwrap_or_default().to_string(),
         });
     }
@@ -739,20 +745,12 @@ pub fn gain_expr(cue: &Cue) -> String {
     format!("if(between(t,{:.3},{:.3}),{},1)", cue.from, cue.to, value)
 }
 
-/// S5 (`per cue, in turn`): every cue of one clip applied one after another, so two that overlap multiply — which is
-/// exactly what the preview's mix says they do. Returns the filter text and the label it leaves on.
-pub fn gain_chain(cues: &[Cue], in_label: &str) -> String {
-    let mut fc = String::new();
-    let mut label = in_label.to_string();
-    for (k, cue) in cues.iter().enumerate() {
-        let out = format!("gv{k}");
-        fc += &format!(
-            "[{label}]volume=volume='{}':eval=frame[{out}];",
-            gain_expr(cue)
-        );
-        label = out;
-    }
-    fc
+/// S5 (`per cue, in turn`): every cue applied one after another, so two that overlap multiply, which is exactly what
+/// the preview's mix says they do.
+pub fn gain_filters(cues: &[Cue]) -> Vec<String> {
+    cues.iter()
+        .map(|cue| format!("volume=volume='{}':eval=frame", gain_expr(cue)))
+        .collect()
 }
 
 /// S5 (`after the lane mix, before the narration`): where the volume cues sit in the audio graph. The lanes are

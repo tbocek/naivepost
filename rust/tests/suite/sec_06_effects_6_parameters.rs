@@ -135,8 +135,8 @@ fn sec_06_effects_6_parameters_used_s3_max_gain_bounds_the_filter() {
     // top of the band, and a gain above the ceiling cannot make it say ten.
     let expr = render_fx::gain_expr(&cues[0]);
     assert!(
-        expr.contains(&format!("{:.4}", fx_record::gain_ceiling() - 1.0)),
-        "the volume expression must carry the ceiling as its multiplier, got {expr}"
+        expr.contains(&format!("{:.4}", fx_record::gain_ceiling())),
+        "the volume expression must carry the ceiling, got {expr}"
     );
     assert!(
         !expr.contains(&format!("{:.4}", 99.0 - 1.0)),
@@ -349,8 +349,8 @@ fn sec_06_effects_6_parameters_used_s7_max_gain_reaches_the_encode_filter() {
         "the clip's audio chain carries the volume filter: {audio}"
     );
     assert!(
-        audio.contains(&format!("{:.4}", fx_record::gain_ceiling() - 1.0)),
-        "the multiplier ffmpeg is asked for is the ceiling minus unity: {audio}"
+        audio.contains(&format!("{:.4}", fx_record::gain_ceiling())),
+        "the gain ffmpeg is asked for is the ceiling: {audio}"
     );
     assert!(
         !audio.contains("98.0000"),

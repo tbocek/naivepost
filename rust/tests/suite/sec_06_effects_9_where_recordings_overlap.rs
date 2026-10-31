@@ -321,27 +321,19 @@ fn sec_06_effects_9_where_recordings_overlap_s6_a_volume_carries_its_lane_into_t
     };
     let built =
         produce_fx_chain::for_clip(&clip, &clip.fx, (1920, 1080), std::path::Path::new("/tmp"));
-    let audio = built.audio.join("\n");
-    let lane_at = audio
-        .find("[snd]volume=volume=")
-        .or_else(|| audio.find("volume=volume="))
-        .unwrap_or_else(|| panic!("a gain filter was emitted at all: {audio}"));
-    let bed_at = audio
-        .rfind("volume=volume=")
-        .expect("the bed gain is in the chain too");
-    assert!(
-        lane_at <= bed_at,
-        "the lane gain runs before the bed gain: {audio}"
+    assert_eq!(
+        built.lane_gains.len(),
+        1,
+        "the lane's gain waits for its lane"
     );
-    assert!(
+    assert_eq!(
         built
             .audio
             .iter()
             .filter(|f| f.contains("volume=volume="))
-            .count()
-            >= 2,
-        "both gains survive as their own filters: {:?}",
-        built.audio
+            .count(),
+        1,
+        "and the bed's rides after the mix"
     );
 
     // Over a card the volume still arrives: §9's MUST row, applied as the preview applies it.

@@ -321,11 +321,9 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s5_one_volume_filter_p
     assert_eq!(cues[2].gain, cut_hear::MAX_GAIN); // and a shout is held to what the pipeline accepts
     assert_eq!(cut_hear::MAX_GAIN, 10.0);
 
-    let chain = render::gain_chain(&cues, "snd");
+    let chain = render::gain_filters(&cues).join(",");
     assert_eq!(chain.matches("volume=volume='").count(), 3);
     assert_eq!(chain.matches(":eval=frame").count(), 3);
-    // In turn: the second stage reads the first's label.
-    assert!(chain.contains("[gv0]volume=volume='"), "{chain}");
     for cue in &cues {
         assert!(render::gain_expr(cue).starts_with("if(between(t,"));
     }

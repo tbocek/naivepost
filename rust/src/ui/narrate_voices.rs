@@ -36,7 +36,7 @@ pub fn press_add_file(window: &adw::ApplicationWindow) {
         answer_chooser(&win, picked);
     });
     CHOOSERS_RAISED.with(|raised| raised.set(raised.get() + 1));
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 thread_local! {

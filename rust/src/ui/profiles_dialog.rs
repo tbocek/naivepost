@@ -282,7 +282,7 @@ fn choose_file(
         answer(&then, picked.as_deref());
         chooser.destroy();
     });
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 /// A chooser's answer: a picked path goes to what the press asked for; no pick (Cancel, ×) changes nothing.

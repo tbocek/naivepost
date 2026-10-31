@@ -239,7 +239,15 @@ pub fn render_half(
         run,
         &snap.tree,
         &crate::produce_exec::Materials {
-            exists: &|file| std::path::Path::new(file).exists(),
+            // Through §1's one path rule, as the clip's own input is: a stored `project:` is no file name.
+            exists: &|file| {
+                crate::cut::Seg {
+                    ins: file.to_string(),
+                    ..Default::default()
+                }
+                .insert_asset(&root, snap.tree.dir())
+                .is_some_and(|path| path.exists())
+            },
             // S3's effects: the cut's own list. `plan_clips` filters it per scene through
             // `effect_overlap::drawn_on_scene`, so handing it the whole list drops nothing and invents
             // nothing — an empty one here would render a cut with no zoom, no volume, no text, and nobody
@@ -299,11 +307,11 @@ pub fn render_half(
                         ins: clip.source.clone(),
                         ..Default::default()
                     }
-                    .insert_asset(&root, &root)
+                    .insert_asset(&root, snap.tree.dir())
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|| clip.source.clone()),
                 )
-                .map(|path| (path, clip.seg_s))
+                .map(|path| (path, clip.ss))
             },
             // §6 bullet 1's doors: the filmed spans this snapshot already gathered (the same list
             // `footage_left` reads), and the name a clip's base goes by — the footage row's for footage and a
@@ -317,7 +325,7 @@ pub fn render_half(
                         .map(|(path, _)| path)
                         .unwrap_or_default()
                 } else {
-                    seg.insert_asset(&root, &root)
+                    seg.insert_asset(&root, snap.tree.dir())
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|| seg.ins.clone())
                 };

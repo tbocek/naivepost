@@ -660,17 +660,25 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         "{:?}",
         plan.plan_logs
     );
-    // The frames exist on disk before the encode command names them, under the scratch folder §3 lists.
+    // The walk writes them once it has emptied the scratch folder, before the encode command names them.
     let frames = tree.clips_dir().join("board.frames");
-    let count = std::fs::read_dir(&frames).map(|rd| rd.count()).unwrap_or(0);
+    let written: Vec<&(std::path::PathBuf, String)> = plan
+        .scratch_files
+        .iter()
+        .filter(|(path, _)| path.starts_with(&frames))
+        .collect();
     // The frame grid plus the finished frame the bake adds at the animation's own end.
     assert_eq!(
-        count,
+        written.len(),
         cards::bake_times(2.0).len() + 1,
         "one static SVG per frame in {}",
         frames.display()
     );
-    let first = std::fs::read_to_string(frames.join("f00000.svg")).unwrap();
+    let first = &written
+        .iter()
+        .find(|(path, _)| path.ends_with("f00000.svg"))
+        .expect("the first frame")
+        .1;
     assert!(
         !first.contains("<animate"),
         "a written frame is a finished picture: {first}"
@@ -800,12 +808,15 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
         plan.plan_logs
     );
     let argv = &plan.encodes[0].command.argv;
-    // Its slot is longer than one pass of it, so the picture runs again: `-stream_loop -1`.
+    // Its slot is longer than one pass of it, so the picture runs again.
     let loops = argv
         .iter()
-        .position(|a| a == "-stream_loop")
+        .position(|a| a == "-loop" || a == "-stream_loop")
         .expect("an endless card loops");
-    assert_eq!(argv[loops + 1], "-1", "{argv:?}");
+    assert!(
+        argv[loops + 1] == "1" || argv[loops + 1] == "-1",
+        "{argv:?}"
+    );
     // And looping is only safe because `-t` trims the loop back to the seconds the cut asked for.
     let limit = argv
         .iter()

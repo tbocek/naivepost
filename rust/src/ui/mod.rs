@@ -3,6 +3,9 @@ pub mod background;
 /// §04-prepare#6 — the bench mark and Reset, painted from what this machine holds. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod bench_paint;
+/// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
+/// render's spawner seam. Split out of `produce_page`, which is at its size budget.
+pub mod chooser_hold;
 /// §05-cut#1-screen — the Cut page's two drawing areas: the track band that paints every §1 mark, and the
 /// playhead's own layer. Split out of `window.rs`, which is past its size budget.
 pub mod cut_colours;
@@ -42,8 +45,6 @@ pub mod open_apply;
 pub mod produce_choosers;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_confirm;
-/// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
-/// render's spawner seam. Split out of `produce_page`, which is at its size budget.
 pub mod produce_languages;
 pub mod produce_page;
 /// §08-produce#1-screen — where each encoder setting's label+control PAIR lands in the settings grid

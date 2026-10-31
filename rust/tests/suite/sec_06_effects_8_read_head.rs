@@ -120,11 +120,11 @@ fn sec_06_effects_8_details_s4c_the_chain_gets_half_a_dip_on_each_side() {
     );
     let audio = built.audio.join(" , ");
     assert!(
-        audio.contains(&format!("afade=t=in:st=2.000:d={half}")),
+        audio.contains(&format!("afade=t=in:st=0:d={half}")),
         "the incoming half of the join: {audio}"
     );
     assert!(
-        audio.contains(&format!("afade=t=out:st=8.000:d={half}")),
+        audio.contains(&format!("afade=t=out:st={:.3}:d={half}", 5.0 - half)),
         "the outgoing half: {audio}"
     );
     assert_eq!(

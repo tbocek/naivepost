@@ -85,3 +85,22 @@ pub fn size_of(file: &Path) -> Option<(i32, i32)> {
     let reply = crate::subprocess::run(&ffprobe_program(), &refs, |_| ()).ok()?;
     parse_sizes(&reply)
 }
+
+/// Does this file carry a sound stream? A file ffprobe cannot answer for counts as having one: a clip that then fails
+/// says why, where a silently dropped sound would not.
+pub fn has_sound(file: &Path) -> bool {
+    std::process::Command::new(ffprobe_program())
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(file)
+        .output()
+        .map_or(true, |out| !out.status.success() || !out.stdout.is_empty())
+}

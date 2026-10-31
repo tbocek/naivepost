@@ -5,7 +5,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use naivepost::cut::{self, Cut, EffectKind, Fx, Lane, Seg, NO_CUT_YET};
+use naivepost::cut::{self, Cut, EffectKind, Fx, Lane, Seg};
 use naivepost::layout::Tree;
 
 use crate::common;

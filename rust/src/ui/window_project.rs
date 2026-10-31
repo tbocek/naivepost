@@ -327,7 +327,7 @@ fn ask_add_sources(
     // Built is not shown: without this the press did nothing at all — the chooser existed, unseen,
     // and its response never came. Same call as every other native chooser in the app.
     CHOOSERS_SHOWN.with(|shown| shown.set(shown.get() + 1));
-    chooser.show();
+    crate::ui::chooser_hold::show(&chooser);
 }
 
 thread_local! {

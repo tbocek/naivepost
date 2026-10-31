@@ -430,6 +430,8 @@ fn f4_3_s11_a_line_without_a_wav_takes_no_room() {
     let entries = [entry(0.0, 3.0, 0.3), entry(0.0, 4.0, 3.5)];
     let seconds_of = |entry: &Entry| -> Option<f64> { (entry.at < 1.0).then_some(2.5) };
     let mut clip = r::Clip {
+        ss: 0.0,
+        sound_input: 0,
         no: 1,
         seg_s: 0.0,
         on_screen: 6.0,

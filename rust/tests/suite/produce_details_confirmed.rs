@@ -1430,6 +1430,7 @@ fn path_error(tree: &naivepost::layout::Tree) -> String {
 /// A `Plan` with only what `write_stamp` reads: the stamp hash, the video and its scratch folder.
 fn plan_materials_plan(tree: &naivepost::layout::Tree) -> naivepost::produce_exec::Plan {
     naivepost::produce_exec::Plan {
+        scratch_files: Vec::new(),
         speaking: false,
         captions_warning: None,
         speech: Vec::new(),

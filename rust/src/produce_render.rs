@@ -149,6 +149,10 @@ pub struct Clip {
     pub scratch: std::path::PathBuf,
     /// The heard lanes as the encode reads them, filled by [`crate::produce_exec`] once it can resolve their files.
     pub lane_files: Vec<LaneFile>,
+    /// The second inside an insert's own file this clip starts at.
+    pub ss: f64,
+    /// Which input the clip's own sound comes from: its picture, unless that has none.
+    pub sound_input: usize,
     /// Each spoken line's take (a line in `lines` with speech), in that order, filled beside `lane_files`.
     pub voice_files: Vec<String>,
 }
@@ -157,6 +161,8 @@ pub struct Clip {
 /// how many output seconds into the clip the lane begins (a lane that starts after the clip does).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LaneFile {
+    /// The lane's name, which a volume cue aims at.
+    pub name: String,
     pub path: String,
     pub seek: f64,
     pub delay: f64,
@@ -308,6 +314,8 @@ pub fn plan_clips(
         clips.push(Clip {
             no,
             seg_s: seg.s,
+            ss: seg.ss,
+            sound_input: 0,
             on_screen,
             rate,
             source: seg.ins.clone(),
@@ -829,7 +837,8 @@ fn audio_parts(
     hush: &[(f64, f64)],
 ) -> AudioParts {
     let mut head = Vec::new();
-    if (clip.rate - 1.0).abs() > f64::EPSILON {
+    // A read head keeps the sound at 1× while the picture runs on.
+    if (clip.rate - 1.0).abs() > f64::EPSILON && clip.read_head.is_none() {
         head.push(render_fx::atempo_chain(clip.rate));
     }
     for (from, to) in hush {
@@ -920,13 +929,15 @@ pub fn audio_graph(clip: &Clip, settings: &Produce, lane_base: usize, voice_base
         .collect();
     let parts = audio_parts(clip, settings, clip.lane_files.len(), voices.len(), &[]);
     let mut graph = String::new();
-    let mut current = "0:a".to_string();
+    let mut current = format!("{}:a", clip.sound_input);
     let step = |graph: &mut String, current: &mut String, filters: &[String], to: &str| {
         if !filters.is_empty() {
             graph.push_str(&format!("[{current}]{}[{to}];", filters.join(",")));
             *current = to.to_string();
         }
     };
+    let built_gains =
+        crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch).lane_gains;
     step(&mut graph, &mut current, &parts.head, "own");
     if let Some(mix) = &parts.lane_mix {
         let mut joined = String::new();
@@ -934,7 +945,16 @@ pub fn audio_graph(clip: &Clip, settings: &Produce, lane_base: usize, voice_base
             graph.push_str(&format!(
                 "[{}:a]{}[ln{k}];",
                 lane_base + k,
-                lane_chain(lane, clip, settings).join(",")
+                lane_chain(lane, clip, settings)
+                    .into_iter()
+                    .chain(
+                        built_gains
+                            .iter()
+                            .filter(|(name, _)| *name == lane.name)
+                            .map(|(_, filter)| filter.clone()),
+                    )
+                    .collect::<Vec<_>>()
+                    .join(",")
             ));
             joined.push_str(&format!("[ln{k}]"));
         }
@@ -1123,7 +1143,7 @@ pub fn encode_command_with(
                     filter_inputs += 1;
                     continue;
                 }
-                if matches!(*kind, "text" | "svg") {
+                if matches!(*kind, "text" | "svg" | "image") {
                     argv.extend([
                         "-loop".into(),
                         "1".into(),

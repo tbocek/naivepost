@@ -213,6 +213,8 @@ pub struct Sidecar {
 /// sheet, S5's encodes, S6's join, S7's translations, S8's mux and S9's sidecars, in that order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan {
+    /// Title sheets and card files the encodes read: `(path, contents)`.
+    pub scratch_files: Vec<(PathBuf, String)>,
     /// S2: whether this voice speaks at all (false for captions-only: the lines ride the subtitle track).
     pub speaking: bool,
     /// S2: captions only with Subtitles "none in the video" — the words are in the .srt beside it only.
@@ -312,6 +314,10 @@ fn container_ext(settings: &Produce) -> &'static str {
         Container::Mkv => "mkv",
         Container::Webm => "webm",
     }
+}
+
+fn is_card_source(source: &str) -> bool {
+    crate::cut_insert::kind(source) == crate::cut_insert::Kind::Svg
 }
 
 /// S1: the run clears the scratch folder. The clear itself is `render::clear_scratch`; what this module
@@ -587,6 +593,8 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
 
     // S5: one encode per clip. No burned-in sheet is passed: `Subtitles::BurnedIn`'s overlay is F5.4's
     // own rendering round, and the plan carries the cues it would be drawn from.
+    // Written by the walk, after it has emptied the folder they live in.
+    let mut scratch_files: Vec<(PathBuf, String)> = Vec::new();
     let mut effect_logs: Vec<String> = Vec::new();
     let encodes: Vec<ClipEncode> = clips
         .iter()
@@ -613,6 +621,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                         )
                 })
                 .map(|lane| render::LaneFile {
+                    name: lane.name.clone(),
                     path: crate::layout::resolve(tree.dir(), tree.dir(), &lane.src)
                         .display()
                         .to_string(),
@@ -631,11 +640,28 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                         .map(|wav| wav.display().to_string())
                 })
                 .collect();
+            let source = (mats.source_file)(&clip);
+            let insert = !clip.source.is_empty() && !clip.source.starts_with("copy:");
+            let picture_kind = if insert {
+                match crate::cut_insert::kind(&clip.source) {
+                    crate::cut_insert::Kind::Still => "image",
+                    _ => "video",
+                }
+            } else {
+                "video"
+            };
+            // A card or a picture brings no sound, and a video insert may not: the graph needs one all the same.
+            let silent = insert
+                && source.as_ref().is_some_and(|(path, _)| {
+                    picture_kind == "image"
+                        || is_card_source(&clip.source)
+                        || !crate::produce_probe::has_sound(std::path::Path::new(path))
+                });
+            clip.sound_input = usize::from(silent);
             let clip = &clip;
-            let source = (mats.source_file)(clip);
             let seek = source.as_ref().map_or(clip.seg_s, |(_, seek)| *seek);
             let mut inputs: Vec<(&str, Option<&str>)> = match source.as_ref() {
-                Some((path, _)) => vec![("video", Some(path.as_str()))],
+                Some((path, _)) => vec![(picture_kind, Some(path.as_str()))],
                 None => Vec::new(),
             };
             // Set when this clip reads a baked card that has no own length; see `produce_cards::Staged::loops`.
@@ -645,11 +671,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // §4: whatever this clip's effects read has to exist before ffmpeg is asked for it — a generated title
             // sheet is only an input once it is on disk. One call per clip; the same answer builds the filters.
             let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
-            for (path, text) in &built.title_files {
-                if let Err(err) = std::fs::write(path, text) {
-                    eprintln!("produce: {}: {err}", path.display());
-                }
-            }
+            scratch_files.extend(built.title_files.iter().cloned());
             // §5: a card is not read as the file it is. Its holes are filled (or it is redrawn from its generator),
             // and an animated one is baked to one static SVG per frame at the bake fps — all of that is
             // `produce_cards`' decision; this writes what it produced into the scratch folder BEFORE the command is
@@ -658,11 +680,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                 crate::produce_cards::stage(clip, source.as_ref().map(|(path, _)| path.as_str()))
             {
                 effect_logs.extend(card_input.logs.iter().cloned());
-                for (path, text) in &card_input.files {
-                    if let Err(err) = std::fs::write(path, text) {
-                        eprintln!("produce: {}: {err}", path.display());
-                    }
-                }
+                scratch_files.extend(card_input.files.iter().cloned());
                 for (kind, path) in std::mem::take(&mut card_input.inputs) {
                     // `stage` answers with one of two kinds, so the spelling is fixed here rather than carried as a
                     // `String` the caller would have to borrow from a value that is about to be dropped.
@@ -670,12 +688,14 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                     card_paths.push((kind, path));
                 }
                 // A card with no own length (an indefinite repeat) runs its frames again until the slot is full.
-                if card_input.loops {
-                    loops_card = true;
-                }
+                loops_card = card_input.loops && card_paths.iter().any(|(kind, _)| *kind == "card");
             }
-            for (kind, path) in card_paths.iter() {
-                inputs.push((*kind, Some(path.as_str())));
+            // The staged card IS the clip's picture, in place of the file it was filled from.
+            if let Some((kind, path)) = card_paths.first() {
+                inputs = vec![(*kind, Some(path.as_str()))];
+            }
+            if silent {
+                inputs.push(("sound", None));
             }
             // Last: `video_graph` counts the overlays' inputs back from here.
             for (kind, path) in built.inputs.iter() {
@@ -817,6 +837,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         .collect();
 
     Plan {
+        scratch_files,
         speaking,
         captions_warning,
         speech,
@@ -914,6 +935,15 @@ where
         }
         Err(why) => {
             ran.failed = Some(why);
+            return ran;
+        }
+    }
+    for (path, text) in &plan.scratch_files {
+        if let Some(folder) = path.parent() {
+            let _ = std::fs::create_dir_all(folder);
+        }
+        if let Err(why) = std::fs::write(path, text) {
+            ran.failed = Some(format!("{}: {why}", path.display()));
             return ran;
         }
     }

@@ -234,6 +234,7 @@ pub fn cue_title(clip_no: usize, cue_no: usize) -> String {
 /// card's inputs are not re-parsed per frame. The stem keeps the card's own name.
 pub fn card_copy(card_file: &str) -> String {
     let name = card_file.rsplit('/').next().unwrap_or(card_file);
+    let name = name.strip_prefix("project:").unwrap_or(name);
     let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
     format!("{stem}-filled.svg")
 }
