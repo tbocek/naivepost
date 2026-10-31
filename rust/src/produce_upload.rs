@@ -501,6 +501,8 @@ pub struct Materials<'a> {
     /// Without this leg a picked frame rewrites the row but produces no picture, so nothing can be printed
     /// onto it and no stamp can be written.
     pub own_picture: &'a dyn Fn(&Publish) -> Result<(), String>,
+    /// The cut's aspect, which the picture is drawn at.
+    pub aspect: String,
 }
 
 /// What the walk did. Every field is a thing a test pins about ORDER, not just outcome.
@@ -681,14 +683,8 @@ pub fn walk(
 
     // S6: draw unless the picture is the user's own, or its own stamp says these images and this
     // instruction were already drawn.
-    let aspect = DEFAULT_ASPECT.to_string();
-    let current = thumbnail_stamp(
-        &next.frames,
-        &next.prompt,
-        &next.negative,
-        &aspect,
-        next.own,
-    );
+    let aspect = mats.aspect.as_str();
+    let current = thumbnail_stamp(&next.frames, &next.prompt, &next.negative, aspect, next.own);
     // S5/S7: the title that goes onto the picture: the record's printed title, seeded above from the first title.
     let printed_title = next.thumb_title.clone();
     // S5: whether the picture has to carry the new words. One answer for both doors — `set_title` reports it
@@ -742,7 +738,7 @@ pub fn walk(
             out.error = Some(NO_INSTRUCTION.to_string());
             return out;
         }
-        let (wide, high) = frame_size_from_aspect(&aspect);
+        let (wide, high) = frame_size_from_aspect(aspect);
         // S6: the images come from the media leg, so `ref_images` holds bytes the app read off disk — a
         // cropped base and raw references — rather than the row's file names, which the server cannot open.
         let sent = (mats.request_images)(&next);

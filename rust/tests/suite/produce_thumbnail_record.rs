@@ -112,7 +112,7 @@ fn a_description_alone_does_not_turn_the_printed_line_into_the_title() {
         },
         true,
     );
-    assert_eq!(told, "new words");
+    assert_eq!(told, r#"{"description":"new words"}"#);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn an_untouched_row_is_not_replayed_as_an_instruction() {
         },
         true,
     );
-    assert_eq!(told, "TITLE: new");
+    assert_eq!(told, r#"{"title":"new"}"#);
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn a_new_frame_is_an_answer() {
         },
         true,
     );
-    assert_eq!(told, "THUMBNAIL: frame:9.0");
+    assert_eq!(told, r#"{"frame":"9.0"}"#);
 }
 
 #[test]
@@ -156,5 +156,20 @@ fn a_call_that_wrote_nothing_answers_nothing_and_one_that_repeated_itself_still_
         ..Default::default()
     };
     assert_eq!(answer(&base, base.clone(), false), "");
-    assert_eq!(answer(&base, base.clone(), true), "TITLE: same");
+    assert_eq!(answer(&base, base.clone(), true), r#"{"title":"same"}"#);
+}
+
+#[test]
+fn a_heading_on_a_written_description_survives() {
+    let base = Publish::default();
+    let told = answer(
+        &base,
+        Publish {
+            description: "Chapters:\n0:00 Start".into(),
+            ..Default::default()
+        },
+        true,
+    );
+    let read: serde_json::Value = serde_json::from_str(&told).expect("json");
+    assert_eq!(read["description"], "Chapters:\n0:00 Start");
 }

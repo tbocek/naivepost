@@ -682,6 +682,7 @@ fn walk_with_frames(
     let save_publish = save_publish_leg();
     let write_stamp = stamp_writer();
     let mats = up::Materials {
+        aspect: "16:9".to_string(),
         save_publish: &save_publish,
         // No model call in these checks: the answers are what a model would have answered, handed in.
         ask_model: &|_brief: &str| Ok(String::new()),
@@ -730,6 +731,7 @@ fn walk_through_page_legs(
     let legs =
         naivepost::ui::produce_languages::upload_legs(&tree, &publish_run(&scene.tree, publish));
     let mats = up::Materials {
+        aspect: "16:9".to_string(),
         save_publish: &legs.save_publish,
         ask_model: &legs.ask_model,
         // `upload_mats` already spells this false; spelled here too because this literal builds its own view.

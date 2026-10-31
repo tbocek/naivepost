@@ -320,6 +320,7 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
         move |next: &naivepost::project::Publish| naivepost::publish::save(next, &tree)
     };
     let mats = up::Materials {
+        aspect: "16:9".to_string(),
         save_publish: &save_publish,
         ask_model: &ask_model,
         model_asked: false,

@@ -133,7 +133,9 @@ pub fn upload_legs(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -
             let segs = run.cut.segs.clone();
             move || crate::produce_upload_frames::spread_rows(&segs)
         }),
-        stored_stamp: read_picture_stamp(tree),
+        // A stamp vouches for files: with either gone there is nothing to skip drawing for.
+        stored_stamp: read_picture_stamp(tree)
+            .filter(|_| tree.thumbnail_plain_png().is_file() && tree.thumbnail_png().is_file()),
         write_stamp: Box::new({
             let tree = tree.clone();
             move |hash: &str| write_picture_stamp(&tree, hash)
@@ -168,10 +170,9 @@ pub fn upload_legs(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -
 
 /// A [`crate::produce_upload::Materials`] borrowing the legs this call built. The one door the words half
 /// uses: `upload_half` builds the legs, hands the walk this view of them, and drops them when the walk ends.
-#[allow(clippy::needless_pass_by_value)] // `run` is read for the cut its legs already copied
 pub fn upload_mats<'a>(
     legs: &'a Owned,
-    _run: &crate::produce_flow::Run,
+    run: &crate::produce_flow::Run,
 ) -> crate::produce_upload::Materials<'a> {
     crate::produce_upload::Materials {
         save_publish: &legs.save_publish,
@@ -190,6 +191,11 @@ pub fn upload_mats<'a>(
         edited_by_hand: legs.edited_by_hand,
         request_images: &legs.request_images,
         own_picture: &legs.own_picture,
+        aspect: if run.aspect.trim().is_empty() {
+            crate::produce_upload::DEFAULT_ASPECT.to_string()
+        } else {
+            run.aspect.clone()
+        },
     }
 }
 
@@ -709,7 +715,11 @@ fn save_drawn(job: &crate::produce_upload::DrawnJob, png: &[u8]) -> Result<(), S
     } else {
         png.to_vec()
     };
-    write_plain(&path, &bytes).map_err(|why| format!("job {}: {why}", job.id))
+    write_plain(&path, &bytes).map_err(|why| format!("job {}: {why}", job.id))?;
+    // Stands as the thumbnail until words are printed on it; a picture with none gets no print pass.
+    std::fs::copy(&path, session_tree().thumbnail_png())
+        .map(|_| ())
+        .map_err(|why| format!("job {}: {why}", job.id))
 }
 
 /// The write itself, split out so the folder is created for a project that has never drawn before.
@@ -813,40 +823,46 @@ pub fn upload_ask(
             &cancelled,
             crate::ui::window::log_line,
         )?;
-        // The conversation wrote the record directly; hand back the text form `answers_from` reads, so
-        // prose and tools land through the same parser and cannot drift apart.
         Ok(render_answers(&publish, &collected))
     })
 }
 
-/// What a finished call changed on the record `base`, in the labelled-line form `peel`/`answers_from` read. What it
-/// left alone is not an answer: replayed, the printed line would become the title and a row entry the instruction.
+/// What a finished call changed on the record `base`, in the JSON form `answers_from` reads whole: replaying it as
+/// prose would drop a description's heading. What it left alone is not an answer, or the printed line would become
+/// the title and a row entry the instruction.
 pub fn render_answers(
     base: &crate::project::Publish,
     collected: &crate::produce_upload_call::Collected,
 ) -> String {
     let publish = &collected.publish;
-    let mut lines = Vec::new();
+    let mut answer = serde_json::Map::new();
     if publish.title != base.title {
-        lines.push(format!("TITLE: {}", publish.title));
+        answer.insert("title".into(), publish.title.clone().into());
     } else if publish.thumb_title != base.thumb_title {
-        lines.push(format!("TITLE: {}", publish.thumb_title));
+        answer.insert("title".into(), publish.thumb_title.clone().into());
     }
     if publish.own && publish.frames != base.frames {
-        if let Some(frame) = publish.frames.first() {
-            lines.push(format!("THUMBNAIL: {frame}"));
+        if let Some(at) = publish
+            .frames
+            .first()
+            .and_then(|f| f.strip_prefix("frame:"))
+        {
+            answer.insert("frame".into(), at.into());
         }
     } else if publish.prompt != base.prompt && !publish.prompt.trim().is_empty() {
-        lines.push(format!("THUMBNAIL: {}", publish.prompt));
+        answer.insert("instruction".into(), publish.prompt.clone().into());
     }
     if publish.description != base.description {
-        lines.extend(publish.description.lines().map(str::to_string));
+        answer.insert("description".into(), publish.description.clone().into());
     }
     // The model wrote and repeated what stood: an answer all the same, unlike a call that wrote nothing.
-    if lines.is_empty() && collected.wrote {
-        lines.push(format!("TITLE: {}", publish.title));
+    if answer.is_empty() && collected.wrote {
+        answer.insert("title".into(), publish.title.clone().into());
     }
-    lines.join("\n")
+    if answer.is_empty() {
+        return String::new();
+    }
+    serde_json::Value::Object(answer).to_string()
 }
 
 /// F5.7: the six page presses, driven through [`crate::produce_presses`]. Built here rather than in

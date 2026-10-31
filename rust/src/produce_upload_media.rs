@@ -322,7 +322,11 @@ pub fn write_own_picture(
         wide,
         high,
         log,
-    )
+    )?;
+    // Stands as the thumbnail until words are printed on it; a picture with none gets no print pass.
+    std::fs::copy(tree.thumbnail_plain_png(), tree.thumbnail_png())
+        .map(|_| ())
+        .map_err(|why| format!("{}: {why}", tree.thumbnail_png().display()))
 }
 
 /// The JPEG quality ladder's rung as ffmpeg's `-q:v`. The mjpeg encoder takes a 2..31 scale where LOWER is

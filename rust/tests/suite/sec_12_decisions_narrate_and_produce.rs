@@ -612,6 +612,7 @@ fn upload_walk(
     };
     let own_picture = |_p: &Publish| Ok(());
     let mats = up::Materials {
+        aspect: "16:9".to_string(),
         save_publish: &save_publish as &(dyn Fn(&Publish) -> Result<(), String> + 'static),
         ask_model: &ask_model as &(dyn Fn(&str) -> Result<String, String> + 'static),
         model_asked: false,
