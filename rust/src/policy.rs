@@ -330,7 +330,14 @@ pub fn marking_pass_of(policy: &Policy) -> MarkingPass {
     policy.marking_pass.value
 }
 
+/// A cut mode nobody chose follows the marking pass: a scripted recording's joins are repaired from its words, so
+/// its cut comes from them too. An answer that named a mode, or a person's, stands.
 pub fn cut_mode_of(policy: &Policy) -> CutMode {
+    if policy.cut_mode.origin == crate::project::Origin::Default
+        && policy.marking_pass.value == MarkingPass::Joins
+    {
+        return CutMode::Words;
+    }
     policy.cut_mode.value
 }
 
@@ -515,7 +522,9 @@ pub fn derive(
 /// [`target_length_log`]), or nothing mentioned — because the whole point of the entry is that a missed
 /// reading must not be silent.
 pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
-    let reading = crate::policy_length::target_length_of(context);
+    // Not the script: "stolen in about 20 minutes" is the news, not how long the video should run.
+    let reading =
+        crate::policy_length::target_length_of(&crate::prompt_assembly::without_script(context));
     let mut out = Derived::default();
     // A length that was mentioned but cannot be spelled in seconds is still a fact worth logging ("the length
     // of a train journey": §12's complaint was silence), so `mentioned` proceeds even with 0 seconds. Only a

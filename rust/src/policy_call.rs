@@ -119,7 +119,8 @@ pub fn answer_at(
     refusals: &[String],
     policy: &Policy,
 ) -> Round {
-    let req = policy::request(context);
+    // The fields are about how to edit: the script's words can only mislead the answer.
+    let req = policy::request(&crate::prompt_assembly::without_script(context));
     let model = conf.model.clone();
     let paths = current_paths();
     let system = policy_system(paths.as_ref(), &req);

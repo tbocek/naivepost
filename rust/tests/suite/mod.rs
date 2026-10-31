@@ -322,6 +322,7 @@ mod p_machine_briefmaxchars;
 mod p_machine_describe_frame_width;
 mod p_machine_promptmaxchars;
 mod policy_derive;
+mod policy_scripted;
 mod preload_lead;
 mod prepare_data_written;
 mod prepare_decisions;

@@ -58,7 +58,7 @@ pub fn suggest_press(
             stops: true,
         };
     }
-    let said = match policy_.cut_mode.value {
+    let said = match crate::policy::cut_mode_of(&policy_) {
         CutMode::Words => press_words(window),
         // §S2b: the model is asked, the answer is walked back, and only then does anything reach the
         // page. The bar is NOT opened either way — a suggestion is an answer, not a run — which is what

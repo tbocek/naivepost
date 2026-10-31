@@ -149,7 +149,7 @@ First rewrite: `drop_words(side, count)`, `keep_join`, `get_words` offered as to
 |---|---|---|
 | `set_policy` | `field`, `value`, `because` | ok or error (unknown field, out of range) |
 
-The model reads the User Context and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The pipeline fields are among them: markingPass ("I read from a script, stumbled and started again" → joins; "a gaming session, cut out the dead stretches" → retakes), cutMode, captionsPass, speedPass, decorationsPass. They decide which flows and jobs run at all. The form shows the `because`.
+The model reads the User Context, without its script, and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The pipeline fields are among them: markingPass ("I read from a script, stumbled and started again" → joins; "a gaming session, cut out the dead stretches" → retakes), cutMode, captionsPass, speedPass, decorationsPass. They decide which flows and jobs run at all. The form shows the `because`.
 
 ### 3.12 Text gate (per pair of frames, F1.6 S6)
 
