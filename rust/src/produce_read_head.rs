@@ -1,20 +1,11 @@
 //! §06-effects#8 bullet 4: the one question the encode path asks about a planned
 //! 1× read head — may this run's sound be read back at all?
-//!
-//! The two halves of the answer stay where they are owned: the 0.05 s worth-dipping
-//! threshold in [`crate::produce_details::drifts`] and the card / held frame / no
-//! recording rule in [`crate::produce_details::run_closes`]. This module only asks
-//! both, because the encode path needs ONE yes before it spends two `afade`s on a
-//! join nobody would hear.
 
 use crate::fx_lane;
 use crate::produce_details as details;
 
 /// Does the read head open? §8: it opens only where the sound would drift by at
 /// least `machine.driftSeconds` AND the run is not closed by what the clip is.
-///
-/// `planned` is the footage's own seconds, `actual` the seconds the picture will
-/// show — the pair [`crate::produce_render::read_head_plan`] names a run for.
 pub fn opens(planned: f64, actual: f64, source_is_footage: bool, on_recording: bool) -> bool {
     source_is_footage
         && on_recording

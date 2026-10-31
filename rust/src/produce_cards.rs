@@ -1,18 +1,4 @@
 //! §06-effects#5-cards-svg-inserts — the render's CALLER for the card rules [`crate::cut_cards`] decides.
-//!
-//! `cut_cards` holds the arithmetic (a path's arguments, its holes, its stamp, its animation reader and its
-//! length) and nothing outside it used to call any of that: a card reached ffmpeg as whatever file the cut named,
-//! with its `{{holes}}` still in it and its SMIL untouched, so the three §8 sentences were never logged and an
-//! animated card was drawn by whichever renderer ffmpeg happened to be built with. This module is the missing
-//! caller: one insert path in, one finished picture out — the document as it will be baked, the sentence saying how
-//! it was arrived at, and either one static file or a strip of frames at the bake fps.
-//!
-//! # What lives here and what does not
-//!
-//! Nothing is decided twice. The wording comes from [`cut_cards::arrived_at`] / [`cut_cards::drawn_by`], the timing
-//! from [`cut_cards::card_length`] / [`cut_cards::bake_times`], the interpolation from [`cut_cards::value_at`]. This
-//! only walks a document, applies those answers tag by tag, and names the files. No window, no subprocess, no
-//! rasteriser: a frame is a static SVG, which is what §8 says the bake writes (`f%05d.svg`).
 
 use crate::cut_cards::{self as cards};
 use crate::cut_insert;
@@ -63,9 +49,6 @@ impl Card {
 }
 
 /// §5 + §8: turn one insert path (which may carry `?key=value&…`) and the file's bytes into a finished card.
-///
-/// `doc` is the document as read; reading the file is the caller's, which keeps this checkable without a disk and
-/// lets the Cut page ask the same question about a file it just probed.
 pub fn arrive(raw_path: &str, doc: &str) -> Card {
     let mut card = draw(raw_path, doc);
     bake(&mut card);
@@ -134,8 +117,6 @@ pub fn offer_seconds(path: &str) -> Option<f64> {
 pub fn join_for_test(doc: &str, scope: &[(String, String)]) -> String {
     cards::fill(doc, scope)
 }
-
-// --- S7: the bake ---------------------------------------------------------------------------------------------------
 
 /// One animation plus the tag it animates and the byte range of the animation tag itself — what [`frame`] writes a
 /// value against, and what it cuts out of every frame.
@@ -249,10 +230,6 @@ fn bake(card: &mut Card) {
         return;
     }
     let own = cards::card_length(&timed).or_else(|| css_length(&css));
-    // A CSS animation with no @keyframes is a still by §8, whatever the SMIL beside it says: there is nothing to
-    // interpolate for that half, so baking frames would promise motion the file cannot supply. Asked BEFORE any
-    // length is read, because a rule whose keyframes are missing still carries a duration and would otherwise be
-    // timed as if it animated.
     if lost_css {
         card.length = None;
         card.still = Some(card.still_name());
@@ -461,8 +438,6 @@ fn find_selector(doc: &str, selector: &str) -> Vec<(usize, usize)> {
     }
     out
 }
-
-// --- S7: the CSS subset ---------------------------------------------------------------------------------------------
 
 /// One `@keyframes` step: the fraction it lands at and the declarations written there.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -812,10 +787,6 @@ fn animated_rule(selector: &str, decls: &str, sheets: &[(String, Vec<Step>)]) ->
         .map(|(_, steps)| steps.clone());
     rule.steps = steps.unwrap_or_default();
     if rule.property.is_empty() {
-        // The property is whatever the keyframes write, first step wins. When the named @keyframes are NOT in the
-        // file there is nothing to read it from — and that is exactly §8's "a CSS animation with no @keyframes in
-        // the file", so the rule is kept with an empty property and `bake` says the sentence rather than dropping it
-        // here in silence.
         if let Some((key, _)) = rule.steps.first().and_then(|step| {
             step.decls
                 .iter()
@@ -841,8 +812,6 @@ fn css_length(rules: &[CssRule]) -> Option<f64> {
     }
     Some(last)
 }
-
-// --- §8: the sentences -----------------------------------------------------------------------------------------------
 
 /// §8 (`refuses an absolute one`): named with the href, because "self-contained" on its own tells nobody which line
 /// of their file to change.
@@ -937,8 +906,6 @@ pub fn is_card(path: &str) -> bool {
 /// disk has to keep them on the root tag — without them the file it writes is no longer a card of ours.
 pub const STAMP_KEYS: [&str; 2] = [cards::STAMP, cards::STAMP_ARGS];
 
-// --- §5: what the render does with a card ---------------------------------------------------------------------------
-
 /// One card staged for its clip's encode: which input ffmpeg should open, and what had to be written first.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Staged {
@@ -955,11 +922,6 @@ pub struct Staged {
 }
 
 /// Read the card's file, arrive at it, and write what the bake produced under this clip's scratch folder.
-///
-/// Returns `None` when the clip's source is not an SVG insert, when there is nothing to open (the caller already
-/// skipped such a clip), or when the file cannot be read — a card that vanished is `produce_render`'s missing-insert
-/// sentence, not a second one here. A refused card (an absolute `href`) still answers, with its static file, so the
-/// refusal reaches the log rather than being swallowed.
 pub fn stage(clip: &crate::produce_render::Clip, resolved: Option<&str>) -> Option<Staged> {
     let path = resolved?;
     if !is_card(&clip.source) {
@@ -995,10 +957,6 @@ pub fn stage(clip: &crate::produce_render::Clip, resolved: Option<&str>) -> Opti
     staged
         .inputs
         .push(("svg".to_string(), out.display().to_string()));
-    // A single static picture needs looping whenever the clip is longer than one frame of it, which is every card
-    // that has no strip of its own: §8's `takes the default insert length, loops for its slot`. The loop flag is the
-    // caller's to set — `produce_render::encode_command_with` takes it as an argument — so a test that stages a card
-    // and one that encodes it cannot disagree about what "loops" means.
     staged.loops = card.length.is_none();
     Some(staged)
 }

@@ -1,14 +1,6 @@
-//! F5.5 S5 — the `<video>` tag page the run writes after BOTH halves of ▶ (spec/08-produce.md §F5.1 S5,
-//! §F5.5). `produce_embed` owns every rule (the tag's text, which files count as tracks, the two notes);
-//! this file is the walk that gathers what is on disk, asks for the poster and writes `final.html`.
-//!
-//! Two things decide the shape, both straight from the spec:
-//! - **The tracks come off THE DISK, not out of the render.** A ▶ that found everything up to date skipped
-//!   the encode and wrote no subtitles, yet the `.vtt`s beside the video are that video's subtitles (that
-//!   is what the F5.3 stamp made legitimate), so the page is rewritten either way.
-//! - **The poster is a JOB, not a lookup.** `embed::poster_command` builds the ffmpeg argv and the
-//!   caller's spawner runs it, so nothing here spawns anything — the same reason `produce_render` builds
-//!   argv instead of running it, and why a test can answer the poster leg without an encoder.
+//! F5.5 S5 — the `<video>` tag page the run writes after BOTH halves of ▶ (spec/08-produce.md §F5.1
+//! S5, §F5.5). `produce_embed` owns every rule (the tag's text, which files count as tracks, the
+//! two notes).
 
 use std::path::PathBuf;
 
@@ -17,12 +9,11 @@ use crate::produce_embed as embed;
 use crate::project::{Codec, Container};
 use crate::roles::Language;
 
-/// The poster's ffmpeg leg, caller-supplied exactly as `narrate_tts::speak_line` supplies both of its
-/// network legs: it takes the argv [`embed::poster_command`] built, so no test needs an encoder standing.
+/// The poster's ffmpeg leg, caller-supplied exactly as `narrate_tts::speak_line` supplies both of
+/// its network legs: it takes the argv [`embed::poster_command`] built, so no test needs an encoder
+/// standing.
 pub type MakePoster = dyn Fn(&[String]) -> Result<(), String>;
 
-/// Adapt the page's spawner (which takes a [`crate::produce_exec::Command`]) to this module's argv shape,
-/// so the poster goes through the same door the encodes do — scripted in a test, real otherwise.
 pub fn poster_through<F>(spawn: F) -> Box<MakePoster>
 where
     F: Fn(&crate::produce_exec::Command) -> Result<(), String> + 'static,
@@ -37,9 +28,6 @@ where
     })
 }
 
-/// What the walk did. `poster` says whether there is a `final.jpg` to point at, `written` whether the
-/// page itself landed. A failed page is said in the log and is never the run's verdict — that is
-/// [`embed::render_verdict`], and it takes the render's outcome alone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TagPage {
     pub path: PathBuf,
@@ -48,16 +36,12 @@ pub struct TagPage {
     pub tracks: usize,
 }
 
-/// The base name only: the html lives beside the files it names, so its `src=` and `poster=` need no
-/// folder in front of them — which is the whole reason the page can be pasted anywhere.
 fn base(path: &std::path::Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_default()
 }
 
-/// Build the page and write it. Every step's rule is `embed`'s; this function only puts the calls in the
-/// spec's order and turns "is it on disk?" answers into the tag's arguments.
 pub fn build_and_write(
     tree: &Tree,
     container: Container,
@@ -69,17 +53,10 @@ pub fn build_and_write(
 ) -> TagPage {
     let (video, jpg, html) = embed::paths(tree, container);
 
-    // 1. The poster: JPEG 90 off the thumbnail the words half drew. No thumbnail is said quietly and the
-    //    tag goes out without a `poster=` — a page with no picture still plays.
-    //    §F5.5 names THE THUMBNAIL as the poster's source, and the run can leave either of its two files on
-    //    disk: `thumbnail.png`, which is the printed picture (§F5.6 S7), or only `thumbnail-plain.png`,
-    //    which is what the draw leg saves before any words go on it (§F5.6 S6). The plain one is the same
-    //    frame without the lettering, so it is a legitimate poster and the page should not lose its picture
-    //    just because the print pass did not run. Only when NEITHER exists is there no poster at all.
     let printed = tree.thumbnail_png();
     let plain = tree.thumbnail_plain_png();
-    // `Option`, not a path that does not exist: "no poster" must be an answer the type carries, so the leg
-    // below cannot be reached with a made-up file name.
+    // `Option`, not a path that does not exist: "no poster" must be an answer the type carries, so
+    // the leg below cannot be reached with a made-up file name.
     let source = match (printed.is_file(), plain.is_file()) {
         (true, _) => Some(printed),
         (false, true) => Some(plain),
@@ -91,24 +68,17 @@ pub fn build_and_write(
             false
         }
         Some(from) => match make_poster(&embed::poster_command(from, &jpg)) {
-            // Ok alone is not enough: the file has to be there for `poster="final.jpg"` to be true.
             Ok(()) => jpg.is_file(),
             Err(_) => false,
         },
     };
 
-    // 2. The tracks: whatever `.vtt` files are beside the video, read off the folder rather than out of
-    //    the run, ordered by `embed::tracks` with this video's own language first (and `default`).
-    //    `final.vtt`'s parent is the produce folder, since `Tree::produce_dir` is private.
     let folder = jpg
         .parent()
         .unwrap_or(std::path::Path::new("."))
         .to_path_buf();
     let tracks = embed::tracks(&embed::list_vtt(&folder), own_language, known);
 
-    // 3. The page itself: the bare tag, base names only. `src=` names the video THIS run wrote — `paths`
-    //    already resolved it against the chosen container, so an mkv or webm render gets a `src=` that
-    //    points at a file that exists instead of a hardcoded mp4 nobody made.
     let body = embed::tag(
         &base(&video),
         poster.then(|| base(&jpg)).as_deref(),
@@ -116,8 +86,6 @@ pub fn build_and_write(
     );
     let written = embed::write_tag(tree, &body).is_ok();
     if !written {
-        // Said and done: the video and its subtitles are on disk either way, and throwing away the page is
-        // not worth failing a run that already produced a file.
         log(&embed::unwritable_log(&html.display().to_string()));
         return TagPage {
             path: html,
@@ -128,8 +96,6 @@ pub fn build_and_write(
     }
     log(&embed::wrote_tag_log(&html.display().to_string()));
 
-    // 4. §F5.5's two notes, after the tag line so they read underneath it: the container/codec no browser
-    //    plays, and the http-vs-file:// trap that shows a caption-less page rather than an error.
     if let Some(note) = embed::web_unplayable(container, codec) {
         log(note);
     }

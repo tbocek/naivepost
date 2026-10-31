@@ -1,8 +1,4 @@
 //! The shell's tab switching (spec/03-shell.md F0.1).
-//!
-//! Which page is showing, whether a tab may be entered, and what has to be redone on arrival — all
-//! of it here rather than in a `notify` handler, so a bounce, a flush and a refit are testable
-//! without a window (spec/00-principles.md §5). The UI renders [`Shell`] and forwards clicks.
 
 use std::fs;
 use std::path::Path;
@@ -60,8 +56,6 @@ impl Page {
         }
     }
 
-    /// The one-line tooltip of an unlocked tab (§1's tab row; the prototype's steps table). A locked
-    /// tab shows [`lock`]'s reason instead — that swap is the whole of §1's "tooltip = the reason".
     pub fn tip(self) -> &'static str {
         match self {
             Self::Prepare => {
@@ -78,10 +72,6 @@ impl Page {
     pub const START: Page = Page::Prepare;
 }
 
-/// S2's refusal sentence for Cut — §1's exact wording, em dash included. The prototype carries it
-/// as the tab's `wait` text (go/main.go:77) so a click and a hover say the same thing.
-/// The window's own title (§1: "One window, title \"Naivepost\""). Capitalised the way the spec spells
-/// it, unlike the app id `ch.bocek.naivepost` and the binary name, both lower-case.
 pub const WINDOW_TITLE: &str = "Naivepost";
 
 /// §1's window MINIMUM, width: "Its minimum size is 1240×900: it opens at that size and cannot be made
@@ -92,9 +82,6 @@ pub const WINDOW_MIN_W: i32 = 1240;
 /// it lives here as a bare constant rather than in `params.rs`.
 pub const WINDOW_MIN_H: i32 = 900;
 
-/// The page band at §1's minimum size: the window minus the header (~52 px), the run bar row (~53 px) and
-/// an open log band (220 px, `ui::window_bench::LOG_OPEN_PX`). It is where the shell's page/bottom-bar
-/// divider opens in a snapshot, because headless nothing drags that handle (`snapshot::run` sets it).
 pub const PAGE_BAND_PX: i32 = 560;
 
 pub const CUT_LOCK: &str =
@@ -102,19 +89,9 @@ pub const CUT_LOCK: &str =
 
 /// The bottom bar's Inputs row for a Cut page with nothing to cut — `spec/inventory/cut.md` §A spells it
 /// and §1 makes that inventory normative ("Tooltips and greyed rules: inventory/cut.md §A, normative").
-/// A different sentence from [`CUT_LOCK`] on purpose: the lock answers "why can't I open this tab?" while
-/// this one answers "what is this page looking at?", and the second question is asked with the tab already
-/// open (a source loses its footage mark while the page is showing).
 pub const NOTHING_TO_CUT: &str = "nothing to cut \u{2014} no source on Inputs is marked as footage";
 
 /// Why a page cannot be entered, `None` meaning it can (S2's question).
-///
-/// Prepare never is: it is where the sources get added, so an empty project still has to open it.
-/// Cut waits for a source marked footage, because the cut is laid out from the recordings. Narrate
-/// and Produce are never locked (§1: "Narrate and Produce never locked; their ▶ refuses without a
-/// cut") — [`cut::NO_CUT_YET`] is what ▶ says, and putting a page behind it would hide the voice
-/// picker, which lives beside the lines it speaks but needs no cut to be useful. An unknown page
-/// cannot be named here, which is the advantage of an enum over the prototype's index lookup.
 pub fn lock(page: Page, project: &Project) -> Option<&'static str> {
     match page {
         Page::Prepare => None,
@@ -162,12 +139,6 @@ pub enum Outcome {
     },
 }
 
-/// The narration file's beat (§7-narrate.md:215 "autosaved 400 ms after typing; flushed on tab
-/// leave, window close, and before Produce reads the file"; spec/10-parameters.md lists it among
-/// the engineering constants).
-///
-/// Not to be confused with [`crate::checks::CONF_SAVE_WAIT`], which is the *settings* dialog's beat
-/// of 600 ms on `llm.conf`. Two files, two beats; neither one's rule belongs to the other.
 pub const NARRATION_AUTOSAVE: Duration = Duration::from_millis(400);
 
 /// A narration write that typing owes. The timer is the caller's (a GTK timeout here, nothing in a
@@ -210,14 +181,6 @@ impl Pending {
 pub type PrepareFile = (String, u64);
 
 /// What Prepare had produced when the cut was last built — S5's "since its build".
-///
-/// The files are Prepare's per-source output under `prepare/inputs/<source>/`: the transcript text,
-/// its word timings and the frames marker. Those three move exactly when Prepare has done more work
-/// (a re-transcribe, a re-align, frames drawn), which is what a cut built from them would go stale
-/// on; the source files themselves are not stamped because adding one changes the source list, and
-/// §1 treats that as Prepare's own business. A file that is not there yet reads as absent rather
-/// than as an error: "Prepare has not produced it" is a real state, and it must differ from "it
-/// exists with this size".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PrepareStamp {
     pub sources: Vec<PrepareFile>,
@@ -256,8 +219,6 @@ fn stamp_of(path: &Path) -> u64 {
         .ok()
         .and_then(|when| when.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |span| span.as_secs());
-    // These files are nowhere near 2^32 bytes, so the shift leaves room for the seconds without
-    // either field crowding the other out.
     (meta.len() << 32) ^ seconds
 }
 
@@ -323,7 +284,6 @@ pub struct Shell {
 impl Default for Shell {
     fn default() -> Self {
         Self {
-            // The window opens on Prepare (F0.6), so that is where switching starts from.
             page: Page::START,
             status: String::new(),
             help_page: Page::START,
@@ -334,11 +294,6 @@ impl Default for Shell {
 }
 
 impl Shell {
-    /// S1-S5 in one call. `entries` is the narration as the Narrate page holds it (half-typed rows
-    /// pulled in first, which is the prototype's `pullRows`, go/narrate.go:2473); it is refitted in
-    /// place when the target is Narrate. `tree` is needed for the two refreshes that read disk and
-    /// may be `None` for a project with no folder yet — a page then shows what it has rather than
-    /// failing to open.
     pub fn switch(
         &mut self,
         to: Page,
@@ -361,9 +316,6 @@ impl Shell {
             Move::Vanished if reason.is_some() => Page::START,
             _ => to,
         };
-        // A silent return to Prepare says nothing: an old status line would be a lie about what just
-        // happened, and the reason for a switch the user did not make is not their news (§1: "S2's
-        // bounce is only for a click").
         let silently = why == Move::Vanished && reason.is_some();
 
         // S3: whatever was half-typed is on disk before the page is left.
@@ -372,11 +324,9 @@ impl Shell {
             self.status = String::new();
         }
 
-        // S4: show the page, its readouts and ⓘ together.
         self.page = to;
         self.help_page = to;
 
-        // S5: the refresh that page needs.
         let refresh = self.refresh(to, project, tree, segs, entries);
         Outcome::Shown {
             page: to,
@@ -385,9 +335,6 @@ impl Shell {
         }
     }
 
-    /// S5 for one page. Only three pages have anything to redo; Prepare is where the work starts, so
-    /// arriving there changes nothing upstream of it. `segs` is the cut's clips as the caller holds
-    /// them (the live editor's if it has any), which is what Narrate's lines are refitted against.
     fn refresh(
         &mut self,
         to: Page,
@@ -410,8 +357,6 @@ impl Shell {
                 Refresh::CutRebuild { stale }
             }
             Page::Narrate => {
-                // The cut is the page most likely to have moved under these lines — it is where the
-                // user came from.
                 let (moved, orphan) = refit(segs, entries);
                 if moved > 0 || orphan > 0 {
                     self.status = refit_sentence(moved, orphan);
@@ -433,13 +378,6 @@ impl Shell {
 }
 
 impl Shell {
-    /// The Inputs readout of the page shown (spec/03-shell.md §1: "the visible tab's `Inputs:` and
-    /// `Outputs:` readouts"). Prepare's and Produce's wording are spec/04-prepare.md §1 and
-    /// spec/08-produce.md §1 verbatim; Cut's and Narrate's rows are specified in 05/07, whose rounds
-    /// have not come, so those two are the rewrite's own short sentences — one line each, naming what
-    /// ▶ on that page would read. The tree the readouts count files in is passed to the read rather
-    /// than remembered by the shell: which project is open is the window's business, so the shell
-    /// cannot disagree with it after an Open.
     pub fn inputs(
         &self,
         tree: Option<&Tree>,
@@ -460,11 +398,6 @@ impl Shell {
                 format!("{} clip(s)", cut.segs.len())
             }
             Page::Cut => NOTHING_TO_CUT.to_string(),
-            // §7 §1's FULL line, not a short summary of it: "N clip(s) · mm:ss[ · ⚠ N clip(s) unwritten,
-            // N line(s) off the cut][ · no timeline]", or its no-cut sentence. The counts come from the same
-            // files ▶ reads (`narrate_inputs_tally`), so the bottom bar and the page cannot disagree.
-            // There is no narration switch (§1): a narration nobody wrote is "N clip(s) unwritten", which the
-            // row already says.
             Page::Narrate => {
                 let tally = crate::ui::narrate_inputs_tally::from_session(
                     tree,
@@ -503,21 +436,12 @@ impl Shell {
         }
     }
 
-    /// The Inputs readout's TOOLTIP (§1 badge **6**: "per-file tooltip"). Prepare is the one page
-    /// whose row counts several files at once, so its tooltip breaks the same arithmetic down per
-    /// source through [`prepare::inputs_tip`]; every other page's row says all it has in the text.
-    /// With no folder open there are no files to break down, and §6 wants the tooltip to say exactly
-    /// that rather than leaving the row's sentence unexplained.
     pub fn inputs_tip(&self, tree: Option<&Tree>, project: &Project) -> Option<String> {
         match self.page {
             Page::Prepare => Some(match tree {
                 Some(tree) => prepare::inputs_tip(tree, project),
                 None => prepare::NO_INPUTS_TIP.to_string(),
             }),
-            // §6 (`Inputs tooltip`): the Narrate row's per-file breakdown — which cut file, why the
-            // narration is stale and what fixes it, how many transcript lines with what window, the
-            // session context, and who speaks. The numbers come from the same files the run reads, so the
-            // shell stays out of the arithmetic: `ui::narrate_inputs` owns it beside the page.
             Page::Narrate => {
                 let state = crate::ui::narrate_page::read_state();
                 let tip = crate::ui::narrate_inputs::tooltip(tree, &state);
@@ -572,10 +496,6 @@ impl Shell {
                 format!("{} {}", prepare::OUTPUTS_LABEL, text)
             };
         }
-        // §1 asks for a count of what the page wrote; counting the page's own output folder is the
-        // one number that cannot lie about a run that has not happened yet. Narrate is the exception §7 §1
-        // writes out in words ("Outputs: narrate/ — narration.json, the voice reference and the synthesis
-        // cache"), so its row names the three things instead of counting them.
         if self.page == Page::Narrate {
             return crate::narrate_screen::outputs_readout().to_string();
         }
@@ -588,17 +508,11 @@ impl Shell {
     }
 
     /// One walk of `prepare/` decides both halves of the row: the count+size sentence and its age.
-    /// Both readers go through here so the number in the text and the date on hover cannot come from two
-    /// sweeps of the folder that disagree about what is in it.
     fn prepare_readout(&self, tree: &Tree) -> (String, String) {
         let (bytes, newest) = prepare::outputs_size(tree);
         prepare::outputs_readout(prepare::outputs_count(tree), bytes, newest)
     }
 
-    /// The Outputs readout's TOOLTIP (§6: "N files, size" with "newest <ago>"). Prepare is the page
-    /// that has an age to show — its count comes off a walk that also saw every stamp — so this is where
-    /// `prepare::outputs_readout`'s second half reaches the row; other pages say all they have in text.
-    /// An empty folder has no age, so it gets no tooltip rather than "newest just now" about nothing.
     pub fn outputs_tip(&self, tree: Option<&Tree>) -> Option<String> {
         if self.page != Page::Prepare {
             return None;
@@ -628,7 +542,6 @@ pub fn cut_seconds(cut: &cut::Cut) -> f64 {
 
 /// Files under `dir`, counting recursively and missing nothing quietly: a folder that is not there
 /// has no output yet, which is zero rather than an error.
-/// How many files are under `dir`, and their bytes together.
 fn files_and_bytes(dir: &Path) -> (usize, u64) {
     let Ok(entries) = fs::read_dir(dir) else {
         return (0, 0);
@@ -660,12 +573,6 @@ fn count_files(dir: &Path) -> usize {
 
 /// S5's refit: move the lines onto the cut as it is now without asking the model. The words are
 /// kept, the times follow. Returns `(moved, orphan)`.
-///
-/// A line keeps its place against the *video*, not its offset into the clip — so `at` is re-based
-/// when the clip's start moved, which is what keeps the words over the same moment of the
-/// recording (prototype go/narrate.go:2421-2438). A line whose clip is gone is left exactly where
-/// it was and counted: deleting narration because a clip went away is worse than a line with no
-/// clip under it, and the count is what tells the user why.
 pub fn refit(segs: &[Seg], entries: &mut [Entry]) -> (usize, usize) {
     let (mut moved, mut orphan) = (0, 0);
     for entry in entries {
@@ -690,16 +597,10 @@ pub fn refit(segs: &[Seg], entries: &mut [Entry]) -> (usize, usize) {
     (moved, orphan)
 }
 
-/// How close a clip's bounds have to be for the line on it to count as unmoved (prototype: 0.05 s).
 const CLIP_TOLERANCE: f64 = 0.05;
 
-/// The clip a line belongs to now: the one it shares the most video with — not "the one holding its
-/// start", because a clip trimmed at the front leaves that start outside the very clip the rest of
-/// the line plainly sits in (prototype `clipFor`, go/narrate.go:2443-2462).
 fn clip_for(segs: &[Seg], entry: &Entry) -> Option<usize> {
     if entry.e <= entry.s {
-        // A line written on a card has no span to share, so its clip is the zero-span segment still
-        // sitting at the same moment, if there is one.
         return segs
             .iter()
             .position(|seg| seg.e <= seg.s && (seg.s - entry.s).abs() <= CLIP_TOLERANCE);
@@ -714,8 +615,6 @@ fn clip_for(segs: &[Seg], entry: &Entry) -> Option<usize> {
     best.map(|(index, _)| index)
 }
 
-/// The status line S5 writes after a refit — the prototype's sentence (go/narrate.go:2482-2484),
-/// because it is the one place the app explains that its work was automatic.
 pub fn refit_sentence(moved: usize, orphan: usize) -> String {
     if orphan > 0 {
         return format!(

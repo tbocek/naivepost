@@ -1,22 +1,4 @@
 //! The audio.cpp task door: the one place `POST /v1/tasks/run` is dialed.
-//!
-//! §02-services.md §1 lists the endpoint next to the four things audio.cpp serves — speech to text,
-//! alignment, diarization, voice separation — and §5 confirms the envelope as `{"model","request"}`,
-//! which [`crate::bodies`] builds. Before this module nothing in the program ever sent it: the flow
-//! modules ([`crate::asr`], [`crate::align`], [`crate::transcribe`], [`crate::separate`]) each take an
-//! `ask`/`join` closure "the real ▶ hands over" (their own words) and nothing did. Every function here
-//! is therefore a closure supplier: it hands the flow the ask it was written to be given, and the ask
-//! dials the real server through [`crate::server_leg`], so a test points the Settings box at a
-//! loopback fake exactly as the shipped legs do.
-//!
-//! What this module owns, because no other module can:
-//! - **The endpoint, re-read per request** (§1: "the settings file is re-read per request (each URL,
-//!   key and model id)"), through [`crate::services::endpoint_for`] so audio.cpp's env precedence
-//!   lives in one place.
-//! - **The missing-model sentence.** A run that asks for a model the server does not serve gets
-//!   [`crate::services::missing_model`], which carries §1's compiled-in install hint. Until now that
-//!   wording only reached a log from the Settings dialog's Test buttons.
-//! - **The reply shapes** below.
 
 use std::path::Path;
 
@@ -29,10 +11,6 @@ use crate::server_leg;
 use crate::services::{self, Kind, Need, Server};
 use crate::transcribe::SAMPLE_RATE;
 
-/// What one dial needs to know beyond the body: who is asking (the step's word, which lands in the
-/// `requests.tsv` step column), which job of it (`asr/c03.wav`, so a failed chunk is comparable
-/// against its audio), and what §1 task the request names — the same word [`Need::task`] takes, so
-/// the missing-model sentence says "Prepare needs `asr` there".
 #[derive(Debug, Clone, Copy)]
 pub struct Ask<'a> {
     pub step: &'a str,
@@ -40,11 +18,6 @@ pub struct Ask<'a> {
     pub task: &'a str,
 }
 
-/// The reply shape §5's three task kinds answer with, as read here. The spec gives the envelope and
-/// the audio path but not the body of a task reply, so this is a decision written down: the reply is
-/// read leniently, at the top level or under `result`, and a shape that is not one of these is an
-/// `Err` naming the server and showing the reply rather than a guess — an aligner already does this
-/// ([`crate::align::parse_words`]) and a silent empty answer is how a wrong guess gets filed as work.
 fn answer(body: &Value) -> Value {
     if body.get("ok").and_then(Value::as_bool) == Some(false) {
         return body.clone();
@@ -53,11 +26,6 @@ fn answer(body: &Value) -> Value {
 }
 
 /// Speech to text's answer: the chunk's text, and its word times if the server sent them.
-///
-/// Accepted spellings: `text | transcript` for the words heard; `words | alignment` for the times,
-/// each entry a word in [`crate::align::parse_words`]'s senses. A text-only reply is fine — that is
-/// what a model that only transcribes sends — but a reply with neither is reported, because a chunk
-/// that came back with nothing in it is not a chunk that heard nothing.
 pub fn asr_answer(body: &Value) -> Result<WordsDoc, String> {
     let reply = answer(body);
     let text = ["text", "transcript"]
@@ -93,14 +61,6 @@ fn joined(words: &[Word]) -> String {
 }
 
 /// Diarization's answer: speaker turns as samples.
-///
-/// `speaker_turns | turns | speakers | diarization` at either level (`speaker_turns` is what audio.cpp's
-/// nemotron diarizer sends; the first rewrite did not know it and failed the run on a good answer), each entry read with [`turn`] and then sorted by
-/// start, because placement anchors on order and a server that answers out of order would otherwise
-/// place against a scrambled timeline. An empty list is an honest answer: nobody spoke. audio.cpp says
-/// that by leaving the list out and sending only its `timing` (probed 2026-10-28 on 2.5 s of silence:
-/// `{"timing":{"wall_ms":15.65}}`), so a finished run with no list is nobody speaking too; the first
-/// rewrite failed Prepare on it. A reply with neither is still the model's failure.
 pub fn diar_answer(body: &Value) -> Result<Vec<Turn>, String> {
     let reply = answer(body);
     let Some(list) = ["speaker_turns", "turns", "speakers", "diarization"]
@@ -125,10 +85,6 @@ pub fn diar_answer(body: &Value) -> Result<Vec<Turn>, String> {
     Ok(turns)
 }
 
-/// One turn, its edges as samples (seconds and milliseconds also read: the shape varies per server)
-/// and its speaker as a number, a name ending in one (`speaker_0` is voice 0, so the transcript says
-/// SPEAKER_00), or another name hashed to one, since a diarizer that labels voices by name still has to
-/// answer in [`Turn`]'s terms.
 fn turn(entry: &Value) -> Option<Turn> {
     let start = sample(entry, &["start_sample", "start", "from"])?;
     let end = sample(entry, &["end_sample", "end", "to"])?;
@@ -180,10 +136,6 @@ fn sample(entry: &Value, keys: &[&str]) -> Option<u64> {
 }
 
 /// Voice separation's answer: the paths of the two stems on the server.
-///
-/// A stems task answers with file paths, not bytes — every audio.cpp task works inside the server's
-/// own folders (that is why [`ServerPath`] exists) — so this returns server paths to be downloaded
-/// and joined by the caller's ffmpeg.
 pub fn stem_paths(body: &Value) -> Result<(Stems, ServerPath, ServerPath), String> {
     let reply = answer(body);
     let path = |keys: &[&str]| {
@@ -209,10 +161,6 @@ pub enum Stems {
 }
 
 /// The envelope with the audio path in it: `{"model","request":{"audio",…}}`.
-///
-/// The path a task names is always one an upload handed back, never a local path — audio.cpp reads
-/// inside its own container, so a local path is a file-not-found minutes later. Hence the
-/// [`ServerPath`] type rather than a `&str` here.
 pub fn task_body(
     kind: Task,
     model: &str,
@@ -257,15 +205,6 @@ impl Task {
 }
 
 /// Send one task envelope and bring back the reply body.
-///
-/// `paths` is explicit rather than read from the environment inside so the caller's own resolved
-/// settings folder is what is dialled (the module's documented style, and it keeps a test off the
-/// real `$HOME`); `tree` is `None` when no project is open, which drops the timed row exactly as the
-/// settings probes do — a task run without a project has nowhere to write `requests.tsv`.
-///
-/// Failure is specific: a non-200 names the model, the status and the server's own sentence; a reply
-/// saying the model is not there costs one extra `GET /v1/models` and comes back as
-/// [`services::missing_model`], which is where §1's install hint lives.
 pub fn dial(
     tree: &Option<Tree>,
     paths: &crate::settings::Paths,
@@ -281,8 +220,6 @@ pub fn dial(
     // time on the wire.
     let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, ask.step, &cancelled) {
         Ok(got) => got,
-        // ⏹ landed while every slot was busy: nothing went out, so this is the same refusal as the check
-        // above rather than a server problem.
         Err(crate::slot_gate::Wait::Cancelled) => {
             return Err(format!(
                 "{}: cancelled while waiting for a {model} slot",
@@ -361,9 +298,6 @@ pub fn dial(
     ))
 }
 
-/// Whether a failure is the server saying it does not have this model. Both ways it says so: a 404,
-/// and a 4xx/5xx whose body names the wanted id beside a word that means "not here". A 500 that
-/// does not mention the model is an ordinary failure and stays one.
 fn says_missing(status: &u16, body: &str, model: &str) -> bool {
     if *status == 404 {
         return true;
@@ -425,15 +359,6 @@ pub fn catalog(
 }
 
 /// The `ask` [`crate::asr::run`] wants: one chunk's file name in, that chunk's text and word times out.
-/// This is the half `asr::run`'s own doc names — "the real ▶ hands over ffmpeg's cut, the upload and the
-/// ASR request; a test hands over a closure" — so it does all three:
-///
-/// - **The cut.** `run_at` writes `asr/cNN.wav.plan` immediately before it asks, and that note's first line
-///   is `cut_plan`'s arguments (`-ss <from> -t <span>`). Reading the span back from the flow's own scratch is
-///   what lets an ask know which chunk it is answering about: `asr::run` passes a file name and nothing else.
-/// - **The upload.** A task names a file inside the server's folders, so a local path is no answer at all;
-///   the bytes go up as raw under the chunk's own name, which is `Kind::Upload`'s contract (§1).
-/// - **The request**, answered through [`asr_answer`] like any other ASR reply.
 pub fn asr_ask<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
@@ -480,13 +405,6 @@ pub fn asr_ask<'a>(
 }
 
 /// The `ask` [`crate::align::run`] wants: model, clip and text in, the aligner's word list out.
-///
-/// The model arrives from the aligner picker (§1: an aligner is chosen by task, not by the box), so
-/// unlike [`asr_ask`] this one takes the id per call and dials whichever the picker named.
-///
-/// Like [`asr_ask`] it CUTS before it uploads: `align::ask_span` writes the window's scratch note and
-/// hands over only the clip's name, so the plan that says which seconds this window is lives in that
-/// note. Uploading a file nobody cut would ask the aligner about audio that was never sent.
 pub fn align_ask<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
@@ -525,9 +443,6 @@ pub fn align_ask<'a>(
     }
 }
 
-/// One align window's cut arguments, read back from the `.plan` [`crate::align`] wrote beside it —
-/// the same two-line file format as an ASR chunk's note, under `align/` instead of `asr/`. A missing
-/// note is an error naming its path: the note is what proves this clip is the window being asked about.
 fn align_plan(tree: &Option<Tree>, source: &str, clip: &str) -> Result<Vec<String>, String> {
     let dir = match tree {
         Some(tree) => tree.align_scratch(source),
@@ -553,19 +468,6 @@ fn align_plan(tree: &Option<Tree>, source: &str, clip: &str) -> Result<Vec<Strin
 }
 
 /// The diarization scan [`crate::transcribe::run`] wants: nothing in but this source's turns out.
-///
-/// The window is not chosen here — [`crate::diar_scan::run`] walks §2's 90 → 45 → 25 s ladder and asks once
-/// per window on the recording, which is why [`diar_window_ask`] takes the span it is being asked about
-/// rather than assuming the whole file. One request per window is also what makes an answer mean anything: a
-/// server sent two windows at once has no reason to call the same person `SPEAKER_01` twice. §6's scan needs
-/// a second door as well — the pass-2 window, cut with the anchor in front of it — and both are the same
-/// request over a different span of `voice16k.wav`.
-///
-/// The lines the walk says (§6's `finding voices i/n`, the anchor line, `placing speakers i/n`, and the
-/// no-voice line) come back in the `Passage` the caller prints, appended in [`transcribe_source`] the same
-/// way the aligner's sentences are: this closure is one of the arguments to that same call, so it cannot
-/// also hold the sink the call writes through. The files say what was decided; these lines say how far the
-/// scan had got when it decided it, which is what a resumed run is read against.
 pub fn diar_scan<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
@@ -592,12 +494,6 @@ pub fn diar_scan<'a>(
     }
 }
 
-/// One pass-2 request: the anchor's own pieces followed by this span's seconds, cut from the same decode and
-/// sent as one file, because that is the shape the answer is counted in. The turns come back on THAT file's
-/// clock (the anchor at zero): [`crate::diar_scan`] measures the claims against the anchor and moves what lies
-/// past it onto the recording's clock itself. The first rewrite cut one stretch starting anchor-length before
-/// the span instead (`-ss -12` for the first span, 65..67.5 s for a span at 77 s), so the server never heard
-/// the anchor, and a silent stretch it was sent by mistake failed Prepare.
 pub fn placement_ask(
     tree: &Option<Tree>,
     paths: &crate::settings::Paths,
@@ -638,11 +534,6 @@ fn joined_plan(pieces: &[(f64, f64)]) -> Vec<String> {
 }
 
 /// The diarization turns [`crate::transcribe::run`] wants: nothing in but this source's turns out.
-///
-/// The window is not chosen here — [`crate::diar_scan::run`] walks §2's 90 → 45 → 25 s ladder and asks once
-/// per window on the recording, which is why this closure takes the span it is being asked about rather than
-/// assuming the whole file. One request per window is also what makes an answer mean anything: a server sent
-/// two windows at once has no reason to call the same person `SPEAKER_01` twice.
 pub fn diar_window_ask<'a>(
     tree: &'a Option<Tree>,
     paths: &'a crate::settings::Paths,
@@ -682,9 +573,6 @@ fn diar_file_ask(
     chunk: &str,
     plan: &[String],
 ) -> Result<Vec<Turn>, String> {
-    // The scratch note records the request the way the door spells every other one, so a failed window
-    // is comparable against its audio without asking again — the same file `asr_ask` reads back.
-    // The path in it is the chunk's own name: nothing has been uploaded yet at this point.
     let note = serde_json::json!({ "audio": chunk, "language": "" });
     // The diarizer's windows live in `diar/`, not beside the ASR's chunks: `asr::run` clears `asr/`
     // when it succeeds, so a window left in there would outlive every stage's cleanup.
@@ -733,20 +621,6 @@ pub fn diar_ask<'a>(
 }
 
 /// The `asr` [`crate::transcribe::run`] wants: this source's `words.json` document out.
-///
-/// The recording is chunked, not uploaded whole: `crate::asr::run` decides the pieces (60 s on the qwen3
-/// family, 300 s elsewhere, halved on an out-of-memory answer — §F1.3 S1) and hands each piece's file name
-/// to [`asr_ask`], which cuts, uploads and dials it. One request for a two-hour take would be a request for
-/// a two-hour decode on the server.
-///
-/// `silences` are §F1.4 S2's quiet stretches, measured once by the caller over `voice16k.wav`: a cut that
-/// lands inside one costs nothing, while one mid-sentence puts a word across two requests.
-///
-/// `log` is the dial's sink: the chunking flow has two things worth saying out loud (a halved ceiling, an
-/// empty transcript) and they arrive in the outcome rather than in the words. Eight arguments because the
-/// ask needs all of them to name one request — the tree, the endpoint's settings, the recording, its model
-/// and language, its length and its silences — so the count stays rather than growing a struct no caller
-/// fills any more honestly.
 #[allow(clippy::too_many_arguments)]
 pub fn transcribe_asr<'a, L>(
     tree: &'a Option<Tree>,
@@ -772,10 +646,6 @@ where
             silences,
             asr_ask(tree, paths, source, model, language),
         )?;
-        // §F1.4 S1 and S4 say things the user has to see — "no room for that much audio", "no speech
-        // found" — and they live in the outcome, not in the words. Dropping them made a halved ceiling and
-        // an empty transcript both look like a silent success, so they go to the door's log sink the way
-        // `separate_run::run_task` hands over its own.
         for line in &outcome.logs {
             log(line);
         }
@@ -791,15 +661,6 @@ where
     }
 }
 
-/// The envelope a separation request carries. §5 lists no body for it, so this is a decision written
-/// down: the same envelope every task run takes (`{"model","request"}`) with the recording's server
-/// path and the chunk the split is asked for, since a stems task answers with stem paths for the audio
-/// it was given and nothing else.
-///
-/// Public because the run path ([`crate::separate_run`]) puts a decoded recording on the server before
-/// it asks: the thing a task may name is always an upload's answer, so the split needs the upload and
-/// its envelope from the same door, and naming it in one place keeps the two halves of the request
-/// describing the same bytes.
 pub fn separation_body(model: &str, audio: &ServerPath, chunk: &str) -> Value {
     serde_json::json!({
         "model": model,
@@ -807,16 +668,9 @@ pub fn separation_body(model: &str, audio: &ServerPath, chunk: &str) -> Value {
     })
 }
 
-/// The keys that name the speech half and everything else, however the model spelled them. A reply may
-/// also answer one of them with an ARRAY of files (`{"rest": ["/u/a.wav", "/u/b.wav"]}`), which is a
-/// rest made of more than one file rather than a mistake.
 const VOICE_KEYS: [&str; 2] = ["voice", "vocals"];
 const REST_KEYS: [&str; 4] = ["rest", "accompaniment", "nonvoice", "instrumental"];
 
-/// What one chunk's separation reply gave back: which stem holds the speech (or `None` when the chunk
-/// was silence, which is what makes S6's loudness rule meaningful), where each voice file lives on the
-/// server, and where every other file does — in order, because a multi-stem answer's rest is their sum
-/// and the order is the only thing that keeps them from being mixed twice.
 #[derive(Debug)]
 pub struct ChunkStems {
     pub voice: Option<usize>,
@@ -825,17 +679,6 @@ pub struct ChunkStems {
 }
 
 /// Read one chunk's stems out of a tasks-run reply, however the model spelled them.
-///
-/// Three shapes are accepted, all of them real answers a local server gives:
-/// * `{"voice": ..., "rest": ...}` — the two-way answer [`stem_paths`] already reads;
-/// * `{"stems": [{"name": "vocals", "path": ...}, ...]}` — a RoFormer's named set;
-/// * a flat object whose values are paths (`{"drums": ..., "bass": ..., "other": ..., "vocals": ...}`)
-///   — HTDemucs, four stems, no names field.
-///
-/// A name counts as the voice when it contains `voice` or `vocal`; everything else is rest. Silence is
-/// `voice: null`/absent-with-no-voices, and a reply that carries NO paths at all is an error naming the
-/// reply, never an empty answer: a chunk that came back with nothing in it is not a chunk that heard
-/// nothing (the same rule [`asr_answer`] applies to its text).
 pub fn chunk_stems(body: &Value) -> Result<ChunkStems, String> {
     let reply = answer(body);
     let mut voices: Vec<ServerPath> = Vec::new();
@@ -871,14 +714,8 @@ pub fn chunk_stems(body: &Value) -> Result<ChunkStems, String> {
             }
         }
     } else {
-        // Flat object: pairs in the reply's own order, keys kept for the voice test. The named loop
-        // below is what fills the lists from a `"stems"` array; a bare `"voice"`/`"rest"` pair goes
-        // through `push_paths`, which also accepts an ARRAY of files for one half.
         if let Some(map) = reply.as_object() {
             for (key, value) in map {
-                // Only a key that MEANS one of the halves is read as such; an HTDemucs object's `other`
-                // is an instrument name on the same footing as `drums` and `bass`, so it stays in the
-                // named loop below rather than being claimed here.
                 if VOICE_KEYS.contains(&key.as_str()) {
                     push_paths(value, &mut voices);
                     continue;
@@ -908,8 +745,6 @@ pub fn chunk_stems(body: &Value) -> Result<ChunkStems, String> {
         voice_index = voices.first().map(|_| 0);
     }
     if voices.is_empty() && rests.is_empty() {
-        // A reply with no paths is either silence or a shape nobody recognised, and only one of those is
-        // normal: a reply that looks like a mistake is shown, not swallowed.
         let looks_silent = reply.get("voice").is_some()
             || reply.get("silence").and_then(Value::as_bool) == Some(true);
         if !looks_silent {
@@ -957,8 +792,6 @@ pub fn upload_bytes(
 ) -> Result<ServerPath, String> {
     let endpoint = services::endpoint_for(paths, Server::Audio, |env| std::env::var(env).ok());
     let cancelled = crate::cancel_leg::cancel_check_now();
-    // The file goes up as its own bytes. It once went through `String::from_utf8_lossy`, which swaps every byte
-    // that is not UTF-8 for a three-byte U+FFFD: audio.cpp answered "invalid WAV RIFF header" to the result.
     let payload = bytes;
     let base = server_leg::base_row(Server::Audio, "", Kind::Upload.method(), "", "upload", name);
     let reply = match tree {
@@ -1015,13 +848,6 @@ fn scratch_dir() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_default().join("scratch")
 }
 
-/// The scratch note the flow modules keep (`plan` plus the body, so a failed chunk is comparable
-/// against its audio without asking again) — the same file `asr::make_scratch` writes, written here
-/// because this door is the half that actually runs.
-///
-/// Public for the one test that drives [`asr_ask`] on its own: in the program the note is always written
-/// by `asr::run_at` immediately before it asks, and a test that calls the ask directly has to stand in for
-/// that writer. It is not a seam the program substitutes — the cut, upload and dial are the real ones.
 pub fn write_scratch_for_test(
     tree: &Option<Tree>,
     source: &str,
@@ -1046,9 +872,6 @@ fn write_scratch(
     write_scratch_at(&dir, file, plan, body)
 }
 
-/// The note itself, wherever the calling stage keeps its scratch. Each stage names its own folder
-/// (`asr/`, `align/`, `diar/`) because a stage's cleanup deletes exactly that folder — a window written
-/// into another stage's scratch is a file nobody ever removes.
 fn write_scratch_at(
     dir: &Path,
     file: &str,
@@ -1061,9 +884,6 @@ fn write_scratch_at(
         .map_err(|why| format!("{}: {why}", dir.join(file).display()))
 }
 
-/// Read one chunk's scratch note back: ffmpeg's cut arguments on the first line, the request body on the
-/// second — the file format [`write_scratch`] and `asr::make_scratch` both write. The door needs the plan
-/// because that is the only place a chunk's span is recorded for whoever runs the cut.
 fn read_scratch(
     tree: &Option<Tree>,
     source: &str,
@@ -1092,10 +912,6 @@ fn read_scratch(
     Ok((plan, lines.next().unwrap_or_default().to_string()))
 }
 
-/// The same rule for a door built without a session handle: name the folder the stage keeps its scratch
-/// in, and the cut lands there anyway. `transcribe_source` holds the tree but hands its closures an
-/// `Option<Tree>` clone, so without this the ASR's chunks would fall outside every stage's folder and
-/// outside the session — invisible to the cleanup that is supposed to keep them.
 fn scratch_folder(
     tree: &Option<Tree>,
     fallback: impl FnOnce(&Tree) -> std::path::PathBuf,
@@ -1106,19 +922,12 @@ fn scratch_folder(
     }
 }
 
-/// ffmpeg's cut of one chunk from a named input, through the same spawn path the run's stages use so a
-/// failure names the tool and its tail. `Err` when the output is not there afterwards: a decode that
-/// produced nothing is not an upload, and naming the file is the useful half of that sentence.
 fn cut_from(
     paths: &crate::settings::Paths,
     input: &Path,
     plan: &[String],
     out: &Path,
 ) -> Result<(), String> {
-    // `-ss` goes AFTER the input on purpose: the door cuts `voice16k.wav`, which §F1.3 S1 decoded to pcm,
-    // and a seek before the input is exact only for formats with an index. Here it must be exact — a chunk
-    // whose start is a keyframe away would have its word times shifted by the difference, and `asr::shift`
-    // trusts the span the scratch note recorded.
     let mut args = vec!["-i".to_string(), input.to_string_lossy().into_owned()];
     args.extend(plan.iter().cloned());
     args.push("-y".to_string());
@@ -1144,10 +953,6 @@ pub fn ffmpeg_program(paths: &crate::settings::Paths) -> String {
     trimmed.to_string()
 }
 
-/// Prepare's speech stage for one recording: `crate::transcribe::run`, with every closure it asks for
-/// supplied from real dials — ASR, diarization, and the aligner chosen by task off the server's own
-/// list (§1: “an aligner is chosen by task, not id”). This is what a ▶ Prepare press reaches for each
-/// recording row; before it the stage logged its intent and asked no server.
 pub fn transcribe_source(
     tree: &Tree,
     paths: &crate::settings::Paths,
@@ -1159,11 +964,6 @@ pub fn transcribe_source(
     let conf = crate::settings::read(paths).unwrap_or_default();
     let asr_model = services::asr_model(&conf).to_string();
     let diar_model = services::diar_model(&conf).to_string();
-    // §F1.5 S1: a configured aligner the box does not declare is NOT replaced and NOT fatal. Cut points
-    // come off the waveform either way, so the id is left in the box, the reason is said, and the pass
-    // goes on with the ASR's own times. `align::not_served` already spells that sentence, so the `Err`
-    // is logged rather than raised; the url comes from the settings, not a `""`, or the line would say
-    // which server refuses without naming it.
     let endpoint = services::endpoint_for(paths, Server::Audio, |name| std::env::var(name).ok());
     let models = catalog(&Some(tree.clone()), paths, "align")?;
     let aligners = match crate::align::aligners(&conf.align_model, &endpoint.url, &models) {
@@ -1179,8 +979,6 @@ pub fn transcribe_source(
     let diar_lines: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
     // §F1.4 S2/§F1.5 S2: the quiet stretches of THIS recording, measured once and handed to both
     // chunking steps so one definition of "quiet" moves both the ASR's cuts and the aligner's windows.
-    // A detector that is not there or fails outright is not a failure: no silences only means every cut
-    // lands on the clock, which is what `asr::cut_points` says an empty list means.
     let silences = crate::separate_media::spans(
         &crate::separate_media::program(&conf.ffmpeg),
         &tree.voice16k_wav(source),
@@ -1191,10 +989,6 @@ pub fn transcribe_source(
     // calls the ASR first, so whichever were moved would leave the other holding nothing.
     let silences_ref: &[crate::asr::Silence] = &silences;
     let held_ref = &held;
-    // S4 is only knowable after S3 wrote `words.json`: the aligner places THIS pass's words, so the
-    // decision arrives as a closure over the words the pass hands back rather than as a value decided
-    // before anything was transcribed. `align::run` writes `words.aligned.json` itself; this only says
-    // whether it answered, and `Failed` keeps the server's own sentence (§Failure-is-specific).
     let align = |doc: &crate::requests::WordsDoc| match aligners.first() {
         None => crate::transcribe::Align::None,
         Some(_) => {
@@ -1232,19 +1026,11 @@ pub fn transcribe_source(
         ),
         diar_ask(&held, paths, source, &diar_model, duration, &diar_lines),
     )?;
-    // `speech_stage` prints `passage.logs` in order after this returns, so appending here puts the
-    // aligner's own sentences (S1's picker line, S6's bare-seconds warning) and the diarizer's scan
-    // lines (§6's counts and the anchor line) in the run's log without either closure ever touching the
-    // sink: each returns one value, and `&mut log` belongs to the ASR closure it shares the call's borrow
-    // scope with.
     passage.logs.extend(align_lines.borrow().iter().cloned());
     passage.logs.extend(diar_lines.borrow().iter().cloned());
     Ok(passage)
 }
 
-/// Where a recording row's `source` word comes from: its file name minus the extension, the same
-/// rule `prepare_run::lane` and `frames.rs` use, so the folders this door writes are the ones every
-/// later step reads.
 pub fn source_lane(path: &str) -> String {
     let base = path.rsplit('/').next().unwrap_or(path);
     base.split_once('.')
@@ -1253,8 +1039,6 @@ pub fn source_lane(path: &str) -> String {
 }
 
 /// The server path a task is asked about, from the file name the flow module chose.
-///
-/// A reply body that is not JSON is a protocol disagreement, said as one with the reply quoted.
 fn parse_json(body: &str) -> Result<Value, String> {
     serde_json::from_str(body).map_err(|_| {
         format!(

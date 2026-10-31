@@ -15,8 +15,6 @@ use crate::ui::settings;
 use crate::ui::window::SESSION;
 use crate::ui::window_doors::find_widget_by_name;
 
-/// F0.13: the gear opens the Settings dialog over this window. Nothing is decided here — the rows,
-/// their badges and Test All live in [`settings`], and every pass rule lives in [`crate::checks`].
 pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
     button.connect_clicked(move |_| {
@@ -24,16 +22,11 @@ pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindo
     });
 }
 
-/// The live policy this window's session holds — the same `Rc` Open/Rescan write, read through the
-/// newest slot like [`session_sources`] does. Every reader of the live policy — the pass gates,
-/// `get_context`, the tests — goes through this rather than the thread-local.
 pub fn session_policy(window: &adw::ApplicationWindow) -> crate::project::Policy {
     let _ = window;
     live_session_policy()
 }
 
-/// [`session_policy`] without needing a window handle: a flow that may run with no shell open (a tool call
-/// made headless) reads the live policy through this.
 pub fn live_session_policy() -> crate::project::Policy {
     // A run's worker holds no window session: it reads the policy the run saved before its first stage
     // (F1.1 S2), which is the one it runs under.
@@ -73,10 +66,6 @@ pub(crate) fn write_policy_field(
 }
 
 /// Put a value, source and reason on one policy field of this window's live session.
-///
-/// Goes through `policy::apply`, so what lands is exactly what the derivation path would have written; the
-/// caller may override the origin afterwards. The program's own writers are the derivation and
-/// `tool:set_policy`, both of which reach the same door through [`policy::apply`].
 pub fn set_session_policy_field(
     window: &adw::ApplicationWindow,
     field: &str,
@@ -113,9 +102,6 @@ type PolicySenders = std::cell::RefCell<
 >;
 
 thread_local! {
-    /// Who answers a derivation's request, newest last — the same newest-slot rule as
-    /// [`WINDOW_SHELLS`]. Injected rather than hard-wired to the HTTP layer so the whole of F0.7 S2-S4
-    /// is testable with no server: a check installs a stub here and drives the real ⚙.
     static POLICY_SENDERS: PolicySenders = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -126,38 +112,23 @@ thread_local! {
 }
 
 thread_local! {
-    /// The pending debounced derivation, so a burst of keystrokes replaces one timer instead of
-    /// queueing one per letter. `policy::DEBOUNCE_MS` is the wait; without this slot every keystroke
-    /// would fire its own request and the last few would race.
     static POLICY_DEBOUNCE: std::cell::RefCell<Vec<glib::SourceId>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// The newest window this process built. The run-bar handler is wired before the handle is in scope at
-/// the call site, so it reads the window back from [`POLICY_WATCH_WINDOW`] — the same newest-slot rule
-/// every other per-window piece here uses. Panics for a caller that cannot legitimately run outside a
-/// window; a door a headless flow can reach takes [`built_window`] instead.
 pub fn main_window() -> adw::ApplicationWindow {
     built_window().expect("a policy request happens inside a built window")
 }
 
-/// [`main_window`] without the promise: `None` when this thread has never built a window. A door a
-/// headless flow can reach (a chat call made with no shell open) reads through this instead, because a
-/// log line is never a reason to fail the thing that wrote it.
 pub fn built_window() -> Option<adw::ApplicationWindow> {
     POLICY_WATCH_WINDOW.with(|watch| watch.borrow().clone())
 }
 
 thread_local! {
-    /// The window the bench's User Context editor belongs to, newest last. The bench is built before
-    /// the window handle reaches `wire_*`, so its keystroke hook reads the window back from here —
-    /// the same newest-slot rule as [`POLICY_TRACKERS`].
     pub(crate) static POLICY_WATCH_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// Install the answer used by later derivations in this process (a test seam). Newest wins, so a
-/// check can put its own model in front of whatever `build_window` installed.
 pub fn set_policy_sender_for_tests(
     sender: impl FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal> + 'static,
 ) {
@@ -185,8 +156,6 @@ pub fn set_session_context(window: &adw::ApplicationWindow, text: &str) {
     }
 }
 
-/// Whether this window's policy still matches its User Context (F0.7's "changed" question, published
-/// so a widget test asserts the same fact the ▶ path acted on).
 pub fn policy_is_current(window: &adw::ApplicationWindow, context: &str) -> bool {
     let _ = window;
     POLICY_TRACKERS
@@ -194,9 +163,6 @@ pub fn policy_is_current(window: &adw::ApplicationWindow, context: &str) -> bool
         .is_some_and(|tracker| !tracker.borrow().needs_derive(context))
 }
 
-/// The live answer a derivation dials through: the real HTTP leg, with the session's policy handed to it
-/// so `get_context` answers with the fields as they stand. `set_policy_sender_for_tests` still wins when
-/// a check installs one (newest-slot), which is how the widget tests keep injecting.
 fn live_policy_answer(
     req: &policy::DerivationRequest,
     refusals: &[String],
@@ -207,12 +173,6 @@ fn live_policy_answer(
     crate::policy_call::answer(req, refusals)
 }
 
-/// Derive this window's editing policy from its User Context now (F0.7 S1-S4), and drop the marks a
-/// changed `markingPass` invalidates.
-///
-/// Thin on purpose: every rule is `policy::derive`'s. This reads the two things the rule needs (the
-/// context, the live policy), sends them through the installed answer, records the result on the
-/// tracker, and lets the caller print `Derived::status()` where it belongs.
 pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
     let context = user_context(window);
     let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
@@ -229,14 +189,10 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
     finish_derivation(&session, policy, derived, &context)
 }
 
-/// Whether a test has put its own answerer in place of the policy model: that one answers at once, so the ▶ door
-/// derives on the window thread with it; the live model is asked on the run's worker ([`apply_derivation`]).
 pub(crate) fn answerer_installed() -> bool {
     POLICY_SENDERS.with(|senders| !senders.borrow().is_empty())
 }
 
-/// The ▶ door's derivation, made on the run's worker and taken back here: the same second half
-/// [`derive_policy`] runs, and the same line the door says.
 pub(crate) fn apply_derivation(
     policy: crate::project::Policy,
     derived: policy::Derived,
@@ -251,8 +207,6 @@ pub(crate) fn apply_derivation(
     }
 }
 
-/// The derivation's second half, on the GTK thread: the derived policy lands on the session, what it decided
-/// is said, the tracker remembers the context, and the marks a changed `markingPass` invalidates go.
 fn finish_derivation(
     session: &Rc<RefCell<crate::project::Project>>,
     policy: crate::project::Policy,
@@ -270,7 +224,6 @@ fn finish_derivation(
     }
     // S4: every value this derivation stored is said with its field, value and `because`, so what the model
     // decided is visible without a form to open — §12's policy decisions are made "visibly in the log".
-    // Printed before the run bill so the log reads "what changed" then "what it cost".
     for line in policy::derived_log(&derived, &session.borrow().policy) {
         crate::ui::window::log_line(&line);
     }
@@ -279,7 +232,6 @@ fn finish_derivation(
     }
     // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
     // what stops every ▶ from re-asking about a context nobody intends to fill.
-    // A model that could not be reached answered nothing: the next ▶ asks again.
     if let Some(tracker) = POLICY_TRACKERS
         .with(|trackers| trackers.borrow().last().cloned())
         .filter(|_| !derived.model_fault)
@@ -312,8 +264,6 @@ fn finish_derivation(
     derived
 }
 
-/// Queue one debounced derivation (F0.7's "debounce"). Called from the User Context editor on every
-/// keystroke; a pending one is cancelled first, so typing a paragraph costs one request.
 pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
     let held = window.clone();
     POLICY_DEBOUNCE.with(|pending| {
@@ -346,14 +296,9 @@ fn say_status(window: &adw::ApplicationWindow, derived: &policy::Derived) {
 }
 
 thread_local! {
-    /// The newest debounced derivation: an older one's answer is dropped when it lands, because the context it
-    /// was asked about is no longer the one on the page.
     static DERIVE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// F0.7's debounced derivation, its model call on a worker. The session's policy and context are read here;
-/// the worker derives and hands back the policy, the outcome and its own log lines; the answer lands only if
-/// it is still the newest and the context is still the one asked about.
 fn derive_in_background(window: &adw::ApplicationWindow) {
     let context = user_context(window);
     let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
@@ -395,9 +340,6 @@ fn derive_in_background(window: &adw::ApplicationWindow) {
     });
 }
 
-/// §F0.7's ⓘ (header badge 6): a button whose whole job is its tooltip — the shown tab's label and help
-/// text, kept in sync by `paint_readouts`. It has no window of its own to open: F0.7 ends with "There is no
-/// policy form", so the ⓘ is inert on press and the policy is read where it is said — the log.
 pub(crate) fn wire_policy(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let _ = (button, window);
 }

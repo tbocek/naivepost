@@ -1,35 +1,23 @@
 //! F6.2 §3's live half: the patience every chat ask rides.
 //!
-//! [`crate::llm_retry`] holds §3's rules as pure functions and `tests/suite/llm_retries_f6_2.rs` pins them; this is
-//! the door that puts them on the wire. Before it, every chat ask dialled once and failed on the first error, so
-//! a container restart cost the step even though the ladder exists to sit through exactly that. Now an LLM ask
-//! goes through [`chat`]: a call that died in transit waits 5 s → 20 s → 1 min → 2 min → 4 min and asks the
-//! IDENTICAL request again; anything that got an answer — a 4xx, a plain 5xx, an unusable reply — gets the one
-//! short retry after 2 s, first failure only.
+//! [`crate::llm_retry`] holds §3's rules as pure functions; this puts them on the wire through [`chat`]: a
+//! call that died in transit waits 5 s → 20 s → 1 min → 2 min → 4 min and asks the IDENTICAL request again;
+//! anything that got an answer gets one short retry after 2 s, first failure only.
 //!
 //! # What counts as which
 //!
-//! `server_leg` returns a 4xx/5xx as `Ok(Sent)` (it sets `http_status_as_error(false)` so the caller can read
-//! the server's own message beside the status), so the door turns `!sent.ok()` into a failure of the loop and
-//! classifies it there: a 5xx whose body names a device or memory failure backs off like a death (§3's NEW
-//! rule — an out-of-memory is the box having no room yet, which is what a wait fixes), and every other status
-//! takes the short retry. A `Sent` with a 2xx is an answer whatever its content says: whether the JSON parses is
-//! the caller's question, and a rejected ANSWER has its own counters (`roles::LLM_ATTEMPTS`,
-//! `seam_retries`, `cut_captions::retries`) which this door does not touch — those count refusals of answers,
-//! this counts failures of the call.
+//! `server_leg` returns a 4xx/5xx as `Ok(Sent)`, so the door turns `!sent.ok()` into a failure and classifies
+//! it: a 5xx whose body names a device or memory failure backs off like a death (§3), every other status takes
+//! the short retry. A 2xx is an answer whatever its content; rejected ANSWERS have their own counters
+//! (`roles::LLM_ATTEMPTS`, `seam_retries`, `cut_captions::retries`) which this door does not touch.
 //!
-//! One decision worth stating, because §3 and §02-services pull opposite ways: a failure where the request never
-//! reached a server that had ever answered — connection refused or unreachable at connect time, which is what
-//! `server_leg::down`'s "is not answering" wording carries — rides the ladder. §3 lists "refused" among the
-//! death words outright, and the reason it gives is the reason that fits: the restart policy leaves the port
-//! closed while weights load, so refusing to wait would spend the step on a server that is fine by the time
-//! anyone looks. The prototype did the same (`llmGone` matches `ECONNREFUSED`).
+//! A connection refused or unreachable at connect time (`server_leg::down`'s "is not answering") rides the
+//! ladder too: the restart policy leaves the port closed while weights load (§3 lists "refused" outright).
 //!
 //! # Cancellable
 //!
-//! The wait is [`nap`], which polls the session's cancel switch, so ⏹ ends a four-minute wait instead of
-//! turning the button into decoration for eight minutes. A stopped run reports itself through `Run::stopped`;
-//! the caller sees the last failure as the error, because nothing arrived to say otherwise.
+//! The wait is [`nap`], which polls the session's cancel switch, so ⏹ ends a four-minute wait. A stopped run
+//! reports itself through `Run::stopped`; the caller sees the last failure as the error.
 
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -42,16 +30,13 @@ use crate::requests::Request;
 use crate::server_leg::{self, Sent};
 use crate::services::{Endpoint, Kind};
 
-/// How long [`nap`] sleeps per slice. `cancel_leg::POLL` is private to that module; the number is repeated here
-/// rather than made public because a wait this coarse gains nothing from a tighter poll, and 50 ms is well inside
-/// a blink against a five-second floor.
+/// How long [`nap`] sleeps per slice. `cancel_leg::POLL` is private; 50 ms is plenty against a five-second floor.
 const NAP_POLL: Duration = Duration::from_millis(50);
 
 /// Wait `seconds`, giving up the moment ⏹ lands. True = the whole wait happened; false = the run was stopped.
 pub fn nap(seconds: u64) -> bool {
     let left = nap_duration(seconds);
-    // One deadline read fresh each slice, so a thread that got no timeslice for a second cannot make the wait
-    // longer or shorter than it was asked.
+    // One deadline read fresh each slice, so a starved thread cannot make the wait longer or shorter.
     let started = Instant::now();
     while started.elapsed() < left {
         if cancel_leg::cancelled() {
@@ -59,14 +44,12 @@ pub fn nap(seconds: u64) -> bool {
         }
         std::thread::sleep(NAP_POLL.min(left - started.elapsed()));
     }
-    // A stop landing in the last slice still counts as stopped: the caller must not report a server problem for
-    // a run the user ended.
+    // A stop landing in the last slice still counts as stopped: do not report a server problem for a run the user ended.
     !cancel_leg::cancelled()
 }
 
-/// How long a §3 wait actually takes. `NAIVEPOST_RETRY_SCALE` divides it, which is how a live test sits through the
-/// whole 5 s → 4 min ladder in seconds; the log keeps naming the SECONDS §3 spells, because that is the truth about
-/// the patience, and only the wall time shrinks. Unset in every real run, where a wait is a wait.
+/// How long a §3 wait actually takes. `NAIVEPOST_RETRY_SCALE` divides it so a live test can sit through the
+/// ladder in seconds; the log still names the SECONDS §3 spells. Unset in every real run.
 fn nap_duration(seconds: u64) -> Duration {
     let scale = std::env::var("NAIVEPOST_RETRY_SCALE")
         .ok()
@@ -76,16 +59,15 @@ fn nap_duration(seconds: u64) -> Duration {
     Duration::from_millis(seconds * 1000 / scale)
 }
 
-/// Either leg's failure, unified so one loop can hold both. `run` needs `Display` on it and a closure that says
-/// which patience applies; the status and body ride along rather than being folded into a string, so §3's device
-/// rule is applied to the real status instead of to a guess about one (`llm_retry::status_of` exists for text
-/// that only *names* a status, which a `Sent` no longer is).
+/// Either leg's failure, unified so one loop can hold both. The status and body ride along (not a string) so
+/// §3's device rule is applied to the real status.
 enum Failure {
-    /// The socket died: `server_leg`'s own wording, naming the server and the address.
     Gone(String),
-    /// The server answered with a status this app cannot use.
-    Status { status: u16, body: String },
-    /// ⏹ landed before this attempt was dialled: not a server problem at all, and no patience applies to it.
+    Status {
+        status: u16,
+        body: String,
+    },
+    /// ⏹ landed before this attempt was dialled: not a server problem, and no patience applies.
     Stopped,
 }
 
@@ -115,20 +97,16 @@ impl Failure {
 
 /// Endpoints that have answered at least once since the app started.
 ///
-/// §3's ladder is for a server that "went away mid-call", and its own log line says exactly that: a container
-/// restart caught mid-reply, coming back through its weights load. A connection REFUSED by an endpoint this app
-/// has never once got a reply from is a different thing — §02-services#1's "a service that is down gives an
-/// error" — and sitting 5 s + 20 s + 1 min + 2 min + 4 min in front of it would hold a run for eight minutes over
-/// a box nobody started. So the ladder is gated on having been answered before: refused-with-no-history takes §3's
-/// short patience instead, which still asks the identical request once more and then reports the server as down.
-/// The word list in [`llm_retry::transport_death`] is unchanged by this — it classifies what the words say; this
-/// table knows whether there was ever a call to go away from.
+/// §3's ladder is for a server that "went away mid-call". A connection REFUSED by an endpoint that never
+/// replied (§02-services#1's "a service that is down gives an error") would otherwise hold a run for eight
+/// minutes over a box nobody started, so the ladder is gated on having been answered before; refused with
+/// no history takes the short patience and then reports the server as down.
 fn answered_once() -> &'static Mutex<std::collections::HashSet<String>> {
     static ANSWERED: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
     ANSWERED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
 }
 
-/// Has this endpoint ever answered? A poisoned lock means a check panicked mid-call; the table is still ours to read.
+/// Has this endpoint ever answered? A poisoned lock only means a check panicked mid-call; the table is still ours.
 fn has_answered(endpoint: &str) -> bool {
     answered_once()
         .lock()
@@ -138,26 +116,20 @@ fn has_answered(endpoint: &str) -> bool {
 
 /// Note that this endpoint answered, so a later death of it counts as mid-call.
 ///
-/// Public because the table is process-wide and keyed by URL: a wire test that wants its OWN fresh port to have
-/// mid-call history would otherwise have to earn it with an answered call on the very fake that is scripted to die,
-/// which changes what that fake is testing. Nothing outside a test should call it.
+/// Public because the table is process-wide, keyed by URL: a wire test wanting mid-call history on its own
+/// port would otherwise need an answered call on the very fake scripted to die. Only tests should call it.
 pub fn note_answer(endpoint: &str) {
     if let Ok(mut seen) = answered_once().lock() {
         seen.insert(endpoint.to_string());
     }
 }
 
-/// Forget that this endpoint ever answered, so a later death of it reads as "a box nobody started" again.
+/// Forget that this endpoint ever answered; the mirror of [`note_answer`].
 ///
-/// The mirror of [`note_answer`], for the other half of the same race. The table is process-wide and keyed by
-/// URL, and a test's dead server sits on an EPHEMERAL port: an earlier scenario in the same binary may have been
-/// ANSWERED on that number before its listener was released, so `has_answered` can come back true for a wire
-/// this scenario has never dialled — and §3's ladder, which should cost nothing here, is spent instead (three
-/// rows where two were promised). A scenario that means "a server this app has never heard from" says so here
-/// instead of depending on which port number the OS happened to hand out.
+/// The table is process-wide and a test's dead server sits on an EPHEMERAL port that an earlier scenario in
+/// the same binary may have been answered on, which would spend §3's ladder where it should cost nothing.
 ///
-/// Named `_for_test` because nothing in the program calls it: an endpoint that answered keeps its mid-call history
-/// for the life of the run, which is the point of the table, so only a proof needs it wiped.
+/// Named `_for_test` because only a proof needs it: an endpoint that answered keeps its history for the run.
 pub fn forget_answer_for_test(endpoint: &str) {
     if let Ok(mut seen) = answered_once().lock() {
         seen.remove(endpoint);
@@ -166,19 +138,10 @@ pub fn forget_answer_for_test(endpoint: &str) {
 
 /// Ask the LLM for one chat turn and keep asking until it answers, the patience runs out, or ⏹ says otherwise.
 ///
-/// This is the door every chat ask should go through: it writes its timed row per dial (so a retried call leaves
-/// one row per request, §09 §10), logs each wait as §3 spells it, and hands back the `Sent` unchanged so the
-/// caller keeps reading its own answer through `llm_request::reply_from`. `step` names the job in the log line
-/// (§3's `>>> <step>` / `!!! <step>` prefix). The waits are [`llm_retry::BACKOFF_SECONDS`] — 5 s to 4 min,
-/// cancellable — which is long by design: the container has to stop, come back and read its weights before it
-/// can answer again.
-///
-/// This is the door every chat ask should go through: it writes its timed row per dial (so a retried call leaves
-/// one row per request, §09 §10), logs each wait as §3 spells it, and hands back the `Sent` unchanged so the
-/// caller keeps reading its own answer through `llm_request::reply_from`. `step` names the job in the log line
-/// (§3's `>>> <step>` / `!!! <step>` prefix). The waits are [`llm_retry::BACKOFF_SECONDS`] — 5 s to 4 min,
-/// cancellable — which is long by design: the container has to stop, come back and read its weights before it
-/// answers anything.
+/// The door every chat ask goes through: it writes a timed row per dial (§09 §10), logs each wait as §3
+/// spells it, and returns the `Sent` unchanged for `llm_request::reply_from`. `step` names the job in the
+/// log line (§3's `>>> <step>` / `!!! <step>`). The waits are [`llm_retry::BACKOFF_SECONDS`], long by design:
+/// the container has to stop, come back and read its weights.
 pub fn chat(
     step: &str,
     tree: &Tree,
@@ -191,10 +154,8 @@ pub fn chat(
     chat_on(step, tree, base, endpoint, body, cancelled, log, &nap)
 }
 
-/// The prototype's queue line needs a holder that is NOT this step. Holder names carry the per-ask `#N`
-/// suffix `slot_gate::hold` adds, so the comparison is on the step prefix; the first such holder is named,
-/// because "it was busy with <other>" reads as one cause and the log already lists every holder in §4's
-/// waiting line.
+/// A holder that is NOT this step. Holder names carry a per-ask `#N` suffix (`slot_gate::hold`), so the
+/// comparison is on the step prefix; only the first such holder is named, as the log lists every holder.
 pub fn other_holder(step: &str, holders: &[String]) -> Option<String> {
     holders
         .iter()
@@ -203,13 +164,11 @@ pub fn other_holder(step: &str, holders: &[String]) -> Option<String> {
         .map(str::to_string)
 }
 
-/// [`chat`] with the wait supplied — the seam that lets a test watch the patience without living through eight
-/// minutes of it. The program calls [`chat`], which passes §3's own ladder and [`nap`]; the argument exists so
-/// the waits are observable, not so a caller can pick its own patience.
+/// [`chat`] with the wait supplied, so a test can watch the patience without living through eight minutes.
+/// The program calls [`chat`], which passes §3's own ladder and [`nap`].
 ///
-/// Every request this door sends is filed in the run's exchange page on its way past [`dial`], which is why no
-/// chat ask has to record anything itself (§7: "recording never fails the call" — the page is written before
-/// the answer is even looked at, and a failed page only ever costs a log line).
+/// Every request is filed in the run's exchange page on its way past [`dial`], so no chat ask records
+/// anything itself (§7: "recording never fails the call").
 #[allow(clippy::too_many_arguments)]
 pub fn chat_on(
     step: &str,
@@ -221,25 +180,18 @@ pub fn chat_on(
     log: &dyn Fn(&str),
     sleep: &dyn Fn(u64) -> bool,
 ) -> Result<Sent, String> {
-    // A plain ask treats every failure as retryable: §3's patience is exactly about these.
+    // A plain ask treats every failure as retryable.
     dial(step, tree, base, endpoint, body, cancelled, log, sleep).answer
 }
 
 /// File one dialled chat call in the run's exchange page (§7), and hand its log lines to the sink the
-/// caller already writes its §3 patience lines to, so the record of the call sits beside the record of
-/// the waiting.
+/// caller writes its §3 patience lines to.
 ///
-/// Called from all three endings of a dial: answered, refused, and never answered. The last of these
-/// still belongs on the page — an exchange where the server said nothing is the one a user opens the
-/// page to find — so the call carries the failure's wording as its error and no reply at all.
+/// Called from all three endings of a dial (answered, refused, never answered); the last still belongs on the
+/// page, with the failure's wording as its error and no reply.
 ///
-/// Only a `text/event-stream` reply arrives in chunks, and every chat ask has already read them by the
-/// time this runs, so the section is filed whole rather than left open to grow.
-///
-/// `streamed` is decided by the response's own `content-type` (§9 §1: only `text/event-stream` is a
-/// stream). A stream read here has still been read to its end by this function's caller before anyone
-/// looks at the reply, so the section is closed straight away — the open-`<pre>` form §8 describes is
-/// for a caller that appends as chunks land, and none of the chat asks do that; they wait for the body.
+/// `streamed` is decided by the response's `content-type` (§9 §1: only `text/event-stream`). Chat asks read
+/// the body to its end first, so the section is closed straight away rather than left open to grow.
 #[allow(clippy::too_many_arguments)]
 fn record_dial(
     step: &str,
@@ -251,14 +203,12 @@ fn record_dial(
     log: &dyn Fn(&str),
     live: &exchange_leg::Live,
 ) {
-    // Decided by the body, not by what arrived: §9 §1 recognises a stream by the response's `content-type`, but
-    // the page's live section was opened (or not) when the request went out, and the two must agree about which
-    // calls this one. `asked_for_live` is that same decision on the request side.
+    // Decided by the body, not by what arrived: the page's live section was opened (or not) when the request
+    // went out and the two must agree. `asked_for_live` is that same decision on the request side.
     let streamed = live.asked_for_live();
     let took = started.elapsed().as_secs();
     let (reply_body, content_type, failure) = match reply {
-        // A refused status is the failure this dial ended with, in the same words `Failure::Status`
-        // prints so the page and the §3 patience lines agree about what went wrong. A 2xx has none.
+        // A refused status is the failure this dial ended with, in the words `Failure::Status` prints.
         Ok(sent) => (
             sent.body.as_str(),
             sent.content_type.as_str(),
@@ -266,14 +216,12 @@ fn record_dial(
                 .then(String::new)
                 .unwrap_or_else(|| format!("answered {}: {}", sent.status, sent.body.trim())),
         ),
-        // A call that got no reply at all still belongs on the page — it is the one a user opens the page
-        // to find — so it goes with the failure's wording and no reply.
+        // A call with no reply still goes on the page, with the failure's wording.
         Err(why) => ("", "", why.to_string()),
     };
     let problem = (!failure.is_empty()).then_some(failure);
-    // A whole stream is read back through `call_of`'s stream parser, which is what keeps the thinking and the tool
-    // calls on the finished section. A call that ended without one (refused, given up mid-stream) shows the words the
-    // hook decoded, or, with none, the body as it arrived, which for those endings is the server's own message.
+    // A whole stream is read back through `call_of`'s stream parser, which keeps thinking and tool calls on the
+    // finished section. A call that ended without one shows the words the hook decoded, or else the raw body.
     let streamed_words = live.streamed_words();
     let partial = streamed
         && !streamed_words.is_empty()
@@ -297,8 +245,7 @@ fn record_dial(
         took,
         problem.clone(),
     );
-    // A call nobody streamed ends exactly as it always did: one call files the whole exchange. For a streamed
-    // one, `live.finish` closes the section the hook was growing instead, which is §7's other ending.
+    // A streamed call is closed via `live.finish` (§7's other ending); anything else files the whole exchange.
     if streamed {
         live.finish(shown_reply, shown_type, took, problem, log);
     } else {
@@ -306,22 +253,19 @@ fn record_dial(
     }
 }
 
-/// What one dialled chat call came to: the answer, or the reason there is none, plus how many times the wire was
-/// touched — so a caller (and a test) can tell "asked once and refused" from "waited through the ladder".
+/// What one dialled chat call came to: the answer or the reason there is none, plus how many times the wire
+/// was touched, so "asked once and refused" differs from "waited through the ladder".
 pub struct Dialled {
     pub answer: Result<Sent, String>,
-    /// Requests that actually went out. §09 §10 counts one timed row per one of these.
+    /// Requests that actually went out; §09 §10 counts one timed row per one.
     pub attempts: u32,
 }
 
 /// [`chat_on`], the door itself.
 ///
-/// Two things stop here before §3's patience is applied. A 4xx whose message refuses the `tools` field is not a
-/// transient — F6.1's own next move is a DIFFERENT request (the same messages minus the field) — so that answer
-/// is handed back after a single dial rather than re-sent first; [`crate::degraded::refused_answer`] makes that
-/// call, because §1 keeps the server's message beside the status and "a 400" alone cannot tell a schema it
-/// dislikes from a broken server. And a socket death only walks the ladder when this endpoint has answered at
-/// least once (§3 says "went away MID-CALL"), see [`has_answered`].
+/// Two things stop here before §3's patience: a 4xx refusing the `tools` field is not transient (F6.1 resends
+/// without the field), so it is handed back after a single dial ([`crate::degraded::refused_answer`] decides);
+/// and a socket death only walks the ladder when this endpoint has answered before ([`has_answered`]).
 #[allow(clippy::too_many_arguments)]
 pub fn dial(
     step: &str,
@@ -334,23 +278,18 @@ pub fn dial(
     sleep: &dyn Fn(u64) -> bool,
 ) -> Dialled {
     let mut attempts = 0u32;
-    // One dial, and the answer read exactly as it arrived: no patience applied yet, so a caller that has its own
-    // next move for an answered-but-refused response (F6.1's resend-without-tools) can see it untouched.
+    // One dial, the answer read as it arrived, so a caller with its own next move (F6.1's resend-without-tools) sees it untouched.
     let mut one = || -> Result<Sent, Failure> {
         attempts += 1;
         let started = Instant::now();
-        // ⏹ between rungs: the dial never goes out, and the loop must not spend another wait on a run already over.
-        // This is the same check `server_leg` applies before sending; the ladder would otherwise keep walking after
-        // the stop with nothing left to cancel.
+        // ⏹ between rungs: the dial never goes out and the loop must not spend another wait. Same check `server_leg` applies.
         if cancelled() {
             return Err(Failure::Stopped);
         }
-        // §02 §1, on the LLM's own door: one request at a time per server. The wait is written into the
-        // row's wait column (§09 §10).
+        // §02 §1: one request at a time per server; the wait goes in the row's wait column (§09 §10).
         let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, step, cancelled) {
             Ok(got) => got,
-            // ⏹ landed while every slot was busy. Nothing went out, so no patience applies — the same answer
-            // as the check above, reached from inside the wait instead of before it.
+            // ⏹ landed while every slot was busy: nothing went out, so no patience applies.
             Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
         };
         if waited > 0.0 {
@@ -358,10 +297,8 @@ pub fn dial(
                 log(&crate::slot_gate::waited_log(step, &other));
             }
         }
-        // §7's live half of a chat call. `chat_on` is the one door every chat ask in the app goes through, so
-        // this is where "the page fills up while you wait" happens — no flow had to be changed, and none can
-        // forget it. The recorder reads the body to decide whether there is anything to stream (§9 §1: only a
-        // request that asked for a stream gets chunks), so a one-shot ask still files its exchange at the end.
+        // §7's live half: `chat_on` is the one door every chat ask goes through, so the page fills up while you
+        // wait with no flow changed. The recorder reads the body to decide whether to stream (§9 §1).
         let live = exchange_leg::Live::new(tree, step, &base.model, body);
         let hook = live.opened_then_hook(log);
         let (_row, reply) = server_leg::call_dialed(
@@ -375,23 +312,20 @@ pub fn dial(
                 body: Some(body.as_bytes()),
                 filename: None,
                 cancelled,
-                // §4: every chat call is streamed, so the stall rule holds for all of them — the same decision that
-                // puts `"stream": true` in the body (`llm_request::body`), carried here rather than re-derived.
+                // §4: every chat call is streamed, so the stall rule holds for all (same decision as `"stream": true` in `llm_request::body`).
                 liveness: Some(crate::llm_watch_leg::Liveness::streamed(step)),
                 waited_ms: (waited * 1000.0).round() as i64,
                 delta: hook,
                 budget: None,
-                // §10: "a retry is a line of its own", with its attempt number. This loop is the only
-                // thing that knows which rung it is on, so it says so rather than letting the leg guess.
+                // §10: "a retry is a line of its own", with its attempt number; this loop knows which rung it is on.
                 attempt: attempts,
             },
         );
-        // §7's live half: this attempt is over, so its hook writes nothing more — a §4 give-up leaves the
-        // reader thread alive, and its late words must not land in the NEXT attempt's section.
+        // This attempt is over, so its hook writes nothing more: a §4 give-up leaves the reader alive and its late
+        // words must not land in the NEXT attempt's section.
         live.close_attempt();
-        // The slot is given back here, before the reply is read: §4 holds it across the HTTP call only, so a
-        // step thinking between tool rounds holds nothing. Dropping the guard is the release, which also makes
-        // an early `?` below release just as surely as this line does.
+        // The slot is given back before the reply is read (§4 holds it across the HTTP call only). Dropping the
+        // guard is the release, so an early `?` below releases too.
         drop(slot);
         match reply {
             Ok(sent) if sent.ok() => {
@@ -445,9 +379,7 @@ pub fn dial(
         _ => false,
     };
     if refused_field {
-        // §3's patience is for a transient; a refusal of the `tools` field is not one, and the caller's own
-        // resend is a DIFFERENT request. Hand the verdict back in the shape its check recognises, having dials
-        // once.
+        // A `tools` refusal is not transient and the caller's resend is a DIFFERENT request: hand the verdict back, having dialled once.
         let why = match &first {
             Err(Failure::Status { status, body }) => crate::degraded::refused_reason(*status, body),
             _ => unreachable!("only a refused answer reaches here"),
@@ -457,9 +389,8 @@ pub fn dial(
             attempts,
         };
     }
-    // Everything else rides §3's patience: the identical body re-sent after each wait, the ladder for a death,
-    // the one short retry for anything the server answered but could not use. `attempts` already counts the dial
-    // above, so the loop's first call is that same result being classified — it must NOT dial again.
+    // Everything else rides §3's patience. `attempts` already counts the dial above, so the loop's first call
+    // classifies that same result and must NOT dial again.
     let mut first_attempt = Some(first);
     let mut attempt = || match first_attempt.take() {
         Some(carried) => carried,
@@ -467,38 +398,31 @@ pub fn dial(
     };
     let outcome = llm_retry::run(
         step,
-        // The FIRST dial is already behind us (it had to be, to see whether this was a `tools` refusal the caller
-        // must answer with a different request), so the loop starts its patience from there: re-running `one`
-        // here would send the request a second time before any wait and turn §3's one short retry into two.
+        // The first dial is already behind us (needed to see whether this was a `tools` refusal), so the loop starts
+        // its patience from there; re-running `one` would turn §3's one short retry into two.
         &mut attempt,
         sleep,
-        // The run's OWN switch, not the process-wide one: a leg that belongs to a run carries `cancelled`, and a
-        // test (or a settings probe) that passes a never-cancelled closure must not be stopped by some other
-        // run's ⏹ sitting on the shared cell.
+        // The run's OWN switch, not the process-wide one: a never-cancelled test closure must not be stopped by another run's ⏹.
         cancelled,
         &|problem: &Failure| problem.went_away(&endpoint.url),
     );
-    // §3's patience is for a server that is coming back; ⏹ is not. A stopped run reports itself through
-    // `Run::stopped` and its caller says so — so nothing after this point may hand a stop back as a server
-    // failure, which is what the refused-field return below would otherwise do.
-    // `server_leg`'s own wording for a call that got no reply names the server and the address it tried, and
-    // §Failure-is-specific wants that kept all the way to the step's line -- "no answer after N attempts" on its
-    // own would not say which of the four boxes to look at. So the last failure's text is what comes back.
+    // A stopped run reports itself through `Run::stopped`; nothing here may hand a stop back as a server failure.
+    // `server_leg`'s wording for a call with no reply names the server and address; keep it to the step's line
+    // (§Failure-is-specific), so the last failure's text is what comes back.
     let last_reason = match &outcome.last {
         Some(Failure::Gone(why)) => why.clone(),
         Some(other) => other.to_string(),
         None => String::new(),
     };
-    // §3 gives the death branch a line and the short retry none; `llm_retry::run` writes both, and every one of
-    // them goes to the sink the user and the tests read (`ui::window::log_line` from every caller).
+    // §3 gives the death branch a line and the short retry none; `llm_retry::run` writes both to the sink
+    // users and tests read.
     for line in &outcome.logs {
         log(line);
     }
     let answer = match outcome.answer {
         Some(sent) => Ok(sent),
-        // Nothing arrived to report. A refusal the caller declined to retry comes back as the server's own
-        // wording, because that is what its tools-refusal check reads; anything else gets a reason naming the
-        // patience that ran out. The lines already logged say what was waited for and why it stopped.
+        // Nothing arrived to report. A declined refusal comes back as the server's own wording (the tools-refusal
+        // check reads it); anything else gets a reason naming the patience that ran out.
         None => Err(match (outcome.stopped, outcome.last) {
             (false, Some(Failure::Status { status, body })) => {
                 format!("at {} answered {}: {}", endpoint.url, status, body.trim())

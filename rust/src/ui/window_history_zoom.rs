@@ -1,11 +1,6 @@
 //! §05-cut#1-screen — the history buttons and the zoom pair: the door from a press to the rule, the
 //! repaint from the answer. Split out of `window.rs`, which is past its size budget; its doors are
 //! re-exported through `window`.
-//!
-//! The four history buttons and the −/+ pair live in the toolbar; the rules they consult are
-//! `cut::History` (the stack, its depth bound `P.layout.undoDepth`) and `cut_screen`'s zoom ladder.
-//! What this section adds is the door from a press to those rules and nothing else: each function takes
-//! the window, calls one rule, prints what came back, and repaints from the answer.
 
 use std::rc::Rc;
 
@@ -26,30 +21,11 @@ use crate::ui::cut_zoom_hand::{
 use crate::ui::window as ui;
 use crate::ui::window_bench::refresh_cut_readouts;
 
-// --- §05-cut#1-screen: the history and zoom groups -----------------------------------------------
-//
-// The four history buttons and the −/+ pair live in the toolbar; the rules they consult are
-// `cut::History` (the stack, its depth bound `P.layout.undoDepth`) and `cut_screen`'s zoom ladder.
-// What this section adds is the door from a press to those rules and nothing else: each function takes
-// the window, calls one rule, prints what came back, and repaints from the answer.
-
 thread_local! {
-    /// This window's edit history (§2), newest slot last like [`REVIEW_CUTS`] so the newest window is
-    /// the live one. Opened on whatever cut the page was built with, which §2 makes both the first
-    /// state and the base Revert returns to.
     static CUT_HISTORIES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut::History>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// The TEST-FACING door for "the page has been edited". Every mutating press in the app records through
-/// [`record_edit`], which publishes, records and refreshes in one step; this is the narrower seam a test
-/// uses when it wants to say "treat what is on screen as an edit" without going through a widget -- which
-/// is why `tests/suite/cut_screen_toolbar_widgets.rs` calls it after a Split. It pushes unconditionally
-/// (`History::push`), where the app-side door asks first whether anything actually changed.
-///
-/// A real ＋ Add lights Undo WITHOUT any call to this function: `report_verb`'s Applied branch calls
-/// `record_edit`, so the button's state comes from the app's own recording rather than from a caller
-/// remembering to say so. Do not use this to make a button light in production code.
 pub fn note_edit(window: &adw::ApplicationWindow) {
     let history = cut_history(window);
     history.borrow_mut().push(&ui::newest_review_cut());
@@ -71,10 +47,6 @@ pub(crate) fn cut_history(
     fresh
 }
 
-/// F2.13: re-open this window's edit history on the cut a caller is about to show, so the base Revert
-/// returns to is that cut and not whatever was newest when the history happened to be touched first.
-/// Used by `build_window` at project open (against the cut read from `cut/cut.json`) and by tests that
-/// seed a cut into an already-built window — both are "this is what the page opens with".
 pub fn reopen_history_on(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     let _ = window;
     CUT_HISTORIES.with(|slot| {
@@ -88,8 +60,6 @@ pub fn reopen_history_on(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     });
 }
 
-/// Undo (§1 item 18): take the page back one state. Returns the line for the status bar — either what
-/// the page went back to, or the fact that there was nothing behind it.
 pub fn press_undo(window: &adw::ApplicationWindow) -> String {
     let history = cut_history(window);
     let back = history.borrow_mut().undo();
@@ -135,8 +105,6 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// Revert (§1 item 20): drop everything added or removed by hand and go back to the base — the last
-/// suggestion, or what the page opened with when there has been none.
 pub fn press_revert(window: &adw::ApplicationWindow) -> String {
     let history = cut_history(window);
     let already_base = history
@@ -159,8 +127,6 @@ pub fn press_revert(window: &adw::ApplicationWindow) -> String {
 }
 
 /// Clear (§1 item 21): every kept stretch and every effect off the timeline, recordings as loaded.
-/// It is itself an edit, so Undo brings them back — which is why the result is pushed rather than
-/// simply written.
 pub fn press_clear_cut(window: &adw::ApplicationWindow) -> String {
     let had = ui::newest_review_cut();
     if had.segs.is_empty() && had.fx.is_empty() {
@@ -201,18 +167,6 @@ pub(crate) fn publish_cut(cut_: &cut::Cut) {
     });
 }
 
-/// F2.13 S4: the ONE door every mutating press writes through. It publishes the new cut, records it on
-/// the history, and refreshes the four history buttons from the stack — so a button lighting up always
-/// means a snapshot is behind it, never that some caller remembered to say so.
-///
-/// Recording goes through [`cut::History::note_change`] rather than `push`: several doors write things
-/// that are not edits along with the cut (a fold toggle persists `folds`, which `Snapshot` deliberately
-/// omits so Undo can never unfold the page under someone; the watched row is not a cut field at all),
-/// and comparing the snapshot against the state on screen is what keeps those off the stack. A door whose
-/// write changed none of the seven editable things therefore leaves Undo exactly as greyed as it was.
-///
-/// The history's OWN writes (`press_undo`, `press_redo`, `press_revert`) use plain [`publish_cut`]: they
-/// move the pointer or reset the base, and recording them would put the undo itself on the undo stack.
 pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     publish_cut(cut_);
     // The one door every edit takes, so no edit can reach the screen and miss the file; mid-drag the writer waits.
@@ -227,8 +181,6 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     refresh_cut_readouts(window);
 }
 
-/// A held drag's later move: the cut is written and published like any edit, and the step the drag's first
-/// move took is amended to it ([`cut::History::amend`]), so the drag stays one Undo step that redoes to its end.
 pub(crate) fn amend_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     crate::ui::window::seed_review_cut(window, cut_);
     ui::save_insert_cut(cut_);
@@ -237,9 +189,6 @@ pub(crate) fn amend_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     refresh_cut_readouts(window);
 }
 
-/// − / + (§1 item 22): one step of the zoom ladder over THIS page's view, its floor where the whole
-/// session fits (`cut_view::floor_pps`) rather than the placeholder strip's constant, so a session of any
-/// length stops at “all of it on screen”.
 pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
     let view = crate::ui::cut_view::wheel_gestures_view(window);
     let runs = crate::timeline::filmed_runs(&page_recordings());
@@ -288,8 +237,6 @@ pub(crate) fn repaint_scrollbar(window: &adw::ApplicationWindow) {
     crate::ui::cut_view::refresh_page_scrollbar(window);
 }
 
-/// §1's three wheel gestures, attached to the widgets they belong to. The ground names live here because
-/// this is where those widgets are named; `cut_view::attach_wheel` does the attaching.
 pub(crate) fn wire_wheel_gestures(window: &adw::ApplicationWindow) {
     crate::ui::cut_view::attach_wheel(
         window,
@@ -307,8 +254,6 @@ pub(crate) fn wire_wheel_gestures(window: &adw::ApplicationWindow) {
         },
     );
 }
-/// Wire the four history buttons and the two zoom buttons. Same shape as the verb wiring: find by name,
-//  click forwards to the seam, the status line gets the sentence, and the sensitivity is refreshed
 /// from the rule rather than remembered.
 pub(crate) fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
     for (name, seam) in [
@@ -344,9 +289,6 @@ pub(crate) fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
     }
 }
 
-/// The grip between the pictures and the sound strip set the strip's height to `px`. The row's pitch does not
-/// change, so nothing refits: the band repaints and the gutter's row switches re-place on the strip. The status
-/// line says the height, and at either end that it can go no further.
 pub fn press_wave(window: &adw::ApplicationWindow, px: f64) -> f64 {
     let held = crate::ui::cut_tracks::row_wave_px();
     crate::ui::cut_tracks::set_row_wave_px(px);
@@ -369,10 +311,6 @@ pub fn press_wave(window: &adw::ApplicationWindow, px: f64) -> f64 {
     now
 }
 
-/// The grip at the bottom of the picture rows (§1 badge 2) set the thumbnail height to `px`, kept inside
-/// 40..160. The size is the band's (`cut_tracks::thumb_px`): every picture row is drawn, fitted and pressed at
-/// it, so a step re-fits the band, repaints it and re-places the gutter's row switches. The status line says the
-/// size, and at either end that it can go no further. Returns the height the band now has.
 pub fn press_thumb(window: &adw::ApplicationWindow, px: u32) -> u32 {
     let held = crate::ui::cut_tracks::thumb_px();
     crate::ui::cut_tracks::set_thumb_px(px);
@@ -403,9 +341,6 @@ pub fn press_thumb(window: &adw::ApplicationWindow, px: u32) -> u32 {
     now
 }
 
-/// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (§1 items 18-19's chords). One controller on the window, following
-/// [`wire_line_keys`]' shape: the key decides, the shift decides which of the two directions, and an
-/// unheld letter is left to whatever widget has focus.
 pub(crate) fn wire_history_keys(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
@@ -438,14 +373,12 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// This window's history key controller, newest window winning like [`line_key_controller`].
+/// This window's history key controller, newest window winning like `line_key_controller`.
 pub fn history_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
     let _ = window;
     HISTORY_KEYS.with(|cell| cell.borrow().clone())
 }
 
-/// F3.1 S2: this window's zoom drag, newest-window rule as everywhere else here (`SELECT_GESTURES`), so a
-/// widget test can fire `drag-begin`/`drag-end` on the real gesture instead of calling the seam directly.
 pub fn zoom_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
     let _ = window;
     ZOOM_GESTURES.with(|cell| cell.borrow().clone())
@@ -456,9 +389,6 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// F3.1 S2: the drag on the preview that draws the box. The gesture carries no rule: it converts its own
-/// press position and offset into two corners and hands them to [`zoom_drag_ended`], which is the same seam
-/// the widget test drives. Left button only — the right button belongs to trim/move (F2.8).
 pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     let Some(panel) = preview_panel(window).and_then(|w| w.downcast::<gtk::Widget>().ok()) else {
         return;
@@ -503,18 +433,6 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     let win_end = window.clone();
     gesture.connect_drag_end(move |_g, dx, dy| {
         let (sx, sy) = start.get();
-        // DISPATCH BY ARMED ENTRY -- the one structural choice here that the spec does not dictate. This panel
-        // carries ONE left-button drag gesture (F3.1's); adding a second button-1 gesture for F3.4 would put
-        // two grab handlers on one widget fighting over the same sequence, and which one wins depends on GTK's
-        // internal capture order rather than on what the user armed. So the single gesture asks who is waiting:
-        // a caption arm takes the press first (its box is drawn on the output frame), and only an unarmed press
-        // falls through to the zoom flow. A no-travel press arrives here too and is read as a CLICK inside
-        // `text_drag_ended_with_source`, which is also where a press with nothing to place at falls back to the
-        // play/pause toggle (`fx_text::press_without_travel_toggles_play`).
-        // ...and a DRAWING arm is asked before the caption one. Both draw against the output frame, but the
-        // svg arm is the more specific state: it only exists once a file has actually been chosen, so an svg
-        // press that fell through to the text flow would drop the ink someone just picked. Order: svg, text,
-        // then the zoom flow for an unarmed press.
         let say = if svg_armed() {
             svg_drag_ended(&win_end, (sx, sy), (sx + dx, sy + dy))
         } else if text_armed() {
@@ -538,13 +456,6 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
                 (sx + dx, sy + dy),
             ) {
                 Some(said) => said,
-                // Then the CAMERA: a release that started inside a placed zoom's rectangle moves or sizes that
-                // camera (§F3.8 S3, `a box or camera rect dragged on the picture`). Asked after the caption door
-                // and before `zoom_drag_ended` because the two disagree about exactly one press: this one takes a
-                // release that BEGAN on a zoom's box, and F3.1's framing question is about a release that drew a
-                // NEW rectangle clear of every box. A press with no travel is refused by this door, so it still
-                // reaches `zoom_drag_ended`, which is where §F3.1's play/pause toggle and re-framing press live --
-                // F3.1's rules are untouched by the extra arm.
                 None => match crate::ui::cut_zoom_hand::zoom_box_edit_on_release(
                     &win_end,
                     at,
@@ -567,10 +478,6 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
     ZOOM_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
 }
 
-/// F3.2: the Aspect ratio dropdown's wire. `connect_selected_notify` is the `notify::selected` handler GTK
-/// raises when the popover's own choice lands (and the one a test raises with `set_selected`), so this fires
-/// on the user's pick and on nothing else. The callback converts the index to the string it stands for and
-/// prints what [`press_aspect`] returns — no rule, no sentence of its own.
 pub(crate) fn wire_aspect_choice(window: &adw::ApplicationWindow) {
     let Some(widget) = ui::find_widget_by_name(window.upcast_ref(), "aspect-choice") else {
         return;
@@ -596,13 +503,6 @@ pub(crate) fn wire_aspect_choice(window: &adw::ApplicationWindow) {
     });
 }
 
-/// F3.1 S1: Esc releases the arm without drawing a box ("same entry again disarms" has a keyboard twin, and
-/// §cut.md's key list drops the arm rather than leaving someone stuck with a lowered camera layer). Claims
-/// ONLY Escape while armed; every other key, and Escape with nothing armed, returns `Proceed`, so typing in an
-/// entry field is untouched exactly as `wire_copy_esc` leaves it.
-/// Is this the window whose zoom form is live? Every zoom write goes through here so a closed window's leftover
-/// handler cannot draw into, or clear, the form another window is showing -- the failure shape behind
-/// `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed` across checks.
 pub(crate) fn zoom_form_owner(window: &adw::ApplicationWindow) -> bool {
     LAST_ZOOM_WINDOW.with(|cell| {
         cell.borrow()
@@ -694,8 +594,6 @@ pub(crate) fn zoom_check(name: &str) -> Option<gtk::CheckButton> {
     })
 }
 
-/// S4: Cancel drops the form and changes nothing on the cut — no record pushed, no history written, so ↶
-/// still points where it did before the box was drawn.
 pub fn press_zoom_cancel(window: &adw::ApplicationWindow) -> String {
     set_zoom_form(None);
     if let Some(holder) = zoom_form_box(window) {
@@ -739,9 +637,6 @@ pub(crate) fn wire_zoom_esc(window: &adw::ApplicationWindow) {
     window.add_controller(controller);
 }
 
-/// Which of the four history buttons may be pressed right now, from the stack's own counts. Called
-/// from [`refresh_selection_readout`] so a greyed history button is today's answer along with every
-/// other greyed control on the page, never a leftover from the last draw.
 pub(crate) fn refresh_history_buttons(window: &adw::ApplicationWindow) {
     let history = cut_history(window);
     let held = history.borrow();

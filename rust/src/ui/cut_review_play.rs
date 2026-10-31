@@ -1,15 +1,4 @@
 //! F2.3's page half: ▶✂✂'s button face, its grey, and the tick that makes a review ADVANCE.
-//!
-//! [`crate::cut_review`] holds every rule — which joins there are, how far each is heard, where a press at
-//! the red line starts, what one tick of the line means (`Move::{Stay, Seek, Done, Lost}`) and the exact
-//! sentence for each. None of that belongs here. What was missing, and what this file supplies, is the hand
-//! that feeds the line back into `cut_review::tick` ten times a second: without it the rules were complete
-//! but unreachable — the status printed "reviewing cut 1 of 2" and then nothing played, no join was ever
-//! sought, and neither `reviewed_all` nor `LINE_MOVED` could be reached by any user action.
-//!
-//! The clock arithmetic is not written twice either: the head advances through [`crate::cut_play_leg::tick`],
-//! the same function ▶✂ uses, so removed stretches are skipped identically under both buttons ("play as the
-//! cut", S3). This module only sequences: move the line, ask `cut_review` what that means, do what it says.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -20,14 +9,9 @@ use crate::ui::window::find_status;
 use crate::{cut, cut_play_leg, cut_review, cut_screen, preview, ui};
 /// §A group 1's shipped label, spelled from the toolbar row so the two cannot drift.
 pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_REVIEW;
-/// §F2.3's one rule for the three buttons: "each wears ⏸ only while its own thing runs … exactly one is
-/// lit". So the pause face appears here ONLY while a review is the running preview, and ▶/▶✂ give theirs
-/// back at the same moment (each module reads the player rather than remembering).
 pub const PAUSE_LABEL: &str = "\u{23f8}\u{2702}\u{2702}";
 
 /// The review's own state: which join is being heard and whether the line has been seen inside its window.
-/// One slot per process because one preview plays at a time — the same reason [`crate::cut_play_back`]'s
-/// player slots are process-wide. A test drives it through `begin`, exactly as a press does.
 fn held() -> &'static std::sync::Mutex<Option<cut_review::Review>> {
     static HELD: std::sync::OnceLock<std::sync::Mutex<Option<cut_review::Review>>> =
         std::sync::OnceLock::new();
@@ -50,9 +34,6 @@ pub fn armed_for_test() -> bool {
     held().lock().expect("the review slot").is_some()
 }
 
-/// What the press did to the page: every arm of [`cut_review::pressed`] answered in one place, so the shell
-/// forwards and this module owns the reaction (§5). Lives here rather than in `window.rs`, which is past its
-/// size budget.
 pub fn answer_press(
     window: &adw::ApplicationWindow,
     status_line: &gtk4::Label,
@@ -60,13 +41,9 @@ pub fn answer_press(
     cut_: &cut::Cut,
 ) {
     match pressed {
-        // S4: the status names which join out of how many is being heard. The review IS the cut preview with
-        // one more hand on the line, so its press starts the player and hands the line to the review's tick,
-        // which cues each later run-up as it seeks (S3).
         cut_review::Pressed::Started {
             status, seek_to, ..
         } => {
-            // The footage is the session's own files, through the same door ▶✂ starts its player by.
             crate::ui::cut_cut_play::cue_running(
                 window,
                 seek_to.unwrap_or_else(|| playhead_of(window)),
@@ -74,13 +51,11 @@ pub fn answer_press(
             begin(cut_review::start(cut_, playhead_of(window)));
             status_line.set_text(status)
         }
-        // S5: pausing ends the review, and says so with the module's own short line.
         cut_review::Pressed::PausedAndEnded { status } => {
             clear();
             crate::ui::cut_cut_play::pause_media();
             status_line.set_text(status)
         }
-        // S1: fewer than two clips, in `refused`'s own words.
         cut_review::Pressed::Refused(reason) => status_line.set_text(reason),
     }
     crate::ui::cut_record_play::paint_transport(window);
@@ -92,9 +67,6 @@ fn playhead_of(window: &adw::ApplicationWindow) -> f64 {
 }
 
 /// Paint the button from the page's state, reading rather than remembering (§5: the UI renders state).
-///
-/// Two things the spec puts ON this widget: S1's grey ("greyed with fewer than two clips") and the ⏸ face.
-/// The press-time refusal stays as well — a greyed button and a named refusal answer two different moments.
 pub fn paint(window: &adw::ApplicationWindow) {
     let Some(button) = ui::review_cuts_button(window) else {
         return;
@@ -135,11 +107,7 @@ pub enum Outcome {
     NotReviewing,
 }
 
-/// One tick's whole decision, over plain numbers instead of a window: advance the head the way ▶✂ does,
-/// then ask [`cut_review::tick`] what the new line means. `tick_once` is the thin window wrapper around it;
-/// keeping them apart is what lets S3/S4/S5 be tested without waiting on a timer.
 pub fn step(cut_: &cut::Cut, review: &mut cut_review::Review, from: f64) -> Outcome {
-    // Same arithmetic as the plain cut preview, so a removed stretch is skipped identically under both.
     let head = cut_play_leg::tick(cut_, from, preview::TICK_MS).head;
     match cut_review::tick(cut_, review, head) {
         cut_review::Move::Stay => Outcome::Stay,
@@ -167,7 +135,6 @@ fn say(window: &adw::ApplicationWindow, line: &str) {
 }
 
 /// One tick of the review against THIS window: move the line, then act on what the rules answered.
-/// Returns early unless a review is running, so the loop costs nothing while ▶ or ▶✂ owns the preview.
 pub fn tick_once(window: &adw::ApplicationWindow) {
     let player = ui::preview_player(window);
     if !player.reviewing || !player.transport.playing {
@@ -183,7 +150,6 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
         .unwrap_or(0.0);
     match step(&cut_, &mut review, from) {
         Outcome::Stay => {
-            // Head may have moved even when the join did not; keep it and the review.
             let head = cut_play_leg::tick(&cut_, from, preview::TICK_MS).head;
             ui::set_playhead(window, head);
             *held().lock().expect("the review slot") = Some(review);
@@ -197,7 +163,6 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
             *held().lock().expect("the review slot") = Some(review);
         }
         Outcome::Finished { status } => {
-            // S4: pause, and the processes go with the pause (F2.2 S4's door releases player and spare).
             ui::set_preview_state(
                 window,
                 true,
@@ -212,10 +177,6 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
             crate::ui::cut_record_play::paint_transport(window);
         }
         Outcome::LineMoved { status } => {
-            // S5's hand on the line ENDS the review. DECISION (the spec names the sentence, not the
-            // transport): the cut preview keeps playing, because the same chapter says pressing another of
-            // the three switches the preview WITHOUT stopping — a person who moved the line wants to watch
-            // where they moved it to, not a paused picture. The review simply stops owning the line.
             ui::set_preview_state(
                 window,
                 true,
@@ -233,11 +194,6 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
 }
 
 /// Own the review loop for this window, on the preview's one cadence.
-///
-/// It is a separate loop from [`crate::cut_play_leg::start_cut_preview_tick`] because that one answers for
-/// ▶✂'s own needs (spare arms, stills, rates) and returns unless the preview is the PLAIN cut; a review is
-/// `cut_only` AND `reviewing`, and folding a second gate into that loop would decide the review's flow from
-/// inside the cut preview's. Both loops run at `preview::TICK_MS` and each no-ops for the other's mode.
 pub fn start(window: Rc<adw::ApplicationWindow>) {
     glib::timeout_add_local(Duration::from_millis(preview::TICK_MS), move || {
         tick_once(&window);

@@ -1,16 +1,14 @@
-//! §07-narrate#1-screen, number **9**: "Add file…" — copy one recording into the voices folder and
-//! use it (§A.6). The chooser is thin: it picks a path and hands it to [`add_voice_file`], which does
-//! the real work (convert with ffmpeg, name it, list it) so the tested seam and the clicked one are
-//! the same function.
+//! §07-narrate#1-screen, number **9**: "Add file…" — copy one recording into the voices folder and use it
+//! (§A.6). The chooser only picks a path and hands it to [`add_voice_file`], so the tested seam and the
+//! clicked one are the same function.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
-/// The chooser's own title, §A.6 quoted: "Choose a voice sample".
+/// The chooser's own title, §A.6 quoted.
 const CHOOSER_TITLE: &str = "Choose a voice sample";
 
-/// **9** Add file…: open the chooser. A cancel says so and copies nothing; an accepted file goes
-/// through [`add_voice_file`] like any other door would.
+/// **9** Add file…: open the chooser. A cancel says so and copies nothing.
 #[expect(
     deprecated,
     reason = "the 4.10 replacement cannot offer a filtered native chooser"
@@ -44,13 +42,13 @@ thread_local! {
     static CHOOSERS_RAISED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// How many "Add file…" choosers the button raised, for a test pressing the real button.
+/// Same count, for a test pressing the real button.
 pub fn choosers_raised_for_test() -> usize {
     CHOOSERS_RAISED.with(std::cell::Cell::get)
 }
 
-/// The chooser's answer, the one door its response runs and a test answering it drives: no pick says so;
-/// a pick is converted on a worker (§03-shell §1, "The window thread never waits") and offered when it lands.
+/// The chooser's answer, the one door its response runs and a test drives: no pick says so; a pick is
+/// converted on a worker (§03-shell §1) and offered when it lands.
 pub fn answer_chooser(window: &adw::ApplicationWindow, picked: Option<std::path::PathBuf>) {
     let Some(path) = picked else {
         set_status(window, &refused_no_file());
@@ -71,27 +69,23 @@ pub fn answer_chooser(window: &adw::ApplicationWindow, picked: Option<std::path:
     );
 }
 
-/// Put one sentence on the shell's status line. The chooser's answer has to reach the same line the
-/// page writes to, and `say` is private to the page, so this goes straight to the widget.
+/// Put one sentence on the shell's status line; `say` is private to the page, so this goes straight to the widget.
 fn set_status(window: &adw::ApplicationWindow, said: &str) {
     if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
         status.set_text(said);
     }
 }
 
-/// The refusal when no file was chosen. Its own sentence, because a cancelled dialog must not read as
-/// a copy that happened.
+/// The refusal when no file was chosen; a cancelled dialog must not read as a copy that happened.
 pub fn refused_no_file() -> String {
     "no file chosen \u{2014} nothing was copied into the voices folder".to_string()
 }
 
-/// Copy one recording into the voices folder as mono PCM wav under a sanitised, never-overwriting
-/// name, then offer it as a voice. Returns the sentence for the status line; `Err` carries its own,
-/// naming the file and why (§00: failure is specific and local).
+/// Copy one recording into the voices folder as mono PCM wav under a sanitised, never-overwriting name, then
+/// offer it as a voice. Returns the status sentence; `Err` names the file and why (§00).
 ///
-/// The conversion is a real ffmpeg run (`-ac 1 -vn`, pcm wav) through [`crate::subprocess::run`], the
-/// same leg every other audio step uses, so a machine without ffmpeg gets ffmpeg's reason rather than
-/// a placeholder.
+/// The conversion is a real ffmpeg run (`-ac 1 -vn`) through [`crate::subprocess::run`], so a machine
+/// without ffmpeg gets ffmpeg's reason.
 pub fn add_voice_file(
     window: &adw::ApplicationWindow,
     source: &std::path::Path,
@@ -111,8 +105,8 @@ pub fn copying_status(source: &std::path::Path) -> String {
     )
 }
 
-/// The ffmpeg half of [`add_voice_file`]: convert `source` into the voices folder and answer the name it
-/// was filed under. Touches no window, so the chooser runs it on a worker.
+/// The ffmpeg half of [`add_voice_file`]: convert `source` into the voices folder and answer the name it was
+/// filed under. Touches no window, so the chooser runs it on a worker.
 pub fn copy_voice_file(source: &std::path::Path) -> Result<String, String> {
     if !source.exists() {
         return Err(format!(
@@ -123,13 +117,11 @@ pub fn copy_voice_file(source: &std::path::Path) -> Result<String, String> {
     let folder = voices_folder();
     crate::settings::ensure_voices_folder(&folder)?;
     let taken = crate::voices::list_wavs(&folder);
-    // One rule for the never-overwriting name: `narrate_details::added_file_name` owns §6's `name-2`,
-    // `name-3` sequence, and [`crate::voices::target_name`] delegates to it so a second copy of the same
-    // recording can never overwrite (or silently re-key) the first.
+    // `narrate_details::added_file_name` owns §6's `name-2`, `name-3` sequence; [`crate::voices::target_name`]
+    // delegates to it so a second copy can never overwrite or re-key the first.
     let name = crate::voices::target_name(&taken, source);
     let target = folder.join(&name);
-    // §6 (`"Add file…"`): say what is about to happen before the conversion runs — a pasted recording is
-    // made mono PCM by ffmpeg, and that is the step a slow copy is waiting on.
+    // §6 (`"Add file…"`): say what is about to happen before the conversion runs, the step a slow copy waits on.
     crate::ui::window::log_line(&crate::narrate_details::reference_convert_log(&name));
     let ffmpeg = ffmpeg_program();
     let args: Vec<String> = vec![
@@ -152,18 +144,15 @@ pub fn copy_voice_file(source: &std::path::Path) -> Result<String, String> {
     Ok(name)
 }
 
-/// The window half: offer the copied voice now, since the picker's rows come from the page state, so
-/// adding the name and refreshing is what makes the new voice selectable without a restart.
+/// The window half: offer the copied voice now, since the picker's rows come from page state.
 fn offer_copied(window: &adw::ApplicationWindow, name: &str) -> String {
     crate::ui::narrate_page::offer_voice(name);
     crate::ui::narrate_page::refresh(window);
     format!("{name} added to the voices folder \u{2014} pick it in the voice dropdown")
 }
 
-/// The voices folder this machine reads: Settings' `AUDIOCPP_VOICES`, else the legacy models root's
-/// `voices/`, else the platform's own — [`crate::settings::voices_folder`]'s rule alone, fed by the
-/// conf this process would read. The legacy key is read here the way `settings::read` documents it:
-/// its `voices/` subfolder stands in when `AUDIOCPP_VOICES` stayed empty.
+/// The voices folder this machine reads: Settings' `AUDIOCPP_VOICES`, else the legacy models root's `voices/`,
+/// else the platform's own ([`crate::settings::voices_folder`]'s rule), fed by the conf this process would read.
 pub fn voices_folder() -> std::path::PathBuf {
     let paths = crate::settings::from_environment();
     let conf = paths
@@ -182,8 +171,7 @@ pub fn voices_folder() -> std::path::PathBuf {
     )
 }
 
-/// Which ffmpeg to run: the Settings box, else the bare name — the same reading `speak_leg` uses so
-/// a configured path applies here too.
+/// Which ffmpeg to run: the Settings box, else the bare name, as `speak_leg` reads it.
 fn ffmpeg_program() -> String {
     let conf = crate::settings::from_environment()
         .and_then(|paths| crate::settings::read(&paths).ok())

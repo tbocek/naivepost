@@ -1,29 +1,7 @@
-//! §08-produce#6's legacy `produce` keys, folded into [`Produce`] on load.
-//!
-//! The encoder settings are project state: `params::produce()` spells `P.policy.gameVolume` from
-//! `Produce::default().game_volume`, and every other setting is a serde default on [`Produce`]. A project
-//! written by the Go prototype stored that same block under four spellings the current model has none of, and
-//! §08 §6 records what each means:
-//!
-//! - `subs: "sidecar"` → subtitles "none in the video" (`Subtitles::None`): the old word named the files beside
-//!   the video, which is exactly what "none in the video" keeps — an .srt beside it, nothing in the container;
-//! - `subs_from` → dropped. It named where subtitle text was taken from, a question this app no longer asks
-//!   (the cues are built on the produced clock), so it is ignored rather than guessed at or made an error;
-//! - `game_vol`: ABSENT means the default (§4's 0.22), while a stored `0` means silence. That distinction is
-//!   the whole reason this module exists: serde alone cannot tell "not in the file" from "written as zero", and
-//!   folding a missing key to 0.0 would quiet every project that never had the key;
-//! - `bare` → the negation of the blurred-edges tick: the prototype's name for leaving the edges bare.
-//!
-//! Lives in its own file because `project.rs` holds the rest of the migration and this rule is one function with
-//! one raw view of it. Nothing here runs on save: the fold happens once, on load, and is reported like every
-//! other legacy fold so a project says out loud what was read into it.
-
 use serde::{Deserialize, Serialize};
 
 use crate::project::{Produce, Subtitles};
 
-/// The legacy spellings, as they appear inside the stored `produce` block. Every field is an `Option` so
-/// "absent" stays distinguishable from "present and empty/zero" — which is precisely the question §6 answers.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RawProduce {
@@ -33,9 +11,6 @@ pub struct RawProduce {
     pub subs_from: Option<serde_json::Value>,
     pub game_vol: Option<f64>,
     pub bare: Option<bool>,
-    /// The CURRENT keys, read as plain words. Not legacy at all — this is how §6's two stored-value fallbacks
-    /// reach a live read: an enum field cannot answer "the file said a word we do not offer", so the block is
-    /// read a second time here and [`fold_stored_words`] decides what an unknown word means.
     pub subtitles: Option<String>,
     pub resolution: Option<String>,
 }
@@ -53,10 +28,6 @@ impl RawProduce {
     }
 }
 
-/// Deserializer for the second read of the stored `produce` block: keeps only [`RawProduce`]'s names, so the
-/// field fills for any shape the file has (absent block, current keys, legacy ones, both) and never fails a load.
-/// Named `from_object` because it is attached to the `produce` key itself (`#[serde(rename = "produce")]`): one
-/// object, two readers, each taking the half of it that is its own.
 pub fn from_object<'de, D>(deserializer: D) -> Result<RawProduce, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -80,7 +51,6 @@ where
 /// `game_vol` of `"loud"` has no reading here, and keeping it would fail the whole block.
 fn keep_readable(key: &str, value: serde_json::Value) -> Option<(String, serde_json::Value)> {
     let ok = match key {
-        // Read into an `Option<String>` / `Option<f64>` / `Option<bool>` by the field above.
         "subs" | "subs_from" | "subtitles" | "resolution" => true,
         "game_vol" => value.is_number() || value.is_null(),
         "bare" => value.is_boolean() || value.is_null(),
@@ -89,8 +59,6 @@ fn keep_readable(key: &str, value: serde_json::Value) -> Option<(String, serde_j
     ok.then(|| (key.to_string(), value))
 }
 
-/// The six names this raw view reads: §6's four legacy spellings plus the two current keys whose stored word
-/// may be one the app no longer offers. Spelled once so the filter above and [`RawProduce`] cannot disagree.
 const READ_KEYS: [&str; 6] = [
     "subs",
     "subs_from",
@@ -102,14 +70,6 @@ const READ_KEYS: [&str; 6] = [
 
 /// The stored `produce` block, read as plain JSON so the loader can keep the rows it understands when one
 /// row's word is not one this app writes.
-///
-/// WHY this exists: `Produce`'s enum fields are strict serde enums, so a file saying `"subtitles": "sidcar"`
-/// makes the whole `produce` object fail to deserialize — and because `Raw.produce` carries
-/// `#[serde(default)]`, that failure silently hands back `Produce::default()`, resetting container, codec,
-/// preset, crf and every tick in the same block over one misspelled word. §6 asks for the opposite: an unknown
-/// subtitle mode reads as *none in the video* and an unoffered resolution as the default, each on its own, and
-/// nothing else moves. So the block is read here as values first ([`read`]), every readable row is kept, and
-/// only the two words §6 names get a fallback.
 pub struct Stored {
     /// The settings the file could state, with §6's two fallbacks applied where a word was stale.
     pub settings: Produce,
@@ -164,10 +124,6 @@ pub fn read(block: Option<&serde_json::Value>) -> Stored {
             .filter_map(|entry| entry.as_str().map(str::to_string))
             .collect();
     }
-    // §6's two fallbacks, each asked only of its own row. A known word was already taken by the loops above
-    // (they parse the same spellings), so only an unknown one reaches the door — and the door is
-    // `produce_details::stored_subtitle_mode` / `stored_resolution`, which is what makes them live rules
-    // rather than constants a test reads back.
     if let Some(stored) = word("subtitles") {
         match parse_subtitles(stored) {
             Some(found) => settings.subtitles = found,
@@ -213,8 +169,6 @@ fn resolution_label(resolution: crate::project::Resolution) -> &'static str {
     }
 }
 
-// The stored spellings, spelled from `project.rs`'s own `#[serde(rename)]` attributes so this reader and the
-// writer cannot drift: `Subtitles` is `rename_all = "lowercase"`, `Resolution` renames each variant by hand.
 fn parse_subtitles(word: &str) -> Option<Subtitles> {
     match word {
         "burnedin" => Some(Subtitles::BurnedIn),
@@ -273,10 +227,6 @@ fn parse_frame_rate(word: &str) -> Option<crate::project::FrameRate> {
     }
 }
 
-/// Fold the legacy keys into the settings the current model holds, and say what was folded.
-///
-/// Order matters only for the report: the notes come out in the order §6 lists the keys, so a person reading
-/// the log sees the spec's list rather than a hash order.
 pub fn fold_legacy(settings: &mut Produce, legacy: &RawProduce) -> Vec<String> {
     let mut report = Vec::new();
     if let Some(subs) = legacy.subs.as_deref() {

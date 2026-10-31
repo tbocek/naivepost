@@ -1,26 +1,15 @@
 //! F3.10 S1–S5 (`⏩ Speeds`) — the pass's own half of the shell: read the page, telephone, write back.
 //!
-//! Split out of `crate::ui::window`, which is past its size budget. No rule lives here: every decision —
-//! membership, the caption refusal, rate ≈ 1, the gap merge and both log lines — belongs to
-//! [`crate::cut_speed_pass`], and the wire leg to [`crate::speeds_ask`]. What this module owns is the seam
-//! between them and the page: which clips the batch is made of, which captions are already on them, how many
-//! rounds §S4 allows, and where an answer is written so one ↶ takes it back.
-//!
-//! The two public doors differ by ONE thing: [`run_speeds_pass`] dials for real, while
-//! [`run_speeds_pass_with_reply`] hands the same calls back each round so a test can exercise §S4's retry and
-//! §S5's merge without a socket. Both run through the one private body, so they cannot drift apart.
+//! No rule lives here: every decision belongs to [`crate::cut_speed_pass`], the wire leg to [`crate::speeds_ask`]. This module is the seam to the page: which clips make the batch, which captions are on them, how many rounds §S4 allows,
+//! and where an answer is written so one ↶ takes it back. [`run_speeds_pass`] dials for real; [`run_speeds_pass_with_reply`] hands the same calls back each round for tests; both run one private body.
 
 use crate::policy;
 use crate::ui::window;
 
 /// F3.10 S1–S5: run the speeds pass over this window's newest cut and say what happened.
 ///
-/// Rule-free like [`window::run_captions_pass`]: every decision lives in [`crate::cut_speed_pass`]. This seam
-/// reads the page, hands the rules their inputs (the kept clips AND the captions already on them, because S1's
-/// brief notes them and S2 refuses a fast rate over one), and writes back what they answer. Placed speeds go
-/// through `record_edit` and NEVER `seed_review_cut`, so one ↶ takes the whole pass back. Each round TELEPHONES
-/// through `ask_speeds` below — §F3.10 S4's second round is a fresh ask, not the same reply handed to the rules
-/// twice.
+/// Rule-free like [`window::run_captions_pass`]. This seam reads the page, hands the rules their inputs (the kept clips AND the captions already on them: S1's brief notes them and S2 refuses a fast rate over one),
+/// and writes back what they answer. Placed speeds go through `record_edit`, NEVER `seed_review_cut`, so one ↶ takes the pass back. Each round asks afresh through `ask_speeds` (§F3.10 S4).
 pub fn run_speeds_pass(window: &adw::ApplicationWindow) -> String {
     let inputs = window::pass_inputs(window);
     let cut_ = window::newest_review_cut();
@@ -36,8 +25,7 @@ pub fn walk_speeds(inputs: &window::PassInputs, cut_: &crate::cut::Cut) -> windo
     })
 }
 
-/// F3.10 S2/S4/S5 with a scripted reply: the same route the pass takes, minus the telephone. A test feeds the
-/// calls here and asserts placement against real page state, exactly as `run_captions_pass_with_reply` does.
+/// F3.10 S2/S4/S5 with a scripted reply: the same route minus the telephone, as `run_captions_pass_with_reply`.
 pub fn run_speeds_pass_with_reply(
     window: &adw::ApplicationWindow,
     calls: &[crate::cut_speed_pass::Call],
@@ -50,9 +38,7 @@ pub fn run_speeds_pass_with_reply(
     out.said
 }
 
-/// F3.10 S1's leg: the ask over the batch this pass just built, for this round of it. Returns no calls when
-/// there is nothing to ask about or nowhere to ask it — the same shape `window::ask_captions` keeps, so a
-/// missing project folder is said in the log rather than thrown.
+/// F3.10 S1's leg: the ask over the batch just built, for this round. No calls when there is nothing to ask about or nowhere to ask it (as `window::ask_captions`).
 fn ask_speeds(
     inputs: &window::PassInputs,
     cut_: &crate::cut::Cut,
@@ -68,16 +54,14 @@ fn ask_speeds(
         .iter()
         .map(|clip| (clip.n, clip.length))
         .collect();
-    // Which clips carry captions, and how many, comes off the batch itself, so the brief says the same
-    // thing the refusal will — §F3.10 S1's `N caption(s) -- runs at 1`.
+    // Which clips carry captions comes off the batch itself, so the brief says what the refusal will (§F3.10 S1's `N caption(s) -- runs at 1`).
     let captioned: Vec<(u32, usize)> = batch
         .clips()
         .iter()
         .map(|clip| (clip.n, batch.captions_of(clip.n).len()))
         .filter(|(_, count)| *count > 0)
         .collect();
-    // §9 (`the caption, speed and decoration briefs name no camera or lane`): named once
-    // there is more than one row filming or more than one recording heard.
+    // §9 (`the caption, speed and decoration briefs name no camera or lane`): named once there is more than one row filming or recording heard.
     let mut rows: Vec<String> = cut_
         .segs
         .iter()
@@ -103,9 +87,7 @@ fn ask_speeds(
     asked.calls
 }
 
-/// `ask` is the telephone: called once per round with the batch as it stands, so a retry asks again rather than
-/// re-reading an answer that was just refused. The scripted door passes a closure that hands back the same
-/// calls every time, which is what lets a test exercise the two-round rule without a socket.
+/// `ask` is called once per round with the batch as it stands, so a retry asks again; the scripted door hands back the same calls every time to exercise the two-round rule.
 fn walk_speeds_with(
     inputs: &window::PassInputs,
     cut_: &crate::cut::Cut,
@@ -119,12 +101,8 @@ fn walk_speeds_with(
     }
     let mut cut_ = cut_.clone();
     let mut changed = false;
-    // The clips the pass asks about are the VISIBLE SEGMENTS of the cut, numbered from 1 in play order, each
-    // carrying its own session start -- which is why this uses `Clips` triples rather than F3.9's
-    // `(number, length)` sum. NOT `cut_play::kept_runs`: that helper MERGES touching segments into runs for
-    // preloading ("no gap means no jump to preload for"), and one merged run would be one clip to the model,
-    // so a cut of three adjoining segments would answer to a single 30 s clip and every rate the model named
-    // for clip 2 or 3 would fall outside the batch.
+    // The clips are the VISIBLE SEGMENTS of the cut, numbered from 1 in play order with their session starts (`Clips` triples, not F3.9's sum). NOT `cut_play::kept_runs`: it MERGES touching segments for preloading,
+    // so three adjoining segments would be one clip to the model and every rate for clip 2 or 3 would fall outside the batch.
     let mut segs: Vec<(f64, f64)> = cut_
         .segs
         .iter()
@@ -138,9 +116,8 @@ fn walk_speeds_with(
         .map(|(i, (start, end))| (i as u32 + 1, *start, end - start))
         .collect();
     let mut batch = crate::tools::clips::Clips::new(&triples);
-    // S1's brief and S2's refusal read the captions that are ALREADY on the cut, so they must be in the batch.
-    // A text effect hanging across a clip boundary is CLAMPED to the overlap rather than skipped: dropping it
-    // would hide a caption from the refusal rule and let a clip the viewer sees as captioned be sped up.
+    // S1's brief and S2's refusal read the captions ALREADY on the cut, so they must be in the batch. A text effect across a clip boundary is CLAMPED to the overlap, not skipped,
+    // or a caption would hide from the refusal rule and a captioned clip be sped up.
     for fx in cut_.fx.iter().filter(|fx| fx.kind == "text") {
         let clips_now: Vec<(u32, f64, f64)> = batch
             .clips()
@@ -158,19 +135,14 @@ fn walk_speeds_with(
     }
     let footage = crate::cut_speed_pass::footage_total(&batch);
 
-    // Two rounds at most, decided by the same rule F3.9 uses: one rejection owes one retry, a third ask never
-    // happens. A fault is an UNUSABLE reply (a clip number never given); a per-call refusal is unwelcome, not
-    // unusable, and does not cost the round.
+    // Two rounds at most, as F3.9: one rejection owes one retry. A fault is an UNUSABLE reply (a clip number never given); a per-call refusal does not cost the round.
     let mut placed: Option<Vec<crate::cut::Fx>> = None;
     let mut refusals: Vec<String> = Vec::new();
     for attempt in 1..=2u32 {
-        // S4: each round asks afresh. A fault is an UNUSABLE reply (a clip number never given); a per-call
-        // refusal is unwelcome, not unusable, and does not cost the round.
         let reply = crate::cut_speed_pass::place(&batch, &ask(attempt, &batch));
         for answer in &reply.answers {
             if let crate::cut_speed_pass::Answer::Refused(reason) = answer {
-                // S2: the refusal MUST be said. Silently dropping a rate would leave the model believing its
-                // speed is in the cut.
+                // S2: the refusal MUST be said, or the model believes its speed is in the cut.
                 refusals.push(reason.clone());
             }
         }

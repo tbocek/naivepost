@@ -1,25 +1,13 @@
 //! F4.4's wire: the three audio.cpp calls one spoken line needs, over real HTTP.
 //!
-//! [`crate::narrate_tts`] owns every S1–S6 rule and takes its two network steps as closures; the
-//! page supplied those closures with a literal path and a test thread-local, so nothing was dialled
-//! and a scripted reply stood in for the work. This module is the program's side of that seam: it
-//! reads the Settings file on **every** call (§02-services#1 — each URL, key and model id is
-//! re-read per request, so an address typed while a run is going lands on the next line rather
-//! than the next launch), dials through [`crate::server_leg`] so each trip leaves its timed
-//! `requests.tsv` row (§09 §10), and hands the answers to `narrate_tts::speak_line`, which is
-//! still what decides whether a take landed.
+//! [`crate::narrate_tts`] owns every S1–S6 rule and takes its two network steps as closures; this is the program's side of that seam. Settings are read on **every** call
+//! (§02-services#1), it dials through [`crate::server_leg`] so each trip leaves its timed `requests.tsv` row (§09 §10), and hands answers to `narrate_tts::speak_line`.
 //!
-//! The three legs, in the flowchart's order:
-//! - [`health`] — S2: `GET /health`, then `GET /v1/models`. Both, because health alone green-lights
-//!   a server serving only step-1 models, which cannot narrate; the verdict itself stays in
-//!   [`checks::tts_endpoint_verdict`], shared with the Settings row so the two cannot disagree.
-//! - [`upload_reference`] — S3: `POST /v1/ui/upload`, raw bytes with `X-Audiocpp-Filename`, read
-//!   from `narrate/voice_ref.wav`. Called for EVERY line and never remembered across calls
-//!   ([`bodies::VOICE_REF_REUPLOADED_EVERY_LINE`]): a server path dies with a restart.
+//! - [`health`] — S2: `GET /health`, then `GET /v1/models` (health alone green-lights a server with only step-1 models); verdict in `checks::tts_endpoint_verdict`.
+//! - [`upload_reference`] — S3: `POST /v1/ui/upload` of `narrate/voice_ref.wav`, for EVERY line (`bodies::VOICE_REF_REUPLOADED_EVERY_LINE`): a server path dies with a restart.
 //! - [`post_speech`] — S4/S5: `POST /v1/audio/speech`, answering `(status, bytes)`.
 //!
-//! A down server answers `Err` naming that server and the address tried (`server_leg`'s own words),
-//! never `Ok` with nothing in it.
+//! A down server answers `Err` naming that server and the address tried, never `Ok` with nothing.
 
 use crate::bodies::ServerPath;
 use crate::layout::Tree;
@@ -30,36 +18,27 @@ use crate::services::{self, Endpoint, Kind, Server};
 use crate::settings::{self, Conf};
 use crate::voice_ref;
 
-/// The step column every row this module lands carries. `speak` is what a person reads beside the
-/// job name in `requests.tsv`; the job stays `narrate` because that is the run they started.
+/// The step column of every row this module lands; the job stays `narrate`, the run the user started.
 pub const STEP: &str = "speak";
 
 /// The job column: F4.4 speaks lines of the narration record, so its rows belong to `narrate`.
 pub const JOB: &str = "narrate";
 
-/// The settings as they are ON DISK right now, re-read per call. An unreadable file resolves as an
-/// empty one rather than failing the line: a settings file caught mid-write must not stop a speak
-/// when the loopback default is still right (the rule `settings_probe::current_conf` follows too).
+/// The settings as they are ON DISK now, re-read per call. An unreadable file resolves as empty: a file caught mid-write must not stop a speak (as `settings_probe::current_conf`).
 fn current_conf() -> Conf {
     settings::from_environment()
         .and_then(|paths| settings::read(&paths).ok())
         .unwrap_or_default()
 }
 
-/// audio.cpp's endpoint for this call: the Settings box, then `NAIVEPOST_TTS_URL`, then
-/// `AUDIOCPP_SERVER`, then the loopback — [`services::audio_endpoint`]'s precedence, unchanged.
-/// This module adds no override of its own, which is what makes the address the test seam: a fake
-/// server replaces the real one by being the address, and no program code knows the difference.
+/// audio.cpp's endpoint for this call: [`services::audio_endpoint`]'s precedence, unchanged. No override here, so a fake server replaces the real one by being the address.
 fn endpoint(conf: &Conf) -> Endpoint {
     services::audio_endpoint(conf, |name| std::env::var(name).ok())
 }
 
 /// Ask audio.cpp one thing, timed and recorded against this session's `requests.tsv`.
 ///
-/// The cancel closure is the live switch ([`crate::cancel_leg::cancel_check_now`]), not a stub:
-/// §02-services#1's last paragraph puts every request on the run context, so a ⏹ pressed while a
-/// synthesis is in flight ends the wait instead of leaving the app hanging on a server it already
-/// gave up on.
+/// The cancel closure is the live switch ([`crate::cancel_leg::cancel_check_now`]): §02-services#1 puts every request on the run context, so ⏹ ends the wait.
 fn ask(
     tree: &Tree,
     base: &TimedRow,
@@ -91,12 +70,9 @@ fn ask(
     .1
 }
 
-/// S2: is audio.cpp up, and what does it serve? Both questions, in that order, asked here rather
-/// than read off cached state — speaking is not a repaint, so the answer has to be current.
+/// S2: is audio.cpp up, and what does it serve? Asked here, not read off cached state: speaking is not a repaint.
 ///
-/// A `/health` that does not answer returns `Err` carrying `server_leg`'s own sentence (which
-/// names the address tried); the caller turns that into the refusal rather than treating it as
-/// "unhealthy but worth trying".
+/// A `/health` that does not answer returns `Err` with `server_leg`'s sentence (naming the address tried), which the caller turns into the refusal.
 pub fn health(tree: &Tree) -> Result<Vec<services::AudioModel>, String> {
     let conf = current_conf();
     let endpoint = endpoint(&conf);
@@ -121,9 +97,7 @@ pub fn health(tree: &Tree) -> Result<Vec<services::AudioModel>, String> {
 
 /// S3: put `narrate/voice_ref.wav` on the server and bring back the path the speech call will name.
 ///
-/// The upload carries the file's own bytes, not a local path: audio.cpp only sees inside its own
-/// container. A 401/403/405 is answered by [`services::upload_refused`] — the fix ("start it
-/// with --ui-management"), not the status — because nobody reads a 403 as a missing start-up flag.
+/// The upload carries the file's bytes, not a local path: audio.cpp only sees inside its own container. A 401/403/405 is answered by [`services::upload_refused`] (the fix, not the status).
 pub fn upload_reference(tree: &Tree) -> Result<ServerPath, String> {
     let conf = current_conf();
     let endpoint = endpoint(&conf);
@@ -166,21 +140,15 @@ pub fn upload_reference(tree: &Tree) -> Result<ServerPath, String> {
 
 /// S4/S5: one `POST /v1/audio/speech`, answering the status and the reply BYTES.
 ///
-/// Bytes rather than a string because S5 counts them and a wav is not UTF-8: read through
-/// `Sent.body` a synthesized voice sample would arrive lossily converted, and the floor
-/// ([`narrate_tts::MIN_WAV_BYTES`]) would then be measured against a different length than the
-/// file the user gets. The session folder comes from [`hold_tree`], which [`speak`] sets first.
+/// Bytes, not a string: S5 counts them and a wav is not UTF-8, so a lossy read would measure the floor ([`narrate_tts::MIN_WAV_BYTES`]) against a different length. The session folder comes from [`hold_tree`], set first by [`speak`].
 pub fn post_speech(body: &serde_json::Value) -> Result<(u16, Vec<u8>), String> {
     let tree = held_tree().expect("a speak sets its session tree before its speech leg runs");
     let conf = current_conf();
     speech_call(&tree, &endpoint(&conf), body)
 }
 
-/// The speech POST itself, tree explicit so [`speak`] can bind its own session into the closure
-/// `narrate_tts::speak_line` takes. Same endpoint rules, same bearer header and same cancel switch
-/// as every other leg; the dial is written by hand rather than through `server_leg::send` because a
-/// wav is binary and `Sent.body` is a `String` — reading a voice sample lossily would put S5's
-/// 1000-byte floor against a different length than the file the user gets.
+/// The speech POST itself, tree explicit so [`speak`] can bind its session into the closure. Same endpoint rules, bearer header and cancel switch as every leg;
+/// dialled by hand rather than through `server_leg::send` because a wav is binary and `Sent.body` is a `String`.
 pub fn speech_call(
     tree: &Tree,
     endpoint: &Endpoint,
@@ -197,8 +165,7 @@ pub fn speech_call(
     let builder = ureq::post(&url)
         .config()
         .timeout_connect(Some(server_leg::CONNECT_TIMEOUT))
-        // `Kind::Speech` has no ceiling of its own: a long line is long work (§1). Only the connect
-        // is bounded, so a machine that is not there fails fast.
+        // `Kind::Speech` has no ceiling (a long line is long work, §1); only the connect is bounded.
         .timeout_global(services::timeout_for(Kind::Speech))
         .http_status_as_error(false)
         .build();
@@ -207,21 +174,17 @@ pub fn speech_call(
         None => builder,
     };
     let payload = body.to_string();
-    // The model id goes on the row: it is the one column a reader needs to know WHICH voice was
-    // dialled, and the request body is where it lives.
+    // The model id goes on the row: the column that says WHICH voice was dialled.
     let model = body
         .get("model")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
-    // §02 §1 on the voice: a TTS line takes its server BEFORE the socket opens and gives it back when the wav
-    // is in. Without this every synthesis joins a queue inside audio.cpp, where this app can neither see nor
-    // time it — and `wait_s` would stay empty for the one model that runs per sentence.
+    // §02 §1 on the voice: a TTS line takes its server BEFORE the socket opens and gives it back when the wav is in, or every synthesis queues inside audio.cpp unseen and `wait_s` stays empty.
     let (slot, waited) =
         match crate::slot_gate::hold(&endpoint.url, "speech", &|| crate::cancel_leg::cancelled()) {
             Ok(got) => got,
-            // ⏹ landed while every voice slot was busy: nothing went out, so this reads as the refusal at the top
-            // of this function rather than as a server failure.
+            // ⏹ landed while every voice slot was busy: nothing went out, so this is the refusal, not a server failure.
             Err(crate::slot_gate::Wait::Cancelled) => {
                 return Err("speech: cancelled before sending".to_string())
             }
@@ -232,8 +195,7 @@ pub fn speech_call(
     // The wait is reported beside the call rather than folded into it (§10).
     let mut timer =
         crate::request_timing::Timer::queued((waited * 1000.0).round() as i64, started_ms);
-    // One writer for the row, whichever way the dial ended: §09 §10 wants the request on file even
-    // when it died, and written before the caller looks at the bytes.
+    // One writer for the row however the dial ended: §09 §10 wants the request on file even when it died.
     let landed =
         |timer: &crate::request_timing::Timer, outcome: crate::requests::Outcome, got: i64| {
             let mut row = base.clone();
@@ -272,8 +234,7 @@ pub fn speech_call(
         }
     }
     timer.finished(epoch_ms());
-    // The voice is in hand (or the dial died): §4's hold covers the call only, so the slot goes back before
-    // the caller looks at the bytes or starts the next line.
+    // §4's hold covers the call only, so the slot goes back before the caller looks at the bytes.
     drop(slot);
     let outcome = if (200..300).contains(&status) {
         crate::requests::Outcome::Ok
@@ -287,12 +248,9 @@ pub fn speech_call(
     Ok((status, bytes))
 }
 
-/// The whole of F4.4 for one line, over the real wire: S2 asked here, S3 uploaded here, S4 dialled
-/// here, and every rule — including which step refused and which therefore never ran — decided by
-/// [`narrate_tts::speak_line`].
+/// The whole of F4.4 for one line over the real wire: S2, S3 and S4 dialled here, every rule (which step refused, which never ran) decided by [`narrate_tts::speak_line`].
 ///
-/// `project_language` is P.policy.ttsLanguage and reaches [`narrate_tts::language`] unchanged, so
-/// the project's language is what the model is told to speak; only an empty one falls back to "en".
+/// `project_language` is P.policy.ttsLanguage and reaches [`narrate_tts::language`] unchanged; only an empty one falls back to "en".
 pub fn speak(
     tree: &Tree,
     text: &str,
@@ -302,13 +260,9 @@ pub fn speak(
     project_language: &str,
 ) -> Outcome {
     hold_tree(tree);
-    // S1 first, before ANY dial: with no reference there is nothing to clone, and asking a live
-    // server about its health would put two requests on the wire for a line that cannot be spoken.
+    // S1 first, before ANY dial: with no reference there is nothing to clone, and a health check would put two requests on the wire for a line that cannot be spoken.
     if let Some(problem) = narrate_tts::reference_problem(tree) {
-        // F4.6 S1: a voice pick "re-cuts the reference on the next line spoken", so a missing
-        // reference is BUILT here before it is refused — from the recording the project tagged, at the
-        // pitch the page holds. Only when that build cannot be done is the F4.4 refusal said, and its
-        // wording is the one F4.4 pins, unchanged.
+        // F4.6 S1: a voice pick re-cuts the reference on the next line, so a missing reference is BUILT here before it is refused; only a failed build says the F4.4 refusal, unchanged.
         match build_missing_reference(tree) {
             Ok(built) => {
                 for line in &built.said {
@@ -340,17 +294,12 @@ pub fn speak(
         &models,
         &model,
         upload_reference,
-        // The tree and endpoint are bound here so the closure keeps `post_speech`'s one-argument
-        // shape while still recording into this session and dialling this address.
+        // The tree and endpoint are bound here so the closure keeps `post_speech`'s one-argument shape.
         move |body| speech_call(tree, &dial, body),
     )
 }
 
-/// F4.6's door into F4.4: build the reference the session is missing, from the recording the project
-/// tagged as the narrator's. Every part of the decision is voice_ref's (S2's floors and cap, S3's
-/// level/shift); this resolves only what this leg already has to know — the source, the diarized turns
-/// and the word counts that go with them — and which ffmpeg to run.
-/// Under this a reference holds nothing to clone.
+/// Under this many seconds a reference holds nothing to clone.
 const MIN_REFERENCE_SECONDS: f64 = 0.1;
 
 pub fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
@@ -391,8 +340,7 @@ fn cut_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
         &source,
         &turns,
         |from, until| words_in(&words, from, until),
-        // §6's narrowing: the transcript lines inside the turn give its spoken span — first line's start
-        // to last line's end. No lines means no candidate at all.
+        // §6's narrowing: the transcript lines inside the turn give its spoken span; no lines means no candidate.
         |from, until| word_span(&words, from, until),
     )?;
     // ffmpeg answers success for seconds past a recording's end, leaving a file with no sound.
@@ -405,9 +353,7 @@ fn cut_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
     Ok(built)
 }
 
-/// The span the transcript's own words occupy inside a window: the earliest line start and the latest
-/// line end fully inside it. `None` when nothing falls there — a diarized turn with no words in it is the
-/// diarizer guessing over noise, so there is nothing to narrow to.
+/// The span the transcript's own words occupy inside a window (earliest line start to latest line end fully inside); `None` when no words fall there.
 pub fn word_span(lines: &[(f64, f64, usize)], from: f64, until: f64) -> Option<(f64, f64)> {
     let mut span: Option<(f64, f64)> = None;
     for (start, end, _) in lines.iter().filter(|(s, e, _)| *s >= from && *e <= until) {
@@ -418,8 +364,7 @@ pub fn word_span(lines: &[(f64, f64, usize)], from: f64, until: f64) -> Option<(
     span
 }
 
-/// §6 (`Reference build`): the log names the recording the reference was cut FROM, by file name — a path
-/// would bury the one fact that says whether this is the right speaker.
+/// §6 (`Reference build`): the log names the recording the reference was cut FROM, by file name, not path.
 fn source_file_name(tree: &Tree) -> String {
     voice_source(tree)
         .ok()
@@ -457,8 +402,7 @@ fn voice_source(tree: &Tree) -> Result<String, String> {
         .to_string())
 }
 
-/// Prepare keys everything per source by the file's own stem, not by its full path; that is what
-/// `prepare/inputs/<lane>/` is named after.
+/// Prepare keys everything per source by the file's stem; `prepare/inputs/<lane>/` is named after it.
 fn source_lane(source: &str) -> String {
     std::path::Path::new(source)
         .file_stem()
@@ -466,10 +410,7 @@ fn source_lane(source: &str) -> String {
         .unwrap_or_else(|| source.to_string())
 }
 
-/// The diarized turns of one source, in seconds. `turns.json` stores samples at the 16 kHz mono file
-/// Prepare transcribed from, and 16 000 is that file's rate by §6, so samples over 16 000 is the only
-/// conversion needed. No file is no turns, which voice_ref answers as S2's "run Prepare, or pick the
-/// seconds by hand under the video".
+/// The diarized turns of one source, in seconds: `turns.json` stores samples of the 16 kHz mono file Prepare transcribed (§6). No file is no turns (voice_ref's S2 answer).
 fn speaker_turns(tree: &Tree, lane: &str) -> Vec<(f64, f64, u32)> {
     const PREPARED_RATE: f64 = 16_000.0;
     let Ok(turns) = crate::requests::read_turns(tree, lane) else {
@@ -487,9 +428,7 @@ fn speaker_turns(tree: &Tree, lane: &str) -> Vec<(f64, f64, u32)> {
         .collect()
 }
 
-/// The transcript's own lines, seconds and words, for the words-per-second floor. Prefers the fixed
-/// file (what the fix pass settled on) and falls back to the raw transcript; neither means zero words,
-/// which sends S2 to "no clean solo stretch found" rather than inventing a density.
+/// The transcript's lines, seconds and words, for the words-per-second floor: the fixed file when there is one, else the raw transcript; neither means zero words.
 fn transcript_words(tree: &Tree, lane: &str) -> Vec<(f64, f64, usize)> {
     for path in [
         tree.transcript_fixed_tsv(lane),
@@ -506,8 +445,7 @@ fn transcript_words(tree: &Tree, lane: &str) -> Vec<(f64, f64, usize)> {
     Vec::new()
 }
 
-/// How many transcript words fall inside a candidate window — the number S2's
-/// P.eng.refMinWordsPerSecond is checked against.
+/// How many transcript words fall inside a candidate window (S2's P.eng.refMinWordsPerSecond is checked against it).
 fn words_in(lines: &[(f64, f64, usize)], from: f64, until: f64) -> usize {
     lines
         .iter()
@@ -516,9 +454,7 @@ fn words_in(lines: &[(f64, f64, usize)], from: f64, until: f64) -> usize {
         .sum()
 }
 
-/// The ffmpeg this call runs: the Settings box, else the bare program name so PATH answers. Clearing
-/// `FFMPEG` is a real answer the other legs read the same way, and a missing program is named by
-/// `voice_ref`'s own error rather than guessed around here.
+/// The ffmpeg this call runs: the Settings box, else the bare program name so PATH answers; a missing program is named by `voice_ref`'s error.
 fn ffmpeg_program(conf: &settings::Conf) -> String {
     if conf.ffmpeg.trim().is_empty() {
         "ffmpeg".to_string()
@@ -528,9 +464,7 @@ fn ffmpeg_program(conf: &settings::Conf) -> String {
 }
 
 thread_local! {
-    /// The session the current speak records into, read by [`post_speech`]: the closure signature
-    /// `narrate_tts::speak_line` takes for its speech leg carries the body alone, so the project
-    /// folder travels here rather than as a ninth argument.
+    /// The session the current speak records into, read by [`post_speech`]: the closure `narrate_tts::speak_line` takes carries the body alone.
     static SPEAK_TREE: std::cell::RefCell<Option<Tree>> = const { std::cell::RefCell::new(None) };
 }
 
@@ -539,14 +473,11 @@ pub fn hold_tree(tree: &Tree) {
     SPEAK_TREE.with(|cell| *cell.borrow_mut() = Some(tree.clone()));
 }
 
-/// The session [`post_speech`] will write its row into.
 pub fn held_tree() -> Option<Tree> {
     SPEAK_TREE.with(|cell| cell.borrow().clone())
 }
 
-/// A row for one of this module's calls: service audio, step [`STEP`], job [`JOB`]. The address is
-/// already in the row's own `kind`/url-free identity — `server_leg` records the URL it dialled in
-/// the timing columns, so only the model id travels here.
+/// A row for one of this module's calls: service audio, step [`STEP`], job [`JOB`]; only the model id travels here (the URL is in the timing columns).
 fn row(kind: &str, model: &str) -> TimedRow {
     server_leg::base_row(Server::Audio, model, kind, "", STEP, JOB)
 }
@@ -562,8 +493,7 @@ fn trim(body: &str) -> String {
     }
 }
 
-/// Milliseconds since the epoch, for the row's `started` column. `server_leg` keeps its own copy
-/// private, and this leg times its own dial.
+/// Milliseconds since the epoch, for the row's `started` column (`server_leg` keeps its copy private).
 fn epoch_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

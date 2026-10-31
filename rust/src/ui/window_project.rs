@@ -1,6 +1,5 @@
-//! §F0.9 / §F0.10 / §F0.12 — the project dialogs: ＋ New, Open, Save, Rescan and Add sources, plus
-//! the import run they drive. Split out of `window.rs`, which is past its size budget; its doors are
-//! re-exported through `window`, so no caller's path changed.
+//! §F0.9 / §F0.10 / §F0.12 — the project dialogs: ＋ New, Open, Save, Rescan and Add sources, plus the
+//! import run they drive. Doors are re-exported through `window`.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -26,21 +25,18 @@ use crate::ui::window::{
     WINDOW_BAR, WINDOW_QUEUE,
 };
 
-/// The New button's tooltip, §1's wording for badge **1**.
 pub(crate) const NEW_TIP: &str =
     "New project \u{2014} name it, put it where you want it, and start over";
 
-/// S3's confirmation, drawn from [`new_project`]'s strings and deciding nothing: the question, the
-/// two paragraphs, and the two answers. "Start new…" is destructive because what it does cannot be
-/// undone, and Cancel keeps the focus so a blind Enter does nothing (the prototype's `confirm`).
+/// S3's confirmation, drawn from [`new_project`]'s strings: "Start new…" is destructive, and Cancel keeps the
+/// focus so a blind Enter does nothing.
 pub fn new_project_confirm(
     parent: Option<&adw::ApplicationWindow>,
     detail: &str,
 ) -> adw::MessageDialog {
     let dialog = adw::MessageDialog::new(parent, Some(new_project::QUESTION), Some(detail));
-    // The × in the header bar answers exactly as Cancel does. `close-button` is adw::Window's own
-    // property (the response its × produces is `close-response`, which names Cancel), so both are
-    // set through the object rather than through a trait method this binding only has on Window.
+    // The × answers exactly as Cancel does; `close-response` is set through the object because this binding
+    // only has the trait method on Window.
     dialog.set_property("close-response", "cancel");
     dialog.add_response("cancel", "Cancel");
     dialog.add_response("start", new_project::BUTTON);
@@ -49,10 +45,8 @@ pub fn new_project_confirm(
     dialog
 }
 
-/// Where a press of ＋ New goes: ask [`new_project::press`], then draw what it says. Every string the
-/// user sees comes from that module, including the refusal's and the confirmation's. Whether the
-/// session is empty comes from the live handle the pages mutate, so S2 asks only when there is
-/// something to lose; a run under way comes from F0.2's [`run::RunBar`], which ▶ answers for too.
+/// Where a press of ＋ New goes: ask [`new_project::press`], then draw what it says. Whether the session is
+/// empty comes from the live handle the pages mutate; a run under way comes from F0.2's [`run::RunBar`].
 pub(crate) fn wire_new(
     new_: &gtk::Button,
     bar: &Rc<RefCell<run::RunBar>>,
@@ -76,7 +70,7 @@ pub(crate) fn wire_new(
                 let open = open.clone();
                 let session = session.clone();
                 dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {
-                    // Cancel is not pressing on: S3's whole point is that nothing was changed.
+                    // Cancel changes nothing.
                     if response == "start" {
                         ask_new_project(&status, &root, &open, &session);
                     }
@@ -90,14 +84,9 @@ pub(crate) fn wire_new(
 
 /// S4's sheet: where the new project goes AND what it is called, with the name editable.
 ///
-/// A save-style dialog, not `select_folder`: a folder picker only ever hands back a folder that already
-/// exists and never shows an editable name, so S4's default name, its `.naivepost` appending and its
-/// `-2`/`-3` walk would be computed and thrown away, and S5's refusal could only fire on a folder that
-/// happened to be a project under its own name. The save sheet is the one that puts a name in a text
-/// box the person can overwrite, and the path it returns is the project they named.
-///
-/// "Create" as the accept label because "Save" would promise a file and a project is a folder (01 §1);
-/// F0.8 does not name the button, so this is the app's decision.
+/// A save-style dialog, not `select_folder`: a folder picker never shows an editable name, so S4's default
+/// name, its `.naivepost` appending and its `-2`/`-3` walk would be thrown away. "Create" is the accept label
+/// because "Save" would promise a file and a project is a folder (01 §1).
 pub fn new_project_dialog(dir: &Path, day: &str) -> gtk::FileDialog {
     let dialog = gtk::FileDialog::builder()
         .title(new_project::TITLE)
@@ -108,9 +97,8 @@ pub fn new_project_dialog(dir: &Path, day: &str) -> gtk::FileDialog {
     dialog
 }
 
-/// S4 answered, however it was answered — by the sheet below or by a test handing over the same path.
-/// Every arm of [`new_project::answer`] gets exactly one sentence here: create and apply (S6), say the
-/// refusal (S5), or, for a dismissal, change nothing at all.
+/// S4 answered, by the sheet or by a test handing over the same path. Each arm of [`new_project::answer`]
+/// gets one sentence: create and apply (S6), say the refusal (S5), or change nothing on a dismissal.
 pub fn name_chosen(
     root: &Path,
     chosen: Option<&Path>,
@@ -118,26 +106,23 @@ pub fn name_chosen(
     session: &Rc<RefCell<Project>>,
 ) {
     match new_project::answer(root, chosen) {
-        // S6: apply it, not just announce it — log, session swap, remembered pair, status.
+        // S6: apply it: log, session swap, remembered pair, status.
         new_project::Answer::Created(created) => {
             crate::ui::new_apply::apply(&created, session, status)
         }
-        // S5: the name stays the project that is there; nothing is half-applied and nothing is logged.
+        // S5: the name stays the project that is there; nothing is half-applied or logged.
         new_project::Answer::Refused(reason) => status.set_text(&reason),
         new_project::Answer::Dismissed => {}
     }
 }
 
-/// S4: ask where the new project goes and what it is called. The name's date is taken here because
-/// [`new_project`] is handed the day rather than reading a clock, which is what keeps its tests off
-/// today; the sheet's answer goes through [`name_chosen`], the same door a test uses.
+/// S4: ask where the new project goes and what it is called. The day is taken here because [`new_project`]
+/// is handed it rather than reading a clock; the answer goes through [`name_chosen`], the door a test uses.
 fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<RefCell<Project>>) {
-    // `%F` is the ISO date, which is what the spec's default name is.
     let day = glib::DateTime::now_local()
         .and_then(|today| today.format("%F").map(|day| day.to_string()))
         .unwrap_or_else(|_| "new-project".to_string());
-    // S6's chooser rule reaches this sheet too: after a project created outside the root, that is the
-    // folder the person was last standing in, and the free-name walk has to run where the sheet stands.
+    // S6's chooser rule: the free-name walk has to run where the person was last standing.
     let dir = crate::ui::new_apply::chooser_dir()
         .or_else(|| open.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| root.to_path_buf());
@@ -151,56 +136,46 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<R
         None::<&gtk::Window>,
         None::<&gio::Cancellable>,
         move |chosen: Result<gio::File, glib::Error>| {
-            // An error is a dismissal (GTK reports cancel that way): nothing was asked for.
+            // An error is a dismissal (GTK reports cancel that way).
             let picked = chosen.ok().and_then(|file| file.path());
             name_chosen(&root, picked.as_deref(), &status, &session);
         },
     );
 }
 
-/// What the last ＋ New press asked for. The desktop's sheet cannot be typed into in a headless run, so
-/// this is how a check sees the title and the default name the press put up — the same handles the
-/// press set, not a copy built for the test.
+/// What the last ＋ New press asked for: a headless run cannot type into the sheet, so a check reads the
+/// title and default name here.
 pub fn last_ask() -> Option<gtk::FileDialog> {
     LAST_ASK.with(|asked| asked.borrow().clone())
 }
 
-/// What the last Open press asked for, read back the same way as [`last_ask`] — including the folder
-/// S6 says it should start in, which is what a check compares against `new_apply::chooser_dir()`.
-/// Test-only by name: the program never reads it, only sets the slot when it opens the chooser.
+/// What the last Open press asked for, including the folder it should start in (compare `new_apply::chooser_dir()`).
+/// Test-only by name.
 pub fn last_open_ask_for_test() -> Option<gtk::FileDialog> {
     LAST_OPEN.with(|asked| asked.borrow().clone())
 }
 
 thread_local! {
-    /// The naming sheet the last press opened, for [`last_ask`]. Thread-local like the rest of this
-    /// window's state: it belongs to the session, not to the process's arguments.
+    /// The naming sheet the last press opened, for [`last_ask`].
     static LAST_ASK: std::cell::RefCell<Option<gtk::FileDialog>> =
         const { std::cell::RefCell::new(None) };
 
-    /// The folder chooser the last Open press opened, for [`last_open_ask_for_test`].
     static LAST_OPEN: std::cell::RefCell<Option<gtk::FileDialog>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// Prepare's own two widgets (F0.12): the button that adds files, and the tick that decides whether
-/// they come inside the project or stay where they are. The ellipsis is the single character §1's
-/// screenshot shows, not three dots.
+/// Prepare's two widgets (F0.12): the button that adds files, and the tick that decides whether they come
+/// inside the project. The ellipsis is the single character §1's screenshot shows.
 pub(crate) const ADD_LABEL: &str = "Add source files…";
 pub(crate) const COPY_LABEL: &str = "copy into project";
 
-/// The Rescan button's tooltip, §1's wording for badge **8**.
 pub(crate) const RESCAN_TIP: &str = "Rescan inputs and outputs";
 
-/// §1's wording for the Settings badge: the two servers the dialog is about, named in the tooltip
-/// so the gear is never an unlabelled control.
+/// §1's wording for the Settings badge: names the two servers so the gear is never unlabelled.
 pub(crate) const SETTINGS_TIP: &str = "Settings \u{2014} the LLM and audio.cpp endpoints";
 
-/// Where a press of Rescan goes: [`rescan`] decides everything — which rows are gone, what was
-/// re-read, what the status says. The button forwards and draws the answer (spec/00-principles.md §5).
-///
-/// No run refusal here: S1 drops what has vanished whether or not a run is on, so unlike Save this
-/// handler never reads [`run::RunBar`].
+/// Where a press of Rescan goes: [`rescan`] decides everything. S1 drops what has vanished whether or not a
+/// run is on, so this never reads [`run::RunBar`].
 pub(crate) fn wire_rescan(
     button: &gtk::Button,
     status: &gtk::Label,
@@ -208,9 +183,8 @@ pub(crate) fn wire_rescan(
     shell: &Rc<RefCell<Shell>>,
 ) {
     let status = status.clone();
-    // The window is handed an immutable `&Project` and holds no live project yet, so the scan works on
-    // the private copy shared with Add sources, and [`rescan_apply`] writes the pruned list back to the
-    // session file. Which folder is open is the same stand-in New and Save use, so all three agree.
+    // The window holds no live project yet, so the scan works on the private copy shared with Add sources and
+    // [`rescan_apply`] writes the pruned list back. The folder is the same stand-in New and Save use.
     let root = std::env::current_dir().unwrap_or_default();
     let project = session.clone();
     let shell = shell.clone();
@@ -218,8 +192,7 @@ pub(crate) fn wire_rescan(
         let dir = startup::open_dir();
         let tree = layout::Tree::new(&dir).ok();
         let found = rescan::rescan(&mut project.borrow_mut(), &root, &dir, tree.as_ref());
-        // Every step the window takes with that answer -- the drop lines, the write-back, the vanished
-        // page, all three refreshes and the status -- is `rescan_apply`'s, in the spec's order.
+        // Every step with that answer is `rescan_apply`'s, in the spec's order.
         let scanned = project.borrow().clone();
         rescan_apply::apply(
             &found,
@@ -233,15 +206,11 @@ pub(crate) fn wire_rescan(
     });
 }
 
-/// Where a press of "Add source files…" goes: [`add_sources`] decides whether it may happen at all,
-/// which kinds the chooser offers, what is copied and what is only referenced, and what the status
-/// says. The button forwards (spec/00-principles.md §5).
+/// Where a press of "Add source files…" goes: [`add_sources`] decides whether it may happen and what is
+/// copied or only referenced.
 ///
-/// The copy's bytes are drawn on F0.5's bar: a copy is a run of its own (F0.12 S0), so it reports
-/// through the same bookkeeping ▶'s run uses ([`add_files`], which feeds `runqueue::Queue`) rather
-/// than painting a second bar. The session that grows here is the window's private copy for the
-/// same reason [`wire_rescan`] spells out — the pages render the `&Project` handed to
-/// `build_window`, and a live project state is F0.9's.
+/// A copy is a run of its own (F0.12 S0): it reports through the bookkeeping ▶ uses ([`add_files`] feeds
+/// `runqueue::Queue`) rather than a second bar. The session is the window's private copy, as in [`wire_rescan`].
 pub(crate) fn wire_add(
     window: &adw::ApplicationWindow,
     button: &gtk::Button,
@@ -257,7 +226,7 @@ pub(crate) fn wire_add(
     // The tick is read when the chooser is answered, not when it opened.
     let copy_into = copy_into.clone();
     button.connect_clicked(move |_| {
-        // S0 first: a copy is a run of its own, so no chooser opens while something else runs.
+        // S0 first: no chooser opens while something else runs.
         if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
             status.set_text(reason);
             return;
@@ -266,13 +235,11 @@ pub(crate) fn wire_add(
     });
 }
 
-/// S1's chooser: titled for adding, filtered to audio and video, and willing to take a whole card at
-/// once. As in `ask_save_project` it is answered by nobody in a headless test, which is the point —
-/// what a test asserts is that the press got this far.
+/// S1's chooser: titled for adding, filtered to audio and video, accepting a whole card at once. A headless
+/// test answers nobody; it asserts the press got this far.
 ///
-/// GTK 4.10 replaced the file chooser with `gtk::FileDialog` and deprecated everything below it; the
-/// replacement has no multiple-selection filter API that answers a *native* chooser, so this stays on
-/// the old calls and takes their warnings here rather than silencing them crate-wide.
+/// GTK 4.10 deprecated the file chooser, but `gtk::FileDialog` has no multiple-selection filter that answers a
+/// *native* chooser, so this stays on the old calls and takes their warnings here.
 #[expect(
     deprecated,
     reason = "the 4.10 replacement cannot offer a filtered multi-select native chooser"
@@ -288,8 +255,7 @@ fn ask_add_sources(
         .modal(true)
         .action(gtk::FileChooserAction::Open)
         .build();
-    // The accept button says what it does. `add_choice` is not the three-label call it looks like —
-    // that one adds an extra combo — so the buttons are set where they belong.
+    // `add_choice` is not the three-label call it looks like (it adds a combo), so the buttons are set here.
     chooser.set_accept_label(Some("Add"));
     chooser.set_cancel_label(Some("Cancel"));
     chooser.set_select_multiple(true);
@@ -299,8 +265,7 @@ fn ask_add_sources(
         filter.add_pattern(&format!("*{ext}"));
     }
     chooser.add_filter(&filter);
-    // F0.8 S6: a project created outside the root is where its footage almost certainly is, so the
-    // chooser opens there; with nothing remembered the chooser keeps its own default.
+    // F0.8 S6: a project created outside the root is where its footage almost certainly is.
     if let Some(dir) = crate::ui::new_apply::chooser_dir() {
         let _ = chooser.set_current_folder(Some(&gio::File::for_path(&dir)));
     }
@@ -308,7 +273,7 @@ fn ask_add_sources(
     let _status = status.clone();
     let _session = session.clone();
     let _copy_into = copy_into.clone();
-    // The same stand-in New, Save and Rescan use, so all four flows agree on which project is open.
+    // The same stand-in New, Save and Rescan use.
     let _root = std::env::current_dir().unwrap_or_default();
     let window = window.clone();
     chooser.connect_response(move |chooser, response| {
@@ -324,35 +289,31 @@ fn ask_add_sources(
         // The same body a widget test drives, so the chooser and the seam cannot drift apart.
         add_files(&window, &files);
     });
-    // Built is not shown: without this the press did nothing at all — the chooser existed, unseen,
-    // and its response never came. Same call as every other native chooser in the app.
+    // Built is not shown: without this the chooser existed unseen and its response never came.
     CHOOSERS_SHOWN.with(|shown| shown.set(shown.get() + 1));
     crate::ui::chooser_hold::show(&chooser);
 }
 
 thread_local! {
-    /// How many times this thread has raised the Add sources chooser. A headless test can never
-    /// answer one, so "the press got as far as opening it" is only observable as a count — a widget
-    /// can outlive the borrow that made it, which rules out holding one in shared state.
+    /// How many times this thread has raised the Add sources chooser: a headless test can never answer one, so
+    /// the press getting that far is only observable as a count.
     static CHOOSERS_SHOWN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// The door a widget test reads: how many Add sources choosers have been raised so far.
+/// How many Add sources choosers have been raised so far.
 pub fn add_chooser_shown_count() -> usize {
     CHOOSERS_SHOWN.with(|shown| shown.get())
 }
 
-/// Zero the count, so a test asserts a delta of one rather than whatever earlier checks stacked up.
+/// Zero the count, so a test asserts a delta of one.
 pub fn reset_add_chooser_shown() {
     CHOOSERS_SHOWN.with(|shown| shown.set(0));
 }
 
-/// The Save button's tooltip, §1's wording for badge **3**.
 pub(crate) const SAVE_TIP: &str = "Save this project to a file";
 
-/// The seam a widget test drives: the same body the chooser's callback calls, reached through the
-/// window rather than by threading `bar`/`status`/`session` by hand. It decides nothing — it finds
-/// the widgets this window built and forwards to [`open_folder`].
+/// The seam a widget test drives: the body the chooser's callback calls, reached through the window. It
+/// finds the widgets this window built and forwards to [`open_folder`].
 pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
     let (Some(bar), Some(status), Some(session)) = (
         WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
@@ -364,24 +325,15 @@ pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
     open_folder(&bar, &status, &session, picked)
 }
 
-/// The seam a widget test drives for F0.12: the same body the "Add source files…" chooser's response
-/// calls, reached through the window rather than by threading `bar`/`status`/`session`/`queue`/
-/// `progress` by hand. It decides nothing — [`add_sources`] does — but it is where the copy's bytes
-/// reach the bar.
+/// The seam a widget test drives for F0.12: the body the "Add source files…" response calls. [`add_sources`]
+/// decides; this is where the copy's bytes reach the bar.
 ///
-/// A copy is a run of its own (F0.12 S0), so it borrows F0.5's bookkeeping instead of painting a
-/// second bar: the copy owns one track, each file asked for is one task on it, and each file's byte
-/// fraction inside that task is what `prog` reports. That is why the bar moves in proportion to the
-/// bytes actually copied rather than to the number of rows added — a slow card is what the bar is
-/// waiting on, and `add_sources::Progress` already carries those bytes.
+/// A copy is a run of its own (F0.12 S0): one track, each file one task, each file's byte fraction what `prog`
+/// reports, so the bar moves with the bytes copied (`add_sources::Progress`).
 ///
-/// The copy itself runs on a worker (§03-shell §1, the window thread never waits; the first rewrite copied
-/// gigabytes inside the chooser's callback): each file's bytes go down there, and each file's row is added and
-/// drawn here as that file lands, so the list fills while the bar counts. ⏹ ends the copy between two files;
-/// what landed by then stays.
-///
-/// Returns whether the copy started. Refused while another run is on (S0): the session is not touched, so a
-/// refused press cannot half-apply.
+/// The copy runs on a worker (§03-shell §1); each file's row is added and drawn here as it lands. ⏹ ends the
+/// copy between two files; what landed stays.
+/// Returns whether the copy started. Refused while another run is on (S0), leaving the session untouched.
 pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) -> bool {
     let (Some(bar), Some(status), Some(session), Some(queue), Some(progress)) = (
         WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
@@ -395,28 +347,26 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
     let copy = copy_into_project(window).is_some_and(|tick| tick.is_active());
     let root = std::env::current_dir().unwrap_or_default();
     let dir = startup::open_dir();
-    // S0 first, again at the seam: pressed while a run is on, it says the sentence and stops before
-    // any byte moves. Nothing here clears a ▶ run's flag — ⏹ owns that.
+    // S0 again at the seam: pressed while a run is on, it says the sentence and stops before any byte moves.
+    // Nothing here clears a ▶ run's flag; ⏹ owns that.
     if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
         status.set_text(reason);
         return false;
     }
-    // The folder a copy lands in has to exist before the first `.part` is renamed into it (F0.12 S2).
+    // The folder a copy lands in must exist before the first `.part` is renamed into it (F0.12 S2).
     if copy && std::fs::create_dir_all(dir.join("sources")).is_err() {
         status.set_text(add_sources::NO_SOURCES_DIR);
         log_line(add_sources::NO_SOURCES_DIR);
         return false;
     }
-    // Ours alone: the import marks itself as *the* run so a ▶ press during a copy is refused the
-    // other way round, and only this flow may take that flag away.
+    // The import marks itself as *the* run so a ▶ press during a copy is refused; only this flow clears it.
     bar.borrow_mut().running = Some(run::Run {
         step: run::Step::Prepare,
         paused: false,
         log_expanded: true,
         sources: run::snapshot_sources(&session.borrow()),
     });
-    // One job on the first track; every file asked for is one task of it, so the tooltip counts the
-    // pick rather than what survived (`added N of M` is the status line's job, not the bar's).
+    // One job on the first track; each file is one task, so the tooltip counts the pick, not survivors.
     queue.borrow_mut().job(TRACK_IMPORT, IMPORT_JOB, 0, 0);
     queue.borrow_mut().push(TRACK_IMPORT, files.len(), "file");
     let counted = Rc::new(std::cell::Cell::new((0usize, 0usize)));
@@ -437,8 +387,7 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
                 &format!("copying {}", landed.name),
             );
             paint_import(&progress, &queue);
-            // The row: `add_sources`' own rule, whose copy finds this file already on disk at its size and
-            // only stats it.
+            // `add_sources`' own rule: the copy finds this file already on disk at its size and only stats it.
             let added = add_sources::add(
                 &mut session.borrow_mut(),
                 &root,
@@ -466,8 +415,7 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
         let counted = counted.clone();
         move |copied: Result<bool, String>| {
             queue.borrow_mut().done(TRACK_IMPORT, 1.0);
-            // The import is over either way. The status line is set by hand rather than through `end_run`,
-            // which clears it, and this flow needs it for S5's sentence.
+            // Set the status by hand: `end_run` clears it, and this flow needs it for S5's sentence.
             bar.borrow_mut().running = None;
             bar.borrow_mut().stop_flag = false;
             crate::cancel_leg::clear();
@@ -479,7 +427,6 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
                         log_line(">>> add sources: stopped -- the files copied so far are in");
                     }
                 }
-                // S0's abandonment: the log keeps the reason, the status line the sentence.
                 Err(err) => {
                     status.set_text(add_sources::NO_SOURCES_DIR);
                     log_line(&err);
@@ -497,16 +444,14 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
     true
 }
 
-/// One file of the pick, on disk where the row will name it: the file, its name for the bar, and the byte
-/// fraction of the whole pick landed so far.
+/// One file of the pick: the file, its name for the bar, and the byte fraction of the pick landed so far.
 struct Landed {
     file: std::path::PathBuf,
     name: String,
     fraction: f64,
 }
 
-/// The copy half of a press, on the worker: each file's bytes, then a [`Landed`] note. `Ok(true)` when ⏹
-/// ended it between two files.
+/// The copy half of a press, on the worker. `Ok(true)` when ⏹ ended it between two files.
 fn copy_files(
     files: &[std::path::PathBuf],
     dir: &Path,
@@ -525,13 +470,11 @@ fn copy_files(
         }
         let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
         if copy {
-            // `add_sources`' own copy rule — `.part` then rename, same name + same size skipped, a
-            // file already inside the project left where it is. Not reimplemented here.
+            // `add_sources`' own copy rule (`.part` then rename, same size skipped); not reimplemented here.
             add_sources::copy_one(file, dir).map_err(|err| err.to_string())?;
         }
         done_bytes += size;
-        // The bar means "how much of this import is on disk": the byte fraction, not the task count.
-        // Three tiny files beside one long recording should not read as mostly copied.
+        // The bar means bytes on disk, not task count: three tiny files beside one long recording are not mostly copied.
         let fraction = if total == 0 {
             1.0
         } else {
@@ -549,8 +492,8 @@ fn copy_files(
     Ok(false)
 }
 
-/// Draw every row the list does not show yet, by the same door the build used, so an added row carries every
-/// control §4 gives a row (the track menu included) rather than a shorter version of one.
+/// Draw every row the list does not show yet, by the door the build used, so an added row carries every
+/// control §4 gives a row.
 fn draw_new_rows(
     window: &adw::ApplicationWindow,
     session: &Rc<std::cell::RefCell<Project>>,
@@ -562,8 +505,7 @@ fn draw_new_rows(
     else {
         return;
     };
-    // GTK's `ListBox` exposes its rows through the widget tree, so they are counted with the same iterator
-    // the rest of this module walks widgets with: that count is where the drawing stopped.
+    // Rows are counted with the same widget-tree walk the rest of this module uses.
     let drawn = list
         .observe_children()
         .iter::<glib::Object>()
@@ -582,9 +524,8 @@ fn draw_new_rows(
     }
 }
 
-/// Draw the import on F0.5's bar. The fraction and the tooltip come from the queue exactly as
-/// [`paint_progress`] takes them for a ▶ run; only the expander's body is left alone, since an
-/// import writes no run lines of its own.
+/// Draw the import on F0.5's bar; fraction and tooltip come from the queue as in [`paint_progress`]. The
+/// expander's body is left alone, since an import writes no run lines.
 fn paint_import(progress: &gtk::ProgressBar, queue: &std::cell::RefCell<runqueue::Queue>) {
     let (_text, tip) = queue.borrow().text_and_tip();
     progress.set_fraction(queue.borrow().fraction());
@@ -593,18 +534,13 @@ fn paint_import(progress: &gtk::ProgressBar, queue: &std::cell::RefCell<runqueue
     }
 }
 
-/// The import's own job name on the bar's line and tooltip.
 const IMPORT_JOB: &str = "import";
-/// The copy gets one track: the whole pick is a single run of its own, not work interleaved with a
-/// ▶ run (which is precisely why S0 refuses while one is on).
+/// The copy gets one track: the whole pick is a single run of its own (hence S0 refuses while one is on).
 const TRACK_IMPORT: usize = 0;
 
-/// The Open button's tooltip, §1's wording for badge **2**.
 pub(crate) const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
 
-/// Where a press of Open goes. [`open_project`] decides everything — which folder the pick names,
-/// whether it is an old single-file project, what the read produced and what had to be dropped; this
-/// only asks for a folder, then draws the answer.
+/// Where a press of Open goes. [`open_project`] decides everything; this asks for a folder, then draws.
 pub(crate) fn wire_open(
     open_: &gtk::Button,
     bar: &Rc<RefCell<run::RunBar>>,
@@ -615,16 +551,13 @@ pub(crate) fn wire_open(
     let status = status.clone();
     let session = session.clone();
     open_.connect_clicked(move |_| {
-        // The chooser cannot be answered in a headless test, so what a test asserts is that the press
-        // got here and that every rule behind it lives in `open_project` (see
-        // `tests/suite/open_project_widgets.rs`, which drives `open_folder` directly).
+        // A headless test cannot answer the chooser; rules live in `open_project` (see `tests/suite/open_project_widgets.rs`).
         ask_open_project(&bar, &status, &session);
     });
 }
 
-/// S1: the folder chooser, titled for opening. Folder-select rather than file-select because a
-/// project *is* a folder (01 §1); a user who picks `naivepost.json` inside one still gets that
-/// folder, which is [`open_project::folder_for`]'s rule rather than the chooser's.
+/// S1: the folder chooser, titled for opening. Folder-select because a project *is* a folder (01 §1); picking
+/// `naivepost.json` inside one still gets the folder ([`open_project::folder_for`]).
 fn ask_open_project(
     bar: &Rc<RefCell<run::RunBar>>,
     status: &gtk::Label,
@@ -634,8 +567,7 @@ fn ask_open_project(
         .title(open_project::TITLE)
         .accept_label("Open")
         .build();
-    // S6's chooser rule, for this chooser: with a project created outside the root this launch, the
-    // person's projects are almost certainly there, so the picker starts there.
+    // S6's chooser rule: the picker starts where a project created outside the root lives.
     if let Some(dir) = crate::ui::new_apply::chooser_dir() {
         dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
     }
@@ -657,21 +589,15 @@ fn ask_open_project(
     );
 }
 
-/// F0.9's refusal during a run, in the shape New's and Save's take: an Open replaces the window the run
-/// reports into and the folder it writes into.
+/// F0.9's refusal during a run, in the shape New's and Save's take.
 pub const OPEN_STOP_FIRST: &str =
     "stop the run first \u{2014} opening another project would leave it writing into this one";
 
-/// S1 → S4 for one picked path, with no chooser in the way. This is the body the chooser's callback
-/// calls, and the seam a widget test drives so the assertions land on real state rather than on a
-/// dialog nobody answers.
+/// S1 → S4 for one picked path, with no chooser in the way: the chooser callback's body and a widget test's seam.
 ///
-/// S4's "refresh every page" is done by building the window again on the opened folder, through the
-/// same `build_window_at` the launch uses. A window seeds a great deal from its project when it is built
-/// (Prepare's rows and boxes, the tab switch, the cut and its history, the line, the close hook's folder);
-/// repainting some of it left the first port showing the old project's sources and context under the new
-/// one's name, with the Cut tab asking the old project whether it was unlocked. The old window is closed
-/// FIRST, so its close hook flushes into its own folder, never into the one being opened.
+/// S4's "refresh every page" is done by building the window again on the opened folder (`build_window_at`):
+/// repainting some of it left the old project's sources and context under the new name. The old window is
+/// closed FIRST, so its close hook flushes into its own folder, never the one being opened.
 pub fn open_folder(
     bar: &Rc<RefCell<run::RunBar>>,
     status: &gtk::Label,
@@ -700,8 +626,7 @@ pub fn open_folder(
             for line in migration.lines.iter().chain(&migration.failures) {
                 log_line(line);
             }
-            // S4's last steps (remember, status) live in `ui::open_apply`, which owns their order and
-            // wording, and speak through the NEW window's status line.
+            // S4's last steps (remember, status) live in `ui::open_apply`, which owns their order and wording.
             let status = find_status(window.upcast_ref()).unwrap_or_else(|| status.clone());
             crate::ui::open_apply::finish(&applied, &opened_project, &status);
             true
@@ -709,8 +634,7 @@ pub fn open_folder(
     }
 }
 
-/// Close the window and build it again on `dir`, at the same size, keeping the application alive across
-/// the moment it has no window.
+/// Close the window and build it again on `dir`, same size, keeping the application alive meanwhile.
 pub(crate) fn reopen_window_on(project: &Project, dir: &Path) -> adw::ApplicationWindow {
     let old = crate::ui::window::main_window();
     let app = old
@@ -731,9 +655,8 @@ pub(crate) fn reopen_window_on(project: &Project, dir: &Path) -> adw::Applicatio
 }
 
 thread_local! {
-    /// What this launch has opened, per root — the pairs settings writes as `PROJECT_<n>_ROOT` /
-    /// `PROJECT_<n>_FILE`. Held here rather than written out because persisting belongs to
-    /// `settings`' writer, which owns quoting and the whole-store render.
+    /// What this launch has opened, per root: the pairs settings writes as `PROJECT_<n>_ROOT` / `PROJECT_<n>_FILE`.
+    /// Persisting belongs to `settings`' writer.
     static REMEMBERED: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }

@@ -1,10 +1,3 @@
-//! §03-shell.md §5: the Settings dialog's named server entries, the widget half. Writing, Audio and Drawing each
-//! get a dropdown of entries with ＋ New and 🗑 Delete under their heading; [`crate::server_entries`] holds the
-//! rules and the file. Picking an entry fills the section's boxes and makes its values the ones `llm.conf` holds;
-//! typing into a box writes through to the entry in use as well. Split out of `settings.rs`, which is past its
-//! size budget; the dialog hands over the three things it owns (filling its boxes, the boxes' current values,
-//! its log) as closures.
-
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -138,8 +131,6 @@ pub(crate) fn wire(lent: Lent, conf: &crate::settings::Conf) {
     let mut owed = paths
         .as_ref()
         .is_some_and(|paths| !server_entries::path(paths).exists());
-    // `llm.conf` is what every flow reads, so the entry in use says what it says: a hand edit to the file since
-    // the last open lands in the entry instead of being undone by the next pick.
     for section in Section::ALL {
         let now = server_entries::values_from(section, conf);
         let group = servers.group_mut(section);
@@ -162,7 +153,6 @@ pub(crate) fn wire(lent: Lent, conf: &crate::settings::Conf) {
             said_run_open: false,
         })
     });
-    // The first open writes the migrated entries, so the file says what the dialog shows.
     persist(&*lent.note);
     paint();
     let lent = Rc::new(lent);
@@ -276,9 +266,6 @@ fn pick(section: Section, name: &str, lent: &Lent) {
     (lent.fill)(section, &entry);
     with_state(|state| state.filling = false);
     persist(&*lent.note);
-    // No repaint here: a pick comes from the dropdown's own selection signal, and swapping its model inside
-    // that signal brings GTK down. The names did not change; the dropdown already shows the pick.
-    // A run already waiting on the old server keeps waiting on it: flows read the settings per request.
     let open = crate::ui::run_close::run_open();
     let say = with_state(|state| {
         let first = open && !state.said_run_open;

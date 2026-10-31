@@ -1,29 +1,12 @@
 //! F2.9 (Copy, Paste, Lane) — `spec/05-cut.md` F2.9.
-//!
-//! ⧉ Copy takes the selection in hand — a second at least, and the selection itself stays on the band,
-//! because taking a copy is reading and not editing. ⧉ Paste puts those seconds at the red line: footage is
-//! spliced in as a `copy:<seconds>` card, so the video gets longer and nothing filmed is lost; sound is laid
-//! over the kept footage, one piece per stretch, replacing the recording it was copied from and leaving the
-//! picture exactly as it was. ⇲ Lane gives the copy a row of its own — a cut lane windowing the file — with
-//! nothing cut to it. Pasting consumes the copy; Esc drops it.
-//!
-//! Which of the two a paste is was settled by the band the selection was drawn on (F2.6's scope), not asked
-//! again here: the hand carries that [`Scope`] and never re-reads the band, which may have been cleared or
-//! moved somewhere else in between.
-//!
-//! No UI lives here and none is wired: `rust/src/ui/window.rs` renders only the Prepare page, so there are
-//! no ⧉ Copy / ⧉ Paste / ⇲ Lane buttons to attach yet (as with F2.1–F2.8) and no widgets of this flow to
-//! compare against a spec image. The widget layer will forward the three presses and print what these return.
 
 use crate::cut::{Cut, Lane, Seg};
 use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
 use crate::timeline::Recording;
 use crate::{timeline, tools};
 
-/// F2.9: the three buttons' labels and tooltips, spelled once here so the page's widgets and the tests
-/// that read them cannot drift apart — the same arrangement `cut_verbs::BUTTONS` sets for ＋ / | / －.
-/// Wording follows `spec/inventory/cut.md` §D item 4; the glyphs are part of the label because the
-/// headless container has no icon theme (the precedent F2.5's volume control sets).
+/// F2.9: the three buttons' labels and tooltips, spelled once here so the page's widgets and the
+/// tests that read them cannot drift apart.
 pub const COPY_LABEL: &str = "\u{29c9} Copy";
 pub const COPY_TIP: &str =
     "take the selection in hand \u{2014} a second at least; the band keeps showing it";
@@ -32,15 +15,16 @@ pub const PASTE_TIP: &str = "put what is in hand where the red line is \u{2014} 
 pub const LANE_LABEL: &str = "\u{21f2} Lane";
 pub const LANE_TIP: &str = "give the copy a row of its own \u{2014} nothing is cut to it yet";
 
-/// F2.9 S2: what Esc says when it drops the copy. Plain words, because the person asked for nothing to
-/// happen and the status line is where the app answers.
+/// F2.9 S2: what Esc says when it drops the copy. Plain words, because the person asked for nothing
+/// to happen and the status line is where the app answers.
 pub const DROPPED: &str = "the copy is dropped";
 
 // --- S1: taking it in hand -------------------------------------------------------------------------------
 
-/// F2.9 S1: the copy in hand — where its seconds start, how long they are, and what they are of. "What was
-/// drawn on is what is copied": footage from the pictures (with the sound filmed with them), sound from a
-/// lane. The scope travels with the seconds so the paste never has to ask the band again.
+/// F2.9 S1: the copy in hand — where its seconds start, how long they are, and what they are of.
+/// "What was drawn on is what is copied": footage from the pictures (with the sound filmed with
+/// them), sound from a lane. The scope travels with the seconds so the paste never has to ask the
+/// band again.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hand {
     pub from: f64,
@@ -49,12 +33,10 @@ pub struct Hand {
 }
 
 impl Hand {
-    /// Is this a stretch of footage, or of one recording's sound?
     fn is_footage(&self) -> bool {
         matches!(self.scope, Scope::Footage { .. })
     }
 
-    /// The recording the hand holds the sound of, when it holds a sound.
     fn recording(&self) -> Option<&str> {
         match &self.scope {
             Scope::Sound { recording } => Some(recording),
@@ -62,8 +44,6 @@ impl Hand {
         }
     }
 
-    /// The camera row to show the pasted footage on — the row it was copied from. A sound has no row of its
-    /// own, and the pieces it lays inherit the footage they stand over instead.
     fn row(&self) -> i32 {
         match self.scope {
             Scope::Footage { row } if row != crate::cut_select::ANY_ROW => row as i32,
@@ -72,22 +52,19 @@ impl Hand {
         }
     }
 
-    /// F2.9: the same reading as [`Hand::recording`], public so the page can name the file a sound copy
-    /// came from without reaching through the private matching helpers.
+    /// F2.9: the same reading as [`Hand::recording`], public so the page can name the file a sound
+    /// copy came from without reaching through the private matching helpers.
     pub fn recording_public(&self) -> Option<&str> {
         self.recording()
     }
 
-    /// F2.9 S3: what a footage copy is windowed *from* — the recording it was taken out of. Footage has
-    /// no single source in the hand (it is the timeline's own pictures), so the caller supplies one from
-    /// the session; this returns `None` for footage and the recording for a sound.
+    /// F2.9 S3: what a footage copy is windowed *from* — the recording it was taken out of.
     pub fn source_public(&self) -> Option<&str> {
         self.recording()
     }
 }
 
-/// F2.9: the three buttons as `(widget name, label, tooltip)`, in the order the spec lists them — the
-/// same shape `cut_verbs::BUTTONS` uses so the page builds them with one loop.
+/// F2.9: the three buttons as `(widget name, label, tooltip)`, in the order the spec lists them.
 pub const BUTTONS: [(&str, &str, &str); 3] = [
     ("copy-button", COPY_LABEL, COPY_TIP),
     ("paste-button", PASTE_LABEL, PASTE_TIP),
@@ -103,19 +80,16 @@ pub enum Take {
 }
 
 /// F2.9 S1 (`Copy takes the selection in hand (≥ 1 s …)`; `// P.policy.minSceneSeconds`, read from
-/// [`crate::cut_select`] where §10's row is catalogued).
-///
-/// Taking a copy is READING, not editing: this borrows the selection and clears nothing, so the band keeps
-/// what it showed and the person can aim the paste with the source still visible. `from` normalises to the
-/// lower end and `length` to the positive span, because F2.6 lets a drag run either way.
+/// [`crate::cut_select`] where §10's row is catalogued). `from` normalises to the lower end and
+/// `length` to the positive span, because F2.6 lets a drag run either way.
 pub fn copy(selection: Option<&Selection>) -> Take {
     let Some(band) = selection else {
         return Take::NothingSelected(
             "select a stretch of the pictures or of a lane first \u{2014} \u{29c9} Copy takes the selection in hand",
         );
     };
-    // A drag may run either way (F2.6), so the length is measured before anything is compared with the floor —
-    // a right-to-left band is eight seconds, not minus eight, and refusing it for its sign would be absurd.
+    // A drag may run either way (F2.6), so the length is measured before anything is compared with
+    // the floor.
     let (from, end) = if band.start <= band.end {
         (band.start, band.end)
     } else {
@@ -135,8 +109,7 @@ pub fn copy(selection: Option<&Selection>) -> Take {
     })
 }
 
-/// F2.9 S1: what the page says once the seconds are in hand — and where to take them next. A sound names its
-/// recording, because "the footage at 4:10" is not what a lane's seconds are.
+/// F2.9 S1: what the page says once the seconds are in hand.
 pub fn copied_status(hand: &Hand) -> String {
     let span = (hand.from, hand.from + hand.length);
     match &hand.scope {
@@ -157,17 +130,12 @@ pub fn copied_status(hand: &Hand) -> String {
 
 // --- S2: the paste at the red line ------------------------------------------------------------------------
 
-/// F2.9 S2: what a paste says when there is no line to paste at — the page has never been clicked, and
-/// "the red line" is not yet a second (F2.4 owns where the line comes from).
+/// F2.9 S2: what a paste says when there is no line to paste at.
 pub const NO_LINE_YET: &str = "click the timeline where the copy goes first";
 
-/// F2.9 S2 (`footage → spliced insert copy:<seconds> · the video gets longer`): the card a footage paste/// puts in the cut. `s == e` with a `dur` is what makes it SPLICED — the cut is opened there, those seconds
-/// play again, and the footage carries on from the very next frame, so nothing filmed is lost.
-///
-/// The "file" is the session itself: `copy:<seconds>`, read back by [`Seg::copy_seconds`]. Three decimals,
-/// because a hand-placed second like 12.345 must survive the round trip through the file. A card names no
-/// asset of its own (`ins` carries the copy) and reads no file second: `ss` stays 0, so [`Seg::is_insert`]
-/// reports it as spliced rather than overwriting.
+/// F2.9 S2 (`footage → spliced insert copy:<seconds> · the video gets longer`): the card a footage
+/// paste/// puts in the cut. Three decimals, because a hand-placed second like 12.345 must survive
+/// the round trip through the file.
 pub fn spliced(hand: &Hand, at: f64) -> Seg {
     Seg {
         s: at,
@@ -179,19 +147,12 @@ pub fn spliced(hand: &Hand, at: f64) -> Seg {
     }
 }
 
-/// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the kept footage
-/// spans overlapping `[from, to)`, in time order. An insert is not a picture under a sound — only footage is
-/// — which is what the refusal below asks for.
-///
-/// This is the generic "what kept footage lies under this span" query and deliberately applies no minimum: the
-/// sound-over floor lives in [`sound_piece_overlap`], which is what the laying path filters through. Leaving it
-/// unfiltered keeps this usable as a plain read (F2.10's hearing checks ask it that way) instead of quietly
-/// answering two different questions with one function.
+/// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the kept
+/// footage spans overlapping `[from, to)`, in time order.
 pub fn footage_stretches(cut: &Cut, from: f64, to: f64) -> Vec<(f64, f64)> {
     let mut spans: Vec<(f64, f64)> = cut
         .segs
         .iter()
-        // An insert covers no footage of its own; a card is skipped whether spliced or overwriting.
         .filter(|seg| seg.ins.is_empty() && seg.s < to && seg.e > from)
         .map(|seg| (seg.s.max(from), seg.e.min(to)))
         .collect();
@@ -199,31 +160,12 @@ pub fn footage_stretches(cut: &Cut, from: f64, to: f64) -> Vec<(f64, f64)> {
     spans
 }
 
-/// `P.eng.soundMinPieceSeconds` (spec/10-parameters.md §5.1: 0.05, "under this a sound-over piece is not worth
-/// a segment of its own"; prototype `sndMinLn`, go/cut.go). The floor a piece of laid-over sound has to clear
-/// before it earns a segment: below it the sound would be a blink, and the footage either side of it would have
-/// been split for nothing.
-///
-/// Three floors look alike here and answer three different questions; this is only the third:
-/// * [`crate::cut_select::MIN_SECONDS`] (`P.eng.minPieceSeconds`, 0.04) — is a remainder left by a REMOVAL
-///   worth keeping at all;
-/// * [`crate::fx_lane::MIN_BAND_SECONDS`] (`P.eng.effectMinSeconds`, 0.1) — how short an effect band may be
-///   DRAGGED down to without vanishing from under the hand;
-/// * this one — is a stretch of kept footage under a sound long enough that laying a piece over it buys
-///   something rather than costing a split.
+/// The floor a piece of laid-over sound has to clear before it earns a segment: below it the sound
+/// would be a blink, and the footage either side of it would have been split for nothing.
 pub const MIN_SOUND_PIECE_SECONDS: f64 = 0.05;
 
-/// F2.9 S2: the part of `[from, to)` that a segment offers to a laid-over sound, or `None` when there is
-/// nothing worth laying. Two reasons for `None`, matching the prototype's one condition
-/// (`if f.isInsert() || t1-t0 < sndMinLn`):
-/// * the segment is an insert — a card or a spliced copy covers no footage of its own, so a sound cannot lie
-///   over it and take the place of a recording;
-/// * the clipped overlap is under [`MIN_SOUND_PIECE_SECONDS`] — a blink of sound, with a split of the picture
-///   bought for it.
-///
-/// The boundary is tested as "not below" rather than "at or above": 0.05 is not representable in binary, so an
-/// overlap clipped to exactly the floor can come out a ulp under it and would be thrown away as a blink. Same
-/// shape as [`crate::cut_speed::press`]'s tolerance on `MIN_MARKED_SECONDS`.
+/// F2.9 S2: the part of `[from, to)` that a segment offers to a laid-over sound, or `None` when
+/// there is nothing worth laying.
 pub fn sound_piece_overlap(seg: &Seg, from: f64, to: f64) -> Option<(f64, f64)> {
     if !seg.ins.is_empty() {
         return None;
@@ -238,21 +180,15 @@ pub fn sound_piece_overlap(seg: &Seg, from: f64, to: f64) -> Option<(f64, f64)> 
     }
 }
 
-/// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the copied sound cut
-/// into one piece per kept stretch of `[at, at + length)` — each carrying its own part of the file, so pieces
-/// either side of a hole are parts of one sound and not its opening seconds twice. The caller splices them in
-/// where they fall: footage before and after each piece is kept, so the picture is left exactly as it was.
-///
-/// `ss` walks with the SESSION second a piece stands at, hole and all: at 30 the copy is sixteen seconds in,
-/// even though only six of its seconds played, because the sound being replaced was there too. `lane` does NOT
-/// walk — every piece stands in for the same recording, named once for the whole span, because a hole in the
-/// footage is no reason to change what is being replaced. Empty means there was no picture under the copy at
-/// all, which is what the refusal below says.
+/// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the
+/// copied sound cut into one piece per kept stretch of `[at, at + length)` — each carrying its own
+/// part of the file, so pieces either side of a hole are parts of one sound and not its opening
+/// seconds twice.
 pub fn lay_pieces(cut: &Cut, path: &str, hand: &Hand, at: f64, file_seconds: f64) -> Vec<Seg> {
     let to = at + hand.length;
-    // Filtered through the floor rather than straight off `footage_stretches`: a kept stretch shorter than
-    // MIN_SOUND_PIECE_SECONDS is not worth a piece, and laying none over it means no split either (see
-    // [`lay_over`], which asks the same helper for the same answer).
+    // Filtered through the floor rather than straight off `footage_stretches`: a kept stretch
+    // shorter than MIN_SOUND_PIECE_SECONDS is not worth a piece, and laying none over it means no
+    // split either (see [`lay_over`], which asks the same helper for the same answer).
     cut.segs
         .iter()
         .filter_map(|seg| sound_piece_overlap(seg, at, to))
@@ -260,7 +196,8 @@ pub fn lay_pieces(cut: &Cut, path: &str, hand: &Hand, at: f64, file_seconds: f64
             s: start,
             e: stop,
             ins: path.to_string(),
-            // The sound starts where the piece starts, and a piece beginning after a hole resumes mid-file.
+            // The sound starts where the piece starts, and a piece beginning after a hole resumes
+            // mid-file.
             ss: file_seconds + (start - at),
             lane: hand.recording().unwrap_or_default().to_string(),
             ..Default::default()
@@ -268,29 +205,23 @@ pub fn lay_pieces(cut: &Cut, path: &str, hand: &Hand, at: f64, file_seconds: f64
         .collect()
 }
 
-/// F2.9 S2: lay the copied sound over the kept footage at `at` and return how many pieces were laid (zero means
-/// there was no picture under it).
-///
-/// The cut is rebuilt as before / piece / after for every stretch the span touched; footage the span never
-/// reached stays in the list untouched, so the video does not get longer by a single second.
+/// F2.9 S2: lay the copied sound over the kept footage at `at` and return how many pieces were laid
+/// (zero means there was no picture under it).
 pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f64) -> usize {
     let to = at + hand.length;
     let pieces = lay_pieces(cut, path, hand, at, file_seconds);
     if pieces.is_empty() {
         return 0;
     }
-    // Every kept stretch the span touched is cut into before / piece / after; untouched footage stays in the
-    // list as it was, so only the seconds under the copy change.
+    // Every kept stretch the span touched is cut into before / piece / after.
     let mut out: Vec<Seg> = Vec::with_capacity(cut.segs.len() + pieces.len() * 2);
     for seg in &cut.segs {
         if !seg.ins.is_empty() || seg.e <= at || seg.s >= to {
             out.push(seg.clone());
             continue;
         }
-        // The important half of `P.eng.soundMinPieceSeconds`: an overlap under the floor lays no piece, and so
-        // must not split anything either. Asked before head/tail are computed, because a split around a piece that
-        // was never laid is exactly the cost the floor exists to avoid — the footage would come back in two
-        // pieces with nothing heard over the join.
+        // The important half of `P.eng.soundMinPieceSeconds`: an overlap under the floor lays no
+        // piece, and so must not split anything either.
         if sound_piece_overlap(seg, at, to).is_none() {
             out.push(seg.clone());
             continue;
@@ -307,7 +238,6 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
         for piece in &pieces {
             if piece.s < seg.e && piece.e > seg.s {
                 let (from, to) = (piece.s.max(seg.s), piece.e.min(seg.e));
-                // The picture stays what it was: only the sound under it changes.
                 out.push(Seg {
                     s: from,
                     e: to,
@@ -329,31 +259,13 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
     pieces.len()
 }
 
-/// F2.9 S2/S3: which second INSIDE the source the hand's opening second is — §B's `at(t)` for the
-/// recording the copy came from, through [`crate::timeline::local_at`], the same conversion every other
-/// reader of file seconds uses (`cut_picture` picks its frame with it, `edges` bounds a splice with it).
-///
-/// The old page code passed the SESSION second straight through as a file second, so on any recording that
-/// does not start at 0:00 (which is every recording after the first in a real session) a pasted span asked
-/// the tape for material from later than the person pointed at, and a lane row windowed the wrong part of
-/// its file.
-///
-/// * a **sound** hand names its own recording (`Scope::Sound { recording }`), so that is the one converted;
-///   an unknown name answers 0 rather than inventing an offset — the paste refuses a file that left the
-///   session before it ever asks this,
-/// * a **footage** hand has no single source (the pictures are several cameras' worth), so the run holding
-///   its opening second is converted, and with no filmed runs at all there is nothing to convert against,
-///   which answers 0 — the honest reading of "no tape under these seconds",
-/// * `cut.shift` rides along, because a slid recording's material starts elsewhere (§B's hand correction),
-/// * the answer is clamped at 0: a selection that began before the recording did has nothing earlier on
-///   that lane to play, and a negative file second would ask the decoder for frames that do not exist.
+/// F2.9 S2/S3: which second INSIDE the source the hand's opening second is.
 pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
     let recording = match hand.recording() {
         Some(base) => filmed.iter().find(|rec| rec.base == base).cloned(),
         None => None,
     }
     .or_else(|| {
-        // A camera strip goes by its row, not a file. Any other name not on the page has left the session.
         let by_time = hand.recording().is_none_or(|base| {
             base.strip_prefix("cam")
                 .is_some_and(|row| row.parse::<u32>().is_ok())
@@ -370,7 +282,6 @@ pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
     let Some(recording) = recording else {
         return 0.0;
     };
-    // A lane windows its file from its own second, not from the file's head.
     let off = cut
         .lanes
         .iter()
@@ -385,18 +296,8 @@ pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
     .max(0.0)
 }
 
-/// F2.9 S2 (`Pasting consumes the copy; Esc drops it`): the whole paste in one call, so "consumed only when
-/// it happened" is a rule with one home rather than three callers agreeing about it.
-///
-/// `Err` for a page with no line yet ([`NO_LINE_YET`]), for a sound whose recording has left the session
-/// ([`no_source`]) and for a sound with no picture under it ([`no_footage_status`]) — in every case the copy
-/// STAYS in hand, because "the paste did not fail so much as
-/// miss: the answer to missing is to move the red line and press again, not to go and copy the same seconds a
-/// second time". `Ok(status)` consumes it.
-///
-/// `path` is the copied recording's project-relative path (what each laid piece names as its asset) and
-/// `file_seconds` the file second the span starts at — [`file_seconds`] converts it from the session clock,
-/// including wherever that recording sits on it and any hand correction on it. A footage paste ignores both.
+/// F2.9 S2 (`Pasting consumes the copy; Esc drops it`): the whole paste in one call, so "consumed
+/// only when it happened" is a rule with one home rather than three callers agreeing about it.
 pub fn paste(
     cut: &mut Cut,
     hand: &mut Option<Hand>,
@@ -409,8 +310,6 @@ pub fn paste(
         return Err(NO_LINE_YET.to_string());
     };
     let Some(held) = hand.as_ref() else {
-        // Nothing in hand: the button on the page is ⧉ Insert, not ⧉ Paste, so this is a call that should
-        // not happen — said plainly rather than pasting nothing quietly.
         return Err(
             "nothing is in hand \u{2014} \u{29c9} Copy takes a selection there first".to_string(),
         );
@@ -436,16 +335,13 @@ pub fn paste(
     Ok(laid_status(length, &recording, pieces, at))
 }
 
-/// The cut's own length in seconds — the total the paste reports before and after. Cards count for their
-/// `dur`, footage for its span, which is what the page's "Cut" readout shows too: this calls
-/// [`crate::cut_screen::cut_seconds`] rather than repeating it, so a paste can never report a total the screen
-/// would not print.
+/// The cut's own length in seconds — the total the paste reports before and after.
 fn cut_length(cut: &Cut) -> f64 {
     crate::cut_screen::cut_seconds(cut)
 }
 
-/// F2.9 S2: what a footage paste says — the seconds, where they came from, where they went, and both totals,
-/// because "the video got longer" is only checkable against what it was.
+/// F2.9 S2: what a footage paste says — the seconds, where they came from, where they went, and
+/// both totals, because "the video got longer" is only checkable against what it was.
 pub fn pasted_status(length: f64, from: f64, at: f64, now: f64, was: f64) -> String {
     format!(
         "pasted {} from {} at {} \u{2014} the cut is {}, was {}",
@@ -457,8 +353,7 @@ pub fn pasted_status(length: f64, from: f64, at: f64, now: f64, was: f64) -> Str
     )
 }
 
-/// F2.9 S2: what a sound paste says. Naming the stretches is the difference between a puzzling second marker
-/// in the lanes and an expected one, so a copy that crossed a hole in the cut says so.
+/// F2.9 S2: what a sound paste says.
 pub fn laid_status(length: f64, recording: &str, stretches: usize, at: f64) -> String {
     let over = if stretches > 1 {
         format!("{stretches} stretches of footage")
@@ -480,43 +375,36 @@ pub fn no_footage_status(at: f64) -> String {
     )
 }
 
-/// F2.9 S2 (`Esc drops it`): let go of the copy. `true` when there was one, so the page only says the copy is
-/// dropped when something actually was in hand.
+/// F2.9 S2 (`Esc drops it`): let go of the copy.
 pub fn drop(hand: &mut Option<Hand>) -> bool {
     hand.take().is_some()
 }
 
 // --- S3: ⇲ Lane ------------------------------------------------------------------------------------------
 
-/// §05-cut#8 (`Lane refuses "click the timeline where the new lane starts first"`): ⇲ Lane's own sentence for a
-/// page never clicked. ⧉ Paste says the same thing differently ([`NO_LINE_YET`]) because it asks where the copy
-/// GOES; a lane asks where it STARTS, and the two buttons must not answer one question with the other's words.
+/// §05-cut#8 (`Lane refuses "click the timeline where the new lane starts first"`): ⇲ Lane's own
+/// sentence for a page never clicked. ⧉ Paste says the same thing differently ([`NO_LINE_YET`])
+/// because it asks where the copy GOES.
 pub const NO_LANE_LINE_YET: &str = "click the timeline where the new lane starts first";
 
-/// F2.9 S3: what a lane refuses a copy too short to be a window on — a row under [`MIN_SCENE_SECONDS`] is a
-/// band no handle can be grabbed on, and a lane nobody can resize is not a row of its own.
+/// F2.9 S3: what a lane refuses a copy too short to be a window on.
 pub fn too_short() -> &'static str {
     "that copy is too short to be a lane of its own"
 }
 
-/// §05-cut#8 (`Lane refuses "nothing is rolling at m:ss any more"`): the refusal when the second the new row
-/// would start at lies outside every recording — a lane windowing a file from a minute nothing filmed has
-/// nothing to window, and starting the row anyway would be a row of silence nobody asked for.
+/// §05-cut#8 (`Lane refuses "nothing is rolling at m:ss any more"`): the refusal when the second
+/// the new row would start at lies outside every recording.
 pub fn not_rolling(at: f64) -> String {
     format!("nothing is rolling at {} any more", tools::mm_ss(at))
 }
 
-/// §05-cut#8 (`Paste refuses "<base> is not in the session any more — the copied sound has nowhere to come
-/// from"`): the refusal when the recording the copy was taken from is no longer one of the session's files.
 pub fn no_source(base: &str) -> String {
     format!(
         "{base} is not in the session any more \u{2014} the copied sound has nowhere to come from"
     )
 }
 
-/// F2.9 S3: a name for the new lane that nothing already uses — `want`, then `want-2`, `want-3`… The name is
-/// the lane's identity in `Cut::rows` and in every scene's `quiet` list, so a second copy of the same file
-/// cannot share it without two rows answering to one speaker badge.
+/// F2.9 S3: a name for the new lane that nothing already uses.
 pub fn lane_name(want: &str, taken: &[String]) -> String {
     if !taken.iter().any(|name| name == want) {
         return want.to_string();
@@ -531,10 +419,10 @@ pub fn lane_name(want: &str, taken: &[String]) -> String {
     }
 }
 
-/// F2.9 S3 (`footage copy on its own row (a cut lane windowing the file), nothing cut yet`): where ⇲ Lane may
-/// put the new row, decided from the seconds alone so the two refusals have one home: no line yet
-/// ([`NO_LANE_LINE_YET`]), a line no recording is running at ([`not_rolling`]), or a copy too short for a row
-/// of its own ([`too_short`]). `filmed` is the session's filmed runs — the same list the band is laid out from.
+/// F2.9 S3 (`footage copy on its own row (a cut lane windowing the file), nothing cut yet`): where
+/// ⇲ Lane may put the new row, decided from the seconds alone so the two refusals have one home: no
+/// line yet ([`NO_LANE_LINE_YET`]), a line no recording is running at ([`not_rolling`]), or a copy
+/// too short for a row of its own ([`too_short`]).
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneStart {
     Start(f64),
@@ -554,15 +442,8 @@ pub fn lane_start(at: Option<f64>, hand: &Hand, filmed: &[(f64, f64)]) -> LaneSt
     LaneStart::Start(at)
 }
 
-/// F2.9 S3 (`footage copy on its own row (a cut lane windowing the file), nothing cut yet`): the lane this
-/// copy becomes — `off` is the FILE second the copy was taken at, since "the copy was taken at a session
-/// second, and the two differ by wherever that recording sits", and `at` is where the row starts on the clock.
-///
-/// The caller passes the name it settled on ([`crate::cut::Cut::lane_rows`] offers one per recording; this flow
-/// offers `"Copied"`, suffixed past any row already taken — see [`lane_name`]), because a second copy of the
-/// same file cannot share a name: `Lane::name` is what `Cut::rows` keys on and what every scene's `quiet` list
-/// names. Nothing is cut to the new row: the caller adds no [`Seg`], because a lane that arrived already green
-/// would be a cut nobody made — the row is offered, and ＋ Add is what lays scenes on it later.
+/// F2.9 S3 (`footage copy on its own row (a cut lane windowing the file), nothing cut yet`): the
+/// lane this copy becomes.
 pub fn lane(hand: &Hand, source: &str, file_seconds: f64, at: f64, name: String) -> Option<Lane> {
     if hand.length < MIN_SCENE_SECONDS {
         return None;
@@ -576,8 +457,8 @@ pub fn lane(hand: &Hand, source: &str, file_seconds: f64, at: f64, name: String)
     })
 }
 
-/// F2.9 S3: what the lane says when it arrives — the seconds, where they came from, its name, and where it
-/// starts.
+/// F2.9 S3: what the lane says when it arrives — the seconds, where they came from, its name, and
+/// where it starts.
 pub fn lane_status(length: f64, from: f64, name: &str, at: f64) -> String {
     format!(
         "{} from {} is now the {name} lane, starting at {}",

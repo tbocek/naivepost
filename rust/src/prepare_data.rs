@@ -1,8 +1,7 @@
 //! The data Prepare writes (spec/04-prepare.md §3 → spec/01-project-and-files.md §1): the `prepare/`
 //! tree and the one file that records what was read, `inputs/meta.env`.
 //!
-//! [`crate::layout`] already spells every path in §1's block, so this module adds only what a path cannot
-//! say: which recording a run chose, and what the whole set of files is as data a test can walk.
+//! [`crate::layout`] spells every path in §1's block; this adds what a path cannot say: which recording a run chose, and the whole set of files as data a test can walk.
 
 use std::path::{Path, PathBuf};
 
@@ -12,12 +11,8 @@ use crate::project::Project;
 use crate::requests;
 use crate::sources;
 
-/// `SCALE`, as this rewrite spells it.
-///
-/// §1 lists `INTERVAL, SCALE always`, but §7 makes `frame_scale` prototype-only — "ignored on load, never
-/// written" — because frames are kept at the video's own size and [F1.7](spec) scales only on the way to
-/// the model. So there is one scale, and the file says what it is rather than carrying a preset the app no
-/// longer has: dropping the key would break the scripts §1 writes this file for.
+/// `SCALE`, as this rewrite spells it: §1 lists `INTERVAL, SCALE always`, but §7 makes `frame_scale` prototype-only (frames keep the video's own size, [F1.7](spec) scales on the way to the model),
+/// so the file says `native` rather than dropping the key, which would break the scripts §1 writes it for.
 pub const SCALES: &str = "native";
 
 /// The keys `meta.env` carries, in §1's order.
@@ -39,8 +34,7 @@ fn base(stored: &str) -> String {
     }
 }
 
-/// A number the way §1's file wants it: `1`, not `1.0`. The file is for humans and scripts, and every
-/// reader of a `.env` would have to trim the tail itself.
+/// A number the way §1's file wants it: `1`, not `1.0` (readers of a `.env` would otherwise trim the tail).
 fn number(value: f64) -> String {
     let text = value.to_string();
     match text.strip_suffix(".0") {
@@ -51,15 +45,10 @@ fn number(value: f64) -> String {
 
 /// S2: the pairs `meta.env` holds — §1's own conditionals, in its own order.
 ///
-/// `INTERVAL` and `SCALE` are always there, `INTERVAL` being the extraction grid the frames on disk sit on
-/// (Freq, which it once held, is gone); the video pair only when there is footage and the audio pair
-/// only when narrator 1 resolves. Which footage row is *the* one is not spelled out, so it is the first
-/// row with 🎥 ticked whose file is a video: that is the row the rest of Prepare treats as primary, and
-/// an unticked video is footage for nobody. Likewise slot 1's holder is the narrator's own microphone
-/// ([`sources::narrator_of`]), which is what `AUDIO_*` has always named.
+/// `INTERVAL` and `SCALE` are always there (`INTERVAL` is the extraction grid the frames sit on); the video pair only with footage, the audio pair only when narrator 1 resolves.
+/// *The* footage row is the first with 🎥 ticked whose file is a video (the row the rest of Prepare treats as primary); slot 1's holder is the narrator's microphone ([`sources::narrator_of`]).
 ///
-/// Paths go through [`layout::write_path`], so a project file keeps §1's one path rule — `project:` for
-/// what lives inside it, root-relative under the application root, absolute otherwise.
+/// Paths go through [`layout::write_path`] (§1's one path rule: `project:` inside the project, root-relative under the application root, absolute otherwise).
 pub fn meta(project: &Project, root: &Path, tree_dir: &Path) -> Vec<(String, String)> {
     let mut pairs = vec![
         (
@@ -91,26 +80,20 @@ pub fn meta(project: &Project, root: &Path, tree_dir: &Path) -> Vec<(String, Str
     pairs
 }
 
-/// S2: write `inputs/meta.env`. Its existence is what §1 reads as "the sources were read", so a rewrite
-/// replaces the file rather than adding to it — the latest read is the only one that means anything.
+/// S2: write `inputs/meta.env`. Its existence is §1's "the sources were read" marker, so a rewrite replaces the file.
 pub fn write_meta(tree: &Tree, project: &Project, root: &Path) -> Result<(), String> {
     requests::write_meta(tree, &meta(project, root, tree.dir()))
 }
 
-/// The application root `meta.env`'s paths are written against: the folder the session sits in, which
-/// is how every other ▶ leg resolves a path (§F1.1's own `startup::session_dir(cwd)`). A caller that
-/// already knows its root passes it to [`write_meta`] directly.
+/// The application root `meta.env`'s paths are written against: the folder the session sits in (§F1.1's `startup::session_dir(cwd)`); a caller that knows its root passes it to [`write_meta`].
 pub fn default_root() -> PathBuf {
     crate::startup::open_dir()
 }
 
 /// §3 (▶ Prepare): stamp `inputs/meta.env` at the start of a run, before any stage reads a source.
 ///
-/// §1 treats this file as the marker that the sources were read, so a run that never wrote it left no
-/// trace of having read anything. The spec gives no failure rule for a marker, and Failure-is-specific
-/// says name it where it failed and carry on elsewhere: a `meta.env` that will not write therefore does
-/// NOT refuse the press — the sentence comes back here for the log and the run goes through. `Ok(None)`
-/// is the success case: nothing to say, because S4's own lines already report the inputs.
+/// §1 treats this file as the sources-were-read marker. The spec gives no failure rule for a marker, so by Failure-is-specific a `meta.env` that will not write does NOT refuse the press:
+/// the sentence comes back for the log. `Ok(None)` is success: S4's own lines already report the inputs.
 pub fn stamp_meta(tree: &Tree, project: &Project) -> Option<String> {
     write_meta(tree, project, &default_root())
         .err()
@@ -119,10 +102,7 @@ pub fn stamp_meta(tree: &Tree, project: &Project) -> Option<String> {
 
 /// S1: everything §1's block says Prepare writes, as `(what it is, where under prepare/)`.
 ///
-/// Every path comes from a [`Tree`] accessor, so this list is the contract and its own check — §1 spells
-/// the file, `Tree` says where it lives — and one test can walk the whole set instead of it being remembered
-/// in prose. The scratch folders are in it because §1 names them as scratch while running (`asr/c00.wav…`,
-/// `diar/`); when they are removed is a flow rule (F1.x), not a layout question.
+/// Every path comes from a [`Tree`] accessor, so this list is the contract and its own check, and one test can walk the set. Scratch folders (`asr/c00.wav…`, `diar/`) are included as §1 names them; when they are removed is a flow rule (F1.x).
 pub fn paths(tree: &Tree, source: &str) -> Vec<(&'static str, std::path::PathBuf)> {
     [
         ("the sources were read", tree.meta_env()),

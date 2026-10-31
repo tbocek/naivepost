@@ -1,8 +1,9 @@
-//! F1.6 S6's live judge: two frames of one recording shown to the decision model (Settings → Decision), which
-//! answers through `tool:judge_text` whether the text on screen changed between them. Modelled on
-//! [`crate::policy_call`] (the other ask that belongs to no job): the shipped `textgate` prompt through the
-//! settings read path, thinking off, one dial through [`crate::llm_retry_leg`], and every answer filed in the
-//! LLM cache under the two pictures' own bytes, so a rerun of Prepare asks nothing again.
+//! F1.6 S6's live judge: two frames of one recording shown to the decision model (Settings →
+//! Decision), which answers through `tool:judge_text` whether the text on screen changed between
+//! them. Modelled on [`crate::policy_call`] (the other ask that belongs to no job): the shipped
+//! `textgate` prompt through the settings read path, thinking off, one dial through
+//! [`crate::llm_retry_leg`], and every answer filed in the LLM cache under the two pictures' own
+//! bytes, so a rerun of Prepare asks nothing again.
 
 use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
@@ -13,9 +14,7 @@ use crate::settings::{self, Conf, Paths};
 use crate::text_gate::STEP;
 use crate::tools::Tool;
 
-/// Did the text change between the frames at `a` and `b` seconds into `lane`'s file? Shown the 896-wide copies
-/// F1.7 sends (`describe_scale::ensure` made them). An answer without `judge_text` is a failure, said with what
-/// the model wrote: the gate keeps the pixel pass's change rather than guessing from prose.
+/// Did the text change between the frames at `a` and `b` seconds into `lane`'s file?
 pub fn judge(
     tree: &Tree,
     paths: &Paths,
@@ -97,7 +96,6 @@ pub fn judge(
     Ok(verdict)
 }
 
-/// The gate's two messages: the `textgate` wording as system, then the stamps line and FIRST and SECOND.
 fn messages(system: &str, user: &str, urls: &[String; 2]) -> Vec<Message> {
     vec![
         Message {
@@ -134,10 +132,8 @@ fn judge_args(model: &str, content_type: &str, body: &str) -> Result<String, Str
         })
 }
 
-/// The Decision row's Test (§03-shell §5): the gate's own request, prompt, tool and all, with the probe's red
-/// square as both FIRST and SECOND. Two identical pictures have no text that changed, so a model fit to be the
-/// gate answers through `judge_text` with `changed` false; prose, a `true` or a refused call each say what the
-/// gate would get from it. `ask` posts one chat body and returns the reply's JSON (the dialog's own leg).
+/// The Decision row's Test (§03-shell §5): the gate's own request, prompt, tool and all, with the
+/// probe's red square as both FIRST and SECOND.
 pub fn probe(
     conf: &Conf,
     paths: Option<&Paths>,
@@ -165,8 +161,8 @@ pub fn probe(
         ),
         crate::prompts::mode_of(STEP),
         Some(&crate::tools::text_gate_tools()),
-        // Not streamed: the dialog's leg hands back the body without its content type, so the reply is asked
-        // for as one JSON envelope. Everything else is the gate's own request.
+        // Not streamed: the dialog's leg hands back the body without its content type, so the reply
+        // is asked for as one JSON envelope.
         false,
     )?
     .to_string();
@@ -193,13 +189,11 @@ pub fn changed_of(args: &str) -> Result<bool, String> {
         .ok_or_else(|| format!("judge_text without a true/false \"changed\": {args}"))
 }
 
-/// The `textgate` wording, through the settings read path so an edit on the bench wins.
 fn wording(paths: &Paths) -> String {
     let fallback = crate::prompts::shipped_text(STEP).unwrap_or_default();
     settings::prompt_text(paths, STEP, &fallback).unwrap_or(fallback)
 }
 
-/// The timed `requests.tsv` row and exchange page this ask is filed under.
 fn log_row(model: &str) -> crate::requests::Request {
     let mut row = crate::server_leg::base_row(Server::Llm, model, "POST", "", STEP, STEP);
     row.job = STEP.to_string();

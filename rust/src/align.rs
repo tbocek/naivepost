@@ -1,11 +1,8 @@
 //! Forced alignment (spec/04-prepare.md F1.5): which second each word was actually said in.
 //!
-//! The ASR's own stamps run half a second to a second behind the sound, which is fine for reading a
-//! transcript and useless for cutting on a word edge. An aligner fixes that, and this module decides
-//! which one, what each request covers, and what `words.aligned.json` ends up holding. As in
-//! [`crate::asr`], no process is spawned and no socket opened: the silences arrive as arguments, every
-//! cut is returned as ffmpeg's arguments for the caller to run, and each answer arrives through
-//! [`run`]'s closure — a step that decided inside a server call could never be tested (spec/00-principles.md §5).
+//! The ASR's own stamps run a half to a full second behind the sound, useless for cutting on a word edge. This module decides which aligner, what each
+//! request covers and what `words.aligned.json` holds. As in [`crate::asr`], no process is spawned: silences arrive as arguments, cuts are returned as ffmpeg arguments,
+//! and answers arrive through [`run`]'s closure (spec/00-principles.md §5).
 
 use serde_json::{json, Value};
 
@@ -15,48 +12,30 @@ use crate::requests::{self, Chunk, Word};
 use crate::services::{AudioModel, ALIGN_PREFERENCE};
 use crate::transcribe::SAMPLE_RATE;
 
-/// S2: how much audio goes into one align request — the same number the ASR chunks by
-/// ([`asr::CHUNK_QWEN`]), so the pieces line up and each carries its own words (go/align.go:656).
+/// S2: audio per align request, the same as the ASR's chunks ([`asr::CHUNK_QWEN`]) so pieces line up (go/align.go:656).
 pub const WINDOW: f64 = asr::CHUNK_QWEN;
 /// S3: below this a piece cannot be made smaller, for either reason (go/align.go:660 `alignChunkMin`).
 pub const MIN_PIECE: f64 = 15.0;
-/// S2: how far a cut between two align windows may slide to land in a silence — much less than F1.4's
-/// chunker ([`asr::SEEK_MAX`], 20 s): a chunk cut that moves costs only a join, while an alignment cut
-/// moves the whole window a stretch of words is timed against, so the nominal edge stands unless a
-/// silence is close. Small enough to keep sliding when the window halves down to [`MIN_PIECE`] (the
-/// cutter stops at half the window) (go/align.go:670 `alignCutSeek`, floor note go/align.go:668).
-/// §10 files it as `P.eng.alignCutSeekSeconds` (4) and `params::prepare()` rows it from here.
+/// S2: how far a cut between align windows may slide to land in a silence (go/align.go:670 `alignCutSeek`). Far less than F1.4's
+/// [`asr::SEEK_MAX`]: an alignment cut moves the whole window words are timed against, so the nominal edge stands unless a silence is close.
+/// Small enough to keep sliding when the window halves down to [`MIN_PIECE`]. `P.eng.alignCutSeekSeconds` (4); `params::prepare()` rows it from here.
 pub const CUT_SEEK: f64 = 4.0;
-/// S3: how much of the quiet either side of a window's speech goes with it — a word fades out below
-/// the silence threshold before it is over (go/align.go:674 `alignSoundPad`). §10 files this bound as
-/// `P.eng.alignSoundPadSeconds` (0.25, "sound kept around an alignment piece"), and
-/// `params::prepare()` rows it from this constant.
+/// S3: quiet kept either side of a window's speech, since a word fades out below the silence threshold (go/align.go:674 `alignSoundPad`).
+/// `P.eng.alignSoundPadSeconds` (0.25); `params::prepare()` rows it from this constant.
 pub const PAD: f64 = 0.25;
-/// S6: bare talking worth saying out loud, in seconds and as a share of the talking. Both, because ten
-/// bare seconds of a four-hour session is rounding and ten bare seconds of a twenty-second clip is the
-/// whole clip (go/align.go:679-680). §10 files the seconds bound as `P.eng.alignBareWarnSeconds`
-/// (10, "voiced audio under no word before a warning"), and `params::prepare()` rows it from this
-/// constant.
+/// S6: bare talking worth saying out loud, in seconds and as a share (go/align.go:679-680): ten bare seconds is rounding in a four-hour session,
+/// the whole clip in a twenty-second one. `P.eng.alignBareWarnSeconds` (10); `params::prepare()` rows it from this constant.
 pub const BARE_WARN: f64 = 10.0;
-/// S6: the relative companion to [`BARE_WARN`] — a bare stretch only counts against a long session in
-/// proportion, because mis-transcribing a few percent of a four-hour recording is rounding and says
-/// nothing worth interrupting for. §10 files this bound as `P.eng.alignBareShare` (0.08, "share of
-/// voiced audio under no word before a warning"), and `params::prepare()` rows it from this constant.
+/// S6: the relative companion to [`BARE_WARN`]. `P.eng.alignBareShare` (0.08); `params::prepare()` rows it from this constant.
 pub const BARE_SHARE: f64 = 0.08;
-/// S4: comfortably past the longest clip this sends ([`WINDOW`]) — a "second" beyond it did not mean
-/// seconds, it meant samples that forgot to say so (go/align.go:230 `alignClipMax`). §10 files this
-/// bound as `P.eng.alignClipMaxSeconds` (120, "sanity ceiling on a returned second"), and
-/// `params::prepare()` rows it from this constant.
+/// S4: sanity ceiling past the longest clip sent ([`WINDOW`]): a larger "second" is samples (go/align.go:230 `alignClipMax`).
+/// `P.eng.alignClipMaxSeconds` (120); `params::prepare()` rows it from this constant.
 pub const PLAIN_AS_SAMPLES: f64 = 120.0;
 
-/// S1: the aligners to try, best first — a list and not a choice, because a catalog entry is a claim
-/// rather than a working model: a server lists an aligner whose family its engine was not built with
-/// and answers every request for it with an error. [`crate::services::pick_aligner`] is the settings
-/// dialog's single-choice view of the same catalog; this flow needs the whole walk-on-failure list.
+/// S1: the aligners to try, best first: a catalog entry is a claim, not a working model, so this is a walk-on-failure list.
+/// [`crate::services::pick_aligner`] is the settings dialog's single-choice view of the same catalog.
 ///
-/// A name in the box is the whole list when the server declares it for `align`: a box exists to be
-/// obeyed, and quietly using another model is worse than doing nothing — so the refusal below is not
-/// replaced by one of the models that *is* offered.
+/// A name in the box is the whole list when the server declares it for `align`: a box exists to be obeyed, so the refusal below is not replaced by another model.
 pub fn aligners(configured: &str, url: &str, models: &[AudioModel]) -> Result<Vec<String>, String> {
     let wanted = configured.trim();
     let declared = |id: &str| models.iter().any(|m| m.id == id && m.task == "align");
@@ -71,22 +50,19 @@ pub fn aligners(configured: &str, url: &str, models: &[AudioModel]) -> Result<Ve
         .filter(|m| m.task == "align")
         .map(|m| m.id.clone())
         .collect();
-    // The preference first, the rest by name: two aligners sorted plainly put the weaker one first
-    // because its name is shorter (go/align.go:81-98).
+    // The preference first, then by name: plain sorting puts the weaker one first (go/align.go:81-98).
     ids.sort_by_key(|id| (id != ALIGN_PREFERENCE, id.clone()));
     Ok(ids)
 }
 
-/// S1: what to say when the configured id is not served for alignment. Cut points come off the
-/// waveform either way, so this is a log line and not a failure.
+/// S1: what to say when the configured id is not served for alignment; cut points come off the waveform, so a log line, not a failure.
 pub fn not_served(url: &str, id: &str) -> String {
     format!(
         "!!! align: {url} does not serve {id:?} for alignment -- cut points come off the waveform"
     )
 }
 
-/// S1: what to say when an aligner further down the list answered: the first that answers serves the
-/// rest of the run, so this is logged once and never again.
+/// S1: what to say when an aligner further down the list answered; the first to answer serves the rest of the run, so logged once.
 pub fn picked_log(chosen: &str, failed: &[String]) -> String {
     format!(
         ">>> align: {chosen} answers where {} does not -- using it for the rest of the run",
@@ -94,8 +70,7 @@ pub fn picked_log(chosen: &str, failed: &[String]) -> String {
     )
 }
 
-/// S1: which aligner answered earlier in this run. `None` means nothing has answered yet, so every
-/// model is still worth trying; once one has, the others are never asked again.
+/// S1: which aligner answered earlier in this run; `None` means every model is still worth trying.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Picker {
     pub chosen: Option<String>,
@@ -118,19 +93,15 @@ impl Picker {
     }
 }
 
-/// S2: whether the ASR's chunks can be reused as this flow's pieces — every chunk holds exactly as
-/// many word times as its text has words.
+/// S2: whether the ASR's chunks can be reused as this flow's pieces: every chunk holds as many word times as its text has words.
 ///
-/// The estimate belongs here and nowhere else: a timing-less ASR has no times to select by, so where
-/// the counts disagree [S2]'s voiced-seconds share is the only way to divide the text, and it is an
-/// estimate. Where they agree the split is kept rather than re-derived — same seconds, same text.
+/// Where the counts disagree (a timing-less ASR), `S2`'s voiced-seconds share is an estimate; where they agree the split is kept.
 pub fn counts_agree(chunks: &[Chunk], words: &[Word]) -> bool {
     if chunks.is_empty() {
         return false;
     }
     let count = |text: &str| text.split_whitespace().count();
-    // The totals first: a chunk whose times ran past the end of the recording would otherwise make
-    // the last piece look short and every earlier one right.
+    // Totals first: a chunk whose times ran past the recording's end would make the last piece look short.
     let total = chunks
         .iter()
         .map(|chunk| count(&chunk.text) as u64)
@@ -149,14 +120,11 @@ pub fn counts_agree(chunks: &[Chunk], words: &[Word]) -> bool {
         })
 }
 
-/// The recording's end, which is the last chunk's — the pieces tile the recording with no gap.
 fn last_edge(chunks: &[Chunk]) -> f64 {
     chunks.last().map(|chunk| chunk.e).unwrap_or_default()
 }
 
-/// S2: the pieces to ask about. The ASR's own chunks when their word counts agree; otherwise windows
-/// of [`WINDOW`] cut at silences, which is [`asr::cut_points`] doing what it already does for F1.4 —
-/// even pieces, each inside the ceiling, cuts moved to a silence midpoint rather than into a word.
+/// S2: the pieces to ask about: the ASR's chunks when word counts agree, else windows of [`WINDOW`] cut at silences by [`asr::cut_points`].
 pub fn pieces(
     chunks: &[Chunk],
     words: &[Word],
@@ -171,10 +139,8 @@ pub fn pieces(
     edges.windows(2).map(|pair| (pair[0], pair[1])).collect()
 }
 
-/// S2: the text each piece was asked to align, its share of the transcript by how much of it has
-/// sound in it — a stretch of silence holds no words however long it is. Proportional shares are
-/// rounded to word boundaries so the pieces together are the whole transcript with nothing lost or
-/// duplicated, which is what makes this an estimate that still cannot eat text.
+/// S2: the text each piece was asked to align, shared by voiced seconds (a silence holds no words), rounded to word boundaries
+/// so the pieces together are the whole transcript with nothing lost or duplicated.
 pub fn share_text(pieces: &[(f64, f64)], text: &str, silences: &[Silence]) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if pieces.is_empty() || words.is_empty() {
@@ -185,8 +151,7 @@ pub fn share_text(pieces: &[(f64, f64)], text: &str, silences: &[Silence]) -> Ve
         .map(|(from, to)| voiced(silences, *from, *to))
         .collect();
     let total: f64 = voiced.iter().sum();
-    // Nothing has sound in it: fall back to the wall-clock length rather than dividing by zero. A
-    // silent recording gets an empty transcript anyway, so what it is asked with does not matter.
+    // Nothing has sound: fall back to wall-clock length rather than divide by zero.
     let weights: Vec<f64> = if total > 0.0 {
         voiced
     } else {
@@ -200,8 +165,7 @@ pub fn share_text(pieces: &[(f64, f64)], text: &str, silences: &[Silence]) -> Ve
     let mut out = Vec::with_capacity(pieces.len());
     let mut at = 0usize;
     for (index, weight) in weights.iter().enumerate() {
-        // The last piece takes everything left over: rounding each share separately would otherwise
-        // strand a word or two off the end of the recording.
+        // The last piece takes the remainder: separate rounding would strand words off the end.
         let take = if index + 1 == weights.len() {
             words.len() - at
         } else {
@@ -237,19 +201,16 @@ pub fn voiced(silences: &[Silence], t0: f64, t1: f64) -> f64 {
 
 /// S3: the part of `t0..t1` that has sound in it, padded, or `None` when all of it is quiet.
 ///
-/// Built by subtracting the silences rather than by asking whether one reaches the window's edge,
-/// because it does not quite — silencedetect measures a file's end a hair short (go/align.go:622).
+/// Built by subtracting silences, not by testing whether one reaches the window's edge: silencedetect measures a file's end a hair short (go/align.go:622).
 pub fn trim(span: (f64, f64), silences: &[Silence]) -> Option<(f64, f64)> {
     let (t0, t1) = span;
-    // The sounding stretches inside the window, in order.
     let mut parts: Vec<(f64, f64)> = Vec::new();
     let mut at = t0;
     for silence in silences {
         if silence.end <= t0 || silence.start >= t1 {
             continue;
         }
-        // The stretch before this silence is sound, however short — a hair of quiet left at the end
-        // of a file by silencedetect still counts as sounding.
+        // The stretch before this silence is sound however short (silencedetect leaves a hair of quiet at a file's end).
         if silence.start > at {
             parts.push((at, silence.start.min(t1)));
         }
@@ -273,8 +234,7 @@ pub struct Span {
 /// S3: cut a stretch at the quietest moment nearest its middle and divide its words by how much
 /// talking falls each side of the cut.
 ///
-/// Candidates are kept inside the middle three quarters: a cut near an edge makes one half no smaller
-/// than the whole, which is a recursion that does not end (go/align.go:543).
+/// Candidates stay inside the middle three quarters: a cut near an edge would make no progress (go/align.go:543).
 pub fn split_at(span: &Span, silences: &[Silence]) -> (Span, Span) {
     let (mid, quarter) = ((span.from + span.to) / 2.0, (span.to - span.from) / 4.0);
     let mut cut = mid;
@@ -316,9 +276,7 @@ pub fn split_at(span: &Span, silences: &[Silence]) -> (Span, Span) {
     )
 }
 
-/// S3: the window after one halving, and what to say about it. `None` in the log means "this was as
-/// small as it goes", which is what ends the retry loop rather than leaving it to spin — the same
-/// shape [`asr::halve`] has, so both out-of-memory loops read alike.
+/// S3: the window after one halving. `None` in the log means "as small as it goes", which ends the retry loop (same shape as [`asr::halve`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Halved {
     pub window: f64,
@@ -339,14 +297,12 @@ pub fn halve(base: &str, window: f64) -> Halved {
     }
 }
 
-/// S4: what the aligner is asked with. The clip's file name, the text to place over it, and the
-/// language — the same three the ASR gets, so one upload helper serves both.
+/// S4: what the aligner is asked with: clip file name, text and language, as the ASR gets.
 pub fn body(clip: &str, text: &str, language: &str) -> Value {
     json!({ "audio": clip, "text": text, "language": language })
 }
 
-/// S4: ffmpeg's arguments for one window, `-ss` before the caller's own `-i` as in [`asr::cut_plan`] —
-/// on the pcm this stage wrote that seek is exact rather than a keyframe away.
+/// S4: ffmpeg's arguments for one window, `-ss` before `-i` as in [`asr::cut_plan`]; on this stage's pcm the seek is exact.
 pub fn clip_plan(from: f64, to: f64) -> Vec<String> {
     vec![
         "-ss".to_string(),
@@ -356,8 +312,7 @@ pub fn clip_plan(from: f64, to: f64) -> Vec<String> {
     ]
 }
 
-/// Seconds without a tail of zeroes: `213` rather than `213.000`, so the plan in the scratch reads as
-/// the numbers the pieces were cut at.
+/// Seconds without a tail of zeroes: `213`, not `213.000`.
 fn trim_seconds(secs: f64) -> String {
     if (secs - secs.round()).abs() < 1e-9 {
         format!("{}", secs.round() as i64)
@@ -366,19 +321,16 @@ fn trim_seconds(secs: f64) -> String {
     }
 }
 
-/// S3/S4: the scratch's file name for one window, its start in milliseconds — the window is what a
-/// retry re-asks, so the name has to say which one it was.
+/// S3/S4: the scratch's file name for one window, its start in milliseconds (a retry re-asks a window).
 pub fn clip(from: f64) -> String {
     format!("w{:09}.wav", (from * 1000.0).round() as i64)
 }
 
 /// S4: the words out of an answer, however the server spelled it.
 ///
-/// The first non-empty list of `words | alignment | segments | result.words | result.alignment` wins;
-/// each time is read as samples, then milliseconds, then seconds, then a bare number that means
-/// samples once it is past [`PLAIN_AS_SAMPLES`]. Words are stored lower-cased because every later
-/// comparison (F1.3's segments, F1.13's word list) is case-blind; the written form comes back through
-/// [`restore`]. A body with no words at all is an error naming what came back rather than a guess.
+/// The first non-empty list of `words | alignment | segments | result.words | result.alignment` wins; each time is read as samples, then ms,
+/// then seconds, then a bare number that means samples past [`PLAIN_AS_SAMPLES`]. Words are stored lower-cased (later comparisons are case-blind);
+/// [`restore`] brings the written form back. No words at all is an error naming what came back.
 pub fn parse_words(body: &Value) -> Result<Vec<Word>, String> {
     let lists = ["words", "alignment", "segments"]
         .iter()
@@ -421,8 +373,7 @@ pub fn parse_words(body: &Value) -> Result<Vec<Word>, String> {
     Err("no words in the answer".to_string())
 }
 
-/// S4: one time, read the four ways a server writes it. `kind` is "start" or "end"; the suffixed keys
-/// are tried before the bare one, and the bare one last because its unit is a guess.
+/// S4: one time (`kind` is "start" or "end"), read the four ways a server writes it; the bare key goes last because its unit is a guess.
 fn time(entry: &Value, kind: &str) -> Option<f64> {
     let get = |suffix: &str| {
         entry
@@ -449,9 +400,7 @@ fn to_sample(secs: f64) -> u64 {
     (secs * SAMPLE_RATE as f64).round().max(0.0) as u64
 }
 
-/// S4: what came back that nobody expected, for the log line — first 300 characters with the
-/// whitespace collapsed, since the answer's shape is the one thing this cannot know until a server
-/// answers.
+/// S4: what came back that nobody expected, for the log: first 300 characters, whitespace collapsed.
 pub fn head(body: &str) -> String {
     let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
     match flat.len() > 300 {
@@ -467,10 +416,7 @@ pub fn unreadable_log(err: &str, body: &str) -> String {
 
 /// S4: put the transcript's case and punctuation back on words the aligner stored lower-cased.
 ///
-/// Times never change — only the written form. This is a plain walk over the transcript's own word
-/// list; [F1.13]'s session word list (retakes, `final.txt`, subtitles) is what gives it the spellings
-/// worth restoring and will replace this lookup when its round comes. A word the transcript has no
-/// counterpart for keeps what the aligner heard.
+/// Times never change, only the written form. [F1.13]'s session word list will replace this lookup; a word with no counterpart keeps what the aligner heard.
 pub fn restore(words: &[Word], transcript: &str) -> Vec<Word> {
     let written: Vec<&str> = transcript.split_whitespace().collect();
     let matches = |written: &str, spoken: &str| {
@@ -481,8 +427,7 @@ pub fn restore(words: &[Word], transcript: &str) -> Vec<Word> {
     };
     let mut out = Vec::with_capacity(words.len());
     for (index, word) in words.iter().enumerate() {
-        // In order where the counts allow it; a lookup by position is what keeps a repeated word's
-        // punctuation attached to the right occurrence.
+        // By position where counts allow: keeps a repeated word's punctuation on the right occurrence.
         let dressed: Option<&str> = written
             .get(index)
             .copied()
@@ -497,8 +442,7 @@ pub fn restore(words: &[Word], transcript: &str) -> Vec<Word> {
     out
 }
 
-/// S6: how many of the recording's talking seconds no word covers. Words count as covering a hair
-/// more than they say ([`PAD`]), because a word's last moments are quieter than the threshold.
+/// S6: how many of the recording's talking seconds no word covers; words count as a hair more than they say ([`PAD`]).
 pub fn bare_voiced(words: &[Word], duration: f64, silences: &[Silence]) -> f64 {
     let mut covered: Vec<(f64, f64)> = words
         .iter()
@@ -512,8 +456,7 @@ pub fn bare_voiced(words: &[Word], duration: f64, silences: &[Silence]) -> f64 {
     covered.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut bare = 0.0;
-    // Before the first word and after the last, exactly as much of a recording is bare as the words
-    // leave out — an aligner that placed everything in one second would otherwise measure clean.
+    // Before the first word and after the last, so an aligner that placed everything in one second does not measure clean.
     let mut at = 0.0;
     for (start, end) in covered {
         if start > at {
@@ -527,29 +470,24 @@ pub fn bare_voiced(words: &[Word], duration: f64, silences: &[Silence]) -> f64 {
     bare
 }
 
-/// S6: both tests, because ten bare seconds of a four-hour session is rounding and ten bare seconds of
-/// a twenty-second clip is the whole clip.
+/// S6: both tests, seconds and share (see [`BARE_WARN`]).
 pub fn bare_warns(bare: f64, spoken: f64) -> bool {
     spoken > 0.0 && bare >= BARE_WARN && bare >= BARE_SHARE * spoken
 }
 
-/// S6: this failure is silent by nature — words in the wrong second are still words, and the only
-/// visible sign is voiced audio with no word over it, which the cut reads as footage where nothing was
-/// said and deletes. So it gets said out loud.
+/// S6: this failure is silent by nature: words in the wrong second look fine, and voiced audio with no word is deleted by the cut. So it is said out loud.
 pub fn bare_warning(bare: f64, spoken: f64) -> String {
     format!(
         "!!! align: {bare:.0} s of the {spoken:.0} s spoken has no word over it -- the times are wrong, and the cut will drop that footage"
     )
 }
 
-/// S1: an aligner that refused this window — named, because which one failed is what the next try is
-/// about.
+/// S1: an aligner that refused this window, named.
 pub fn refused_log(model: &str, err: &str) -> String {
     format!("!!! align: {model}: {err}")
 }
 
-/// S1: the aligners to ask for one window — the one that already answered, or the whole list until
-/// one does. Public because it is what the caller can see of [`Picker`]'s rule; `run` uses it directly.
+/// S1: the aligners to ask for one window: the one that already answered, or the whole list. Public as the caller's view of [`Picker`]'s rule.
 pub fn to_ask(chosen: &Option<String>, all: &[String]) -> Vec<String> {
     match chosen {
         Some(chosen) => vec![chosen.clone()],
@@ -565,12 +503,11 @@ pub struct Placed {
     pub words: Vec<Word>,
 }
 
-/// What one pass produced. `skipped` is S1's "alignment skipped for the run": no aligner served, so
-/// nothing was asked and cut points will come off the waveform.
+/// What one pass produced. `skipped` is S1's "alignment skipped for the run": cut points come off the waveform.
 #[derive(Debug, Clone, Default)]
 pub struct Outcome {
     pub logs: Vec<String>,
-    /// What the progress bar was told — F0.5 owns the bar, as [`crate::asr`] records its own for.
+    /// What the progress bar was told (F0.5 owns the bar).
     pub steps: Vec<String>,
     /// Every word, in order, with times in the recording's own seconds.
     pub words: Vec<Word>,
@@ -581,12 +518,9 @@ pub struct Outcome {
 
 /// S1-S6 for one source.
 ///
-/// `ask` is handed the model, the clip's file name and the text to place, and answers with the
-/// server's body; it is called once per window per try, in order. The real ▶ hands over ffmpeg's cut,
-/// the upload and the request; a test hands over a closure.
+/// `ask` is handed the model, the clip's file name and the text, and answers with the server's body; once per window per try, in order.
 ///
-/// `aligners` is [`aligners`]' answer: empty means nothing is served for alignment, which is S1's skip
-/// rather than a failure — so what to log about it is the caller's line, not a second one from here.
+/// `aligners` is [`aligners`]' answer: empty is S1's skip, not a failure, and the caller logs it.
 pub fn run<F>(
     tree: &Tree,
     source: &str,
@@ -609,8 +543,7 @@ where
         return Ok(out);
     }
 
-    // S2: the ASR's own pieces where their word counts agree, windows otherwise, and the text shared
-    // out by voiced seconds for whichever of the two this is.
+    // S2: the ASR's pieces where word counts agree, windows otherwise; text shared out by voiced seconds.
     let spans = pieces(chunks, words, duration, silences, WINDOW);
     let texts = share_text(&spans, transcript, silences);
     let mut picker = Picker::default();
@@ -635,24 +568,19 @@ where
         placed.extend(windows);
     }
 
-    // S5: written whole, once, after the last window succeeded. Not per window: `words.aligned.json`
-    // is what F1.3 reads as "the times are the aligner's", and a half-written file would be that
-    // marker for work that was never done.
+    // S5: written whole, once, after the last window succeeded: a half-written `words.aligned.json` would read as "the times are the aligner's" (F1.3).
     let all: Vec<Word> = placed
         .iter()
         .flat_map(|piece| piece.words.clone())
         .collect();
     requests::write_aligned(tree, source, &requests::AlignedDoc { words: all.clone() })?;
-    // §5 bullet 1: the scratch is this stage's own mess — gone once its answer is on disk, kept when it
-    // is not. A window that failed returns before this line, so `align/wNNNN.wav.plan` survives exactly
-    // the failure it explains (`asr.rs` applies the same rule to `asr/`).
+    // §5 bullet 1: the scratch is gone once its answer is on disk; a failed window returns earlier, so `align/wNNNN.wav.plan` survives the failure it explains (as `asr/`).
     let _ = std::fs::remove_dir_all(tree.align_scratch(source));
 
     out.model = picker.chosen.clone().unwrap_or_default();
     // S4: the written form comes back from the transcript; the times are the aligner's.
     out.words = restore(&all, transcript);
-    // S6: only worth measuring when something was placed — an answer with no words at all is reported
-    // by the refusal that produced it.
+    // S6: only worth measuring when something was placed.
     let spoken = voiced(silences, 0.0, duration);
     if !all.is_empty() {
         let bare = bare_voiced(&all, duration, silences);
@@ -663,16 +591,15 @@ where
     Ok(out)
 }
 
-/// S1: what the progress bar says while a window is up there. Recorded rather than drawn.
+/// S1: what the progress bar says while a window is up there.
 pub fn progress(index: usize, total: usize) -> String {
     format!("aligning speech {}/{}", index + 1, total)
 }
 
 /// S3: one window asked about, halved and split until an answer came back.
 ///
-/// The order is the spec's: trim to sound, split while over the limit and longer than [`MIN_PIECE`],
-/// and on an out-of-memory answer halve the limit — never under `MIN_PIECE`, at which point the piece
-/// goes up as it stands or the refusal reaches the caller.
+/// The order is the spec's: trim to sound, split while over the limit and longer than [`MIN_PIECE`], and on an out-of-memory answer halve the limit,
+/// never under `MIN_PIECE`, where the piece goes up as it stands or the refusal reaches the caller.
 fn align_windows<F>(
     tree: &Tree,
     picker: &mut Picker,
@@ -709,8 +636,7 @@ where
             queue.push(left);
             continue;
         }
-        // S3: the clip is the trimmed window — the least audio that still holds all this text's
-        // speech — so its seconds are what the retry of a smaller piece is compared on.
+        // S3: the clip is the trimmed window, so its seconds are what a smaller retry is compared on.
         let asked = window.1 - window.0;
         match ask_span(
             tree, picker, all, source, &window, &span.text, language, ask, out,
@@ -721,9 +647,7 @@ where
                 words,
             }),
             Err(err) if asr::retryable(&err) => {
-                // The ceiling is what a *clip* may be, so the piece is only too big while the audio
-                // actually sent still exceeds it. Under that, the refusal stands: halving further
-                // would change nothing about what goes up.
+                // The ceiling is what a *clip* may be: a piece is only too big while the audio actually sent exceeds it.
                 if asked > limit || asked <= MIN_PIECE {
                     return Err(err);
                 }
@@ -732,8 +656,7 @@ where
                     Some(log) => {
                         out.logs.push(log);
                         limit = next;
-                        // Re-ask this span at the smaller size: pushing it back keeps the order and
-                        // the words it was shared.
+                        // Re-ask this span smaller: pushing it back keeps the order and its shared words.
                         queue.push(span);
                     }
                     None => return Err(err),
@@ -750,8 +673,7 @@ where
     Ok(done)
 }
 
-/// S1/S4: ask the aligners about one window until one answers, remembering which one did — a catalog
-/// entry is a claim rather than a promise, so the first that answers serves the rest of the run.
+/// S1/S4: ask the aligners about one window until one answers; the first that answers serves the rest of the run.
 fn ask_span<F>(
     tree: &Tree,
     picker: &mut Picker,
@@ -771,16 +693,14 @@ where
     let mut last = String::from("no aligner served");
     let candidates = picker.ask(all);
     for model in &candidates {
-        // S3/S4: the scratch is this stage's own mess, kept when a window fails so what was asked for
-        // it — ffmpeg's cut and the request body — is recoverable without asking again (as in `asr`).
+        // S3/S4: the scratch is kept when a window fails, so what was asked is recoverable (as in `asr`).
         make_scratch(tree, source, &clip, &plan, &body(&clip, text, language))?;
         match ask(model, &clip, text) {
             Ok(answer) => {
                 let words = match parse_words(&answer) {
                     Ok(words) => words,
                     Err(err) => {
-                        // The shape is the one thing this cannot be sure of until a server answers, so
-                        // what came back is written down rather than guessed at.
+                        // The shape is unknown until a server answers, so what came back is written down.
                         out.logs.push(unreadable_log(&err, &answer.to_string()));
                         last = err;
                         continue;

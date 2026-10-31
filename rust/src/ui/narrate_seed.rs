@@ -1,13 +1,4 @@
 //! §07-narrate#3-data's writes from the Narrate page: the two one-line settings and `takes.json`.
-//!
-//! The page's doors own what a press MEANS; this module owns what a press LEAVES ON DISK, so the same
-//! three files are written the same way whichever control changed them. It lives apart from
-//! [`narrate_page`](super::narrate_page) because that file is at its size budget and these are three
-//! independent writes, not part of the page's drawing.
-//!
-//! Nothing here decides rules: [`crate::narrate_data`] owns the file formats, and the callers keep their
-//! own sentences. A project with no folder open simply has nothing to write to, so every function answers
-//! quietly in that case rather than inventing a path.
 
 use crate::layout::Tree;
 use crate::narrate_data;
@@ -52,14 +43,6 @@ pub fn note_voice_for_session(id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The whole page as the opened project holds it (§07-narrate#1-screen): the cut's clips and the finished video's
-/// length, the lines in `narration.json`, the narrator slots Prepare tagged, the voices folder's recordings, the
-/// project's language and narration switch, what the recordings cover, the voice/pitch/takes off disk, and the
-/// tally the Inputs row reads. `line` is the window's red line; the page stands on it when it lies on a clip,
-/// else on the first clip.
-///
-/// The first port only ever filled this state from tests and the snapshot bench, so a live window's Narrate page
-/// showed "00:00/00:00", no voices and "the playhead is between clips" over a project with a cut.
 pub fn load_page(tree: &Tree, line: f64) -> NarrateState {
     let project = crate::project::load(tree.dir()).ok();
     let cut = crate::cut::load(tree).unwrap_or_default();
@@ -125,9 +108,6 @@ pub fn project_voice(tree: &Tree) -> String {
 /// What the page shows when it opens, seeded from the project's own files (§07-narrate#3-data): the voice
 /// row, the slider's shift and the take list come off disk rather than from defaults. Only a file that EXISTS
 /// is copied over, so a project that never touched the slider keeps what the flow published.
-///
-/// Takes are the exception in the other direction: keyed by the RECORDING, they fill an EMPTY state only — a
-/// non-empty one is a flow's own live copy, which a per-tab rebuild must not drop.
 pub fn seed_from_disk(tree: &Tree, mut state: NarrateState) -> NarrateState {
     if tree.voice_txt().is_file() {
         state.voice = narrate_data::read_voice(tree);
@@ -162,10 +142,6 @@ pub fn take_recording_key(tree: &Tree) -> Option<String> {
     (!key.is_empty()).then_some(key)
 }
 
-/// `narrate/takes.json` after the band's takes became `takes` (band seconds): each recording on the voice's tape
-/// stores its own part of them in its own seconds, beside what it keeps outside the tape
-/// ([`crate::narrate_tape::Tape::store`]). An emptied list is what deletes a key, which is
-/// [`narrate_data::save_takes`]'s own rule, so "removed the last take" and "never had one" end up as the same file.
 pub fn note_takes(tree: &Tree, voice: &str, takes: &[(f64, f64)]) -> Option<String> {
     let project = crate::project::load(tree.dir()).ok()?;
     let tape = crate::narrate_band_face::tape(tree, &project, voice);

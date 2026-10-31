@@ -1,12 +1,5 @@
-//! §07-narrate#1-screen **10**, the take band's tape: everything one narrator says in the cut, end to end. A
-//! narrator is tagged on as many recordings as they speak in, and the band shows the stretches of those recordings
-//! the cut KEEPS (the green bars of the Cut page), in the cut's order, one after another; the first rewrite showed
-//! the first tagged recording alone, so a session filmed in nineteen files offered half a minute of it to pick
-//! takes from.
-//!
-//! A take is still stored in the seconds of the recording it was cut from, under that recording's name
-//! (`narrate/takes.json`, §07-narrate#3-data): the tape only maps band seconds to (recording, second) and back.
-//! Pure: the recordings, their rows and the cut come in, so a test pins the mapping without a window.
+//! §07-narrate#1-screen **10**, the take band's tape: everything one narrator says in the cut, end to end. The band shows the stretches of every tagged recording that the cut KEEPS, in the cut's order.
+//! A take stays stored in the seconds of its own recording (`narrate/takes.json`, §07-narrate#3-data); the tape only maps band seconds to (recording, second). Pure, so a test needs no window.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -15,16 +8,13 @@ use crate::cut::Cut;
 use crate::narrate_data::Take;
 use crate::timeline::Recording;
 
-/// One kept stretch of one recording on the tape: the file's own seconds `from..to`, laid at band second `at`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stretch {
     pub file: PathBuf,
-    /// The recording's name, the key its takes are stored under.
     pub base: String,
     pub from: f64,
     pub to: f64,
     pub at: f64,
-    /// Where the stretch starts on the session clock; `None` for a recording shown whole, which no clip places.
     pub session: Option<f64>,
 }
 
@@ -34,15 +24,10 @@ impl Stretch {
     }
 }
 
-/// The stretches, in band order, each starting where the one before ended.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tape(pub Vec<Stretch>);
 
-/// The narrator's kept stretches. `recordings` are the session's recordings (their spans on the session clock)
-/// and `narrated` the ones tagged with this narrator, by name, with their files. A kept footage clip on camera
-/// row N takes the part of every narrated recording on row N that it overlaps (the recording the cut shows there,
-/// the same rows [`crate::timeline::rows_for`] colours the Cut page with), at that recording's own second
-/// ([`crate::timeline::local_at`], hand correction included).
+/// The narrator's kept stretches. A kept footage clip on camera row N takes the part of every narrated recording on row N it overlaps ([`crate::timeline::rows_for`]), at that recording's own second ([`crate::timeline::local_at`], hand correction included).
 pub fn kept(cut: &Cut, recordings: &[Recording], narrated: &[(String, PathBuf)]) -> Tape {
     let rows = crate::timeline::rows_for(recordings, cut);
     let mut stretches: Vec<Stretch> = Vec::new();
@@ -80,8 +65,7 @@ pub fn kept(cut: &Cut, recordings: &[Recording], narrated: &[(String, PathBuf)])
     Tape(stretches)
 }
 
-/// A recording shown whole: the tape of a voice that is one file and no kept clips (a separate microphone, a
-/// voices-folder file), `seconds` long.
+/// A recording shown whole: a voice that is one file with no kept clips (separate microphone, voices-folder file).
 pub fn whole(file: PathBuf, seconds: f64) -> Tape {
     let base = crate::narrate_data::take_base(&file);
     Tape(vec![Stretch {
@@ -95,7 +79,6 @@ pub fn whole(file: PathBuf, seconds: f64) -> Tape {
 }
 
 impl Tape {
-    /// The band's length: every stretch, end to end.
     pub fn length(&self) -> f64 {
         self.0.last().map_or(0.0, |last| last.at + last.len())
     }
@@ -104,7 +87,6 @@ impl Tape {
         self.0.is_empty()
     }
 
-    /// The recordings on the tape, each once, in band order.
     pub fn bases(&self) -> Vec<String> {
         let mut bases: Vec<String> = Vec::new();
         for stretch in &self.0 {
@@ -115,8 +97,7 @@ impl Tape {
         bases
     }
 
-    /// The session second under a band second: what a click on the band moves the preview to. `None` past the
-    /// tape's end, or on a stretch no clip places.
+    /// The session second under a band second; `None` past the tape's end or on a stretch no clip places.
     pub fn session_at(&self, band: f64) -> Option<f64> {
         let stretch = self
             .0
@@ -125,9 +106,7 @@ impl Tape {
         stretch.session.map(|start| start + band - stretch.at)
     }
 
-    /// The band second under a session second: where the preview's position stands on the band, the two clocks
-    /// parting at every stretch the cut took out. In a removed stretch, the next kept one's start; past the last,
-    /// the tape's end. `None` when no clip places the tape.
+    /// The band second under a session second. In a removed stretch the next kept one's start; past the last the tape's end; `None` when no clip places the tape.
     pub fn band_at(&self, session: f64) -> Option<f64> {
         let placed = || {
             self.0
@@ -146,8 +125,7 @@ impl Tape {
             .or_else(|| placed().next().map(|_| self.length()))
     }
 
-    /// A span of band seconds as the pieces of recordings it covers: `(stretch, file from, file to, band from)`,
-    /// in band order. A span over a seam between two stretches is two pieces.
+    /// A span of band seconds as `(stretch, file from, file to, band from)` pieces; a span over a seam is two.
     pub fn pieces(&self, span: (f64, f64)) -> Vec<(&Stretch, f64, f64, f64)> {
         self.0
             .iter()
@@ -166,8 +144,7 @@ impl Tape {
             .collect()
     }
 
-    /// The stored takes as the band shows them: each take's part inside a kept stretch, in band seconds, the parts
-    /// that meet across a seam joined into one.
+    /// The stored takes as the band shows them: parts inside kept stretches in band seconds, joined across seams.
     pub fn takes_on(&self, stored: &BTreeMap<String, Vec<Take>>) -> Vec<(f64, f64)> {
         let mut out: Vec<(f64, f64)> = Vec::new();
         for stretch in &self.0 {
@@ -187,9 +164,7 @@ impl Tape {
         out
     }
 
-    /// The takes to store after the band's takes became `band`: for every recording on the tape, what it keeps
-    /// outside the tape's stretches (picked before the cut changed, and not the band's to drop) and the band's
-    /// takes inside them, in that recording's seconds. Recordings the tape does not show are not in the answer.
+    /// The takes to store after the band became `band`: per recording, what it keeps outside the tape's stretches (not the band's to drop) plus the band's takes inside them. Recordings not on the tape are not in the answer.
     pub fn store(
         &self,
         band: &[(f64, f64)],
@@ -205,7 +180,6 @@ impl Tape {
                 .collect();
             let mut kept: Vec<Take> = Vec::new();
             for take in stored.get(&base).into_iter().flatten() {
-                // What lies outside every shown stretch survives, cut at their edges.
                 let mut rest = vec![(take.s, take.e)];
                 for (from, to) in &shown {
                     rest = rest

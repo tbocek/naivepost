@@ -1,12 +1,6 @@
 //! §03-shell.md §5 and §6: named server entries for the Settings dialog's Writing, Audio and Drawing sections.
-//!
-//! A person with two audio.cpp machines (one busy, one free) switches between them by name instead of retyping an
-//! address, a key and five model ids. Each section keeps its entries and which one is active in
-//! `<config>/servers.json`; `llm.conf` stays the one file every flow reads, so picking an entry writes its values
-//! there and no flow knows entries exist. The entries are stored under `llm.conf`'s own key names.
-//!
-//! The file holds API keys, so it is written whole through a `.part` and a rename, at 0600, and nothing here
-//! puts a value into a log line.
+//! Entries and the active one live in `<config>/servers.json`; picking one writes its values to `llm.conf`, the one file flows read.
+//! The file holds API keys: written via `.part` and rename at 0600, never logged.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -15,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::settings::{self, Conf, Paths};
 
-/// The three sections that have servers to switch between. Cutting's local tools have no entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
     Writing,
@@ -24,10 +17,8 @@ pub enum Section {
 }
 
 impl Section {
-    /// Every section with entries, in the dialog's order.
     pub const ALL: [Section; 3] = [Section::Writing, Section::Audio, Section::Drawing];
 
-    /// The section's short name: the dialog's widget names and `servers.json`'s object keys.
     pub fn key(self) -> &'static str {
         match self {
             Section::Writing => "writing",
@@ -36,7 +27,6 @@ impl Section {
         }
     }
 
-    /// The `llm.conf` settings one entry of this section holds.
     pub fn conf_keys(self) -> &'static [&'static str] {
         match self {
             Section::Writing => &["LLM_SERVER", "LLM_API_KEY", "LLM_MODEL", "DECISION_MODEL"],
@@ -54,12 +44,10 @@ impl Section {
         }
     }
 
-    /// The setting that names this section's server, which a migrated entry is named after.
     fn server_key(self) -> &'static str {
         self.conf_keys()[0]
     }
 
-    /// The section a dialog box belongs to, if it belongs to one with entries.
     pub fn of_box(box_key: &str) -> Option<Section> {
         Section::ALL.into_iter().find(|section| {
             section
@@ -70,7 +58,6 @@ impl Section {
     }
 }
 
-/// The dialog box that edits a setting (`entry-<box>`), `None` for one with no box (the voices folder).
 pub fn box_of(conf_key: &str) -> Option<&'static str> {
     Some(match conf_key {
         "LLM_SERVER" => "server",
@@ -90,7 +77,6 @@ pub fn box_of(conf_key: &str) -> Option<&'static str> {
     })
 }
 
-/// The setting a dialog box edits, the way round [`box_of`] goes.
 pub fn conf_key_of_box(box_key: &str) -> Option<&'static str> {
     Section::ALL
         .into_iter()
@@ -98,17 +84,14 @@ pub fn conf_key_of_box(box_key: &str) -> Option<&'static str> {
         .find(|key| box_of(key) == Some(box_key))
 }
 
-/// One entry: its settings, by `llm.conf` name.
 pub type Entry = BTreeMap<String, String>;
 
-/// One section's entries and which one is in use.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Group {
     pub active: String,
     pub entries: BTreeMap<String, Entry>,
 }
 
-/// `servers.json`: one group per section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Servers {
     pub writing: Group,
@@ -134,12 +117,10 @@ impl Servers {
     }
 }
 
-/// Where the entries live: beside `llm.conf`.
 pub fn path(paths: &Paths) -> PathBuf {
     paths.config_dir.join("servers.json")
 }
 
-/// A section's settings as `conf` holds them now: the values a new or migrated entry starts from.
 pub fn values_from(section: Section, conf: &Conf) -> Entry {
     section
         .conf_keys()
@@ -155,7 +136,6 @@ pub fn values_from(section: Section, conf: &Conf) -> Entry {
         .collect()
 }
 
-/// Put an entry's settings into `conf`; a setting the entry lacks is emptied, so a pick never mixes two servers.
 pub fn apply(section: Section, entry: &Entry, conf: &mut Conf) {
     for key in section.conf_keys() {
         let value = entry.get(*key).map(String::as_str).unwrap_or_default();
@@ -193,8 +173,6 @@ pub fn host_name(server: &str) -> String {
     }
 }
 
-/// One entry per section from what `llm.conf` says now: the first time the dialog opens, and the fallback when
-/// `servers.json` cannot be read.
 pub fn migrate(conf: &Conf) -> Servers {
     let mut servers = Servers::default();
     for section in Section::ALL {
@@ -212,7 +190,6 @@ pub fn migrate(conf: &Conf) -> Servers {
     servers
 }
 
-/// What reading `servers.json` came to: the entries, and a line to say when something was not as expected.
 pub struct Loaded {
     pub servers: Servers,
     pub said: Option<String>,
@@ -279,7 +256,6 @@ pub fn load(paths: &Paths, conf: &Conf) -> Loaded {
     }
 }
 
-/// Where an unreadable `servers.json` is put aside.
 pub fn bad_path(paths: &Paths) -> PathBuf {
     paths.config_dir.join("servers.json.bad")
 }
@@ -313,8 +289,6 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|err| format!("{}: {err}", path.display()))
 }
 
-/// ＋ New: a new entry named `name` holding `values`, made the active one. Refused in words for an empty name or
-/// one the section already has.
 pub fn create(group: &mut Group, name: &str, values: Entry) -> Result<(), String> {
     let name = name.trim();
     if name.is_empty() {
@@ -328,8 +302,6 @@ pub fn create(group: &mut Group, name: &str, values: Entry) -> Result<(), String
     Ok(())
 }
 
-/// 🗑: delete `name` and make the next entry active (the one after it by name, else the one before). Refused for
-/// the last entry: a section always has one.
 pub fn delete(group: &mut Group, name: &str) -> Result<String, String> {
     if group.entries.len() <= 1 {
         return Err("the last entry cannot be deleted -- a section always has one".to_string());

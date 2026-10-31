@@ -1,32 +1,18 @@
 //! §05-cut#1-screen — what the Cut page shows and what a press would do.
 //!
-//! The page renders this module and forwards to it; nothing here imports gtk, so which button is
-//! greyed, what its tooltip says and where a wheel goes can be answered without a display
-//! (spec/00-principles.md §5). Tooltips and greyed rules come from [`crate::cut`]'s companion,
-//! spec/inventory/cut.md §A, which the spec calls normative.
-//!
-//! The timeline's own numbers have no `P.*` rows of their own — they are spec/10-parameters.md:133's
-//! "The rest, by area: timeline: …" line (thumb height 40..160, 64 at open, steps ×4/3 and ÷3/4;
-//! zoom 4 → 240 px/s, step 1.25; pan viewW/8). They live here because this is the module whose rule
-//! uses them.
+//! The page renders this module; nothing here imports gtk, so greying, tooltips and wheel routing are testable
+//! without a display (spec/00-principles.md §5; tooltips from spec/inventory/cut.md §A). Timeline numbers have no `P.*` rows: they are spec/10-parameters.md:133's "timeline" line.
 
 use crate::cut::Cut;
 use crate::{prepare, tools};
 
-/// Horizontal padding every Cut-toolbar button keeps, in px, and the width it never goes under: an icon button
-/// about as wide as Adwaita's own image button (the prototype's bar used the theme's defaults). Linked buttons
-/// stand flush, so the padding is what keeps one icon off the next; at 2 px and 16 px the verbs' icons touched.
-/// The bar still fits §1's 1240 px floor: measured with `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`, the
-/// six groups' natural widths had 320 px to spare against the 1182 px bar before this, and that test asserts the
-/// sum stays under the bar.
+/// Horizontal padding of every Cut-toolbar button, in px: at 2 px the verbs' icons touched. The bar must still fit §1's 1240 px floor
+/// (asserted by `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`).
 pub const BUTTON_PADDING_PX: u32 = 6;
 
-/// The click-target floor a toolbar button keeps, in px.
 pub const BUTTON_MIN_WIDTH_PX: u32 = 32;
 
-/// The toolbar's one CSS rule, installed process-wide by `ui::window_page_box`. `#cut-toolbar` scopes it to
-/// that bar so no other button in the shell changes size. Built from [`BUTTON_PADDING_PX`] so the number
-/// stays a single source rather than a literal buried in a string.
+/// The toolbar's one CSS rule, installed by `ui::window_page_box` and scoped by `#cut-toolbar`; built from [`BUTTON_PADDING_PX`].
 pub fn toolbar_css() -> String {
     format!(
         "#cut-toolbar button {{ padding-left: {px}px; padding-right: {px}px; min-width: {min}px; }}\n\
@@ -42,26 +28,20 @@ pub fn toolbar_css() -> String {
     )
 }
 
-/// The transport's buttons are the ones a hand goes back to all the time (▶, ▶✂, ▶✂✂, the frame steps), so they
-/// keep a wider target than the rest of the bar: the prototype's are about a thumb wide.
+/// The transport buttons are pressed constantly, so they keep a wider target.
 pub const TRANSPORT_MIN_WIDTH_PX: u32 = 36;
-/// Their padding either side of the glyph.
 pub const TRANSPORT_PADDING_PX: u32 = 6;
-/// How far the faces of ▶, ▶✂ and ▶✂✂ are lowered, in px: Noto Sans Symbols 2 draws them above the button's centre
-/// (measured on `05-cut`: ink centre 553.5 in a button centred on 555.5). A transform, so the bar's height stays.
+/// Drop in px of the ▶ ▶✂ ▶✂✂ faces: Noto Sans Symbols 2 draws them above centre. A transform, so the bar's height stays.
 pub const PLAY_GLYPH_DROP_PX: u32 = 2;
-/// How far ‹‹f, ‹f, f› and f›› are lowered, in px: measured on `05-cut`, ink centre 554.5 against 555.5.
+/// Drop in px of the frame-step labels, measured on `05-cut`.
 pub const FRAME_LABEL_DROP_PX: u32 = 1;
 
-/// Pixels between two toolbar groups (the prototype's bar spacing); the buttons inside a group are linked.
+/// Pixels between toolbar groups; buttons inside a group are linked.
 pub const TOOLBAR_GAP_PX: i32 = 6;
 
-/// The preview volume's icon (inventory §A group 2: "icon + 0..100").
 pub const VOLUME_ICON: &str = "audio-volume-high-symbolic";
 
-/// The symbolic icon a toolbar button wears instead of its words, the prototype's own choice per button
-/// (`go/cut.go` 4678-4798). `None` keeps the words: the transport, whose ▶/⏸ face the refresh rewrites, the
-/// frame steps, and Insert/Edit.
+/// The symbolic icon a toolbar button wears instead of its words (`go/cut.go` 4678-4798); `None` keeps the words.
 pub fn tool_icon(name: &str) -> Option<&'static str> {
     Some(match name {
         "add-button" => "list-add-symbolic",
@@ -80,27 +60,20 @@ pub fn tool_icon(name: &str) -> Option<&'static str> {
     })
 }
 
-/// The toolbar's groups, left to right (§1: transport, preview volume, verbs, effects dropdown,
-/// history, zoom). The window builds one box per entry in this order, which is what makes the order
-/// a fact a test can hold rather than a fact about how a file happens to read.
+/// The toolbar's groups, left to right (§1); the window builds one box per entry in this order.
 pub const TOOLBAR_GROUPS: [&str; 6] =
     ["transport", "volume", "verbs", "effects", "history", "zoom"];
 
 // --- Thumbnail size (§1 badge 2: the grip at the bottom of the picture rows, clamp 40..160) --------
 
-/// The smallest row the tracks will draw: below this a face is a smudge and zooming further out is
-/// what the zoom control is for.
+/// The smallest picture row: below it a face is a smudge.
 pub const THUMB_MIN: u32 = 40;
 
-/// The largest: past it one recording runs off the end of the world at any usable zoom.
 pub const THUMB_MAX: u32 = 160;
 
-/// Where a page that opens meets you — big enough to read a slide, small enough to see an hour.
 pub const THUMB_AT_OPEN: u32 = 64;
 
-/// The thumbnail height after a drag on the grip at the bottom of a picture row: `rows` is how many rows sit
-/// above that edge, itself included, and all of them grow by the same amount, so the edge stays under the hand.
-/// Kept inside 40..160.
+/// Thumbnail height after dragging the grip; `rows` rows above the edge, itself included, all grow equally. Clamped to 40..160.
 pub fn thumb_dragged(was: u32, rows: usize, dy: f64) -> u32 {
     let grown = f64::from(was) + dy / rows.max(1) as f64;
     (grown.round().max(0.0) as u32).clamp(THUMB_MIN, THUMB_MAX)
@@ -108,21 +81,17 @@ pub fn thumb_dragged(was: u32, rows: usize, dy: f64) -> u32 {
 
 // --- Zoom (§A's toolbar group 7 and §B's zoom rules) --------------------------------------------
 
-/// px per second at open: the whole session is rarely this narrow, so the first thing a person does
-/// is zoom out to the floor — which is why the floor matters more than this.
+/// px per second at open.
 pub const ZOOM_AT_OPEN: f64 = 4.0;
 
-/// The deepest zoom (§A: "ceiling 240 px/s"). It is a ceiling rather than a limit because past it a
-/// second stops being a thing you can point at.
+/// The deepest zoom (§A: "ceiling 240 px/s").
 pub const ZOOM_MAX: f64 = 240.0;
 
 /// §1: the buttons' factor, and the base of the wheel's `1.25^-dy`.
 pub const ZOOM_STEP: f64 = 1.25;
 
-/// The floor: the whole filmed session across the view (§A: "floor fits the filmed duration into the
-/// view minus the gutter" — the gutter is the caller's to subtract from `view_px`, since it is what
-/// the caller drew). An empty session answers [`ZOOM_AT_OPEN`] rather than 0 or infinity: a cut with
-/// no footage still has a timeline, and a zoom of zero would divide by itself on the first draw.
+/// The floor: the whole filmed session across the view (§A); the caller subtracts the gutter from `view_px`.
+/// An empty session answers [`ZOOM_AT_OPEN`] (a zero zoom would divide by itself).
 pub fn fit_pps(filmed_seconds: f64, view_px: f64) -> f64 {
     if filmed_seconds <= 0.0 || view_px <= 0.0 {
         return ZOOM_AT_OPEN;
@@ -130,9 +99,7 @@ pub fn fit_pps(filmed_seconds: f64, view_px: f64) -> f64 {
     view_px / filmed_seconds
 }
 
-/// − : out by one step, stopping at the floor. §A's tooltip says it stops where the whole session is
-/// on screen, which is [`fit_pps`] rather than a fixed number — a two-hour session fits at a px per
-/// second that would leave a five-minute one in a corner.
+/// − : out by one step, stopping at the floor ([`fit_pps`], not a fixed number).
 pub fn zoom_down(pps: f64, floor: f64) -> f64 {
     (pps / ZOOM_STEP).max(floor).min(ZOOM_MAX)
 }
@@ -142,14 +109,10 @@ pub fn zoom_up(pps: f64, floor: f64) -> f64 {
     (pps * ZOOM_STEP).clamp(floor, ZOOM_MAX)
 }
 
-/// Zoom keeping the second under `anchor_x` where it is (§A: the wheel "does the same, around the
-/// cursor"). The scroll back has to move too, or zooming in at the left edge pushes what you were
-/// looking at off screen and every zoom is a hunt for the same moment again.
+/// Zoom keeping the second under `anchor_x` where it is (§A); the scroll moves too.
 ///
-/// `anchor_x` is a pixel of the VIEW (0 at the tape's first visible pixel, right of the gutter) and
-/// `origin_x` the scroll, how many tape pixels are off screen to the left, so the second under the anchor
-/// is `(anchor_x + origin_x) / pps`. The first rewrite subtracted the scroll instead, so every zoom away
-/// from the session's start computed a scroll below zero and jumped back to 0:00.
+/// `anchor_x` is a pixel of the VIEW (0 right of the gutter), `origin_x` the tape pixels off screen left: the second under the anchor is
+/// `(anchor_x + origin_x) / pps`.
 pub fn zoom_around(pps: f64, factor: f64, anchor_x: f64, origin_x: f64, floor: f64) -> (f64, f64) {
     let time = (anchor_x + origin_x) / pps;
     let next = (pps * factor).clamp(floor, ZOOM_MAX);
@@ -158,11 +121,10 @@ pub fn zoom_around(pps: f64, factor: f64, anchor_x: f64, origin_x: f64, floor: f
 
 // --- Frame steps and the wheel (§1's two wheel rules) ------------------------------------------
 
-/// One frame: ‹f and f› step the red line by a single frame, which is the only way to land a cut on
-/// a word edge by hand.
+/// One frame: ‹f and f› step the red line by a frame.
 pub const FRAME_STEP: i64 = 1;
 
-/// Shift makes it five — far enough to cross a seam, short enough that overshoot costs one press.
+/// With Shift, five.
 pub const FRAME_STEP_SHIFT: i64 = 5;
 
 /// ‹f/f› with or without Shift held (§A: "back 5 frames (pauses) — or whatever is held, 5 frames").
@@ -174,8 +136,7 @@ pub fn frame_step(shift: bool) -> i64 {
     }
 }
 
-/// What the wheel is over, which decides what it does (§1: "Wheel over the transport bar **and over
-/// the preview picture** steps frames (Shift = 5); over the tracks it zooms around the cursor").
+/// What the wheel is over, which decides what it does (§1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelOver {
     Transport,
@@ -183,9 +144,7 @@ pub enum WheelOver {
     Tracks,
 }
 
-/// What one wheel motion means. A no-op is `StepFrames { frames: 0 }` rather than its own variant:
-/// a caller that steps the line by nothing has done exactly what the wheel asked for, and a third
-/// answer would be a branch that can only ever do nothing.
+/// What one wheel motion means. A no-op is `StepFrames { frames: 0 }`, not its own variant.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Wheel {
     StepFrames { frames: i64 },
@@ -193,15 +152,13 @@ pub enum Wheel {
     Pan { px: f64 },
 }
 
-/// An eighth of the view (§A: "Shift+wheel pans by dx·viewW/8", and §1's "a trackpad sideways swipe"
-/// is the same gesture). A fixed pixel pan would crawl at 240 px/s and fly at the floor.
+/// An eighth of the view (§A: "Shift+wheel pans by dx·viewW/8"); a fixed pixel pan would crawl at 240 px/s.
 pub fn pan_px(view_px: f64) -> f64 {
     view_px / 8.0
 }
 
-/// One wheel event, decided by what it was over. `dy` is the vertical notch (positive away from the
-/// user, as GDK reports it) and `dx` the sideways one, which on a trackpad arrives with no `dy` at
-/// all — that is how a swipe pans while a notch over the tracks zooms.
+/// One wheel event. `dy` is the vertical notch (positive away from the user, as GDK reports it), `dx` the sideways one,
+/// which a trackpad sends with no `dy`: that is how a swipe pans while a notch over the tracks zooms.
 pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wheel {
     match over {
         WheelOver::Transport | WheelOver::Preview => {
@@ -231,7 +188,6 @@ pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wh
                     px: pan_px(view_px) * direction,
                 }
             } else {
-                // Banked deltas arrive as a count of notches, so the factor is the step to that power.
                 Wheel::Zoom {
                     factor: ZOOM_STEP.powf(-dy),
                     at_x: 0.0,
@@ -243,7 +199,6 @@ pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wh
 
 // --- The transport's three play buttons (§A's group 1) -----------------------------------------
 
-/// What the preview is doing, which is all the two cut buttons need to know about themselves.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Preview {
     /// ▶✂ is running: the removed stretches are skipped.
@@ -252,8 +207,7 @@ pub struct Preview {
     pub reviewing: bool,
 }
 
-/// ▶ is never greyed (§A: "(never greyed)") — pausing a stopped preview is not an error worth a dead
-/// button over, and a control that is only sometimes clickable teaches nobody anything.
+/// ▶ is never greyed (§A).
 pub fn play_recording_sensitive() -> bool {
     true
 }
@@ -263,83 +217,66 @@ pub fn can_play_cut(cut: &Cut) -> bool {
     !cut.segs.is_empty()
 }
 
-/// ▶✂✂ needs joins to review (§A: "sensitive with ≥2 clips"). A card is not a clip: reviewing it
-/// would play one still and call the tour complete.
+/// ▶✂✂ needs joins to review (§A: "sensitive with ≥2 clips"); a card is not a clip.
 pub fn can_review(cut: &Cut) -> bool {
     cut.segs.iter().filter(|seg| !seg.is_insert()).count() >= 2
 }
 
-/// Lit while ▶✂ runs — but not while ▶✂✂ runs, which is the same skipping with a tour through it
-/// (§A: "lit while cutOnly and no review").
+/// Lit while ▶✂ runs but not ▶✂✂ (§A: "lit while cutOnly and no review").
 pub fn play_cut_lit(preview: &Preview) -> bool {
     preview.cut_only && !preview.reviewing
 }
 
-/// Lit while the review runs.
 pub fn review_lit(preview: &Preview) -> bool {
     preview.reviewing
 }
 
 // --- Tooltips (§A's groups 1, 6 and 7, verbatim) -----------------------------------------------
 
-/// ▶ — §A group 1.
 pub const PLAY_TIP: &str = "play or pause the preview at the playhead";
 
-/// ▶✂ idle — §A group 1.
 pub const PLAY_CUT_TIP: &str = "play the CUT instead of the recording: the removed stretches are \
 skipped, so this runs the finished video. The clock reads the cut's own time while it does. Changes \
 nothing that is saved.";
 
-/// ▶✂ running: the same button becomes the pause (§A group 1).
 pub const PLAY_CUT_TIP_LIVE: &str = "pause the cut preview";
 
-/// ▶✂✂ idle — §A group 1.
 pub const REVIEW_TIP: &str = "review every cut in one go: plays 10 s of the finished video before \
 each join and 10 s after it, one join after the other, and stops after the last. The removed \
 stretches are skipped as under ▶✂. Changes nothing that is saved.";
 
-/// ▶✂✂ running — §A group 1.
 pub const REVIEW_TIP_LIVE: &str = "pause the cut review";
 
-/// ‹‹f/‹f/f›/f››. §A elides this with "back 5 frames (pauses) — or whatever is held, 5 frames", so
-/// the four share one sentence naming what they hold in common: they pause, and they move the line.
+/// ‹‹f/‹f/f›/f››: §A elides this, so the four share one sentence.
 pub const FRAME_TIP: &str = "step the red line by a frame (pauses) — Shift holds five";
 
 /// Undo — §A group 6. The keys are §1's own ("Undo Ctrl+Z").
 pub const UNDO_TIP: &str = "Undo — take back the last Add, Remove or Suggest";
 
-/// §1 lists two spellings for Redo where §A names one, so both go in the tooltip rather than one of
-/// them being true and invisible.
+/// §1 lists two spellings for Redo, so both go in the tooltip.
 pub const REDO_KEYS: &str = " (Ctrl+Shift+Z or Ctrl+Y)";
 
-/// Undo's keys, §1's "Undo Ctrl+Z".
 pub const UNDO_KEYS: &str = " (Ctrl+Z)";
 
-/// Redo — §A group 6.
 pub const REDO_TIP: &str = "Redo — put it back";
 
-/// Revert — §A group 6.
 pub const REVERT_TIP: &str = "Revert edits — drop everything you added or removed by hand and go \
 back to the last suggestion — or, if you have not suggested yet, to the cut this page opened with";
 
-/// Clear — §A group 6.
 pub const CLEAR_TIP: &str = "Clear: take every kept stretch and every effect off the timeline, \
 leaving the recordings as they were loaded (↶ Undo brings them back)";
 
-/// − — §A group 7.
 pub const ZOOM_OUT_TIP: &str = "zoom the timeline out — it stops where the whole session is on \
 screen (the scroll wheel does the same, around the cursor)";
 
-/// + — §A elides this one ("…around the middle of what is on screen…"), so it is written to match
-/// its own sentence: the buttons differ from the wheel only in where they anchor.
+/// + — §A elides this one, so it matches its own sentence.
 pub const ZOOM_IN_TIP: &str = "zoom the timeline in — around the middle of what is on screen, and \
 it stops at 240 px a second";
 
 // --- What each toolbar group holds (§1 items 5-22, §A groups 1-7) -------------------------------
 
-/// One toolbar control: the name a test and the snapshot entry point find it by, what it says, and the
-/// sentence that says what pressing it would do. `label` carries the glyph the spec draws plus the
-/// words; a button [`tool_icon`] names an icon for wears the icon instead.
+/// One toolbar control: the name tests and the snapshot entry point find it by, its label and its tooltip.
+/// `label` carries the glyph plus words; a button with a [`tool_icon`] wears the icon instead.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tool {
     pub name: &'static str,
@@ -347,24 +284,15 @@ pub struct Tool {
     pub tip: &'static str,
 }
 
-/// The IDLE face of one of the three preview buttons: `ui::cut_*_play` paints these glyphs over the
-/// toolbar button's label, and keeps its own words for the ⏸ face a running preview wears (the bar has
-/// room for one sentence at a time, not three).
+/// The IDLE face of the three preview buttons: `ui::cut_*_play` paints these over the label and keeps its own words for ⏸.
 pub const PLAY_GLYPH_RECORDING: &str = "\u{25b6}";
-/// ▶✂ — §A group 1's second glyph.
 pub const PLAY_GLYPH_CUT: &str = "\u{25b6}\u{2702}";
-/// ▶✂✂ — §A group 1's third glyph.
 pub const PLAY_GLYPH_REVIEW: &str = "\u{25b6}\u{2702}\u{2702}";
 
-/// Transport, in §1's order 5 → 6 → 7 → 8. The three play buttons keep the names F2.1/F2.2/F2.3
-/// gave them and their own tooltips; the four frame steps are §1 item 8 and share [`FRAME_TIP`].
+/// Transport, §1 items 5 → 8. The play buttons keep the names F2.1/F2.2/F2.3; the frame steps share [`FRAME_TIP`].
 ///
-/// The six glyphs are `spec/inventory/cut.md` §A group 1 spelled out (▶, ▶✂, ▶✂✂, ‹‹f, ‹f, f›, f››) and
-/// what `spec/img/05-cut.png` draws: the sentence lives in the tooltip, because the bar is ONE row of six
-/// groups and words here cost it ~1000 px — measured at a 1260 px window, the transport alone asked for
-/// 1255 px, so GTK clipped every later group inside its own scroller and Copy/Paste/Insert/Lane (§1 items
-/// **13**-**16**) fell off the visible bar. `ui::cut_*_play::PLAY_LABEL`/`PAUSE_LABEL` stay as they were:
-/// those are the faces a RUNNING preview paints over this one, not the idle label.
+/// Glyphs only (`spec/inventory/cut.md` §A group 1): words cost ~1000 px and clipped Copy/Paste/Insert/Lane off the bar at a 1260 px window.
+/// `ui::cut_*_play::PLAY_LABEL`/`PAUSE_LABEL` are the faces a RUNNING preview paints over these.
 pub const TRANSPORT_BUTTONS: [Tool; 7] = [
     Tool {
         name: "play-recording-button",
@@ -405,10 +333,8 @@ pub const TRANSPORT_BUTTONS: [Tool; 7] = [
 
 /// Verbs, §1 items 10 → 15 in one row: ＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane.
 ///
-/// This table only ORDERS the controls. Their names, labels and tooltips stay single-sourced where they
-/// already live — `cut_verbs::BUTTONS` for the first three, `cut_copy::BUTTONS` for copy/paste/lane —
-/// and `verb_tools()` returns this list built from those two modules plus [`INSERT_TOOL`], so a change
-/// to either is a change here automatically and the two cannot drift apart.
+/// This table only ORDERS the controls; names, labels and tooltips stay in `cut_verbs::BUTTONS` and `cut_copy::BUTTONS`,
+/// and `verb_tools()` builds this list from them plus [`INSERT_TOOL`].
 pub const VERB_BUTTONS: [Tool; 7] = [
     Tool {
         name: "add-button",
@@ -428,9 +354,7 @@ pub const VERB_BUTTONS: [Tool; 7] = [
     Tool { name: "copy-button", label: "\u{29c9} Copy", tip: "take the selection in hand \u{2014} a second at least; the band keeps showing it" },
     Tool {
         name: "paste-button",
-        // §A group 4 spells the BUTTON "⧉ Paste" and keeps the rest of the sentence ("… where the red line
-        // is — Esc drops the copy") in the tooltip; the long form cost 150 px and scrolled Copy/Paste/Insert
-        // out of the bar's one row at §1's own window size.
+        // §A's long form cost 150 px and scrolled Copy/Paste/Insert out of the bar; the rest of the sentence is in the tooltip.
         label: "\u{29c9} Paste",
         tip: "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage",
     },
@@ -438,9 +362,7 @@ pub const VERB_BUTTONS: [Tool; 7] = [
     Tool { name: "lane-button", label: "\u{21f2} Lane", tip: "give the copy a row of its own \u{2014} nothing is cut to it yet" },
 ];
 
-/// Insert/Edit, §1 item 15 / §A group 4's last-but-one entry. `cut_insert.rs` owns the insert FORM
-/// (its `CHOOSING` wording, the between/over choice, the seconds entry); this is only the button that
-/// opens it, which is why the tooltip points at the choice the form then asks for.
+/// Insert/Edit, §1 item 15. `cut_insert.rs` owns the form; this is only the button that opens it.
 pub const INSERT_TOOL: Tool = Tool {
     name: "insert-button",
     label: "Insert",
@@ -449,10 +371,8 @@ pub const INSERT_TOOL: Tool = Tool {
 
 pub const EFFECT_MENU_TITLE: &str = "\u{271a} Effect \u{2713}";
 
-/// The effects dropdown's six entries, §1 item 17 ("✚ Effect ▾"). The third field is the effect kind
-/// id `cut::EffectKind::parse` accepts (`src/cut.rs`: zoom / speed / text / svg / volume / label),
-/// so an entry here cannot name a kind the cut cannot hold. A stop is not a seventh entry: §1 lists
-/// none, and `EffectKind` folds `"speed" | "stop"` into Speed.
+/// The effects dropdown's six entries (§1 item 17). The third field is a kind id `cut::EffectKind::parse` accepts; a stop is not a seventh entry
+/// (`EffectKind` folds `"speed" | "stop"` into Speed).
 pub const EFFECT_ITEMS: [Tool; 6] = [
     Tool {
         name: "effect-item-zoom",
@@ -486,9 +406,7 @@ pub const EFFECT_ITEMS: [Tool; 6] = [
     },
 ];
 
-/// History, §1 items 18 → 21 with the keys §1 spells: Undo Ctrl+Z, Redo Ctrl+Shift+Z **or Ctrl+Y**,
-/// Revert, ✗ Clear. The key chords live in the tooltip because the page draws no key hints anywhere
-/// else (§1: "No timeline tooltips, by design; status line and cursor shapes say what a press would do").
+/// History, §1 items 18 → 21. The key chords live in the tooltip: the page draws no key hints elsewhere (§1).
 pub const HISTORY_BUTTONS: [Tool; 4] = [
     Tool {
         name: "undo-button",
@@ -514,7 +432,6 @@ as they were loaded (\u{21b6} Undo brings them back)",
     },
 ];
 
-/// Zoom, §1 item 22: − then +.
 pub const ZOOM_BUTTONS: [Tool; 2] = [
     Tool {
         name: "zoom-out-button",
@@ -528,33 +445,24 @@ pub const ZOOM_BUTTONS: [Tool; 2] = [
     },
 ];
 
-/// Which of the four history buttons may be pressed right now, in [`HISTORY_BUTTONS`]' order:
-/// Undo, Redo, Revert, Clear.
+/// Which history buttons may be pressed, in [`HISTORY_BUTTONS`]' order: Undo, Redo, Revert, Clear.
 ///
-/// `undo_left` and `redo_left` are the counts either side of the pointer in `cut::History` (bounded by
-/// `P.layout.undoDepth` = [`crate::cut::UNDO_DEPTH`] = 50 snapshots, so neither count can grow past
-/// that however long the session runs). `ever_edited` is whether anything has been recorded at all:
-/// with nothing but the state the page opened on, Revert has nothing to throw away and Clear would
-/// clear a timeline nobody touched, so both sit greyed next to a greyed Undo.
+/// `undo_left` and `redo_left` are the counts either side of the pointer in `cut::History` (bounded by [`crate::cut::UNDO_DEPTH`]).
+/// `ever_edited` is whether anything was recorded: with none, Revert and Clear have nothing to act on.
 pub fn history_buttons_enabled(undo_left: usize, redo_left: usize, ever_edited: bool) -> [bool; 4] {
     [
-        // Nothing below the pointer: there is no earlier state to go back to.
         undo_left > 0,
-        // Nothing above it: the branch was thrown away by the last new edit (§A: redo survives only
-        // while the branch it belongs to does).
+        // Nothing above it: the last new edit threw the branch away (§A).
         redo_left > 0,
-        // Revert answers "back to the base", and with no edit the screen IS the base.
+        // With no edit the screen IS the base.
         ever_edited,
-        // Clear is the destructive one; it earns its colour only once there is something of yours on
-        // the timeline to lose.
+        // Clear earns its colour only once there is something to lose.
         ever_edited,
     ]
 }
 
-/// The seven idle rows of the form column, §1 item 4's order: aspect, playhead, selection, cut, cut at
-/// 1×, source, segments. These are the labels [`idle_readouts`] emits, in
-/// the order it emits them — listed here so the page's row set is checkable without building a Cut,
-/// and so a renamed row fails a test instead of silently reordering the column.
+/// The seven idle rows of the form column, §1 item 4's order; the labels [`idle_readouts`] emits, in its order,
+/// so a renamed row fails a test instead of silently reordering the column.
 pub const IDLE_FORM_ROWS: [&str; 7] = [
     "Aspect ratio",
     "Playhead",
@@ -565,11 +473,9 @@ pub const IDLE_FORM_ROWS: [&str; 7] = [
     "Segments",
 ];
 
-/// The widget name the form column gives one reading, keyed off its label so the label is spelled in
-/// exactly one place ([`IDLE_FORM_ROWS`] and [`idle_readouts`]) and the name follows from it.
+/// The widget name the form column gives one reading, derived from its label (spelled only in [`IDLE_FORM_ROWS`] and [`idle_readouts`]).
 ///
-/// Non-alphanumerics become `-` and a `×` is spelled out first: "Cut at 1×" must not come out as
-/// `cut-readout-cut-at-1`, which would collide with a hypothetical "Cut at 1" and read as truncated.
+/// Non-alphanumerics become `-` and `×` is spelled out first, so "Cut at 1×" cannot collide with "Cut at 1".
 pub fn readout_widget(label: &str) -> String {
     let spelled = label.replace('\u{00d7}', " times");
     let slug: String = spelled
@@ -588,19 +494,14 @@ pub fn readout_widget(label: &str) -> String {
 
 // --- The form column's idle readings (§A: "Idle rows: …") --------------------------------------
 
-/// One row of the idle form: what it is called on the page, what it reads, and the sentence §A puts
-/// behind it when there is one. A row with an empty tip has no sentence to borrow, so it gets no
-/// tooltip rather than one that restates its own label.
+/// One row of the idle form: label, reading, and §A's tooltip sentence (empty means no tooltip).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Readout {
     pub label: &'static str,
     pub value: String,
 }
 
-/// The shape a cut with no `aspect` is shown in. §A lists Aspect ratio as a dropdown and leaves its
-/// choices to F2.x; the prototype opens at the first recording's own shape, which this module cannot
-/// know without probing files, so the page falls back to the shape recordings are made in and the
-/// aspect round (F2.x) replaces it with the real thing.
+/// The shape shown for a cut with no `aspect`: the shape recordings are made in, until the aspect round (F2.x).
 pub const ASPECT_DEFAULT: &str = "16:9";
 
 /// The cut's own length, as the render makes it: each clip it plays for what it shows, a card for its `dur`, footage
@@ -612,8 +513,7 @@ pub fn cut_seconds(cut: &Cut) -> f64 {
         .sum()
 }
 
-/// The same stretches at normal speed (§A's "Cut at 1×" row). The gap between this and
-/// [`cut_seconds`] is what the speed effects saved, which is the only reason the row exists.
+/// The same stretches at normal speed (§A's "Cut at 1×" row).
 pub fn cut_seconds_at_1x(cut: &Cut) -> f64 {
     cut.segs
         .iter()
@@ -632,9 +532,7 @@ pub fn segment_count(cut: &Cut) -> usize {
     cut.segs.len()
 }
 
-/// How a stored aspect reads on the page: an unset shape shows the default, a chosen one shows itself.
-/// The ONE spelling of that rule — `idle_readouts` and the F3.2 refresh both call this, so the Aspect ratio
-/// row and the `aspect-choice` dropdown beside it can never be painted with two different answers.
+/// How a stored aspect reads on the page: unset shows the default. The ONE spelling of that rule, shared by `idle_readouts` and F3.2's refresh.
 pub fn aspect_shown(aspect: &str) -> String {
     if aspect.is_empty() {
         ASPECT_DEFAULT.to_string()
@@ -643,8 +541,7 @@ pub fn aspect_shown(aspect: &str) -> String {
     }
 }
 
-/// The seven rows of the idle form, in §A's order and with its spellings. The clocks go through
-/// [`crate::tools::mm_ss`], so a page and a log line never disagree about what 4271 seconds is.
+/// The seven idle rows in §A's order; clocks go through [`crate::tools::mm_ss`].
 pub fn idle_readouts(
     aspect: &str,
     playhead: f64,
@@ -653,8 +550,7 @@ pub fn idle_readouts(
     source_seconds: f64,
 ) -> Vec<Readout> {
     let aspect = aspect_shown(aspect);
-    // A row that reads "nothing selected" would be a prompt, and this is a reading: the silence is
-    // the answer, and §A gives it no wording of its own.
+    // No selection reads as silence, not a prompt (§A gives it no wording).
     let selection = match selection {
         Some((start, end)) => format!("{} \u{2013} {}", tools::mm_ss(start), tools::mm_ss(end)),
         None => String::new(),
@@ -694,9 +590,7 @@ pub fn idle_readouts(
 
 // --- The picture band's grid (§1: "on the 250 ms grid restarted at each scene change") ----------
 
-/// How many seconds one thumbnail slot spans: a row `thumb_px` tall of `w:h` shape is that much
-/// wider, and the zoom decides how many px a second is. Below one frame per slot the band draws
-/// black between pictures, which is why the prototype's band went empty when you zoomed in.
+/// Seconds one thumbnail slot spans: a `thumb_px` row of `w:h` shape is that wide, and zoom sets px per second.
 pub fn slot_seconds(thumb_px: u32, aspect: &str, pps: f64) -> f64 {
     let (w, h) = parse_aspect(aspect);
     if pps <= 0.0 || h == 0 {
@@ -706,21 +600,15 @@ pub fn slot_seconds(thumb_px: u32, aspect: &str, pps: f64) -> f64 {
 }
 
 /// Does the band have a picture at every zoom? True while one slot spans no more than
-/// [`crate::prepare::EXTRACTION_GRID`] — `P.eng.frameGridSeconds`, the 250 ms grid Prepare extracts on
-/// and restarts at every scene change.
+/// [`crate::prepare::EXTRACTION_GRID`] (`P.eng.frameGridSeconds`, the 250 ms grid restarted at every scene change).
 ///
-/// Reported rather than assumed: whether a given zoom has a picture depends on the row height and the
-/// aspect as well as on the grid, so this answers from all three and the page says what it finds. The
-/// prototype's band stepped one frame per Freq seconds (Freq ships at 1 s), which is why §1 says it
-/// "zoomed in … shows black between them"; a 64 px 16:9 row wants a frame every 0.47 s at the ceiling,
-/// finer than even the new grid, and this answers `false` for that rather than promising a picture the
-/// extractor was never asked for. The band's own round asks Prepare for one frame per slot instead.
+/// Depends on row height and aspect as well as the grid; a 64 px 16:9 row wants a frame every 0.47 s at the ceiling,
+/// finer than the grid, so this answers `false`. The band's own round asks Prepare for one frame per slot.
 pub fn picture_at_every_zoom(pps: f64, thumb_px: u32, aspect: &str) -> bool {
     slot_seconds(thumb_px, aspect, pps) <= prepare::EXTRACTION_GRID
 }
 
-/// `"{w}:{h}"`, or the default shape for anything else: a page that cannot read its own aspect still
-/// has to lay the band out.
+/// `"{w}:{h}"`, or the default shape for anything else.
 fn parse_aspect(aspect: &str) -> (f64, u32) {
     let Some((w, h)) = aspect.split_once(':') else {
         return (16.0, 9);
@@ -736,45 +624,32 @@ fn parse_aspect(aspect: &str) -> (f64, u32) {
 /// The gutter: fold-all badge, sound switches, empty-row ✕ (§A: "first 30 px of timeline space").
 pub const GUTTER_PX: f64 = 30.0;
 
-/// The ruler, whose ticks are the only place the timeline names a time in words.
 pub const RULER_PX: f64 = 18.0;
 
-/// The selection band: green bar per kept scene, blue selection, fold badges. Taller than the ruler
-/// because it carries things you grab, and a ruler is not grabbed.
 pub const SELECTION_BAND_PX: f64 = 22.0;
 
-/// One row of the effects lane — one row per overlapping group, so this is what they stack by.
 pub const EFFECT_ROW_PX: f64 = 26.0;
 
-/// One channel of a row's wave strip.
 pub const WAVE_LANE_PX: f64 = 30.0;
 
-/// Between a picture row and its wave strip (§A: "gap 3").
 pub const ROW_GAP_PX: f64 = 3.0;
 
-/// The red playhead: "2 px line on its own layer across both bands" (§1). Its own layer is why it
-/// stays one width however the bands above and below it are sized.
+/// The red playhead: "2 px line on its own layer across both bands" (§1).
 pub const RED_LINE_PX: f64 = 2.0;
 
-/// One screenful of drag, however deep the zoom: the thumb is geared so the last 40 px of a
-/// three-hour session are still 40 px of thumb (§A: "thumb geared at high zoom, 40 px per screenful").
+/// One screenful of drag, geared so the thumb stays 40 px at any zoom (§A).
 pub const SCROLLBAR_DRAG_PX: f64 = 40.0;
 
-/// Whether there is a scrollbar at all (§1: "hidden when everything fits"). A bar over a timeline
-/// that does not scroll is a groove nobody can use and one less row of footage.
+/// Whether there is a scrollbar at all (§1: "hidden when everything fits").
 pub fn scrollbar_shown(total_px: f64, view_px: f64) -> bool {
     total_px > view_px
 }
 
-/// §7 (`the tracks are a window drawn under a translate`): the seconds the drawing is asked for. The band is
-/// laid out in pixels and the model holds seconds, so this converts what the translate puts on screen back into
-/// the range the tracks may be filled from — and it never asks for a frame. Nothing decodes inside a draw: the
-/// caller fills the window from what has already arrived, and the one place a draw may ask for work at all is
-/// throttled by [`crate::cut_trim::scrubs`].
+/// §7 (`the tracks are a window drawn under a translate`): the seconds the translate puts on screen, as the range the tracks may be filled from.
+/// It never asks for a frame: nothing decodes inside a draw ([`crate::cut_trim::scrubs`] throttles the one place that may).
 ///
-/// `offset_px` is how far the translate has moved the band left (0 at its start) and is clamped into the band, so
-/// a drag past either end yields the edge rather than an empty track. The gutter is not subtracted here: it is
-/// drawn over the band's own first 30 px ([`GUTTER_PX`]) by the caller, which knows where its translate begins.
+/// `offset_px` is how far the translate has moved the band left, clamped into the band so a drag past either end yields the edge.
+/// The gutter is not subtracted: the caller draws it over the band's first 30 px ([`GUTTER_PX`]).
 pub fn visible_window(offset_px: f64, view_px: f64, pps: f64, filmed_px: f64) -> (f64, f64) {
     if pps <= 0.0 || view_px <= 0.0 {
         return (0.0, 0.0);
@@ -783,8 +658,7 @@ pub fn visible_window(offset_px: f64, view_px: f64, pps: f64, filmed_px: f64) ->
     (start / pps, (start + view_px).min(filmed_px.max(0.0)) / pps)
 }
 
-/// ✚ Effect ▾ — §1 item 17's dropdown. The tooltip says what the six entries are for, since the
-/// button's own label cannot.
+/// ✚ Effect ▾ — §1 item 17's dropdown; the tooltip says what the six entries are for.
 pub const EFFECT_MENU_TIP: &str =
     "add an effect over the seconds under the red line \u{2014} zoom, text, \
 a drawing, a speed change, a volume or a label";

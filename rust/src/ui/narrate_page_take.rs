@@ -13,14 +13,9 @@ use crate::ui::narrate_page::NarrateState;
 use crate::ui::narrate_page::{mutate, read_state, refresh, say, widget_in};
 
 /// **8** ＋ makes the selection a take, refused under P.eng.takeMinSeconds.
-///
-/// The sentence it says carries the selection's own span first (§F4.6's caption: "take added: 0:00–0:03 —
-/// 1 take(s), 2.6 s of reference (14 s is plenty)"), because the seconds someone just dragged are the
-/// fact the status has to confirm; the totals after the dash are [`narrate_details::commit_status`]'s.
 pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) -> String {
     // §6 (`Take band messages`): with no drag on the band there is nothing to make a take OF, and that is a
-    // different sentence from "the selection was too short" — it names the button to use. A zero-width or
-    // negative selection is exactly "nothing was dragged", so it is answered before the floor rule.
+    // different sentence from "the selection was too short" — it names the button to use.
     if selection.1 <= selection.0 {
         return say(window, narrate_details::take_add_hint());
     }
@@ -32,8 +27,6 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
         s.takes = narrate_screen::add_takes(&s.takes, selection);
         s.takes.clone()
     });
-    // S4: the reference was cut from the OLD take set, so it is wrong the moment this one lands; the picks
-    // live in `narrate/takes.json`, not in this window (§07-narrate#3-data).
     if let Some(why) = crate::ui::narrate_seed::note_takes_for_session(&takes) {
         say(window, &format!("could not save the takes \u{2014} {why}"));
     }
@@ -45,8 +38,6 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
             crate::tools::mm_ss(selection.0),
             crate::tools::mm_ss(selection.1),
             // §6 spells the mark as `P.machine.refWantSeconds` (14 s), NOT the ＋ press's own floor:
-            // handing this `take_min()` read "(0 s is plenty)" beside a 2.6 s take, which is the
-            // sentence's whole point — is this enough voice to clone?
             narrate_details::commit_status(
                 "takes",
                 takes.len(),
@@ -62,7 +53,6 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
     if selection.1 <= selection.0 {
         return say(window, narrate_details::take_remove_hint());
     }
-    // Nothing changes, so the reference stays: it was cut from these very takes.
     if narrate_screen::remove_takes(&read_state().takes, selection) == read_state().takes {
         return say(window, narrate_details::nothing_picked());
     }
@@ -120,8 +110,6 @@ pub fn walking() -> bool {
     WALK.with(|walk| walk.borrow().is_some())
 }
 
-/// The take band's ▶ wears ⏹ while a walk plays (prototype `syncPlayBtn`: a second press can only mean
-/// "enough"), sized for both faces so the row never moves.
 fn paint_take_play(window: &adw::ApplicationWindow) {
     if let Some(button) = crate::ui::line_step_button(window, "take-play") {
         crate::ui::cut_record_play::set_steady_label(
@@ -132,12 +120,6 @@ fn paint_take_play(window: &adw::ApplicationWindow) {
     }
 }
 
-/// **8** ▶ plays the takes from the red bar, the seconds themselves in the recording they are cut from (the
-/// prototype's `playClicked`; the reference file does not exist until a line was spoken, and is levelled and
-/// pitch-shifted besides). The bar inside a take plays from the bar to that take's end, then the next take, and
-/// the red bar walks with it, jumping over what is not picked; with no take after the bar the recording plays
-/// from the bar ([`narrate_screen::take_queue`]). A press while it walks stops it. The first rewrite played
-/// `voice_ref.wav`, so on a project nobody had spoken a line in, ▶ did nothing.
 pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
     if walking() {
         WALK.with(|walk| walk.borrow_mut().take());
@@ -152,8 +134,7 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
         return say(window, "no project folder is open \u{2014} nothing to play");
     };
     let project = crate::project::load(tree.dir()).unwrap_or_default();
-    // The band's seconds are the tape's: what the narrator says in the cut, across their recordings. Each queued
-    // span plays from the recording under it, a span over a seam as one piece of each.
+    // The band's seconds are the tape's: what the narrator says in the cut, across their recordings.
     let tape = crate::narrate_band_face::tape(&tree, &project, &s.voice);
     if tape.is_empty() {
         return say(
@@ -182,7 +163,6 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
             "the red bar is at the end of the recording \u{2014} click the band where ▶ should start",
         );
     };
-    // The player is the sample's too: a sample still sounding would play over the takes.
     narrate_sample::stop();
     if let Err(why) = narrate_sample::play_span(&spans[0].file, spans[0].from, spans[0].to) {
         return say(window, &why);
@@ -200,7 +180,6 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
             },
         })
     });
-    // The red bar stays where it was put; the walk's own playhead shows where the sound is.
     crate::ui::narrate_band::set_walk_head(Some(first));
     paint_take_play(window);
     walk_on(window);
@@ -209,8 +188,7 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
 }
 
 /// A click on the band is "play from here" wherever the sound is going: a take walk starts again from the bar, and
-/// the preview's line moves to the same moment, so its ▶ starts there and a running preview jumps there. The first
-/// rewrite only moved the bar, which nothing but the band's own next ▶ read.
+/// the preview's line moves to the same moment, so its ▶ starts there and a running preview jumps there.
 pub fn band_clicked(window: &adw::ApplicationWindow, band_second: f64) {
     if walking() {
         press_take_play(window);
@@ -288,14 +266,9 @@ fn walk_on(window: &adw::ApplicationWindow) {
 }
 
 /// **12** ▶ speaks the sample, or says which click would clear what stops it.
-///
-/// The refusal ladder runs first because a sample asked of a voice that cannot speak one must not put a
-/// request on the wire; past the ladder the sample is really synthesised over the same TTS leg a line
-/// uses, then heard from `narrate/samples/` on every later press of the same voice and words (S5).
 pub fn press_sample_play(window: &adw::ApplicationWindow) -> String {
     // §6 (`Re-roll / sample refusals`, the three states of a playing sample): a ▶ over a sample that is
-    // HOLDING freezes it and says so — "sample paused — ▶ resumes, ⏹ starts over". The next ▶ thaws the same
-    // player rather than synthesizing the words again, which is what "resumes" has to mean.
+    // HOLDING freezes it and says so — "sample paused — ▶ resumes, ⏹ starts over".
     if narrate_sample::hold_paused(false).is_some() {
         return say(window, narrate_details::sample_playing_status());
     }
@@ -320,25 +293,18 @@ pub fn press_sample_play(window: &adw::ApplicationWindow) -> String {
     if let Some(heard) = sample_heard_if_any(&text) {
         return say(window, &heard);
     } // Said BEFORE the leg starts: §6 names this sentence precisely so the bar never reads as done while
-      // the synthesis is out on the wire. The flag goes with it, for the next press.
     say(window, said);
     run_sample_leg(window, 0);
     said.to_string()
 }
 
-/// The cached look-aside, with the page's own state read here so the module below stays free of it.
 fn sample_heard_if_any(text: &str) -> Option<String> {
     let voice = read_state().voice;
     let tree = crate::ui::window::narrate_session_tree()?;
     narrate_sample::already_heard(&tree, &voice, text)
 }
 
-/// Read the plate's own words and hand them to the speak. Split out so both ▶ and ⟳ pass the same text
-/// they show rather than each re-reading the entry and risking disagreeing with it.
-///
-/// The synthesis runs on a worker (§03-shell §1, "The window thread never waits"); the page is `busy` until
-/// it lands, which is what makes another ▶ or ⟳ say "still synthesizing". Sample ⏹ clears `busy`, so a take
-/// landing after it is stopped at once rather than heard.
+/// Read the plate's own words and hand them to the speak.
 fn run_sample_leg(window: &adw::ApplicationWindow, roll: usize) {
     let s = read_state();
     let text = widget_in(window, "sample-sentence")
@@ -359,7 +325,6 @@ fn run_sample_leg(window: &adw::ApplicationWindow, roll: usize) {
         move || narrate_sample::speak(&tree, &s.voice, s.pitch, &text, roll),
         move |outcome| {
             if !read_state().busy {
-                // ⏹ gave up on it while it was out: what the speak started is stopped.
                 narrate_sample::stop();
                 return;
             }
@@ -391,7 +356,7 @@ fn sample_ladder(s: &NarrateState, text: &str) -> &'static str {
 
 pub fn press_sample_stop(window: &adw::ApplicationWindow) -> String {
     // ⏹ gives up on the sample, which means both halves: the flag, and the player that may be holding
-    // the audio. Clearing only the flag would leave a take playing after the page says it stopped.
+    // the audio.
     let killed = narrate_sample::stop();
     mutate(|s| s.busy = false);
     if killed > 0 {

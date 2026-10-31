@@ -1,11 +1,5 @@
 //! Voice separation (spec/04-prepare.md F1.2): the 🗣 rows' wish, granted by ▶.
-//!
-//! The audio server splits a recording into the voice AND everything else — the two halves add back
-//! up to the original — so what comes out is two ordinary files and the session's row becomes two
-//! ordinary rows. Nothing downstream is taught about stems, which is why this module writes files and
-//! edits [`Project::sources`] and nothing else: no ffmpeg call, no upload and no window lives here.
-//! The chunk boundaries, the stem names and the loudness figures arrive as arguments, the way
-//! [`crate::probes::duration`] takes the durations it did not measure (spec/00-principles.md §5).
+//! The audio server splits a recording into the voice and the rest (they add back to the original); the row becomes two ordinary rows. This module only writes files and edits [`Project::sources`]; chunk boundaries, stem names and loudness arrive as arguments (spec/00-principles.md §5).
 
 use std::path::{Path, PathBuf};
 
@@ -14,53 +8,36 @@ use crate::layout::{self, Tree};
 use crate::project::{Project, Source};
 use crate::sources::separable;
 
-/// How much audio goes up in one request (`P.machine.sepChunkMaxSeconds`). One request per five
-/// minutes rather than one per recording: the answer is the audio itself, base64 in a JSON body, and
-/// a whole session in one reply is hundreds of megabytes — so the ceiling matters, not less.
+/// Audio per request (`P.machine.sepChunkMaxSeconds`): a whole session in one base64 reply would be hundreds of megabytes.
 // P.machine.sepChunkMaxSeconds
 pub const CHUNK_MAX_SECONDS: f64 = 300.0;
 
-/// S1: what goes up. The separation models are music models — 44.1 kHz stereo is what they were
-/// trained on, and handing them the 16 kHz mono the ASR uses would be asking them to separate
-/// something they have never heard.
+/// S1: what goes up. The separation models are trained on 44.1 kHz stereo, not the ASR's 16 kHz mono.
 pub const SAMPLE_RATE: &str = "44100";
 pub const CHANNELS: &str = "2";
 
-/// How far either side of a nominal chunk edge the cut may move looking for a silence. Wider and a
-/// chunk would drift past [`CHUNK_MAX_SECONDS`]; narrower and the cut lands mid-word.
+/// How far either side of a nominal chunk edge the cut may move to find a silence; wider drifts past [`CHUNK_MAX_SECONDS`], narrower cuts mid-word.
 pub const SEEK_WINDOW: f64 = 20.0;
 
-/// S6: how far under the mix the rest has to sit before it is worth saying so. A residual 13 dB down
-/// is a recording the model heard as voice from end to end — other players talking in game chat, say
-/// — and the half named for the room then has next to nothing in it. §10 files this bound as
-/// `P.eng.sepLopsidedDB` (10, "a stem this much quieter is dropped"), and `params::prepare()` rows it
-/// from this constant. What §10 calls "dropped" is the user's decision, made on reading the note: the
-/// app marks the split and leaves both halves on disk rather than deleting one.
+/// S6: how far under the mix the rest must sit to be worth a note. §10 files this as `P.eng.sepLopsidedDB` (10) and `params::prepare()` rows it from this constant. The app marks the split and keeps both halves rather than dropping one.
 pub const LOPSIDED_DB: f64 = 10.0;
 
-/// S3's mix of "everything that isn't the voice": `normalize=0` because these stems were one
-/// recording a moment ago and summing them has to give that recording back, not an eighth of it.
+/// S3's mix of "everything that isn't the voice": `normalize=0` so the sum gives the recording back.
 pub fn amix(stems: usize) -> String {
     format!("amix=inputs={stems}:normalize=0")
 }
 
-/// S1/S2: the pieces one recording is sent up as. Each is ≤ [`CHUNK_MAX_SECONDS`], and each cut is
-/// moved to the silence nearest the nominal edge inside [`SEEK_WINDOW`] — a cut in a silent gap costs
-/// nothing, while one mid-sentence puts a word across two requests and the model hears two words. A
-/// silence outside the window is ignored, which is what keeps any piece from growing past the
-/// ceiling: the nominal edges are fixed, only their exact position moves.
+/// S1/S2: the pieces one recording is sent up as, each ≤ [`CHUNK_MAX_SECONDS`], each cut moved to the nearest silence inside [`SEEK_WINDOW`]. Nominal edges are fixed, so no piece grows past the ceiling.
 pub fn chunk_plan(seconds: f64, silences: &[f64]) -> Vec<(f64, f64)> {
     if seconds <= CHUNK_MAX_SECONDS {
         return vec![(0.0, seconds)];
     }
-    // Nominal edges at the ceiling, then each moved to a silence: 640 s is 300 + 300 + 40 before any
-    // silence is considered, and only the exact bound stays one piece.
+    // Nominal edges at the ceiling, then each moved to a silence (640 s is 300 + 300 + 40).
     let mut plan = Vec::new();
     let mut from = 0.0;
     while seconds - from > CHUNK_MAX_SECONDS {
         let edge = from + CHUNK_MAX_SECONDS;
-        // Only a silence ahead of the last cut and no further than the ceiling helps: anything else
-        // would give a negative or an over-long piece, so the nominal edge stands.
+        // Only a silence after the last cut and within the ceiling helps; otherwise the nominal edge stands.
         let to = nearest_silence(silences, edge)
             .filter(|silence| *silence > from && *silence - from <= CHUNK_MAX_SECONDS)
             .unwrap_or(edge);
@@ -71,7 +48,6 @@ pub fn chunk_plan(seconds: f64, silences: &[f64]) -> Vec<(f64, f64)> {
     plan
 }
 
-/// The silence nearest `edge`, or `None` when none is within [`SEEK_WINDOW`].
 fn nearest_silence(silences: &[f64], edge: f64) -> Option<f64> {
     silences
         .iter()
@@ -85,11 +61,7 @@ fn nearest_silence(silences: &[f64], edge: f64) -> Option<f64> {
         .copied()
 }
 
-/// S1's decode: the source at [`SAMPLE_RATE`] Hz, [`CHANNELS`] channels, pcm — what every chunk of
-/// the plan is cut from. The separation models are music models, so this is not the 16 kHz mono the
-/// ASR takes; it is spelled out here because the two decodes look identical in a command line and are
-/// not the same request. Returns the ffmpeg arguments after the input: the caller prepends its own
-/// output path rather than this module naming where a temporary lands, which is F0.5's business.
+/// S1's decode: the source at [`SAMPLE_RATE`] Hz, [`CHANNELS`] channels, pcm; not the ASR's 16 kHz mono. Returns the ffmpeg arguments after the input; the caller prepends the output path (F0.5).
 pub fn decode_plan() -> Vec<String> {
     vec![
         "-vn".into(),
@@ -102,10 +74,7 @@ pub fn decode_plan() -> Vec<String> {
     ]
 }
 
-/// S3: which of the stems the model sent back is the voice and which is everything else. A RoFormer
-/// answers `vocals` and `instrumental`; an HTDemucs answers four instruments, where the rest is the
-/// other three mixed with [`amix`]. Both halves are required — a model that gave neither fails here
-/// rather than at the render, minutes later and with no explanation.
+/// S3: which returned stem is the voice and which the rest. RoFormer gives `vocals` and `instrumental`; HTDemucs gives four, the rest being the other three mixed with [`amix`]. A model giving neither fails here, not at the render.
 pub fn pick_stems(ids: &[String]) -> Result<(String, Vec<String>), String> {
     let is = |id: &str, want: &str| id.eq_ignore_ascii_case(want);
     let voice = ids
@@ -127,31 +96,23 @@ pub fn pick_stems(ids: &[String]) -> Result<(String, Vec<String>), String> {
     Ok((voice, rest))
 }
 
-/// The row already holds both halves: nothing is redone, and the log says so rather than going quiet.
 pub fn already_split_log(base: &str) -> String {
     format!(">>> {base} already split")
 }
 
-/// S6's first line, said before the first chunk goes up — minutes of GPU with nothing on screen is
-/// otherwise indistinguishable from a hang.
 pub fn start_log(base: &str, seconds: f64, parts: usize, model: &str) -> String {
     format!(">>> [{base}] splitting the voice off {seconds:.1} s in {parts} part(s) ({model})")
 }
 
-/// S6's line for a finished recording. The two file names are what the user looks for afterwards, so
-/// they are named as written rather than as paths.
 pub fn split_log(base: &str, rest: &str, voice: &str) -> String {
     format!(">>> [{base}] split into {rest} and {voice}")
 }
 
-/// S6's loudness report. Each level is ffmpeg's `volumedetect` mean, as it printed it (`-20.3 dB`).
 pub fn loudness_log(base: &str, mix: &str, voice: &str, rest: &str) -> String {
     format!(">>> [{base}] the mix averaged {mix}: the voice half {voice}, the rest {rest}")
 }
 
-/// S6's warning: how far under the mix the rest sits, when that is [`LOPSIDED_DB`] or more. Said now
-/// rather than left to be found by ear a day later as "the footage is silent" — and it is not the
-/// footage. An unmeasurable level says nothing: a missing number is not evidence of anything.
+/// S6's warning when the rest sits [`LOPSIDED_DB`] or more under the mix. An unmeasurable level says nothing.
 pub fn lopsided(mix: &str, rest: &str) -> Option<String> {
     let gap = mean_db(mix)? - mean_db(rest)?;
     if gap < LOPSIDED_DB {
@@ -164,10 +125,7 @@ pub fn lopsided(mix: &str, rest: &str) -> Option<String> {
     ))
 }
 
-/// The `volumedetect` mean out of a line like `-20.3 dB`; `None` when there is no number to read.
-///
-/// Public because the run path ([`crate::separate_run`]) reads ffmpeg's own output through it: the
-/// number is ffmpeg's, the reading of it is this module's, and nothing should re-parse it elsewhere.
+/// The `volumedetect` mean out of a line like `-20.3 dB`; `None` when no number. Public because [`crate::separate_run`] parses through it.
 pub fn mean_db(level: &str) -> Option<f64> {
     let digits = level
         .split_whitespace()
@@ -177,7 +135,6 @@ pub fn mean_db(level: &str) -> Option<f64> {
     digits.parse().ok()
 }
 
-/// S6's loudness sentence, warning included when the balance asks for one.
 pub fn loudness_report(base: &str, mix: &str, voice: &str, rest: &str) -> String {
     format!(
         "{}{}",
@@ -186,20 +143,13 @@ pub fn loudness_report(base: &str, mix: &str, voice: &str, rest: &str) -> String
     )
 }
 
-/// What one recording's split produced: the two stored paths and everything the log has to say.
 pub struct Outcome {
     pub logs: Vec<String>,
     pub rest: String,
     pub voice: String,
 }
 
-/// S6/S7's ending, once both halves are on disk: the loudness report, the "split into" line, and the
-/// row turned into two.
-///
-/// Split out of [`separate`] because the run path does its own media work (decode, silences, chunks,
-/// joins) before it gets here, and this is the part neither side should restate: three log lines in a
-/// fixed order and one row split. `logs` arrives from the caller with whatever it said getting here —
-/// the start line above all of it — and comes back as the run's whole log for this row.
+/// S6/S7's ending once both halves are on disk: loudness report, "split into" line, and the row turned into two. `logs` is what the caller said getting here and comes back as the whole log for this row.
 pub fn finish(
     project: &mut Project,
     tree: &Tree,
@@ -241,12 +191,7 @@ pub fn finish(
     Outcome { logs, rest, voice }
 }
 
-/// "Both halves already there?" as a question the run path can ask before it starts any work.
-///
-/// A row that IS a half of a split has no live scissors at all — `sources::separable` says so for the
-/// row's ✂ — and granting its wish again would produce `<base>.split-voice.split-voice.wav`, which is
-/// nobody's source. `Some` means the row needs nothing: the log line says so rather than going quiet,
-/// and NO row split happens here, because nothing changed.
+/// "Both halves already there?" for the run path to ask before any work. A row that IS a half has no live scissors (`sources::separable`); splitting again would make `<base>.split-voice.split-voice.wav`. `Some` means nothing to do and no row split.
 pub fn already_split(project: &Project, tree: &Tree, root: &Path, index: usize) -> Option<Outcome> {
     let source = project.sources.get(index)?;
     let base = base_name(&source.path).to_string();
@@ -272,13 +217,8 @@ pub fn already_split(project: &Project, tree: &Tree, root: &Path, index: usize) 
     })
 }
 
-/// S1-S7 for one row. `seconds` and `silences` come from decoding at [`SAMPLE_RATE`]/[`CHANNELS`]
-/// (S1) and looking for the gaps (S2); `loudness` is ffmpeg's `volumedetect` reading of a file,
-/// asked for after both halves are on disk.
-///
-/// The two products are written here so "both halves already there?" has something to ask about on
-/// the next run, but F1.2's "project saved" belongs to the caller: this module must not touch disk
-/// twice, and a split that fails halfway should leave the session as it was rather than half-saved.
+/// S1-S7 for one row. `seconds`/`silences` come from decoding at [`SAMPLE_RATE`]/[`CHANNELS`] (S1) and gap search (S2); `loudness` is ffmpeg's `volumedetect` of a file.
+/// The products are written here; F1.2's "project saved" belongs to the caller, so a failed split leaves the session as it was.
 #[allow(clippy::too_many_arguments)] // the split's inputs are exactly what §F1.2 S1-S6 names, and a struct here would only rename them
 pub fn separate(
     project: &mut Project,
@@ -295,8 +235,7 @@ pub fn separate(
         .sources
         .get(index)
         .ok_or_else(|| "no such row to split".to_string())?;
-    // Dead scissors are not a request: the row's ✂ is greyed for exactly this reason (§4), and a call
-    // that arrives anyway — from a wish stored before the file was replaced, say — says so plainly.
+    // Dead scissors are not a request (the row's ✂ is greyed, §4); a stale wish arriving anyway is told so.
     if !separable(source) {
         return Err(format!(
             "{} has no voice left to split off",
@@ -304,9 +243,7 @@ pub fn separate(
         ));
     }
     let base = base_name(&source.path).to_string();
-    // The halves are named after the source's stem, so `lecture.mkv` splits into
-    // `lecture.split-voice.wav` — and so "both halves already there?" asks about the same names on
-    // the next run instead of looking for `lecture.mkv.split-voice.wav` forever.
+    // Halves are named after the source's stem (`lecture.split-voice.wav`) so "both halves already there?" finds them next run.
     let stem = base
         .rsplit_once('.')
         .map(|(stem, _)| stem)
@@ -321,22 +258,16 @@ pub fn separate(
     let rest_path = tree.split_novoice(&stem, container);
     let voice_path = tree.split_voice(&stem);
 
-    // Skip when both halves exist; the rule is [`already_split`], which the run path asks first so it
-    // can skip the ffmpeg legs too.
+    // Skip when both halves exist ([`already_split`], also asked first by the run path).
     if let Some(done) = already_split(project, tree, root, index) {
         return Ok(done);
     }
 
-    // S1: the recording is decoded once, to 44.1 kHz stereo, and every piece of `plan` is cut from
-    // that decode rather than re-decoded from the source. The stored path is what resolves through
-    // the one path rule; the decode's own arguments are `decode_plan`, which the run path
-    // ([`crate::separate_media::decode`]) is what actually runs.
+    // S1: decoded once to 44.1 kHz stereo, every piece of `plan` cut from that decode; the arguments are `decode_plan`, run by [`crate::separate_media::decode`].
     let plan = chunk_plan(seconds, silences);
-    // Said before the first chunk goes up, so the wait has a number in front of it.
     let mut logs = vec![start_log(&base, seconds, plan.len(), model)];
 
-    // A stems folder that cannot be made is an error, not a silent skip: the row's wish would be
-    // cleared by work that never happened.
+    // A stems folder that cannot be made is an error; the wish would be cleared by work that never happened.
     write_halves(&mut join, &rest_path, &voice_path)?;
 
     let mix = loudness(&stored);
@@ -355,10 +286,7 @@ pub fn separate(
     Ok(Outcome { logs, rest, voice })
 }
 
-/// S4/S5 for one recording: the joined halves are written under `stems/` and named after the source,
-/// timestamp and all. The bytes are ffmpeg's — each chunk went up to the model and came back as its
-/// own pair, which was concatenated (S4) before it got here — so they arrive through `join`, which
-/// writes the finished file at the path it is given. A test hands over text; ▶ hands over ffmpeg.
+/// S4/S5: the joined halves are written under `stems/`, named after the source. The bytes arrive through `join`, which writes the file at the given path (a test hands text; ▶ hands ffmpeg).
 fn write_halves(
     join: &mut impl FnMut(&Path) -> Result<(), String>,
     rest_path: &Path,
@@ -370,14 +298,11 @@ fn write_halves(
     join(rest_path)
 }
 
-/// The folder a split product lives in, for the error that names it.
 fn stems_folder(path: &Path) -> String {
     path.parent().unwrap_or(path).display().to_string()
 }
 
-/// S7: the row becomes two — everything else where the file was, and the voice as a track of its
-/// own. The rest keeps 🎥 footage (a video's picture went with it, sound muxed back), both keep the
-/// row's voice (there is no "no voice" to give the rest), and both have their wish cleared so a second ▶ does not split a voice off a voice.
+/// S7: the row becomes two: the rest where the file was, and the voice as a track of its own. The rest keeps 🎥 footage, both keep the row's voice, and both have their wish cleared so a second ▶ does not split a voice off a voice.
 pub fn split_rows(project: &mut Project, index: usize, rest: &str, voice: &str) {
     let held = project.sources.remove(index);
     let rest_row = Source {
@@ -398,12 +323,10 @@ pub fn split_rows(project: &mut Project, index: usize, rest: &str, voice: &str) 
     project.sources.insert(index, rest_row);
 }
 
-/// Both halves on disk? Half of one is not a split.
 fn both_there(rest: &Path, voice: &Path) -> bool {
     rest.exists() && voice.exists()
 }
 
-/// The file's own name, for the log line that names what was written.
 fn file_name(path: &PathBuf) -> String {
     path.file_name()
         .unwrap_or_default()
@@ -411,7 +334,6 @@ fn file_name(path: &PathBuf) -> String {
         .into_owned()
 }
 
-/// The last component of a stored or absolute path — `<base>.mkv`, whatever folder it sits in.
 fn base_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }

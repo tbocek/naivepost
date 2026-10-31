@@ -1,25 +1,4 @@
 //! §05-cut#F2.10 — the session's recordings, from what the PROJECT holds, not from the kept clips.
-//!
-//! The page lays its rows from `page_recordings()`, and until now that list was derived from the cut:
-//! `kept_footage_recordings(&opened_cut)` turns kept segments into `cam0`/`cam1` spans, so a project with
-//! two cameras' worth of files drew ONE row (every kept clip says `cam<N>` by its own number, and the union
-//! of kept clips is never longer than itself). F2.10's whole picture — camera 1 and camera 2 overlapping
-//! 0:20–0:37, each on its own row, the microphone on a third — therefore only existed because a snapshot
-//! staged it. This module answers the question the app must answer on its own: WHICH spans did this session
-//! actually film?
-//!
-//! Three sources of truth, in the order §B and §F1 put them:
-//! * **the stamp in the file's own name** places it on the session clock (`clock::clock`, whose zero is the
-//!   earliest stamp in the WHOLE session — that is why the list is built from every footage source at once);
-//! * **a hand correction** (`cut.shift`) slides it afterwards, which is how an unstamped take gets lined up
-//!   by ear and how an overlap made by a drag appears at all;
-//! * **the file's length**, which no project file stores (§B says "built from the source's metadata or
-//!   probed"), so ffprobe answers it — through the program's one probe runner, cached per path because a
-//!   repaint must not re-run a subprocess.
-//!
-//! Cut lanes join the same list: `⇲ Lane` gives a copy "a row of its own", and a row that is not in this
-//! list cannot be watched (S3), heard (S2) or lens-picked (S1). A source ffprobe cannot answer is skipped
-//! and said by name — failure specific and local, not a silent missing row.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -33,17 +12,11 @@ use crate::settings;
 use crate::timeline::Recording;
 use crate::ui::save_apply;
 
-// Probed lengths, keyed by the resolved path. One entry per file for the life of the process: a probe is a
-// subprocess, and the page repaints far more often than a session's files change.
 thread_local! {
-    // `HashMap::new` is not a const fn, so the cell starts empty the plain way.
     static LENGTHS: RefCell<HashMap<String, f64>> = RefCell::new(HashMap::new());
 }
 
 /// The session's recordings, in the order the project lists its footage sources, then the cut's lanes.
-///
-/// `root` and `project` resolve a stored path (`project:` + root-relative, absolute nowhere else); pass
-/// [`open_roots`] to have this read where the window left the open folder.
 pub fn session_recordings(
     project: &Project,
     cut_: &Cut,
@@ -88,8 +61,7 @@ pub fn session_recordings(
 }
 
 /// The cut's own lanes as recordings: a lane IS a span of a file laid on the session clock (`at`, `dur`),
-/// which is exactly what a row needs. Its `off` stays out of here — that is which second of the FILE the row
-/// windows from, and the row's place on the clock is what colouring and watching ask about.
+/// which is exactly what a row needs.
 pub fn lane_recordings(cut_: &Cut) -> Vec<Recording> {
     cut_.lanes
         .iter()
@@ -103,23 +75,19 @@ pub fn lane_recordings(cut_: &Cut) -> Vec<Recording> {
 }
 
 /// Where to resolve a stored path from: the application root (the process cwd, which is what every other
-/// door here uses) and the folder this window opened. `None` when nothing is open, which callers treat as
-/// "no session yet" rather than guessing a folder.
+/// door here uses) and the folder this window opened.
 pub fn open_roots() -> Option<(PathBuf, PathBuf)> {
     let project_dir = save_apply::open_dir()?;
     Some((std::env::current_dir().unwrap_or_default(), project_dir))
 }
 
 /// The session's recordings for the page, or `None` when there is no open folder to resolve paths against.
-/// This is the door `window.rs` calls: one line at the seam, all the rules here.
 pub fn for_open_session(cut_: &Cut) -> Option<Vec<Recording>> {
     let (root, project_dir) = open_roots()?;
     let project = crate::project::load(&project_dir).ok()?;
     Some(session_recordings(&project, cut_, &root, &project_dir))
 }
 
-/// The OPEN project's folder as a tree — the same resolution [`open_roots`] answers, shaped for
-/// [`crate::ui::cut_rebuild`], which asks a file inside it.
 fn open_tree() -> Option<layout::Tree> {
     layout::Tree::new(&save_apply::open_dir()?).ok()
 }
@@ -127,15 +95,11 @@ fn open_tree() -> Option<layout::Tree> {
 /// The door an open or a Rescan calls: this window's session spans, asked of the OPEN PROJECT through
 /// [`for_open_session`] and written into the page's own session slot, so every reader of
 /// `page_recordings()` (the row list, folds, lanes, the painter) sees the same spans.
-///
-/// Nothing is overwritten when there is no folder to resolve against or nothing in it answered ffprobe:
-/// the page keeps the spans it was seeded with rather than collapsing to no rows at all.
 pub fn refresh_page_spans(cut_: &Cut) -> Option<Vec<Recording>> {
     // §7's `the page is rebuilt only when Prepare's output changed`: the spans come from what Prepare wrote
     // (`transcript/session.tsv` places every take on the session clock), so when that file has not moved since
     // the page last drew, this whole recompute — reload the project, ffprobe each footage file, rebuild the row
-    // list and the badges — has a known answer and is skipped. A skip returns the spans already on screen rather
-    // than nothing, so a caller cannot mistake "nothing new" for "no session".
+    // list and the badges — has a known answer and is skipped.
     if let Some(tree) = open_tree() {
         if !crate::ui::cut_rebuild::output_changed(&tree) {
             return Some(crate::ui::cut_folds::page_recordings());
@@ -149,10 +113,7 @@ pub fn refresh_page_spans(cut_: &Cut) -> Option<Vec<Recording>> {
     Some(spans)
 }
 
-/// What ffprobe says this file runs for, remembered per path. `None` carries the refusal upward as a skip, and
-/// it is also the answer while the length is being read: a probe is a subprocess, so it runs on a worker
-/// (§03-shell §1, the window thread never waits; the first rewrite probed every footage file inside the window's
-/// build). When the last one lands the page's spans are asked again and the Cut page repainted.
+/// What ffprobe says this file runs for, remembered per path.
 fn length_of(configured: &str, path: &Path, name: &str) -> Option<f64> {
     let key = path.display().to_string();
     if let Some(known) = LENGTHS.with(|cell| cell.borrow().get(&key).copied()) {
@@ -167,14 +128,11 @@ fn length_of(configured: &str, path: &Path, name: &str) -> Option<f64> {
 }
 
 thread_local! {
-    /// Files ffprobe could not measure: not asked again, the same skip the first answer was.
     static UNREADABLE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    /// Files being measured now, and the mark that holds a snapshot back until the last one lands.
     static MEASURING: RefCell<(Vec<String>, Option<crate::ui::settle::Owed>)> =
         const { RefCell::new((Vec::new(), None)) };
 }
 
-/// Measure one file on a worker; the last landing re-asks the spans and repaints the page.
 fn ask_length(configured: String, key: String) {
     let first = MEASURING.with(|cell| {
         let mut held = cell.borrow_mut();
@@ -209,8 +167,7 @@ fn ask_length(configured: String, key: String) {
                     cell.borrow_mut().insert(key.clone(), seconds);
                 }),
                 None => {
-                    // Said by name and reason rather than dropped quietly: a missing row reads as a bug. Once:
-                    // a file ffprobe could not measure is not asked again.
+                    // Said by name and reason rather than dropped quietly: a missing row reads as a bug.
                     let name = std::path::Path::new(&key)
                         .file_stem()
                         .map(|stem| stem.to_string_lossy().into_owned())
@@ -238,8 +195,6 @@ fn ask_length(configured: String, key: String) {
     );
 }
 
-/// Every length the page asked for has landed: the session's spans, asked again of the open project, and the
-/// Cut page's rows, badges and band drawn from them.
 fn repaint_measured() {
     let cut_ = crate::ui::window::newest_review_cut();
     let spans = for_open_session(&cut_).filter(|spans| !spans.is_empty());
@@ -259,8 +214,6 @@ fn repaint_measured() {
     gtk4::prelude::WidgetExt::queue_draw(&window);
 }
 
-/// The configured ffmpeg decides where ffprobe lives; `""` means no settings home, which the probe reports
-/// as its own reason (`cut_lane::probe_file_seconds` follows the same rule).
 fn configured_ffmpeg() -> String {
     settings::from_environment()
         .map(|paths| settings::read(&paths).unwrap_or_default().ffmpeg)
@@ -268,23 +221,13 @@ fn configured_ffmpeg() -> String {
 }
 
 /// What a `Scope::Sound` / a name plate / the clock all call a source: its file name, without the folder.
-/// A recording's name on the Cut page: the file's stem, the name Prepare files its frames, describe lines and
-/// transcript under (`inputs/frames/<source>/`, [`crate::audio_task::source_lane`]). The full file name (with
-/// its `.mkv`) named no folder, so every frame lookup on the page came back empty: no picture, no thumbnails.
 fn base(source: &crate::project::Source) -> String {
     crate::audio_task::source_lane(&source.path)
 }
 
 /// The page's session spans: what this session actually filmed, asked of the OPEN PROJECT
 /// ([`crate::ui::cut_session`] — stamped names + hand shifts + probed lengths), UNIONED with what the cut
-/// implies. A second camera that filmed the same seconds only gets its own row if it is in this list at all,
-/// and a lane's file likewise; a span for a name already present wins from the SESSION side, because that is
-/// the one that knows where the tape really sits on the clock.
-///
-/// What the cut contributes is ONE span per camera it shows, spanning that camera's earliest and latest kept
-/// second — not one per scene. `timeline::rows_for` colours every entry it is handed, so three clips of one
-/// camera would otherwise read as three recordings and invent two rows; the merged span still overlaps another
-/// camera's, which is what puts an overlap on a row of its own.
+/// implies.
 pub fn session_or_kept(cut_: &Cut) -> Vec<Recording> {
     let mut spans = for_open_session(cut_).unwrap_or_default();
     let mut named: Vec<String> = spans.iter().map(|span| span.base.clone()).collect();
@@ -323,7 +266,6 @@ pub fn session_or_kept(cut_: &Cut) -> Vec<Recording> {
     spans
 }
 
-/// One span per camera a cut's kept scenes read their pictures from: `[earliest s, latest e]` of that camera.
 fn kept_cam_spans(cut_: &Cut) -> Vec<Recording> {
     let mut cams: Vec<i32> = Vec::new();
     let mut spans: Vec<Recording> = Vec::new();

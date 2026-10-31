@@ -1,7 +1,6 @@
-//! §08-produce#1-screen item **7** — the thumbnail's text-overlay editor: the ✎ chips and their dashed
-//! boxes below/over the picture, and the drag on the plate that draws a new box or moves and resizes one. Split out of
-//! `produce_page`, which is at its size budget; nothing here owns state — it reads and writes the page's
-//! through [`produce_page`]'s doors.
+//! §08-produce#1-screen item **7** — the thumbnail's text-overlay editor: the ✎ chips and dashed boxes over
+//! the picture, and the drag on the plate that draws a new box or moves and resizes one. Owns no state; it
+//! reads and writes the page's through [`produce_page`]'s doors.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -9,8 +8,8 @@ use gtk4 as gtk;
 use crate::produce_screen as screen;
 use crate::ui::produce_page::{read_state, widget_in, widget_in_root, ProduceState};
 
-/// One ✎ chip per word box on the picture (§1 item 7: "✎ to reword"). Rebuilt whole, because a removed
-/// mark must not leave its chip behind claiming a box that no longer exists.
+/// One ✎ chip per word box on the picture (§1 item 7: "✎ to reword"). Rebuilt whole so a removed mark
+/// leaves no chip behind.
 pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
     let Some(holder) = widget_in_root("thumbnail-word-chips") else {
         return;
@@ -18,8 +17,7 @@ pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
     while let Some(child) = holder.first_child() {
         holder.remove(&child);
     }
-    // The dashed boxes themselves live over the plate, in their own holder, and are rebuilt by the same
-    // door so a removed mark loses its box too.
+    // The dashed boxes live over the plate in their own holder, rebuilt by the same door.
     crate::ui::produce_paint::clear_overlay_boxes();
     if s.title_seeded && !s.thumb_title.trim().is_empty() {
         let chip = gtk::Button::with_label(&format!("\u{270e} {}", s.thumb_title));
@@ -34,10 +32,8 @@ pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
         holder.append(&chip);
     }
     for (index, mark) in s.texts.iter().enumerate() {
-        // §A: the box itself is visible ON the picture (dashed violet), not only as its chip below. The
-        // widget is made here and `produce_paint::place_overlay_box` moves it into the holder floating over
-        // the plate, at the same fractions that painter strokes — a box stacked in the column under the
-        // picture would be beside the thumbnail, not on it.
+        // §A: the box is visible ON the picture (dashed violet), not only as its chip. `produce_paint::place_overlay_box`
+        // moves it into the holder floating over the plate; a box in the column would be beside the thumbnail.
         let box_on_picture = gtk::Box::new(gtk::Orientation::Vertical, 0);
         box_on_picture.set_widget_name(&format!("words-box-{index}"));
         box_on_picture.add_css_class("produce-word-box");
@@ -61,8 +57,7 @@ pub enum Hold {
     Mark(usize),
 }
 
-/// A drag that took hold of a box: which box, by what, where the hand pressed and the box as it was, all in
-/// the picture's own pixels.
+/// A drag that took hold of a box: which box, by what, where the hand pressed and the box as it was (picture px).
 #[derive(Clone, Copy)]
 struct Grab {
     hold: Hold,
@@ -71,8 +66,8 @@ struct Grab {
     was: (f64, f64, f64, f64),
 }
 
-/// The boxes on the picture in the picture's pixels, bottom first, as the plate paints them: the title band
-/// while the picture prints the title, then every marked text.
+/// The boxes on the picture in picture pixels, bottom first, as the plate paints them: the title band while
+/// the picture prints the title, then every marked text.
 fn boxes_on_picture(s: &ProduceState, wide: f64, high: f64) -> Vec<(Hold, (f64, f64, f64, f64))> {
     let painted = crate::ui::produce_paint::layout_marks(
         &s.texts,
@@ -97,8 +92,7 @@ fn boxes_on_picture(s: &ProduceState, wide: f64, high: f64) -> Vec<(Hold, (f64, 
         .collect()
 }
 
-/// The box a press at `(x, y)` (picture px) takes hold of, and by what: the topmost whose border or middle is
-/// under it, because the one painted on top is the one the eye is pointing at.
+/// The box a press at `(x, y)` (picture px) takes hold of: the topmost whose border or middle is under it.
 fn grab_at(s: &ProduceState, x: f64, y: f64, wide: f64, high: f64) -> Option<Grab> {
     boxes_on_picture(s, wide, high)
         .into_iter()
@@ -127,8 +121,8 @@ fn targets_beside(s: &ProduceState, held: Hold, wide: f64, high: f64) -> (Vec<f6
     (xs, ys)
 }
 
-/// Where a held box is after the hand moved `(dx, dy)` from the press: a border drag resizes (the edge under
-/// the hand snaps), a drag from the middle slides the whole box (any of its lines snaps).
+/// Where a held box is after the hand moved `(dx, dy)`: a border drag resizes (the edge under the hand
+/// snaps), a drag from the middle slides the whole box (any of its lines snaps).
 fn moved(grab: &Grab, dx: f64, dy: f64, xs: &[f64], ys: &[f64]) -> (f64, f64, f64, f64) {
     let (x0, y0, w0, h0) = grab.was;
     if grab.grip.horiz || grab.grip.vert {
@@ -156,8 +150,7 @@ fn unless_shift(gesture: &gtk::GestureDrag, targets: (Vec<f64>, Vec<f64>)) -> (V
     }
 }
 
-/// The marked text's own dashed widget, hidden while the painted box follows the hand, so the box is not seen
-/// twice, once where it was and once where it goes.
+/// The marked text's own dashed widget, hidden while the painted box follows the hand, so it is not seen twice.
 fn show_widget_of(hold: Hold, shown: bool) {
     if let Hold::Mark(index) = hold {
         if let Some(widget) = widget_in_root(&format!("words-box-{index}")) {
@@ -166,22 +159,17 @@ fn show_widget_of(hold: Hold, shown: bool) {
     }
 }
 
-/// The drag on the picture (§A, the prototype's `textOverlay`). A press on a box's border resizes it, a press
-/// in its middle moves it, the title band included; the box follows the hand while the drag lasts and is kept
-/// when it ends. A press clear of every box draws a new one. Every box is kept as FRACTIONS of the picture,
-/// not pixels, so a saved mark survives being shown at another size; edges snap to
-/// [`screen::overlay_snap_targets`]' lines, the picture's edges and middles plus every other box (§A: "boxes
-/// snap to the picture's and each other's edges and middles"), and a new box that ends smaller than §A's 28 px
-/// floor is a look, not a box. The pointer says what a press would do before it is pressed.
+/// The drag on the picture (§A, the prototype's `textOverlay`). A border press resizes, a middle press moves
+/// (title band included); a press clear of every box draws a new one. Boxes are kept as FRACTIONS of the
+/// picture so a saved mark survives another size; edges snap to [`screen::overlay_snap_targets`]' lines, and
+/// a new box under §A's 28 px floor is a look, not a box. The pointer says what a press would do.
 pub fn install_words_gesture(window: &adw::ApplicationWindow) {
-    // The gesture goes on the PLATE (the `DrawingArea`), which is what the drag measures; the overlay that
-    // floats the word boxes over it is its parent and takes no pointer of its own.
+    // The gesture goes on the PLATE (the `DrawingArea`); the overlay floating the word boxes is its parent and takes no pointer.
     let Some(picture) = widget_in(window, "thumbnail-picture") else {
         return;
     };
-    // Measured on the PICTURE where it sits on the plate, not on the plate: a mark is a fraction of the picture
-    // (§A), and a wide thumbnail letterboxed in a taller plate put every box below where it was drawn when the
-    // plate was the unit.
+    // Measured on the PICTURE where it sits on the plate: a mark is a fraction of the picture (§A), and a wide
+    // thumbnail letterboxed in a taller plate would put every box below where it was drawn.
     let on_picture = {
         let plate = picture.clone();
         move || {
@@ -208,8 +196,8 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
 
     let gesture = gtk::GestureDrag::new();
     gesture.set_button(1);
-    // `drag-begin` carries the ABSOLUTE press position and `drag-update`/`drag-end` only the OFFSET from it
-    // (the F2.8 lesson), so the press is kept across the signals, with the box it took if it took one.
+    // `drag-begin` carries the ABSOLUTE press position, `drag-update`/`drag-end` only the OFFSET (the F2.8
+    // lesson), so the press is kept across the signals with the box it took.
     let start = std::rc::Rc::new(std::cell::Cell::new((0.0f64, 0.0f64)));
     let held = std::rc::Rc::new(std::cell::Cell::new(None::<Grab>));
     let (start_begin, held_begin, where_) = (start.clone(), held.clone(), on_picture.clone());
@@ -254,8 +242,7 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
         }
         let (start_x, start_y) = start.get();
         let (start_x, start_y) = (start_x - left, start_y - top);
-        // The targets are read when the drag ENDS, not when it was wired: whatever boxes the page holds at
-        // that moment are the ones this box may line up with.
+        // Targets are read when the drag ENDS: whatever boxes the page holds then are what this box may line up with.
         let (xs, ys) = unless_shift(
             g,
             screen::overlay_snap_targets(wide, high, &read_state().texts),
@@ -283,8 +270,8 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
     WORDS_GESTURE.with(|held| *held.borrow_mut() = Some(gesture));
 }
 
-/// The box being dragged and where the hand has it now, in fractions of the picture, or `None` between drags.
-/// The plate paints a held box from here, so the words follow the hand before anything is kept.
+/// The box being dragged and where the hand has it now, in fractions of the picture, or `None` between
+/// drags. The plate paints a held box from here so the words follow the hand.
 pub fn dragging() -> Option<(Hold, crate::project::TitleBox)> {
     DRAGGING.with(|now| *now.borrow())
 }
@@ -293,16 +280,13 @@ thread_local! {
     /// [`dragging`]'s answer: set on every step of a drag that holds a box, cleared when it ends.
     static DRAGGING: std::cell::RefCell<Option<(Hold, crate::project::TitleBox)>> =
         const { std::cell::RefCell::new(None) };
-    /// The picture's drag controller, kept so a test can fire a real drag the way `ui::zoom_gesture`
-    /// lets `zoom_drag_widgets.rs` fire the Cut panel's. Nothing in the program asks for it — hence
-    /// [`words_gesture_for_test`]'s name.
+    /// The picture's drag controller, kept so a test can fire a real drag; nothing in the program asks for it.
     static WORDS_GESTURE: std::cell::RefCell<Option<gtk::GestureDrag>> = const {
         std::cell::RefCell::new(None)
     };
 }
 
-/// The thumbnail picture's drag gesture, for a test that drives the overlay editor through the real
-/// widget (`emit_by_name("drag-begin"/"drag-end")`). Program code never calls this.
+/// The thumbnail picture's drag gesture, for a test driving the overlay editor through the real widget. Program code never calls this.
 pub fn words_gesture_for_test(_window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
     WORDS_GESTURE.with(|held| held.borrow().clone())
 }

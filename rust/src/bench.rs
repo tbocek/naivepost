@@ -1,12 +1,9 @@
-//! The prompt bench: one heading row and one text box holding everything the models
-//! are told, in the order the pipeline sends it (§04-prepare#1-screen).
+//! The prompt bench: one heading row and one text box holding everything the models are told, in the order
+//! the pipeline sends it (§04-prepare#1-screen).
 //!
-//! Row 0 is the project's User Context — what the editor knows about THIS session,
-//! sent with every request and outranking the prompts, so it leads. Rows 1–12 are the
-//! twelve prompts in pipeline order, per machine: an edit lives on this machine, in
-//! `settings::Paths::prompts_dir`, which is why the row carries a mark rather than a
-//! tick anywhere else. Storage is [`crate::settings`]'s, unchanged: it already knows
-//! that text equal to the shipped wording means "no override".
+//! Row 0 is the project's User Context (sent with every request, outranking the prompts, so it leads); rows
+//! 1–12 are the twelve prompts in pipeline order, per machine, in `settings::Paths::prompts_dir`. Storage is
+//! [`crate::settings`]'s: text equal to the shipped wording means "no override".
 
 use crate::{
     prepare,
@@ -16,26 +13,22 @@ use crate::{
     tools::describe,
 };
 
-/// The mark on a row whose wording this machine holds (§1: "✎ = edited on this machine").
-/// The pencil ALONE is unreadable at window scale — DejaVu draws U+270E as a faint outline, so the shot
-/// showed a smudge beside the title — hence the word next to it: the mark has to say what it means.
+/// The mark on a row whose wording this machine holds (§1: "✎ = edited on this machine"). The pencil ALONE
+/// is unreadable at window scale (DejaVu draws U+270E as a faint outline), hence the word beside it.
 pub const EDITED_MARK: &str = "\u{270e} edited";
 
 /// What the mark means, since ✎ alone does not say where the text went.
 pub const EDITED_TIP: &str = "edited \u{2014} kept in your settings";
 
-/// One row of the bench: what it is called on screen and the key its text is stored
-/// under. An empty key means the User Context, which belongs to the project rather
-/// than to this machine and so has no file.
+/// One row of the bench: its on-screen name and the key its text is stored under. An empty key means the
+/// User Context, which belongs to the project and has no file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Row {
     pub title: &'static str,
     pub key: &'static str,
 }
 
-/// The rows in pipeline order — this page's two jobs, then the cut and its audit, then
-/// the narration, then the upload text. Per machine: a different build could ship a
-/// different set, which is why nothing here counts them at compile time beyond this list.
+/// The rows in pipeline order: this page's two jobs, the cut and its audit, the narration, the upload text.
 pub const ROWS: [Row; 13] = [
     Row {
         title: "User Context",
@@ -91,25 +84,21 @@ pub const ROWS: [Row; 13] = [
     },
 ];
 
-/// The heading: "\u2039Name\u203a prompt" for a prompt, and the plain name for the User
-/// Context — it is not a prompt, and calling it one would hide that it outranks them.
+/// The heading: "‹Name› prompt" for a prompt, the plain name for the User Context (it outranks the prompts).
 pub fn title(row: &Row) -> String {
     if is_context(row) {
         return row.title.to_string();
     }
-    // §04's badge **2** writes the heading as "‹Name› prompt", and its own screenshot reads that
-    // way ("‹Describe› prompt"); the plain form was the app inventing its own wording.
+    // §04's badge **2** writes the heading as "‹Name› prompt", and its own screenshot reads that way.
     format!("\u{2039}{}\u{203a} prompt", row.title)
 }
 
-/// Whether this row is the User Context: no key, so nothing on this machine to differ
-/// from and nothing for Reset to restore (§1).
+/// Whether this row is the User Context: no key, so nothing to differ from and nothing for Reset to restore (§1).
 pub fn is_context(row: &Row) -> bool {
     row.key.is_empty()
 }
 
-/// Which row the bench shows. The User Context first, because it is what the editor
-/// writes most and what every other row is read against.
+/// Which row the bench shows. The User Context first, being what the editor writes most.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bench {
     pub selected: usize,
@@ -130,9 +119,7 @@ impl Bench {
         &ROWS[self.selected]
     }
 
-    /// Choose a row. An index off the end is ignored rather than fatal: the picker's
-    /// list comes from [`ROWS`], so one that does not match this build is a stale widget,
-    /// and a bench that keeps showing what it was showing beats a panic in the UI thread.
+    /// Choose a row. An index off the end is ignored: it is a stale widget, and a panic in the UI thread is worse.
     pub fn select(&mut self, index: usize) {
         if index < ROWS.len() {
             self.selected = index;
@@ -140,25 +127,19 @@ impl Bench {
     }
 }
 
-/// The mark shows only while this machine holds an edit (§1: "live only while this
-/// machine holds an edit").
+/// The mark shows only while this machine holds an edit (§1).
 pub fn shows_mark(row: &Row, edited: bool) -> bool {
     !is_context(row) && edited
 }
 
-/// Reset is live under exactly the same condition: with no override there is nothing to
-/// restore, and a button that does nothing invites a click.
+/// Reset is live under exactly the same condition: with no override there is nothing to restore.
 pub fn shows_reset(row: &Row, edited: bool) -> bool {
     shows_mark(row, edited)
 }
 
-/// Does this machine hold this row's wording? An unreadable prompts folder answers
-/// "no" rather than failing the screen: the bench is a view of the project, and a
-/// directory this process cannot read must not stop it from opening. The write path
-/// still reports its errors.
-///
-/// Through [`settings::stored_prompt`], so an edit kept under the old folder-per-job layout
-/// still shows its mark here rather than looking untouched next to replaced wording.
+/// Does this machine hold this row's wording? An unreadable prompts folder answers "no" rather than
+/// failing the screen; the write path still reports its errors. Through [`settings::stored_prompt`], so an
+/// edit under the old folder-per-job layout still shows its mark.
 pub fn edited(paths: &Paths, row: &Row) -> bool {
     if is_context(row) {
         return false;
@@ -169,8 +150,7 @@ pub fn edited(paths: &Paths, row: &Row) -> bool {
         .is_some()
 }
 
-/// What the text box holds: the project's note for row 0, else this machine's text or
-/// the shipped wording.
+/// What the text box holds: the project's note for row 0, else this machine's text or the shipped wording.
 pub fn text(paths: &Paths, project: &Project, row: &Row) -> String {
     if is_context(row) {
         return project.context.clone();
@@ -182,20 +162,16 @@ pub fn text(paths: &Paths, project: &Project, row: &Row) -> String {
 }
 
 /// The wording a row ships with: the fenced ``` block of `spec/prompts/<key>.md`, read through
-/// [`crate::prompts::shipped_text`], which finds the tree from the executable or the working
-/// directory. A file that is missing or unreadable answers an empty string rather than failing the
-/// screen: the bench is a view of the prompts and one absent file must not stop the page opening —
-/// the write path still reports its errors. The User Context has no key and so no file, which is why
-/// [`text`] and [`reset`] short-circuit around it.
+/// [`crate::prompts::shipped_text`]. A missing or unreadable file answers an empty string rather than
+/// failing the screen. The User Context has no key and no file, so [`text`] and [`reset`] short-circuit it.
 pub fn shipped(row: &Row) -> String {
     crate::prompts::shipped_text(row.key).unwrap_or_default()
 }
 
-/// Store what was typed. §1 asks for every keystroke to be stored: there is no Save
-/// button here, and one would be the only way to lose an edit by closing the window.
+/// Store what was typed. §1 asks for every keystroke to be stored: there is no Save button.
 ///
-/// A prompt whose text equals the shipped wording writes nothing — that is how a box
-/// typed back to empty clears its mark without this module remembering anything.
+/// A prompt whose text equals the shipped wording writes nothing, which is how a box typed back to empty
+/// clears its mark.
 pub fn store(paths: &Paths, project: &mut Project, row: &Row, text: &str) -> Result<(), String> {
     if is_context(row) {
         project.context = text.to_string();
@@ -206,9 +182,8 @@ pub fn store(paths: &Paths, project: &mut Project, row: &Row, text: &str) -> Res
     Ok(())
 }
 
-/// Restore the shipped wording by dropping this machine's override. The User Context
-/// answers `None` and changes nothing: it has no built-in text to go back to, and a
-/// "reset" that cleared the editor's own notes about their session would be data loss.
+/// Restore the shipped wording by dropping this machine's override. The User Context answers `None` and
+/// changes nothing: it has no built-in text, and clearing the editor's notes would be data loss.
 pub fn reset(paths: &Paths, row: &Row) -> Result<Option<String>, String> {
     if is_context(row) {
         return Ok(None);
@@ -217,12 +192,10 @@ pub fn reset(paths: &Paths, row: &Row) -> Result<Option<String>, String> {
     Ok(Some(shipped(row)))
 }
 
-/// What the row picker lists: the thirteen rows in pipeline order. Built from
-/// [`ROWS`] so the menu cannot drift from the prompts themselves.
+/// What the row picker lists: the thirteen rows in pipeline order, from [`ROWS`] so the menu cannot drift.
 ///
-/// The names are the PLAIN prompt names ("Describe", not "‹Describe› prompt"): `spec/img/04-prompt-picker.png`
-/// draws the list that way, and §1's "‹Name› prompt" wording belongs to the HEADING (badge 2), which
-/// [`title`] spells. The live DropDown and the shot's copy both come from here, so neither can disagree.
+/// The PLAIN prompt names ("Describe"), as `spec/img/04-prompt-picker.png` draws them; §1's "‹Name› prompt"
+/// belongs to the HEADING ([`title`]). The live DropDown and the shot's copy both come from here.
 pub fn picker_rows() -> Vec<(usize, String)> {
     ROWS.iter()
         .enumerate()
@@ -230,24 +203,19 @@ pub fn picker_rows() -> Vec<(usize, String)> {
         .collect()
 }
 
-/// What the mark on a row means, spelled out because ✎ alone does not say where the
-/// text went — and where it went is the whole question when a newer build ships better
-/// wording (§04-prepare#6: "the mark's tooltip …"). Written on one line so the sentence
-/// a person reads matches §6 character for character.
+/// What the mark on a row means, spelled out because ✎ alone does not say where the text went (§04-prepare#6:
+/// "the mark's tooltip …"). On one line so it matches §6 character for character.
 pub const KEPT_TIP: &str =
     "Your wording is kept in ~/.config/naivepost/prompts, so a newer built-in prompt will not replace it. Reset puts it back.";
 
-/// Reset live: what the click will do, since the button is next to a box that may hold
-/// an hour of the editor's own tuning (§04-prepare#6).
+/// Reset live: what the click will do, next to a box that may hold an hour of the editor's tuning (§04-prepare#6).
 pub const RESET_TIP: &str = "Put the built-in wording back";
 
-/// Reset idle. A live button under no mark reads as "there is something stored", which
-/// is exactly what the empty mark is denying, so the tooltip says so instead.
+/// Reset idle. A live button under no mark would say "something is stored", which the empty mark denies.
 pub const UNCHANGED_TIP: &str = "This is the built-in wording, unchanged";
 
-/// Which of the two Reset tooltips this row carries. The User Context never gets the
-/// live one: it has no built-in wording to go back to, and a Reset that cleared the
-/// editor's notes about their session would be data loss rather than a restore.
+/// Which of the two Reset tooltips this row carries. The User Context never gets the live one: it has no
+/// built-in wording to go back to.
 pub fn reset_tip(row: &Row, edited: bool) -> &'static str {
     if shows_reset(row, edited) {
         RESET_TIP
@@ -256,10 +224,8 @@ pub fn reset_tip(row: &Row, edited: bool) -> &'static str {
     }
 }
 
-/// What the heading row's tooltip says about the selected row: what the job gets and
-/// what it answers (§04-prepare#6). The two rows whose wording is an arithmetic fact —
-/// how many frames, how many lines — read theirs out of the constants that build the
-/// request, so a retuned request cannot leave this text behind.
+/// What the heading row's tooltip says about the selected row: what the job gets and what it answers
+/// (§04-prepare#6). The frame and line counts are read from the constants that build the request.
 pub fn tooltip(row: &Row) -> String {
     match row.key {
         "" => "What kind of video this is, who is in it, what they were doing, how names are \

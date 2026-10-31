@@ -1,10 +1,4 @@
 //! §07-narrate#1-screen, number **2**: the Narrate page's preview picture.
-//!
-//! The frame is the CUT page's frame, painted by the CUT page's painter: [`crate::ui::cut_preview_frame`]'s
-//! `Frame`/`Observed`/`paint` are one shared path, and this module only supplies the Narrate page's own
-//! answers — which second of the session is on screen, and that a Narrate preview never holds an effect
-//! in hand or draws a zoom box. That is what makes it "the finished frame (crop, zoom, stops, titles)"
-//! rather than a second, drifting copy of the Cut page's picture.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -195,11 +189,6 @@ fn picture_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
         .ok()
 }
 
-/// Which line's take the preview will play when it reaches it, from `from` down the cut: the FIRST
-/// second at or after `from`, not the line the press is standing inside. The running tick starts a
-/// line's wav when the picture ENTERS it, and a line that is already under way at `from` was entered
-/// before ▶ was pressed — so it is not one the preview queued (its own start is already behind us).
-/// `None` for every clip whose line has no wav: a silent line, or one never synthesized.
 pub fn queued_line_for_test(tree: &crate::layout::Tree, from: f64) -> Option<usize> {
     let entries = crate::ui::narrate_page::read_state().entries;
     entries

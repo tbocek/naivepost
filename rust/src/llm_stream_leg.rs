@@ -1,37 +1,26 @@
 //! The one reading of a streamed reply that §7's live page needs: the words, as they arrive.
 //!
-//! [`crate::llm_request::from_events`] is the app's reader of an event stream — it produces the answer a
-//! step must trust, with its reasoning split, its tool-call fragments and its `[DONE]`/EOF verdict. This
-//! module answers a smaller question for a different moment: a chunk of the raw body has just come off
-//! the socket, and the run's exchange page wants the sentence the model has said SO FAR, before any of
-//! that structure is complete. It therefore keeps only `choices[0].delta.content`, and nothing else.
-//!
-//! Two rules shape it. Bytes arrive in pieces the server did not align to lines (§9 §1: the request is
-//! streamed because the answer is long), so a partial line waits for its rest rather than being parsed
-//! half. And a line that cannot be read costs nothing: §7 ends with "recording never fails the call", so
-//! a page that cannot decode a chunk simply shows less of it, while the step still gets its real answer
-//! from `server_leg`'s own copy of the body.
+//! [`crate::llm_request::from_events`] reads an event stream into the answer a step must trust; this keeps
+//! only `choices[0].delta.content`, so the exchange page can show what the model has said SO FAR. Bytes
+//! arrive unaligned to lines (§9 §1), so a partial line waits for its rest. A line that cannot be read costs
+//! nothing (§7: "recording never fails the call"); the step still gets its answer from `server_leg`'s copy.
 
-/// The running text of one call's streamed reply.
 #[derive(Default)]
 pub struct Delta {
-    /// A line the socket cut in half, kept until its newline lands. Bounded below so a server that never
-    /// sends a newline cannot grow this without limit: the page is a convenience, the reply is not.
+    /// A line the socket cut in half, kept until its newline lands; bounded so a server that never sends one
+    /// cannot grow it without limit.
     pending: String,
 }
 
-/// Longest unterminated line tolerated. One SSE `data:` line carrying a whole base64 image would be
-/// longer than this; a text delta never is, and dropping the excess costs the page a fragment, not the call.
+/// Longest unterminated line tolerated. A whole base64 image on one SSE line would exceed it; a text delta never does.
 const MAX_PENDING_BYTES: usize = 1 << 20;
 
 impl Delta {
-    /// Take the next raw bytes of the body and return the new words they carry, concatenated in the
-    /// order their lines arrived. Empty when nothing completed — which is the ordinary answer for a
-    /// chunk that ended mid-line, and for garbage.
+    /// Take the next raw bytes of the body and return the new words they carry, in arrival order. Empty when
+    /// nothing completed (a chunk ending mid-line, or garbage).
     pub fn push(&mut self, bytes: &[u8]) -> String {
         let mut text = String::new();
-        // Bytes, not chars: cutting a UTF-8 sequence in half is normal on a socket, and `pending` holds
-        // the incomplete tail until the rest arrives. Lossy conversion happens per LINE, once it is whole.
+        // Bytes, not chars: a UTF-8 sequence cut in half is normal on a socket. Lossy conversion happens per LINE, once whole.
         let mut start = 0usize;
         for (at, byte) in bytes.iter().enumerate() {
             if *byte != b'\n' {
@@ -47,16 +36,15 @@ impl Delta {
             self.pending
                 .push_str(&String::from_utf8_lossy(&bytes[start..]));
             if self.pending.len() > MAX_PENDING_BYTES {
-                // Never terminated, so it will never be parsed: give up on it rather than grow forever.
+                // Never terminated, so it will never be parsed: give up rather than grow forever.
                 self.pending.clear();
             }
         }
         text
     }
 
-    /// The words carried by whatever sits in `pending` plus `tail`, if the stream ends there. §1's EOF
-    /// rule: a partial is the answer, so a connection that dies mid-sentence still puts its last words on
-    /// the page instead of losing them to a missing newline.
+    /// The words carried by whatever sits in `pending` plus `tail`, if the stream ends there. §1's EOF rule: a
+    /// partial is the answer, so a connection dying mid-sentence still puts its last words on the page.
     pub fn finish(&mut self, tail: &[u8]) -> String {
         self.pending.push_str(&String::from_utf8_lossy(tail));
         self.take_line()
@@ -69,9 +57,8 @@ impl Delta {
     }
 }
 
-/// The words one SSE line carries: `data: {…}` → `choices[0].delta.content`. Everything else — a blank
-/// keep-alive, a comment, `[DONE]`, JSON shaped differently, malformed JSON — answers empty. That is the
-/// whole error policy here, and it is deliberate: see this module's header.
+/// The words one SSE line carries: `data: {…}` → `choices[0].delta.content`. Everything else (keep-alive,
+/// comment, `[DONE]`, other or malformed JSON) answers empty, deliberately.
 fn content_of(line: &str) -> String {
     let Some(payload) = line.trim().strip_prefix("data:") else {
         return String::new();

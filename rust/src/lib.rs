@@ -22,23 +22,16 @@ pub mod cut_delete;
 pub mod cut_effect_decisions;
 pub mod cut_effects_pass;
 pub mod cut_fold;
-/// F2.4 S2: the frame rate of the recording under the line, asked of that file with the real ffprobe.
 pub mod cut_fps;
 pub mod cut_hear;
 pub mod cut_insert;
-/// §05-cut#2 — a cut lane built from a source's own metadata: the naming ladder and the ffprobe ask that
-/// gives a footage file a row of its own when nothing was copied.
 pub mod cut_lanes;
 pub mod cut_line;
 pub mod cut_play;
-/// F2.2 S5's media leg: the cut preview's own player process and the prerolled spare waiting at the next
-/// jump's second (two `gst-play-1.0` processes, swapped by signal — see the module doc).
 pub mod cut_play_back;
 pub mod cut_play_leg;
 pub mod cut_review;
 pub mod cut_rules;
-/// §05-cut#7-rules bullet 7 — the ONE door that writes `cut.json`: it resolves the session folder and hands the
-/// cut to [`crate::cut::save`], so no editing door repeats the path logic or skips the write.
 pub mod cut_save;
 pub mod cut_screen;
 pub mod cut_select;
@@ -88,8 +81,7 @@ pub mod hands_off;
 pub mod icons;
 pub mod join_ask;
 pub mod joins;
-/// F2.5 S3/S4 — the lane pipelines: one real player process per separate recording, obeying `cut_hear`'s
-/// per-tick answer (started at its own second, never started when silenced, stopped at a scene boundary).
+/// F2.5 S3/S4.
 pub mod lane_hear;
 pub mod layout;
 pub mod llm_budget;
@@ -105,8 +97,6 @@ pub mod model_list;
 pub mod model_list_fetch;
 pub mod narrate_ask;
 pub mod narrate_band;
-/// §F4.6 / inventory §A.7: when the take band shows and how many seconds it spans, read off the project
-/// rather than off whichever reference file happens to be on disk.
 pub mod narrate_band_face;
 pub mod narrate_call;
 pub mod narrate_data;
@@ -117,8 +107,6 @@ pub mod narrate_live;
 pub mod narrate_pass;
 pub mod narrate_preview;
 pub mod narrate_preview_leg;
-/// F4.5's media answers for the preview: which files the picture plays and at what gain, so the leg that owns
-/// the two children asks instead of deciding.
 pub mod narrate_preview_media;
 pub mod narrate_reply;
 pub mod narrate_rewrite;
@@ -138,13 +126,9 @@ pub mod params_produce;
 pub mod play_back;
 /// F2.1's built-in player: the recording played inside the preview, a playbin into the GTK4 sink.
 pub mod play_built_in;
-/// F0.7 — the User Context in, the editing policy out: derivation, validation, and which flows the
-/// result turns on. No UI here; the shell forwards its presses to this and prints what comes back.
 pub mod policy;
 /// F0.7 S2's live half: the derivation's own HTTP leg, so a non-empty User Context reaches a model.
 pub mod policy_call;
-/// §12 entry 21: reading a plain target length (`45 min`, `half an hour`, `1h20`) out of the User Context's
-/// own words, so the number lands in `P.policy.targetLengthSeconds` instead of silently staying 0.
 pub mod policy_length;
 pub mod prepare;
 pub mod prepare_data;
@@ -205,14 +189,11 @@ pub mod seam_retries;
 pub mod separate;
 pub mod separate_media;
 pub mod separate_run;
-/// §03-shell.md §5/§6: the Settings dialog's named server entries per section, kept in `servers.json`.
 pub mod server_entries;
 pub mod server_leg;
 pub mod services;
 pub mod settings;
 pub mod settings_probe;
-/// §02-services.md §5 — the Settings rows that are not LLM/audio/sd HTTP: the LLM's two completion
-/// tests, the four audio.cpp model ids, the aligner, ffmpeg and firefox.
 pub mod settings_probe_rows;
 pub mod shell;
 pub mod slot_gate;

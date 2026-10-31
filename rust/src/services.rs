@@ -1,10 +1,4 @@
 //! The four servers, spec/02-services.md §1.
-//!
-//! Where each one lives, which key goes with it, which path a given call takes and how long it
-//! may take: the decisions a request is built from, kept here as plain functions so they can be
-//! tested without a network. Nothing in this module opens a socket — §6's [`crate::requests`]
-//! writes the timed row once a call ends, and the client that will fill these in belongs to a
-//! later item.
 
 use std::path::Path;
 use std::time::Duration;
@@ -13,10 +7,6 @@ use serde::Deserialize;
 
 use crate::settings::{self, Conf, Paths};
 
-/// Where the writing model is expected when its box is empty: the port
-/// halogen-flash-server listens on, on the loopback. The same convention as the two below, and
-/// for the same reason — the stack this app is built against runs on this machine, so a machine
-/// running it as it comes should not have to type three URLs to say so.
 pub const LLM_PORT: u16 = 8731;
 
 /// audio.cpp: speech to text, alignment, diarization, separation, text to speech.
@@ -76,11 +66,6 @@ pub struct Endpoint {
 
 /// What one settings box says about a server, or `None` when it says nothing and the loopback
 /// default applies (§1: "An empty server box means the loopback default").
-///
-/// A host typed without a scheme is read as `https://host`: a host on its own is not a URL any
-/// client would open, and typing one used to fail with a message about an unsupported protocol,
-/// which was not what was wrong with it. The trailing slash goes because a path is about to be
-/// joined to the result.
 pub fn server_url(raw: &str) -> Option<String> {
     let url = raw.trim().trim_end_matches('/');
     if url.is_empty() {
@@ -121,12 +106,6 @@ pub fn llm_endpoint(conf: &Conf) -> Endpoint {
 }
 
 /// A server that refuses uploads at all (§03-shell#8-details-confirmed-against-the-code-verification-pass).
-/// `POST /v1/ui/upload` is part of audio.cpp's management API, and a build started without
-/// `--ui-management` answers 403 — or 401/405, which are the same misconfiguration in a
-/// different costume. The answer is the fix, not the status: nobody reads a 403 as "start
-/// that server differently". A path in the server's own message names the folder to mount.
-///
-/// Any other status answers `None` so the client's ordinary HTTP error stands.
 pub fn upload_refused(status: u16, body: &str) -> Option<String> {
     if !matches!(status, 401 | 403 | 405) {
         return None;
@@ -154,10 +133,6 @@ fn named_path(body: &str) -> Option<&str> {
         .find(|word| word.starts_with('/') && word.len() > 1)
 }
 
-/// Where an uploaded file landed. A 200 with no usable `path` is a failure, not a success:
-/// every later request names the file by what this returned, so carrying on would fail
-/// minutes later in a step that no longer mentions the upload (§8). The raw reply is named
-/// because "it answered something unexpected" is not actionable.
 pub fn upload_path(reply: &serde_json::Value) -> Result<String, String> {
     match reply.get("path").and_then(|value| value.as_str()) {
         Some(path) if !path.is_empty() => Ok(path.to_string()),
@@ -167,10 +142,6 @@ pub fn upload_path(reply: &serde_json::Value) -> Result<String, String> {
     }
 }
 
-/// audio.cpp's server: the settings box, then `NAIVEPOST_TTS_URL`, then `AUDIOCPP_SERVER`, then
-/// the loopback. The dialog wins over the environment because it is the one of the two a user
-/// can see and clear; `AUDIOCPP_SERVER` is audio.cpp's own variable, so setting it once points
-/// both frontends at one server, and `NAIVEPOST_TTS_URL` moves only this app.
 pub fn audio_endpoint(conf: &Conf, env: impl Fn(&str) -> Option<String>) -> Endpoint {
     let url = server_url(&conf.audio_server)
         .or_else(|| server_url(&env("NAIVEPOST_TTS_URL").unwrap_or_default()))
@@ -193,13 +164,6 @@ pub fn image_endpoint(conf: &Conf, env: impl Fn(&str) -> Option<String>) -> Endp
     }
 }
 
-/// The endpoint a request is about to use — reading the settings file here rather than being
-/// handed a config, because §1 asks for exactly that: "the settings file is re-read per request
-/// (each URL, key and model id), so a settings change lands on the next request". A cached
-/// config would keep talking to the server the user just replaced.
-///
-/// An unreadable file resolves as an empty one: a settings file being mid-write must not make a
-/// request fail when the loopback default is still right.
 pub fn endpoint_for(
     paths: &Paths,
     which: Server,
@@ -280,11 +244,6 @@ impl Kind {
 }
 
 /// How long this kind may take, `None` meaning no client timeout at all.
-///
-/// Audio task calls have none: an hour of audio is an hour of work, and a client that gave up at
-/// five minutes would fail a job that was going fine (§1). Housekeeping is the exception, at
-/// [`UNLOAD_TIMEOUT`]. The LLM's silence rule and whole-call ceiling are a different mechanism
-/// and belong to [09 §4](spec/09-llm-and-tools.md#4-liveness-and-the-gate-f63), not here.
 pub fn timeout_for(kind: Kind) -> Option<Duration> {
     match kind {
         Kind::UnloadAll => Some(UNLOAD_TIMEOUT),
@@ -293,11 +252,6 @@ pub fn timeout_for(kind: Kind) -> Option<Duration> {
 }
 
 /// Whether this kind is sent on the run's cancel context, so ⏹ aborts it.
-///
-/// True for every kind: that is the rewrite's side of §1's last paragraph. The prototype left
-/// five off — `GET /health`, `GET /v1/models`, `POST /v1/audio/speech` (a synthesis in flight
-/// could not be stopped), `unload_all_models` and the sd.cpp cancel — which is why a ⏹ during a
-/// long TTS call left the app waiting for a request it had already given up on.
 pub fn rides_cancel_context(kind: Kind) -> bool {
     // The parameter stays because the answer is a table the spec could change per kind; today
     // every row says yes, and §1 asks that it stays that way.
@@ -360,15 +314,6 @@ pub fn parse_models(body: &str) -> Vec<AudioModel> {
 }
 
 /// The aligner to try, by task rather than by id (§1).
-///
-/// A name in the box wins when the server declares it for `align` — that is what the box is for:
-/// a server serving two others, or one whose pick will not load. An empty box is *not* filled
-/// with [`ALIGN_PREFERENCE`] and written back: no aligner at all is a working setup, so writing
-/// a name into the file would put a red badge on a row allowed to be empty and would hold a
-/// server that has a different one to a name it cannot serve. Instead the models declared for
-/// `align` are offered with the preference first and the rest by name — which is the whole point
-/// of the preference: two aligners on one box sorted plainly put the weaker one first because
-/// its name sorts earlier, and the difference shows in how a cut point lands.
 pub fn pick_aligner(configured: &str, models: &[AudioModel]) -> Option<String> {
     let declared = |id: &str| models.iter().any(|m| m.task == "align" && m.id == id);
     let wanted = configured.trim();
@@ -398,14 +343,6 @@ pub fn install_package(id: &str) -> Option<&'static str> {
 }
 
 /// What to say when a server does not have the model a step needs.
-///
-/// Names the server, lists what it *does* serve (sorted, so the same server answers the same way
-/// twice), and adds the install command only for a shipped default: for a hand-picked id the
-/// weights would be a guess, and a wrong `model_manager_v2.py install` line is worse than none.
-/// What one step needs from the audio server: the task its request names, and the
-/// step that noticed (§03-shell#8-details-confirmed-against-the-code-verification-pass:
-/// "but **Prepare** needs Z there"). Naming the step is what makes a message about
-/// four servers actionable.
 #[derive(Debug, Clone, Copy)]
 pub struct Need<'a> {
     pub task: &'a str,
@@ -446,10 +383,6 @@ pub fn missing_model(
     )
 }
 
-/// Where ffprobe lives: beside the configured ffmpeg (§1: "on PATH (or a configured path;
-/// ffprobe from the same folder)"). Frames, waveforms, cuts and encodes are run by one build of
-/// ffmpeg, and mixing a configured ffmpeg with a PATH ffprobe means one of them is a different
-/// version reading the other's output.
 pub fn ffprobe_for(configured_ffmpeg: &str, on_path: &str) -> String {
     let ffmpeg = configured_ffmpeg.trim();
     if ffmpeg.is_empty() {

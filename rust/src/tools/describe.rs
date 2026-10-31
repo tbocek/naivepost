@@ -1,31 +1,14 @@
 //! Describe — spec/02-services.md §3.2, one chunk of frames at a time.
-//!
-//! The model is shown frames and asked for one EVENT per frame plus a running STATE. What it gets
-//! back from `record_event` is the frame it landed on and that frame's session second, because the
-//! number it sent is an index into this batch and only the app knows which second that is.
-//!
-//! The prototype's cleanups of a prose reply are kept here rather than in a prompt: they are about
-//! what a model actually writes — an offset rounded to the nearest half second, a description with
-//! the `EVENT:` label missing, an answer across two lines — and each one used to be silent. They
-//! stay silent to the model too (§3.2's "all invisible to the model"); what changes is that they are
-//! now code with names, so a wrong snap can be found.
 
 use serde_json::json;
 
-/// How many of the previous EVENT lines ride along with each request — what [`Batch::with_history`]
-/// stands for, and the reason a batch's first frame may be answered "same" at all.
-/// P.machine.describeRecentEvents
 pub const RECENT_EVENTS: usize = 3;
 
-/// Speech context per side per source: how many segments either side of the chunk join the brief.
-/// P.machine.describeCtxSegs
 pub const CTX_SEGS: usize = 2;
 
 /// …and how far back or forward each side looks for them. P.machine.describeCtxWindowSeconds
 pub const CTX_WINDOW_SECONDS: f64 = 10.0;
 
-/// One chunk of frames: the seconds the batch was stamped with, in order, and the interval between
-/// them (`P.project.frameInterval`, the same value the request's own stamps were built from).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Batch {
     /// Session seconds of the frames in this batch, oldest first. The model numbers them 1..=n.
@@ -35,8 +18,6 @@ pub struct Batch {
     events: Vec<Event>,
     /// The running STATE, if any.
     state: Option<String>,
-    /// Whether this batch has anything before it to be "same" as — the previous batches' EVENT lines.
-    /// §3.2's finish rule needs exactly this and nothing more.
     has_history: bool,
 }
 
@@ -51,10 +32,6 @@ pub struct Event {
 
 impl Batch {
     /// A batch of `count` frames starting at session second `start`, `interval` apart.
-    ///
-    /// The seconds are computed rather than passed in because the model's stamps and these have to
-    /// agree by construction: two sources of the same arithmetic is how a frame ends up named by
-    /// one second and written down at another.
     pub fn new(start: f64, interval: f64, count: usize) -> Batch {
         Batch {
             frames: (0..count).map(|i| start + i as f64 * interval).collect(),
@@ -76,14 +53,6 @@ impl Batch {
         &self.frames
     }
 
-    /// `record_event(frame, text, calm)` — ok naming the frame the event landed on and its session
-    /// second; a frame recorded twice replaces what was there; an error when `frame` is not in this
-    /// batch.
-    ///
-    /// The frame number is 1-based because that is how the request stamped it ("FRAME 1 of 4"), and
-    /// out-of-range is refused rather than clamped: a model that says frame 9 of 4 has lost track of
-    /// the batch, and quietly filing its words on the last frame would invent an event at a second
-    /// nobody described.
     pub fn record_event(&mut self, frame: usize, text: &str, calm: bool) -> String {
         if frame == 0 || frame > self.frames.len() {
             return crate::tools::error(&format!(
@@ -119,10 +88,6 @@ impl Batch {
         }))
     }
 
-    /// `set_state(text)` — ok; empty text clears the state rather than leaving the old one.
-    ///
-    /// Clearing matters: a state that outlives what it describes is read forward through every
-    /// later chunk and becomes the description of a scene nobody watched.
     pub fn set_state(&mut self, text: &str) -> String {
         let text = flatten(text);
         if text.trim().is_empty() {
@@ -151,11 +116,6 @@ impl Batch {
     }
 
     /// `speech_around(from, to)` — every line spoken in that stretch, from EVERY recording.
-    ///
-    /// Overlap, not containment: a sentence that starts before the window and runs into it is still
-    /// spoken there, and dropping it loses the word the event was about. And no per-side cap — §3.2
-    /// says outright this is not the brief's two-per-side extract, which cut a lecture's aside away
-    /// from the slide change that prompted it.
     pub fn speech_around<'a>(
         &self,
         from: f64,
@@ -169,13 +129,6 @@ impl Batch {
             .collect()
     }
 
-    /// `finish` — the frames still without an event, plus the batch's first frame when it was left
-    /// "same" with no history to be the same as.
-    ///
-    /// The second half is not tidiness: a batch whose first second says nothing has nothing to be
-    /// resumed from, which is why the prototype force-wrote `Calm; same view.` there in silence.
-    /// Here it comes back as a frame still to answer, so the model can say what the first frame is
-    /// instead of having it written for it.
     pub fn finish(&self) -> Vec<Missing> {
         let answered: Vec<usize> = self.events.iter().map(|event| event.frame).collect();
         let mut missing: Vec<Missing> = self
@@ -213,21 +166,13 @@ impl Batch {
         missing
     }
 
-    /// The line §3.2 says the prototype force-wrote for a batch's first frame with no history. Kept
-    /// because a caller may still want to write it; [`Batch::finish`] is what asks instead.
     pub const SAME_WITHOUT_HISTORY: &'static str = "Calm; same view.";
 
-    /// The interval between this batch's frames, which is the half-width an offset may be off by and
-    /// still be snapped (see [`parse_event_line`]).
     pub fn interval(&self) -> f64 {
         self.interval
     }
 }
 
-/// The three headings of the speech block, always all present. A model told about a section it cannot
-/// see answers better than one left to wonder, which is why an empty section carries a word for it —
-/// `(none)` before and after, `(no speech during these frames)` in the middle, where silence over the
-/// frames themselves is the fact that matters rather than an absence of data.
 pub const SPEECH_HEADINGS: [&str; 3] = [
     "--- context before (do not describe) ---",
     "--- spoken during these frames ---",
@@ -237,16 +182,8 @@ pub const SPEECH_HEADINGS: [&str; 3] = [
 /// What a section with nothing in it says, in the two places that use `(none)`.
 pub const NO_SPEECH: &str = "(none)";
 
-/// What the middle section says when nobody spoke over these frames. Different from [`NO_SPEECH`]
-/// because it is an observation about the video, not a hole in the transcript.
 pub const NO_SPEECH_DURING: &str = "(no speech during these frames)";
 
-/// The whole speech block, in §3.2's order: before, during, after — one heading per line, then its
-/// lines indented by nothing, so a reader of `llm/` sees the same shape the model did.
-///
-/// `during` is every line overlapping the batch, `before` and `after` what lies within
-/// [`CTX_WINDOW_SECONDS`] of it, at most [`CTX_SEGS`] per source: enough around the frames to name what
-/// was being talked about, not so much that the model describes the neighbours instead.
 pub fn speech_block(before: &[String], during: &[String], after: &[String]) -> String {
     let section = |heading: &str, lines: &[String], empty: &str| {
         let mut out = format!("{heading}\n");
@@ -267,9 +204,6 @@ pub fn speech_block(before: &[String], during: &[String], after: &[String]) -> S
     out
 }
 
-/// A reply with no label before it is filed as the description — that is what such a reply was every
-/// time it happened — but the file has to say so, or a reader of `events.tsv` takes it for an event line
-/// the stamp got lost from. `%s` is what came back, trimmed and shortened: enough to recognise the call.
 pub fn no_event_line(reply: &str) -> String {
     let text = reply.split_whitespace().collect::<Vec<_>>().join(" ");
     let head: String = text.chars().take(120).collect();
@@ -281,9 +215,6 @@ pub fn no_event_line(reply: &str) -> String {
     format!("(no event line: {head})")
 }
 
-/// An answer written in the prototype's old shape — one `EVENT` for the batch, no per-frame stamps. Its
-/// words belong to the batch's first frame: that is the only frame the answer can be about without
-/// inventing a second nobody described.
 pub const OLD_SHAPE_FRAME: usize = 1;
 
 /// One line of transcript from any recording, as `speech_around` sees it.
@@ -315,20 +246,22 @@ pub enum MissingReason {
 /// What happened to one prose line — recorded, or dropped, and for which of three reasons.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParseOutcome {
-    /// The offset was within half an interval of a frame; that frame is what it meant. `at` is the
-    /// frame's session second, so a caller can see the drift rather than only the landing.
-    Snapped { frame: usize, at: f64, text: String },
-    /// No label at all before the STATE line: filed as the description, which is what such a reply
-    /// plainly was (six chunks in one recording did this in a row).
+    Snapped {
+        frame: usize,
+        at: f64,
+        text: String,
+    },
     UnlabeledDescription(String),
     /// One answer written across several lines, flattened to one.
-    Flattened { frame: usize, at: f64, text: String },
+    Flattened {
+        frame: usize,
+        at: f64,
+        text: String,
+    },
     /// Gone: an offset that does not parse, or one further from every frame than half an interval.
     Dropped(DropReason),
 }
 
-/// Why a line was dropped. Both are silent to the model — §3.2 says so — but not to whoever is
-/// reading why an event is missing from the log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropReason {
     /// The offset could not be read as a number.
@@ -346,15 +279,7 @@ pub enum Placement {
     TooFar(f64),
 }
 
-/// The frame an offset belongs to: the nearest one within half an interval of this batch's frame
-/// grid, measured from the batch's first frame (which is what `EVENT [+2s]` counts from).
 pub fn place_offset(offset: f64, interval: f64, frames: &[f64]) -> Placement {
-    // At exactly half an interval the nearest frame is still unique, so the snap says something;
-    // past it "nearest" stops being a fact and the line is dropped. The tolerance is one ulp of the
-    // bound rather than a fixed epsilon because 0.5 s and 1.0 s are exact in binary while their
-    // difference from 0.51 s is not, and a drift the spec drops must not snap because a bit went the
-    // wrong way. One ulp cannot admit a real drift: the smallest interval this app extracts at is
-    // 0.25 s, half of which is 125 ms, or 2^49 ulps wide.
     let base = frames.first().copied().unwrap_or_default();
     let half = interval / 2.0;
     let tolerance = (half * f64::EPSILON).max(f64::MIN_POSITIVE);
@@ -372,23 +297,7 @@ pub fn place_offset(offset: f64, interval: f64, frames: &[f64]) -> Placement {
     }
 }
 
-/// One line of the prototype's prose reply, cleaned up the way it cleaned up — with the reasons
 /// named instead of swallowed.
-///
-/// `interval` is this batch's frame interval and `frames` its session seconds in order; an offset
-/// within half an interval of a frame snaps to it, and further off is dropped without a word. The
-/// bound is inclusive at exactly half: at that distance the nearest frame is still unique, so the
-/// snap says something, while past it "nearest" stops being a fact.
-///
-/// Offsets are measured against the batch's own first frame, which is what `EVENT [+2s]` means in a
-/// reply — seconds from where the batch starts, not absolute session time. The stamps the model was
-/// shown (`[+0.0s]`, `[+1.0s]`, …) are the same arithmetic, so its number and this one land on the
-/// same frame without either side converting.
-///
-/// Offsets are measured against the batch's own first frame, which is what `EVENT [+2s]` means in a
-/// reply — seconds from where the batch starts, not absolute session time. The stamps the model was
-/// shown (`[+0.0s]`, `[+1.0s]`, …) are the same arithmetic, so its number and this one land on the
-/// same frame without either side converting.
 pub fn parse_event_line(line: &str, interval: f64, frames: &[f64]) -> ParseOutcome {
     let line = line.trim_end_matches(['\r', '\n']);
     if line.trim().is_empty() {
@@ -440,9 +349,6 @@ pub fn parse_event_line(line: &str, interval: f64, frames: &[f64]) -> ParseOutco
     ParseOutcome::Snapped { frame, at, text }
 }
 
-/// The line as a prose reply wrote it: one line, single-spaced, trailing space gone. A newline in
-/// the middle would be a second event in `events.tsv`, which is why this is flattening rather than
-/// trimming.
 fn flatten(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -467,8 +373,6 @@ fn bracketed_offset(body: &str) -> Option<(&str, &str)> {
     Some((offset, rest))
 }
 
-/// A frame's line saying nothing changed. Same reading as the prototype: quotes and the trailing
-/// full stop are decoration, "same" is the word.
 pub fn is_same(text: &str) -> bool {
     let t = text.trim().to_lowercase();
     let t = t.trim_matches(|c| c == '.' || c == '"' || c == '\'');

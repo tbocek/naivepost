@@ -1,10 +1,3 @@
-//! The machine's own files, spec/01-project-and-files.md §7: `llm.conf` and its legacy
-//! `settings.json`, the voices folder, prompts edited on this machine, and the watchdog
-//! dumps. None of them live in a project, so nothing here goes through
-//! [`crate::layout`] — every function is handed the directories it needs, and reading the
-//! environment happens in one place ([`paths_from`]) so a test can pass temp folders and
-//! never touch the real `$HOME`.
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,21 +5,13 @@ use std::path::{Path, PathBuf};
 /// Where this machine's naivepost files live.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
-    /// `~/.config/naivepost` — the conf, the legacy settings, the prompts, the dumps.
     pub config_dir: PathBuf,
     /// `~/.local/share/naivepost` — the voice library when there is no other.
     pub data_dir: PathBuf,
 }
 
 /// The two folders, from the environment variables a caller read for us.
-///
-/// A relative `XDG_*` value is not a path and is ignored, as the prototype ignores it with
-/// `filepath.IsAbs`: a config location that depends on the current directory would make the
-/// program read a different machine's settings depending on where it was started from.
-/// `None` means there is nowhere to keep anything — the prototype's "nowhere to write the
-/// settings -- neither XDG_CONFIG_HOME nor HOME is set".
 fn absolute(v: Option<&str>) -> Option<&str> {
-    // A relative value is not a path; see [`paths_from`].
     v.filter(|v| Path::new(v).is_absolute())
 }
 
@@ -49,9 +34,6 @@ pub fn paths_from(
     })
 }
 
-/// The two folders from this process's own environment — what a caller with no override of its
-/// own reads. `main::settings_paths` is the same three variables; a widget that has to reach a
-/// prompt file uses this rather than reaching into the binary's innards.
 pub fn from_environment() -> Option<Paths> {
     let var = |name: &str| std::env::var(name).ok();
     paths_from(
@@ -68,7 +50,6 @@ impl Paths {
         self.config_dir.join("llm.conf")
     }
 
-    /// The legacy `settings.json`: read once, never written (§7).
     pub fn settings_path(&self) -> PathBuf {
         self.config_dir.join("settings.json")
     }
@@ -144,9 +125,6 @@ pub struct Conf {
     /// Keys this build does not know, kept in file order so a read-modify-write cannot
     /// erase a setting a newer build put here.
     unknown: Vec<(String, String)>,
-    /// The project file last open in each session folder, keyed by folder because every
-    /// path inside a project is relative to it. Ordered, so an unchanged save is
-    /// byte-identical (§7).
     pub projects: BTreeMap<String, String>,
 }
 
@@ -183,9 +161,6 @@ impl Conf {
         ("DECISION_MODEL", |c| &c.decision_model),
     ];
 
-    /// The sixteen keys this store holds, read off [`Conf::KEYS`] so a key added there is listed
-    /// here without a second list to forget. Used by anything that
-    /// has to say which ids are machine settings (directive A, 11 §5).
     pub fn key_names() -> Vec<&'static str> {
         Self::KEYS.iter().map(|(key, _)| *key).collect()
     }
@@ -246,12 +221,6 @@ pub fn render(conf: &Conf) -> String {
 
 /// Quote one value for a double-quoted bash string: backslash, the quote itself, `$`, a
 /// backtick, a carriage return and a newline — and nothing else.
-///
-/// Only those six, because the file has to survive two readers at once: `source` in a shell,
-/// which expands `$VAR`, backticks and line breaks, and this module's own line-based read,
-/// which must not see a value that ran over the end of its line. Everything else — spaces,
-/// tabs, `#` mid-value, unicode — is already safe inside double quotes and quoting it would
-/// make the file harder for a human to edit by hand.
 pub fn quote(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('"');
@@ -270,9 +239,6 @@ pub fn quote(value: &str) -> String {
     out
 }
 
-/// The six sequences [`quote`] writes, back again — plus the pair of quotes around the whole
-/// value, which is what makes the file bash-sourceable. A hand-written line may leave them
-/// off (`KEY=value`), so they are stripped only when both are there.
 fn unquote(value: &str) -> String {
     let inner = value
         .strip_prefix('"')
@@ -292,8 +258,6 @@ fn unquote(value: &str) -> String {
             Some('`') => out.push('`'),
             Some('r') => out.push('\r'),
             Some('n') => out.push('\n'),
-            // An escape this build does not know: keep both characters rather than
-            // inventing a meaning for it.
             Some(other) => {
                 out.push('\\');
                 out.push(other);
@@ -304,14 +268,8 @@ fn unquote(value: &str) -> String {
     out
 }
 
-/// Read the file's text. Comments (a line whose first non-space character is `#`) and blank
-/// lines are skipped, `KEY="value"` and bare `KEY=value` both parse, and a key this build
-/// does not know is kept so that reading and writing a file cannot erase a setting a newer
-/// build put there.
 pub fn parse(text: &str) -> Result<Conf, String> {
     let mut conf = Conf::default();
-    // Projects arrive as numbered pairs, which are only whole once the whole file has been
-    // seen: ROOT and FILE may be a line apart.
     let mut roots: BTreeMap<u32, String> = BTreeMap::new();
     let mut files: BTreeMap<u32, String> = BTreeMap::new();
 
@@ -326,8 +284,6 @@ pub fn parse(text: &str) -> Result<Conf, String> {
         };
         let key = key.trim();
         let value = unquote(value.trim());
-        // The named settings first, then the remembered projects. Each
-        // arm takes the value by reference so only the unknown-key arm has to move it.
         if set_key(&mut conf, key, &value) {
             continue;
         }
@@ -348,12 +304,9 @@ pub fn parse(text: &str) -> Result<Conf, String> {
         if legacy_key(key) {
             continue;
         }
-        // A setting from a newer build: carried through untouched.
         conf.unknown.push((key.to_string(), value));
     }
 
-    // Numbered pairs by number; a ROOT with no FILE is still a remembered folder whose
-    // last file is unknown, not a broken entry to throw away.
     for (number, root) in roots {
         conf.projects
             .insert(root, files.remove(&number).unwrap_or_default());
@@ -428,10 +381,6 @@ pub fn read(paths: &Paths) -> Result<Conf, String> {
 }
 
 /// Write the whole file at 0600 in a directory at 0700, and say whether anything changed.
-///
-/// The bytes are compared first and an unchanged file is left alone: §7 asks for a save that
-/// is byte-identical when nothing changed, and not touching the file also keeps its mtime
-/// meaning "the settings were last edited".
 pub fn save(paths: &Paths, conf: &Conf) -> Result<bool, String> {
     let path = paths.conf_path();
     let body = render(conf);
@@ -443,25 +392,10 @@ pub fn save(paths: &Paths, conf: &Conf) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Where `llm.conf` used to be: beside the videos, under the folder the program was started from.
-///
-/// That placement was wrong twice over — the endpoints are the same for every session this machine
-/// ever cuts, and a session folder gets copied, zipped and handed around, so the API key went with
-/// it (03-shell.md §6's "legacy `<root>/llm.conf`").
 pub fn legacy_conf_path(root: &Path) -> PathBuf {
     root.join("llm.conf")
 }
 
-/// Take over a pre-merge `llm.conf` still sitting beside the videos, once, and put it in the config
-/// folder. Returns the legacy path when a move happened, so the caller can log which file stopped
-/// being read.
-///
-/// Nothing happens while the config folder's own file exists: that one always wins, which is what
-/// makes "migrated once" true rather than a rule that has to be remembered (§6's precedence). The
-/// bytes are copied verbatim instead of parsed and re-rendered — a re-render would drop the comments
-/// a user or an older build left in the file, and every key in it is one [`parse`] already reads.
-/// Copied rather than moved: the old file is one line of documentation about a machine that has been
-/// working for months, and deleting somebody's config to tidy up is not this program's call.
 pub fn migrate_legacy(paths: &Paths, root: &Path) -> Result<Option<PathBuf>, String> {
     let path = paths.conf_path();
     if path.exists() {
@@ -473,14 +407,11 @@ pub fn migrate_legacy(paths: &Paths, root: &Path) -> Result<Option<PathBuf>, Str
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(format!("{}: {err}", legacy.display())),
     };
-    // The same modes as `save`: what arrives is the machine's endpoints and its key.
     write_mode(&paths.config_dir, 0o700)?;
     write_bytes(&path, &bytes, 0o600)?;
     Ok(Some(legacy))
 }
 
-/// The projects remembered by the legacy `settings.json`, which §7 keeps readable and never
-/// writable. `None` when the file is not there.
 pub fn legacy_projects(paths: &Paths) -> Result<Option<BTreeMap<String, String>>, String> {
     let path = paths.settings_path();
     #[derive(serde::Deserialize)]
@@ -498,9 +429,6 @@ pub fn legacy_projects(paths: &Paths) -> Result<Option<BTreeMap<String, String>>
     Ok(Some(legacy.projects))
 }
 
-/// Take the remembered projects from `settings.json` — but only once, and only when the conf
-/// has nothing to say about projects (§7: "read once … on the launch after the merge"). The
-/// legacy file is not written by anything in here.
 pub fn recover_projects(conf: &mut Conf, paths: &Paths) -> Result<bool, String> {
     if !conf.projects.is_empty() {
         return Ok(false);
@@ -515,12 +443,6 @@ pub fn recover_projects(conf: &mut Conf, paths: &Paths) -> Result<bool, String> 
     Ok(true)
 }
 
-/// Keys an older build wrote that this one reads and then drops (§8). They parse
-/// without an error so a hand-edited conf still loads, and they are NOT kept in
-/// [`Conf::unknown`] — that list exists for a newer build's settings, and echoing a
-/// dead key back would make it permanent. `AUDIOCPP_MODELS` is the exception with
-/// a use: its `voices/` subfolder is the voices folder when `AUDIOCPP_VOICES` is
-/// absent, which [`read`] records as [`LEGACY_MODELS`].
 pub const IGNORED_KEYS: [&str; 4] = [
     "AUDIOCPP_MODELS",
     "SD_MODEL",
@@ -528,8 +450,6 @@ pub const IGNORED_KEYS: [&str; 4] = [
     "PROMPT_CUT",
 ];
 
-/// Where the legacy `AUDIOCPP_MODELS` root is parked while a conf is being read, so
-/// a caller can hand it to [`voices_folder`] when `AUDIOCPP_VOICES` stayed empty.
 pub const LEGACY_MODELS: &str = "AUDIOCPP_MODELS";
 
 /// Whether this key belongs to an older build: one of the four named ones, or any
@@ -550,10 +470,7 @@ pub const RETIRED_SLOT_KEYS: [&str; 7] = [
     "SD_SLOTS",
 ];
 
-/// root, is not a project at all — the prototype keeps only the pairs where both are set.
 pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
-    // Sorted by folder, which is what makes an unchanged save byte-identical and the
-    // `PROJECT_<n>` numbering stable between launches.
     projects
         .iter()
         .filter(|(root, file)| !root.is_empty() && !file.is_empty())
@@ -564,15 +481,6 @@ pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
         .collect()
 }
 
-/// The voice library: `AUDIOCPP_VOICES` wins, else the data folder inside Flatpak, else the
-/// dev box's `/mnt/models/audiocpp/voices` (§7). This is the one folder read outside a
-/// project and it has no settings box; the Flatpak rule exists because the dev-box path is
-/// simply not in the sandbox.
-/// The boxes that go back to the shipped default when they are cleared, rather
-/// than to the empty string (§03-shell#8-details-confirmed-against-the-code-verification-pass).
-/// The five are names a server answers or a folder it reads: an empty one is not a
-/// usable value, unlike a URL, a key or a tool path, which are written as typed —
-/// including empty, because clearing `FFMPEG` is a real answer.
 pub const DEFAULTED_WHEN_CLEARED: [&str; 5] = [
     "AUDIOCPP_VOICES",
     "AUDIOCPP_ASR_MODEL",
@@ -598,7 +506,6 @@ fn shipped_default(key: &str) -> &'static str {
         "AUDIOCPP_DIAR_MODEL" => crate::services::DIAR_MODEL,
         "AUDIOCPP_TTS_MODEL" => crate::services::TTS_MODEL,
         "AUDIOCPP_SEP_MODEL" => crate::services::SEP_MODEL,
-        // The folder every other build of this stack mounts.
         _ => crate::settings::DEFAULT_VOICES,
     }
 }
@@ -607,18 +514,12 @@ fn shipped_default(key: &str) -> &'static str {
 /// reader agree on what an empty value means.
 pub const DEFAULT_VOICES: &str = "/mnt/models/audiocpp/voices";
 
-/// The voice library: `AUDIOCPP_VOICES`, else the `voices/` subfolder of the legacy
-/// `AUDIOCPP_MODELS` root (§8: that key is read and ignored, except for exactly
-/// this), else the platform's own folder.
 pub fn voices_folder(
     conf_value: &str,
     models_dir: &str,
     flatpak: bool,
     data_dir: &Path,
 ) -> PathBuf {
-    // An override that is not absolute is not a folder: it would resolve against whatever
-    // the process happens to be started from. The legacy root is trusted the same way —
-    // `voices/` under a relative path would move with the process too.
     if !conf_value.is_empty() && Path::new(conf_value).is_absolute() {
         return PathBuf::from(conf_value);
     }
@@ -637,9 +538,6 @@ pub fn ensure_voices_folder(folder: &Path) -> Result<(), String> {
     write_mode(folder, 0o700)
 }
 
-/// Keep a prompt edited on this machine — but only while it differs from the shipped text
-/// (§7), so returning to the default deletes the override rather than leaving a copy of it
-/// behind that would shadow a future change to the shipped wording.
 pub fn write_prompt(paths: &Paths, key: &str, text: &str, shipped: &str) -> Result<bool, String> {
     if text == shipped {
         return Ok(false);
@@ -678,24 +576,12 @@ pub fn prompt_text(paths: &Paths, key: &str, shipped: &str) -> Result<String, St
     Ok(crate::profile::active_section(paths, key).unwrap_or_else(|| shipped.to_string()))
 }
 
-/// The names the folder-per-wording era wrote a job's DEFAULT wording under — one folder
-/// per job, one file per wording, `General`/`Default` being the built-in one. Anything else
-/// in that folder was a style's wording, and the styles are gone, so only these two are read.
 pub const LEGACY_PROMPT_NAMES: [&str; 2] = ["General.txt", "Default.txt"];
 
-/// Where the old build kept one job's wording: `prompts/<key>/<name>`, a folder per job
-/// where this one keeps a file per job (§04-prepare#6).
 pub fn legacy_prompt_file(paths: &Paths, key: &str, name: &str) -> PathBuf {
     paths.prompts_dir().join(key).join(name)
 }
 
-/// What this machine holds for one prompt, newest layout first: `prompts/<key>.txt`, then
-/// the two names the folder era wrote. An edit made under that build is otherwise invisible
-/// here, and its author would find their wording replaced with no mark to explain it.
-///
-/// A file that trims to nothing is NO prompt: a wording that says nothing would send the
-/// model no system prompt at all, which is not what an empty file looks like but exactly
-/// what it does. Such a file is skipped, so the shipped wording runs and the row stays unmarked.
 pub fn stored_prompt(paths: &Paths, key: &str) -> Result<Option<String>, String> {
     let candidates = std::iter::once(paths.prompt_file(key)).chain(
         LEGACY_PROMPT_NAMES
@@ -718,7 +604,6 @@ pub fn stored_prompt(paths: &Paths, key: &str) -> Result<Option<String>, String>
 }
 
 /// Drop an override so the shipped text applies again — the User Dialog's reset button.
-/// False when there was nothing to drop.
 pub fn clear_prompt(paths: &Paths, key: &str) -> Result<bool, String> {
     match fs::remove_file(paths.prompt_file(key)) {
         Ok(()) => Ok(true),
@@ -732,16 +617,10 @@ pub fn hang_file(stamp: &str) -> String {
     format!("hang-{stamp}.txt")
 }
 
-/// The stamp of one hang, in the prototype's Go layout `0102-150405` — month first so the
-/// dumps sort in the order they happened.
 pub fn hang_stamp(month: u32, day: u32, hour: u32, minute: u32, second: u32) -> String {
     format!("{month:02}{day:02}-{hour:02}{minute:02}{second:02}")
 }
 
-/// Write one watchdog dump and return its path. §7 names the file `hang-*.txt`; what it has
-/// to say is which component stopped answering, its PID and how long it had been unresponsive
-/// — the prototype wrote "the GTK thread has not answered for 3.2s" plus every stack, and a
-/// dump that cannot name the stalled process is no use at 3 a.m.
 pub fn write_hang_dump(
     paths: &Paths,
     component: &str,
@@ -762,8 +641,6 @@ pub fn write_hang_dump(
 
 /// Write one watchdog dump that CARRIES THE STACKS — §1's GUI hang watchdog, as opposed to
 /// [`write_hang_dump`], which names a stalled server-side component and has no stack of its own.
-/// Same file shape (§7: `hang-*.txt`, 0600 beside the settings); what differs is what got measured
-/// and what the body holds, so the caller hands the whole body ready-made.
 pub fn write_stack_dump(paths: &Paths, body: &str, stamp: &str) -> Result<PathBuf, String> {
     write_mode(&paths.config_dir, 0o700)?;
     let path = paths.hang_path(stamp);
@@ -781,9 +658,6 @@ pub(crate) fn seconds_for(wait: std::time::Duration) -> String {
     }
 }
 
-/// Where a setting comes from (03-shell.md §6): the dialog box, then this file, then the
-/// legacy `<root>/llm.conf` migrated once, then the built-in default. An empty answer is not
-/// an answer — a cleared box means "back to the default", not "the empty string".
 pub fn resolve<'a>(
     dialog: Option<&'a str>,
     conf: Option<&'a str>,
@@ -797,10 +671,6 @@ pub fn resolve<'a>(
         .unwrap_or(default)
 }
 
-/// The audio server's URL. `NAIVEPOST_TTS_URL` sits below the dialog and above the file, and
-/// `AUDIOCPP_SERVER` is the file's own key (03-shell.md §6), so both are consulted before the
-/// built-in default. Nothing here validates the URL: it is handed to a client that reports a
-/// bad one far better than this function could.
 pub fn audio_url(
     dialog: Option<&str>,
     tts_url_env: Option<&str>,
@@ -810,15 +680,10 @@ pub fn audio_url(
     resolve(dialog, tts_url_env, conf, default).to_string()
 }
 
-/// Whether this launch may register itself with the desktop (§7). Two cases say no: inside a
-/// Flatpak, whose manifest already exports both files and where a file written from within
-/// would point into the sandbox; and a run out of a build cache, which has no installed
-/// launcher for the entry to name.
 pub fn wants_desktop_file(exe: &Path, flatpak: bool, build_cache: bool) -> bool {
     if flatpak || build_cache {
         return false;
     }
-    // The entry's `Exec` is an absolute path, so there has to be a real binary there.
     exe.is_file()
 }
 
@@ -861,22 +726,12 @@ pub fn install_desktop_file(paths: &Paths, exe: &Path) -> Result<(), String> {
     write_bytes(&paths.desktop_file(), desktop_file(exe).as_bytes(), 0o644)
 }
 
-/// Write the MIME package at 0644. After either file changes the caller runs
-/// `update-mime-database` / `update-desktop-database` in the background (03-shell.md §7);
-/// that is a process, so it happens above here.
 pub fn install_mime_package(paths: &Paths) -> Result<(), String> {
     write_bytes(&paths.mime_package(), mime_package().as_bytes(), 0o644)
 }
 
-/// Create a directory and force its mode — a created directory's mode is masked by the
-/// umask, which is why it cannot simply be trusted (§1's rule, applied to the machine's own
-/// folders because this file holds credentials).
 pub(crate) fn write_mode(dir: &Path, mode: u32) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    // Created here? Then its mode is masked by the umask and has to be forced. A directory
-    // that already existed is left alone — relabelling somebody else's folder (an existing
-    // $XDG_CONFIG_HOME) is not this function's business, and a throwaway test root under
-    // /tmp would otherwise come back 0700 for no reason.
     let fresh = fs::metadata(dir).is_err();
     fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     if fresh {

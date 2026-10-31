@@ -1,22 +1,4 @@
 //! F4.6 Choose the voice and build the reference — `spec/07-narrate.md` F4.6, steps S1–S5.
-//!
-//! Who speaks is one choice with three kinds of answer (captions only, a narrator slot cut from the
-//! session's own recording, a file in the voices folder), and every answer has to become the same two
-//! files the speech server clones from: `narrate/voice_ref_base.wav` (levelled) and
-//! `narrate/voice_ref.wav` (pitch-shifted). This module holds those rules as plain functions; the page
-//! (`crate::ui::narrate_page`) draws them and forwards the presses.
-//!
-//! What this module does **not** own:
-//! - where the files live or when they are thrown away — [`crate::narrate_data`] owns both paths, the
-//!   loudness/rate constants and [`crate::narrate_data::drop_reference`];
-//! - the picker's option list and the take seconds' floor — [`crate::narrate_screen`]'s
-//!   `voice_options`, `TAKE_MIN_SECONDS`, `add_takes` / `remove_takes`;
-//! - speaking anything ([`crate::narrate_tts`], F4.4) — this only builds what it clones from.
-//!
-//! A documented decision (§F4.6 is silent on it): the automatic pick takes its diarization turns and
-//! transcript words as parameters the caller already loaded rather than opening `turns.json` here.
-//! Reaching into a file format this module does not own would give it a second reason to change, and
-//! the caller that has the session open can hand the turns over cheaply.
 
 use std::path::{Path, PathBuf};
 
@@ -30,9 +12,6 @@ use crate::narrate_screen::CAPTIONS;
 /// clones from too little audio and the voice wavers between lines.
 pub const REF_MIN_TAKE_SECONDS: f64 = 5.0;
 
-/// P.machine.refWantSeconds: how much reference the automatic pick aims at. Kept pointed at
-/// `narrate_details`' existing constant so one number answers both the aim and the "14 s is plenty"
-/// status line.
 pub const REF_WANT_SECONDS: f64 = crate::narrate_details::REFERENCE_WANTED_SECONDS;
 
 /// P.machine.refTakeMax: the most pieces the automatic pick may stitch together. More than three and
@@ -70,9 +49,6 @@ pub enum VoiceChoice {
 }
 
 /// S1: resolve a picked voice against what Prepare actually tagged and what the voices folder holds.
-///
-/// `narrators` is how many narrator slots have a recording, `voice_files` the names in the voices
-/// folder, `dir` the voices folder as it is shown in the "no longer in DIR" sentence.
 pub fn pick_voice(id: &str, narrators: usize, voice_files: &[String], dir: &str) -> VoiceChoice {
     if id == CAPTIONS {
         return VoiceChoice::Silent(SILENT_SWITCH.to_string());
@@ -95,10 +71,6 @@ pub fn pick_voice(id: &str, narrators: usize, voice_files: &[String], dir: &str)
     VoiceChoice::Refused(vanished_voice(id, dir))
 }
 
-/// Which narrator slot an id names; `None` for captions or a file name. One rule for the page, the band and
-/// the reference: [`crate::narrate_rules::narrator_slot`], where `own` IS slot 1 (this copy did not know it, so a
-/// project with no `voice.txt` showed Narrator 1 in the picker while the take band, asking here, found no
-/// recording and hid itself).
 pub fn narrator_slot(id: &str) -> Option<usize> {
     crate::narrate_rules::narrator_slot(id)
 }
@@ -126,10 +98,6 @@ pub enum Changed {
     Takes,
 }
 
-/// S4's invalidation rule in one call: the built reference answers a question, and all three settings
-/// change it. Delegates to [`crate::narrate_data::drop_reference`], which keeps the base for a pitch
-/// change and drops it otherwise — this exists so the page says WHICH thing changed rather than passing
-/// a bare bool that reads backwards at the call site.
 pub fn invalidate_for_change(tree: &Tree, what: Changed) -> usize {
     let keep_base = matches!(what, Changed::Pitch);
     narrate_data::drop_reference(tree, keep_base)
@@ -181,15 +149,6 @@ pub enum ReferencePlan {
 }
 
 /// S2: decide what the reference is cut from, against the session's own Prepare output.
-///
-/// `takes` are the hand-picked takes (empty when nobody picked any); `turns` the diarized turns of the
-/// narrator's recording; `words_in` the count of transcript words falling inside each candidate window,
-/// paired with that window. Turns are given in seconds rather than samples because the caller has
-/// already converted them — see the module doc.
-///
-/// The one thing this rule does NOT answer is whether a recording was tagged at all: only
-/// `naivepost.json` says that, and it is asked by [`recut_for_voice`] before this runs, because
-/// "run Prepare" would be wrong advice for a project that never named a recording to run it on.
 pub fn plan_reference(
     takes: &[(f64, f64)],
     turns: &[(f64, f64, u32)],
@@ -213,20 +172,6 @@ pub fn plan_reference(
         return ReferencePlan::Unavailable(NO_DIARIZATION.to_string());
     }
 
-    // Solo stretches first: a window of the narrator's turns with no other speaker inside it, and at
-    // least REF_PAD_SECONDS of clearance on each side. The clearance is judged on the diarizer's OWN turn —
-    // a neighbour next to the silent head of a turn is still next to that speaker.
-    //
-    // What is then kept is NOT the whole turn: §6 narrows each candidate "to their words", so the floor,
-    // the density check and the piece handed to ffmpeg are the transcript's own first-word..last-word span.
-    // A diarized turn routinely carries the half-second of room tone before the first word and the tail
-    // after the last; cloning from those is what makes a reference waver, and it also inflates the length a
-    // sparse turn is divided by, which would flatter exactly the turns the density floor exists to catch.
-    //
-    // Both lists are collected because §6's drop is conditional: "takes under refMinWordsPerSecond dropped
-    // UNLESS THAT LEAVES NONE". A session whose only solo stretches are sparse gets a reference built from
-    // them anyway — audio the clone can use beats a refusal — while a session with no solo stretch at all
-    // still answers NO_CLEAN_STRETCH (§F4.6 S2's own sentence).
     let mut candidates: Vec<(Piece, usize)> = Vec::new();
     let mut sparse: Vec<(Piece, usize)> = Vec::new();
     for &(start, end, speaker) in turns {
@@ -302,11 +247,6 @@ pub fn turn_seconds(turns: &[(f64, f64, u32)], speaker: u32) -> f64 {
         .sum()
 }
 
-/// §6 (`Automatic ranking`): whose voice the reference is cut from when nobody picked takes — the speaker
-/// holding the MOST TURN TIME on the recording. Ties break to the lower speaker id: the diarizer numbers
-/// speakers as it meets them, so the earlier id is the person who spoke first, which is the same order the
-/// picker lists narrators in. Returns `None` with no turns at all, which is S2's "no diarization" case and
-/// stays that refusal rather than becoming a guess.
 pub fn ranked_speaker(turns: &[(f64, f64, u32)]) -> Option<u32> {
     let mut best: Option<(f64, u32)> = None;
     for speaker in turns
@@ -344,8 +284,6 @@ pub struct Built {
     /// The sentences worth printing while building (a re-cut notice, a rename).
     pub said: Vec<String>,
     /// §6 (`Reference build`): how much audio the build cut, and whether a hand or the ranking chose it.
-    /// Carried out of `recut_for_voice` so the flow that ran ffmpeg can log the real numbers rather than a
-    /// guess read back off the file.
     pub seconds: f64,
     /// Words in the chosen pieces; 0 when a hand picked them (§6 names takes instead of words then).
     pub words: usize,
@@ -353,9 +291,6 @@ pub struct Built {
     pub hand_picked: usize,
 }
 
-/// The ffmpeg argument vector that levels the reference: mono, 48 kHz pcm, `REF_LOUDNESS`. Built as a
-/// vector so the shape of the call is testable without running anything; the running stays with
-/// [`crate::subprocess`].
 pub fn level_args(input: &str, out: &str) -> Vec<String> {
     vec![
         "-hide_banner".into(),
@@ -378,7 +313,6 @@ pub fn level_args(input: &str, out: &str) -> Vec<String> {
 }
 
 /// The ffmpeg argument vector that shifts the pitch with formants kept (`rubberband`'s `formant=y`).
-/// `semitones` is the slider's value; the ratio is the linear factor rubberband expects.
 pub fn shift_args(input: &str, out: &str, semitones: f64) -> Vec<String> {
     let ratio = 2f64.powf(semitones / 12.0);
     vec![
@@ -396,16 +330,11 @@ pub fn shift_args(input: &str, out: &str, semitones: f64) -> Vec<String> {
     ]
 }
 
-/// S3: read a wav header far enough to know whether the speech server can read it. Returns
-/// `Some((format_tag, sample_rate))` for a RIFF/WAVE file, `None` when the header is not there or
-/// not a wav at all (which is also a file the server cannot read).
 pub fn wav_header(path: &Path) -> Option<(u16, u32)> {
     let bytes = std::fs::read(path).ok()?;
     if bytes.len() < 28 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return None;
     }
-    // The fmt chunk follows the 12-byte RIFF header in every writer we meet; scanning for the tag
-    // keeps odd padding between chunks from being misread.
     let fmt_at = (12..bytes.len().saturating_sub(4)).find(|&i| &bytes[i..i + 4] == b"fmt ")?;
     let body = fmt_at + 8;
     if bytes.len() < body + 16 {
@@ -423,15 +352,6 @@ pub fn wav_header(path: &Path) -> Option<(u16, u32)> {
 
 const WAV_HEAD_BYTES: u64 = 64 * 1024;
 
-/// How long a wav is, measured from its own header and size: the seconds of PCM the file
-/// holds. F4.3's render half needs this — speech length is THE WAV's duration when a wav
-/// exists, and nothing else may stand in for it (an entry's own span would make a line
-/// occupy room it never speaks into). `None` when there is no readable wav, which is how a
-/// line keeps length 0 and takes no room.
-///
-/// The same 16-bit PCM arithmetic the voice band uses to size its ruler
-/// ([`crate::ui::narrate_band::recording_seconds`]), without that function's floor: a real
-/// recording is never shorter than 0.1 s, a measured wav may be any length at all.
 pub fn wav_seconds(path: &Path) -> Option<f64> {
     use std::io::Read;
     let size = std::fs::metadata(path).ok()?.len();
@@ -472,17 +392,6 @@ pub fn recut_notice(file: &str) -> String {
     format!("voice reference {file} is not a wav the server reads -- cutting it again")
 }
 
-/// F4.6 S2+S3 as one call: the reference the next spoken line clones from, cut from the seconds
-/// [`plan_reference`] chose, levelled to the base and shifted to the served file. This is what S1's
-/// "it is re-cut from the recording on the next line spoken" is made of, and the reason a voice pick
-/// that invalidated `voice_ref.wav` still ends up speaking in the newly chosen voice.
-///
-/// `turns`, `words_in` and `words_span` come from the caller because they are the session's Prepare
-/// output (see the module doc): `speaker_turns` loads them for the real flow. `ffmpeg` is the Settings
-/// seam, so a test points it at a script and no live ffmpeg is needed.
-///
-/// `Err` carries the spec's own refusal sentence (S2's `nothing_tagged`, `NO_DIARIZATION` or
-/// `NO_CLEAN_STRETCH`) or a failure naming the program that was run.
 pub fn recut_for_voice(
     tree: &Tree,
     ffmpeg: &str,
@@ -512,11 +421,6 @@ pub fn recut_for_voice(
     if let Some(slot) = slot.filter(|_| nothing_is_tagged(tree, source)) {
         return Err(nothing_tagged(slot as usize));
     }
-    // §6 (`Automatic ranking`): the reference is cut from whoever holds the most turn time. The flow's slot
-    // is the fallback when there is no diarization to rank at all, so S2 answers "no diarization" rather
-    // than inventing a speaker.
-    // Hand-picked takes come from every recording the narrator is tagged on (the take band shows them all, end
-    // to end), each cut from its own file; the automatic pick reads the one recording the flow was handed.
     let picked = picked_takes(tree, source);
     let takes: Vec<(f64, f64)> = picked.iter().map(|(_, s, e)| (*s, *e)).collect();
     let plan = plan_reference(
@@ -531,17 +435,11 @@ pub fn recut_for_voice(
         ReferencePlan::Automatic(pieces) => (pieces.clone(), 0usize),
         ReferencePlan::Unavailable(why) => return Err(why.clone()),
     };
-    // The file each piece is cut from: a hand-picked piece's own recording (the plan keeps the takes' order),
-    // an automatic one's the source.
     let files: Vec<String> = if hand_picked > 0 {
         picked.iter().map(|(file, _, _)| file.clone()).collect()
     } else {
         vec![source.to_string(); pieces.len()]
     };
-    // §6 (`Reference build`) counts the reference in WORDS when it was picked automatically and in TAKES
-    // when a hand picked them — the same distinction `reference_build_log` spells. The count is the chosen
-    // pieces' own, re-asked of the caller's counter here rather than carried out of the plan, so
-    // `ReferencePlan` keeps its shape (tests compare it against plain piece lists).
     let words: usize = if hand_picked == 0 {
         pieces
             .iter()
@@ -553,7 +451,6 @@ pub fn recut_for_voice(
     let seconds: f64 = pieces.iter().map(|piece| piece.seconds()).sum();
 
     if pieces.len() == 1 {
-        // One stretch needs no stitching: level it straight onto the base.
         let piece = &pieces[0];
         let args = level_piece_args(
             &files[0],
@@ -593,8 +490,6 @@ pub fn recut_for_voice(
         run_ffmpeg(ffmpeg, &args)?;
     }
 
-    // S3's second half: the served copy is the base at the slider's pitch. A zero shift still writes
-    // it so the two files agree byte-for-byte, the same rule `build` follows.
     let semitones = narrate_data::read_pitch(tree);
     if semitones.abs() < f64::EPSILON {
         copy_file(&base, &served)?;
@@ -627,14 +522,8 @@ pub fn built_log(built: &Built, base_name: &str) -> String {
     )
 }
 
-/// The one thing `recut_for_voice` needs from the project that the diarization cannot say: whether a
-/// recording was tagged at all. `None` means the session's own recording — the one the flow is cutting
-/// from, named by the caller — carries a narrator slot. "nothing tagged" is asked the way the spec
-/// means it, of the recording in hand, and is exactly S2's own sentence.
 fn nothing_is_tagged(tree: &Tree, source: &str) -> bool {
     let Ok(project) = crate::project::load(tree.dir()) else {
-        // No project to read is not "untagged": there is nothing to blame, and the diarization answer
-        // below is the honest one.
         return false;
     };
     !project.sources.iter().any(|project_source| {
@@ -652,9 +541,6 @@ pub fn has_picked_takes(tree: &Tree, source: &str) -> bool {
     !picked_takes(tree, source).is_empty()
 }
 
-/// Whether two paths name the same recording, by file name: `takes.json` and the prepare folders are
-/// keyed by stem for the same reason, so the comparison here stays on the same identity the rest of
-/// the flow uses rather than on a string that differs by one trailing slash.
 fn same_file(a: &str, b: &str) -> bool {
     let name = |p: &str| {
         Path::new(p.strip_prefix("project:").unwrap_or(p))
@@ -665,11 +551,6 @@ fn same_file(a: &str, b: &str) -> bool {
     !a.is_empty() && !b.is_empty() && name(a) == name(b)
 }
 
-/// The hand-picked takes, each with the recording it is cut from: every recording tagged with the flow's
-/// narrator slot (the take band shows them all, end to end), in the order they were made (their names are their
-/// stamps), each one's takes in its own seconds. `takes.json` is keyed by RECORDING, by the file's stem. A
-/// project that tags nothing answers the flow's own source's takes; no file, no key, or an unreadable one all
-/// mean "nobody picked anything", which sends the plan to S2's automatic branch rather than failing the build.
 fn picked_takes(tree: &Tree, source: &str) -> Vec<(String, f64, f64)> {
     let all = narrate_data::load_takes(tree).unwrap_or_default();
     let slot = voice_slot(tree);
@@ -713,9 +594,6 @@ fn list_path(tree: &Tree) -> PathBuf {
     narrate_data::reference_list(tree)
 }
 
-/// S3's level pass over ONE stretch of the source: [`level_args`]' shape with `-ss`/`-to` in front of
-/// the input, so the piece is cut as it is levelled and each one meets the loudness target on its own
-/// seconds rather than averaged across the gaps between pieces.
 pub fn level_piece_args(input: &str, start: f64, end: f64, out: &str) -> Vec<String> {
     let mut args = level_args(input, out);
     let at = args.iter().position(|a| a == "-i").unwrap_or(0);
@@ -752,13 +630,6 @@ pub fn concat_args(list: &str, out: &str) -> Vec<String> {
 }
 
 /// S3: build the reference from `source` through the configured ffmpeg binary.
-///
-/// `ffmpeg` is the program path the app resolves from Settings (`settings.ffmpeg`, else PATH) — the
-/// same seam every other ffmpeg user in this tree uses, so a test points it at a fake script and the
-/// program never knows the difference. `semitones` is the pitch slider; 0 still writes the served
-/// copy so the two files agree byte-for-byte at zero shift (§3's `shiftRef`).
-///
-/// Every failure names the program and the reason and comes back `Err`: no silent fallback.
 pub fn build(tree: &Tree, source: &str, ffmpeg: &str, semitones: f64) -> Result<Built, String> {
     let base = narrate_data::base_reference(tree);
     let served = narrate_data::served_reference(tree);
@@ -795,7 +666,6 @@ pub fn build(tree: &Tree, source: &str, ffmpeg: &str, semitones: f64) -> Result<
 }
 
 /// S3's last sentence: a project holding `voice_ref.wav` with no base renames the former to the base.
-/// Returns the renamed-to path, or `None` when there was nothing to do.
 pub fn adopt_existing_reference(tree: &Tree) -> Option<PathBuf> {
     let served = narrate_data::served_reference(tree);
     let base = narrate_data::base_reference(tree);
@@ -807,13 +677,6 @@ pub fn adopt_existing_reference(tree: &Tree) -> Option<PathBuf> {
 }
 
 /// S5's key for one sample: the voice and the words, and nothing else.
-///
-/// The spec caches the sample "per voice and text", and the sample is not a line of the narration — it
-/// has no clip bounds, no delivery tag and no re-roll count that mean anything. `narration::tts_key`
-/// takes an `Entry` and would fold all three into the digest, so re-rolling or moving a line would
-/// re-synthesise a sample whose words and voice never changed. The Entry here is a carrier for the text
-/// alone; the voice rides in `Option` so a switch to another voice misses the cache, which is the
-/// whole point of the key.
 pub fn sample_key(voice: &str, text: &str) -> String {
     let carrier = crate::narration::Entry {
         text: text.to_string(),
@@ -849,10 +712,6 @@ pub fn store_sample(tree: &Tree, voice: &str, text: &str, bytes: &[u8]) -> Resul
     Ok(())
 }
 
-/// Run ffmpeg and turn any failure into a named error, the way the other legs do. The output folder is
-/// made first: the reference's working files live under `narrate/reference/`, which a fresh session
-/// has not created, and an ffmpeg told to write where no folder is fails with `nonexistent directory`
-/// rather than telling anyone which part of the build broke.
 fn run_ffmpeg(ffmpeg: &str, args: &[String]) -> Result<(), String> {
     if let Some(out) = args.last() {
         if let Some(parent) = Path::new(out).parent() {

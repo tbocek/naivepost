@@ -1,8 +1,6 @@
 //! F3.3 ⏩ Speed and stop by hand — the page half of the flow: the press, the form drawer, the Apply.
 //!
-//! Split out of `window.rs` unchanged: the rules live in [`crate::cut_speed`], and what is here is only
-//! the state a press leaves behind and the widgets that show it — the rate dropdown, the custom-rate
-//! entry, the fade-out toggles and the two buttons. No decision of its own.
+//! The rules live in [`crate::cut_speed`]; here is only the state a press leaves behind and the widgets that show it. No decision of its own.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -18,19 +16,10 @@ use crate::ui::window::{
 };
 
 // --- F3.3 Speed and stop by hand: the press, the form, the Apply ----------------------------------------------
-//
-// The rule half lives in `src/cut_speed.rs` (`press`, `initial`, `form_title`, `RATES`/`rate_label`/`rate_index`,
-// `SOUND_CHOICES`/`sound_stored`, `cost_note`, `fade_in_help`, `clamp_speed`, `apply`, `placed_status`). What is
-// here is only the state a press leaves behind and the widgets that show it — no decision of its own.
 
-/// F3.3 S1: what pressing ⏩ Speed did — as the sentence for the status line, with the form opened when there is
-/// something to settle. NOTHING is recorded on this press: the record happens in [`press_speed_apply`], because
-/// until someone answers the rate there is no effect to place.
+/// F3.3 S1: what pressing ⏩ Speed did, as the status sentence, with the form opened when there is something to settle. NOTHING is recorded on this press ([`press_speed_apply`] records).
 ///
-/// The refusal is answered BEFORE any form is drawn, so a cancelled dialog can never cost the user a refusal
-/// (the F2.12 Insert lesson). A band under [`cut_speed::MIN_MARKED_SECONDS`] is not a band at all and falls
-/// through to the line exactly as the flowchart draws it; the line is read through the same seam Paste and Insert
-/// use (`paste_line`) and gated by whether one was ever placed, so the page has one notion of "a line exists".
+/// The refusal is answered BEFORE any form is drawn, so a cancelled dialog never costs the user a refusal (F2.12 Insert). A band under [`cut_speed::MIN_MARKED_SECONDS`] falls through to the line, read through the seam Paste and Insert use (`paste_line`).
 pub fn press_speed_item(window: &adw::ApplicationWindow) -> String {
     let band = selection(window)
         .filter(|band| band.length() > 0.0)
@@ -43,9 +32,7 @@ pub fn press_speed_item(window: &adw::ApplicationWindow) -> String {
             cut_speed::NO_SECONDS.to_string()
         }
         pressed => {
-            // `initial` is the effect the press opens the form with: a half-speed stretch over the marked
-            // seconds, or a stop faded on and off. Its `t`/`dur` are the form's Length; its rate is the
-            // dropdown's starting row.
+            // `initial` opens the form: a half-speed stretch over the marked seconds, or a stop faded on and off; its `t`/`dur` are the form's Length.
             let fx = cut_speed::initial(pressed).unwrap_or_default();
             let title = cut_speed::form_title(fx.t, fx.dur);
             show_speed_form(window, &fx);
@@ -54,15 +41,12 @@ pub fn press_speed_item(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// This window's speed-form holder name. Only the Cut tab's instance is ever drawn into or read from —
-/// `page_box` runs once per tab, so an unscoped name exists four times per window and every lookup lands on
-/// whichever box the walk reaches first (the `fold-badges` / `camera-rows` / `zoom-form` rule).
+/// This window's speed-form holder name. `page_box` runs once per tab, so an unscoped name exists four times and lookups hit whichever box is reached first (the `fold-badges` / `camera-rows` / `zoom-form` rule).
 fn cut_speed_form_name() -> String {
     format!("speed-form-{}", Page::Cut.label())
 }
 
-/// Resolve THIS window's speed-form holder through its own content, so a closed window's surviving tree cannot
-/// answer for a live one.
+/// Resolve THIS window's speed-form holder through its own content, so a closed window's surviving tree cannot answer for a live one.
 fn speed_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     let content = window.content()?;
     find_widget_by_name(&content, &cut_speed_form_name())?
@@ -70,8 +54,7 @@ fn speed_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
         .ok()
 }
 
-/// Hide and empty the speed form. Used by the refusal path too, so a form left open from an earlier press cannot
-/// sit on screen while the page says there is nothing to work on.
+/// Hide and empty the speed form; the refusal path uses it too, so no form lingers while the page says there is nothing to work on.
 pub(crate) fn close_speed_form(window: &adw::ApplicationWindow) {
     set_speed_form(None);
     if let Some(holder) = speed_form_box_raw(window) {
@@ -79,12 +62,10 @@ pub(crate) fn close_speed_form(window: &adw::ApplicationWindow) {
     }
 }
 
-/// F3.3 S2: draw the form "Speed a – b" — the six fields in [`cut_speed::FORM_FIELDS`]'s order, the cost note
-/// under Sound, and Apply / Cancel. Built into locals and appended LAST in one pass: a widget that already has a
-/// parent cannot be appended again and GTK asserts it, so nothing here may travel between calls.
+/// F3.3 S2: draw the form "Speed a – b": the six fields in [`cut_speed::FORM_FIELDS`]'s order, the cost note under Sound, Apply / Cancel. Built into locals and appended LAST in one pass:
+/// a widget that already has a parent cannot be appended again (GTK asserts).
 pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
-    // Hidden FIRST, before anything is touched: while invisible its children cannot read as "already parented
-    // here" to a later pass, and the clear below then removes exactly what this holder owns.
+    // Hidden FIRST, so its children cannot read as already parented to a later pass and the clear removes exactly what this holder owns.
     let Some(holder) = speed_form_box_raw(window) else {
         return;
     };
@@ -105,8 +86,7 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     heading.add_css_class("title-4");
     heading.set_widget_name("speed-heading");
 
-    // Speed ×: the listed rates labelled, `Custom…` last, opening on `rate_index` so a rate that is not on the
-    // list shows Custom rather than snapping to its nearest neighbour.
+    // Speed ×: the listed rates, `Custom…` last, opening on `rate_index` so an unlisted rate shows Custom rather than snapping to a neighbour.
     let rate_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let rate_key = gtk::Label::new(Some(cut_speed::FORM_FIELDS[0]));
     rate_key.set_xalign(0.0);
@@ -120,9 +100,7 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     let rate_choice = gtk::DropDown::from_strings(&rate_items);
     rate_choice.set_widget_name("speed-field-rate");
     rate_choice.set_selected(cut_speed::rate_index(fx.rate) as u32);
-    // The typed box behind `Custom…`: a rate that is not on the list is someone's number, so it gets a field of
-    // its own rather than being rounded to a neighbour. Greyed until Custom is showing -- two live controls for
-    // one question would be two answers disagreeing on screen (the F3.1 zoom form's reason for the same rule).
+    // The typed box behind `Custom…`, greyed until Custom is showing: two live controls for one question would disagree on screen (as the F3.1 zoom form).
     let custom_rate = gtk::Entry::new();
     custom_rate.set_widget_name("speed-field-custom");
     custom_rate.set_width_chars(6);
@@ -177,9 +155,7 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         "speed-field-fade-out",
         &trim_seconds(fx.tout),
     );
-    // Curve: one choice today, shown as a label rather than a dropdown with nothing in it — the same shape and
-    // the same words the zoom form uses, because `cut_speed::apply` feeds this through
-    // `fx_zoom::curve_stored` and both forms must offer what that function understands.
+    // Curve: one choice, shown as a label like the zoom form; `cut_speed::apply` feeds it through `fx_zoom::curve_stored`, so both forms must offer what that understands.
     let curve_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let curve_key = gtk::Label::new(Some(cut_speed::FORM_FIELDS[5]));
     curve_key.set_xalign(0.0);
@@ -204,15 +180,13 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     holder.append(&buttons);
     holder.append(&footer);
     holder.set_visible(true);
-    // Stored only now that the widgets exist and belong to THIS window: `speed_form_open()` then always means
-    // "there is a form on screen behind it", never "a value was parked somewhere".
+    // Stored only now that the widgets exist and belong to THIS window, so `speed_form_open()` always means a form is on screen.
     set_speed_form(Some(form_of(fx)));
 
     wire_speed_buttons(window);
 }
 
-/// The `Fx` the press produced, as the form's own state — the fields a person edits are these numbers, so the
-/// form holds them and Apply reads them back rather than reaching into the cut.
+/// The `Fx` the press produced, as the form's own state; Apply reads it back rather than reaching into the cut.
 pub(crate) fn form_of(fx: &cut::Fx) -> cut_speed::Form {
     cut_speed::Form {
         t: fx.t,
@@ -225,8 +199,7 @@ pub(crate) fn form_of(fx: &cut::Fx) -> cut_speed::Form {
     }
 }
 
-/// F3.3 S2/S3: the form waiting on the page, before Apply. What a widget test reads to assert the same state
-/// the logic test asserts ([`cut_speed::Form`]) rather than a painted field.
+/// F3.3 S2/S3: the form waiting on the page, before Apply; what a widget test reads ([`cut_speed::Form`]).
 pub fn speed_form_open() -> Option<cut_speed::Form> {
     SPEED_FORM.with(|cell| cell.borrow().clone())
 }
@@ -236,13 +209,11 @@ fn set_speed_form(form: Option<cut_speed::Form>) {
 }
 
 thread_local! {
-    /// The form a Speed press left waiting on the page. `None` is no form open, which is also what hides the
-    /// holder — one slot answers both questions so they cannot disagree.
+    /// The form a Speed press left waiting; `None` is no form open, which also hides the holder.
     static SPEED_FORM: std::cell::RefCell<Option<cut_speed::Form>> =
         const { std::cell::RefCell::new(None) };
 
-    /// The window whose speed form was last shown, so the field readers have THIS window's tree to look in
-    /// rather than whichever tree a name walk reaches first.
+    /// The window whose speed form was last shown, so the field readers look in THIS window's tree.
     static LAST_SPEED_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -272,8 +243,7 @@ fn speed_dropdown(name: &str) -> Option<gtk::DropDown> {
     })
 }
 
-/// Does THIS window own the live speed form? Two windows both holding one would put Apply's write into whichever
-/// tree the reader reached first.
+/// Does THIS window own the live speed form? Two windows holding one would put Apply's write into whichever tree is reached first.
 fn speed_form_owner(window: &adw::ApplicationWindow) -> bool {
     LAST_SPEED_WINDOW.with(|cell| {
         cell.borrow()
@@ -284,8 +254,7 @@ fn speed_form_owner(window: &adw::ApplicationWindow) -> bool {
 }
 
 /// The rate the form stands on right now: a listed row's own number, or the typed box when Custom is showing.
-/// An entry that does not parse keeps what the form already held rather than becoming zero, so a half-typed
-/// number cannot silently place a different speed.
+/// An entry that does not parse keeps what the form held rather than becoming zero.
 fn speed_rate_from_form(stored: &cut_speed::Form) -> f64 {
     let listed = speed_dropdown("speed-field-rate").map(|drop| drop.selected() as usize);
     match listed {
@@ -298,8 +267,7 @@ fn speed_rate_from_form(stored: &cut_speed::Form) -> f64 {
     }
 }
 
-/// Is THIS window's typed rate box live right now? Read by a test to assert the greying rather than inferring it
-/// from which row the dropdown shows. Only live while the dropdown stands on `Custom…` (index == RATES.len()).
+/// Is THIS window's typed rate box live? Read by a test to assert the greying; live only while the dropdown stands on `Custom…` (index == RATES.len()).
 pub fn speed_custom_rate_visible(window: &adw::ApplicationWindow) -> bool {
     let _ = window;
     LAST_SPEED_WINDOW.with(|cell| {
@@ -312,7 +280,6 @@ pub fn speed_custom_rate_visible(window: &adw::ApplicationWindow) -> bool {
     })
 }
 
-/// Is the typed rate box live? Only while the dropdown stands on `Custom…` -- the last row, index == RATES.len().
 fn refresh_custom_rate_sensitivity(drop: &gtk::DropDown, custom: &gtk::Entry) {
     let custom_showing = drop.selected() as usize >= cut_speed::RATES.len();
     custom.set_sensitive(custom_showing);
@@ -352,10 +319,8 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     };
     let effect = cut_speed::apply(&form);
     let mut cut_ = review_cut_of(window);
-    // §9 (`A stop at a dropped second SHOULD be refused when placed`): refuse BEFORE anything
-    // is written — a stop holds a frame, and the cut keeps none at a second it dropped or at a
-    // card. The form stays open with the reason, exactly as a refused length does. A cut with no
-    // scenes at all has no say either way, so nothing is refused there.
+    // §9 (`A stop at a dropped second SHOULD be refused when placed`): refuse BEFORE writing: a stop holds a frame, and the cut keeps none at a dropped second or a card.
+    // The form stays open with the reason, as for a refused length. A cut with no scenes has no say.
     if crate::fx_record::is_stop(&effect) && !cut_.segs.is_empty() {
         if let Err(reason) = crate::effect_overlap::place_stop(effect.t, &cut_.segs) {
             log_line(&reason);
@@ -372,24 +337,18 @@ pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     close_speed_form(window);
     let said = cut_speed::placed_status(&effect);
     log_line(&said);
-    // §9 (`it SHOULD say "sound at 1× in the render only"`): `own` and `scene` run on a
-    // different clock from the picture, which one player cannot do — so the preview plays the
-    // sped sound and says what the render will not match. Its own line, because the placement
-    // status is the quote §F3.3 fixes.
+    // §9 (`it SHOULD say "sound at 1× in the render only"`): `own` and `scene` run on a different clock from the picture, which one player cannot do, so the preview plays the
+    // sped sound and says what the render will not match, on its own line (the placement status is the quote §F3.3 fixes).
     if let Some(notice) = crate::effect_overlap::says_render_only(&effect.snd) {
         log_line(notice);
     } else if let Some(agree) = sound_promise(&effect.snd) {
-        // The other two rows of §9's table, said beside the first: `""` and `pitch`
-        // move with the picture's clock in both players, and `mute` is settled by the
-        // render joining the preview (one expression over the whole bed).
+        // The other two rows of §9's table: `""` and `pitch` move with the picture's clock in both players; `mute` is settled by the render joining the preview.
         log_line(agree);
     }
     said
 }
 
-/// §9's two remaining sound rows as one sentence each, so the press says which promise
-/// it is keeping instead of staying silent about them. `own`/`scene` are
-/// [`crate::effect_overlap::says_render_only`]'s pair and never reach here.
+/// §9's two remaining sound rows, one sentence each ([`crate::effect_overlap::says_render_only`] covers `own`/`scene`).
 pub fn sound_promise(snd: &str) -> Option<&'static str> {
     if crate::effect_overlap::preview_plays_pitch_as_render(snd) {
         return Some("the preview plays this sound the way the render does");
@@ -399,15 +358,13 @@ pub fn sound_promise(snd: &str) -> Option<&'static str> {
         .then_some("the preview silences the whole bed, and so now does the render")
 }
 
-/// F3.3 S3: Cancel drops the form and changes nothing on the cut — no record pushed, no history written, so ↶
-/// still points where it did before the press.
+/// F3.3 S3: Cancel drops the form and changes nothing on the cut (no record, no history, ↶ unchanged).
 pub fn press_speed_cancel(window: &adw::ApplicationWindow) -> String {
     close_speed_form(window);
     "left as it was \u{2014} no speed placed".to_string()
 }
 
-/// F3.3: Esc drops an open speed form, and claims no other key. Returns `None` when nothing was open, so the
-/// controller lets the key travel on.
+/// F3.3: Esc drops an open speed form and claims no other key; `None` when nothing was open, so the key travels on.
 pub fn press_speed_esc(window: &adw::ApplicationWindow) -> Option<String> {
     if speed_form_open().is_none() || !speed_form_owner(window) {
         return None;
@@ -415,8 +372,7 @@ pub fn press_speed_esc(window: &adw::ApplicationWindow) -> Option<String> {
     Some(press_speed_cancel(window))
 }
 
-/// The debounced commit: re-read THIS window's speed form's number entries into its stored state and print the kept
-/// length. Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
+/// The debounced commit: re-read THIS window's number entries into the stored form state and print the kept length; the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
 fn keep_speed_fields(window: &adw::ApplicationWindow) {
     let Some(stored) = speed_form_open() else {
         return;
@@ -461,8 +417,7 @@ pub(crate) fn wire_speed_buttons(window: &adw::ApplicationWindow) {
     super::cut_form_buttons::wire_live_fields(window, "speed", keep_speed_fields);
 }
 
-/// Esc releases an open speed form, wired after `set_content` like every other control. Claims Escape only when
-/// this window owns a form; otherwise the key travels on to whatever else is listening.
+/// Esc releases an open speed form; claims Escape only when this window owns a form.
 pub(crate) fn wire_speed_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
@@ -483,10 +438,8 @@ pub(crate) fn wire_speed_esc(window: &adw::ApplicationWindow) {
     window.add_controller(controller);
 }
 
-/// F3.8 S3 (`Esc drops the hold and disarms`): the band's own Esc controller. Shaped exactly like
-/// `wire_speed_esc`: it claims Escape and nothing else, prints what [`press_band_esc`] answered, and lets the
-/// key travel on when this window holds no effect — so a page with an open form or an arm is still handled by
-/// that kind's own controller, which is wired before this one.
+/// F3.8 S3 (`Esc drops the hold and disarms`): the band's own Esc controller, shaped like `wire_speed_esc`: it prints what [`press_band_esc`] answered and lets the key
+/// travel on when this window holds no effect, so an open form or arm is handled by that kind's controller, wired before this one.
 pub(crate) fn wire_band_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
@@ -509,8 +462,7 @@ pub(crate) fn wire_band_esc(window: &adw::ApplicationWindow) {
 }
 
 thread_local! {
-    /// The band's Esc controller, kept so a test can fire a real Escape through it the way
-    /// `delete_key_controller` exposes the ⌦ one.
+    /// The band's Esc controller, kept so a test can fire a real Escape through it.
     static BAND_ESC_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
         const { std::cell::RefCell::new(None) };
 }

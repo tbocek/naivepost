@@ -1,30 +1,4 @@
 //! F4.2's live half: the narration call over real HTTP.
-//!
-//! [`crate::narrate_call`] owns the two messages and the attempt loop, and [`crate::narrate_pass`]
-//! owns every §3.8 tool answer — but nothing until now *telephoned*: `press_narrate_run`'s no-script
-//! branch answered `Ok(vec![])`, so a press with a real server configured wrote nothing and reported
-//! its own emptiness as if that were the answer. This module is that leg. It reads the Settings file on
-//! every ask (so an address typed mid-run is honoured by the next request, §02-services#1), builds the
-//! chat body from the pair `narrate_call::request` assembled, offers §3.8's six tools plus the web
-//! tools (§F4.2: "thinking ON · web tools"), dials through [`crate::server_leg`] so each round trips
-//! into a timed `requests.tsv` row, and reads the reply back.
-//!
-//! Two answer shapes both arrive from real servers, and both are handled here rather than in the rules
-//! module:
-//!
-//! * **A content answer** already carrying the prototype's `{"entries":[{start,end,at,text,emotion}]}`
-//!   document is handed straight back for [`narrate_call::drive`] to match against echoed bounds.
-//! * **A tool-call answer** runs through [`tool_loop::run`], whose `call` closure dispatches to the
-//!   EXISTING `narrate_pass` tools — not copies of them. The collected `write_line`/`leave_silent`
-//!   calls become the entries string with each clip's OWN bounds echoed (`clips[clip-1].s/.e`), because
-//!   the model answers in clip numbers and offsets and the app does the arithmetic (§00-principles).
-//!
-//! A `leave_silent(clip)` becomes an entry with empty text: silence is an ANSWER (the writer looked at
-//! the clip and left it alone), while a clip with no entry at all fails the attempt — and
-//! `drive`'s all-empty check still catches a whole reply that refused everything.
-//!
-//! A server that is down, or a reply that cannot be read, answers `Err` naming the address and the
-//! model. Never `Ok` with nothing in it: that would let a dead box look like a writer with taste.
 
 use crate::cut::Seg;
 use crate::exchanges::{Message, Mode, Part};
@@ -54,9 +28,6 @@ fn current_paths() -> Option<Paths> {
 pub struct Round {
     /// The answer text: either the entries document itself, or the entries built from the tool calls.
     pub answer: String,
-    /// Every `write_line`/`leave_silent` this round's tool loop collected, clip-numbered. §12 #22/#27:
-    /// when a round answered through tools these ARE the answer — the driver matches them by CLIP NUMBER
-    /// and takes any order, instead of re-matching prose bounds forward-only.
     pub picks: Vec<Picked>,
     /// Whether this round asked for tools rather than answering outright. Recorded so a test can pin
     /// that the tool path really was taken over the wire, not only that an answer came back.
@@ -99,10 +70,6 @@ fn turn_of(sent: &crate::server_leg::Sent, last_answer: &mut String) -> Result<T
 /// One round of the narration call, live. `attempt` rides into the log so a retry reads as a retry,
 /// and `thinking` is whatever `narrate_call::drive` decided this attempt gets (§F4.2: thinking starts
 /// ON and is switched off after a call that wrote nothing) — this module obeys it rather than owning it.
-///
-/// every argument the leg needs is read HERE, per call: the address, the key and the model come from
-/// the Settings file as it stands now, and the two messages come from the caller's already-built
-/// [`narrate_call::Request`] so the pair a test pinned is the pair that goes out.
 #[allow(clippy::too_many_arguments)]
 pub fn ask_round(
     tree: &Tree,
@@ -148,11 +115,6 @@ pub fn ask_round(
 
     // The loop's `ask` closure: build the body, dial, read one turn. Each dial writes its own timed
     // row, so a nine-round tool conversation leaves nine lines behind (§09 §10: a line per request).
-    //
-    // The round's answer is remembered HERE, at the dial, rather than read back out of the finished
-    // conversation: a nudge round adds no answer of its own, and picking the content out of the
-    // message list afterwards lost it behind the nudge — while §09 §10 says the row and the answer
-    // belong to the reply that actually arrived.
     let mut requests = 0u32;
     let mut last_answer = String::new();
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<Turn, String> {
@@ -257,8 +219,6 @@ pub fn ask_round(
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
         used_tools = true;
         // §3.1's three reads this leg has no answer of its own for go to the shared dispatcher.
-        // `get_lines` and `finish` stay with §3.8 below: the writer's surroundings are CLIP-relative
-        // (`narrate_pass::get_lines`) and its finish is the narration check list, not a generic ok.
         match asked.name.as_str() {
             "get_context" | "get_events" | "get_frames" => {
                 if let Some(answer) = crate::tool_reads::dispatch(
@@ -319,12 +279,6 @@ pub fn ask_round(
     })
 }
 
-/// The tools this job is offered: §3.8's six plus the web tools the spec says ride on this call
-/// ("thinking ON · web tools"). Taken from `tools::offered(Job::Narrate)`, which already appends
-/// `web_search`/`web_read` for this job, minus the shared reading tools this item's flow never answers
-/// (`get_context`/`get_events`/`get_frames` belong to other sections' rounds and would be offered
-/// with no handler here). Listing them out rather than filtering keeps the offer honest: every name on
-/// the wire has a function behind it in this module.
 pub fn offered_tools() -> Vec<Tool> {
     vec![
         Tool::WriteLine,
@@ -455,11 +409,6 @@ fn placed_at(answer: &str, asked_at: f64) -> f64 {
         .unwrap_or(asked_at)
 }
 
-/// Build the `{"entries":[…]}` document `narrate_call::drive` reads, echoing each clip's OWN bounds
-/// beside the offset the writer gave. The echo is not decoration: drive matches an entry to a clip by
-/// those bounds within [`crate::narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS`], so a clip number is
-/// turned into session seconds HERE and never asked of the model (§00: models propose, the machine places).
-/// Entries are emitted in clip order, because out-of-order clips are the thing drive refuses.
 fn entries_of(picked: &[Picked], clips: &[Seg]) -> Result<String, String> {
     let mut ordered: Vec<&Picked> = picked.iter().collect();
     ordered.sort_by(|a, b| a.clip.cmp(&b.clip).then(a.at.total_cmp(&b.at)));

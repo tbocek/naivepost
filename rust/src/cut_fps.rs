@@ -1,15 +1,5 @@
-//! F2.4 S2 — the frame rate of the recording under the line, asked of the file.
-//!
-//! A frame step is a frame OF THE RECORDING (§1's "step the recording under the line"), so its width is a
-//! fact about that file, not a constant the app carries: 30000/1001 footage steps by 33.37 ms and 25 fps
-//! footage by 40 ms. The answer comes from the real ffprobe, in the shape this project already uses for a
-//! tool call — the caller hands over the subprocess leg (`source_probe::run_ffprobe` in the program, a stub
-//! in a test), so no test waits on a binary or needs one installed.
-//!
-//! When there is nothing to ask (no footage row, no file, no tool, an answer that parses to nothing) the
-//! step still happens at [`crate::cut_line::FALLBACK_FPS`] and the reason is logged: a step that moved by a
-//! slightly wrong amount beats a key that does nothing, but the log says which it was (§0: failure is
-//! specific and local).
+//! F2.4 S2: the frame rate of the recording under the line, asked of the file (ffprobe via an injected subprocess leg).
+//! With nothing to ask the step uses [`crate::cut_line::FALLBACK_FPS`] and the reason is logged (§0).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,9 +7,7 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::source_probe::Tool;
 
-/// The probe's arguments: the video stream's own rate, printed bare. `r_frame_rate` rather than
-/// `avg_frame_rate` because a step is one frame of the track as recorded, and a variable-frame file's
-/// average would make two presses of the same key move by different amounts.
+/// The probe's arguments: the stream's own rate. `r_frame_rate` not `avg_frame_rate`, so a variable-rate file steps the same each press.
 pub fn fps_args(path: &Path) -> Vec<String> {
     vec![
         "-v".to_string(),
@@ -34,8 +22,7 @@ pub fn fps_args(path: &Path) -> Vec<String> {
     ]
 }
 
-/// Parse what ffprobe prints: `"30000/1001"` → 29.970030…, `"25"` or `"25.000000"` → 25.0. An empty
-/// answer, a zero denominator (`"0/0"` on a file with no video stream) or anything unparsable is `None`.
+/// Parse what ffprobe prints (`"30000/1001"`, `"25"`); empty, zero denominator (`"0/0"`) or unparsable is `None`.
 pub fn parse_rate(answer: &str) -> Option<f64> {
     let text = answer.trim();
     if text.is_empty() {
@@ -52,12 +39,10 @@ pub fn parse_rate(answer: &str) -> Option<f64> {
         }
         None => text.parse::<f64>().ok()?,
     };
-    // A rate of 0, a negative one or NaN is not a frame rate; ffprobe prints 0/0 for a stream with none.
     (rate.is_finite() && rate > 0.0).then_some(rate)
 }
 
-/// Ask the tool. `run` is the leg that starts it — the program passes [`crate::source_probe::run_ffprobe`],
-/// a test passes its stub — so this module never dials a binary by itself.
+/// Ask the tool via `run` ([`crate::source_probe::run_ffprobe`] in the program, a stub in a test).
 pub fn probe(ffprobe: &str, path: &Path, run: &Tool) -> Option<f64> {
     let asked = fps_args(path);
     let flags: Vec<&str> = asked.iter().map(String::as_str).collect();
@@ -65,8 +50,7 @@ pub fn probe(ffprobe: &str, path: &Path, run: &Tool) -> Option<f64> {
     parse_rate(&answer)
 }
 
-/// Which ffprobe to ask: Settings' configured ffmpeg decides where it lives (§1's "ffprobe from the same
-/// folder"), exactly as [`crate::ui::cut_lane`]'s duration probe decides it.
+/// Which ffprobe to ask: next to the configured ffmpeg (§1), as [`crate::ui::cut_lane`] does.
 fn ffprobe_program() -> String {
     let configured = crate::settings::from_environment()
         .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
@@ -74,16 +58,13 @@ fn ffprobe_program() -> String {
     crate::services::ffprobe_for(&configured, "ffprobe")
 }
 
-/// One probe per file per session: a step costs a subprocess otherwise, and a person stepping through a
-/// minute presses the key six hundred times. A failed probe is cached too, as the fallback rate, so a file
-/// with no video stream does not get re-asked on every press either.
+/// One probe per file per session, failures cached too as the fallback rate.
 fn cache() -> &'static Mutex<HashMap<PathBuf, f64>> {
     static SLOT: OnceLock<Mutex<HashMap<PathBuf, f64>>> = OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The frame rate to step at for THIS window's session: the footage file's own rate when it can be asked,
-/// [`crate::cut_line::FALLBACK_FPS`] with a logged reason when it cannot.
+/// The rate to step at for this window's session: the footage file's own, else [`crate::cut_line::FALLBACK_FPS`] with a logged reason.
 pub fn session_fps(window: &adw::ApplicationWindow) -> f64 {
     let Some(file) = footage_file(window) else {
         crate::ui::window::log_line(&format!(
@@ -95,8 +76,6 @@ pub fn session_fps(window: &adw::ApplicationWindow) -> f64 {
     ask(&file)
 }
 
-/// One file's rate, probed once and remembered. Split out so `session_fps` stays about WHICH file and this
-/// stays about asking for it.
 fn ask(file: &Path) -> f64 {
     if let Some(held) = cache().lock().ok().and_then(|slot| slot.get(file).copied()) {
         return held;
@@ -120,13 +99,8 @@ fn ask(file: &Path) -> f64 {
     rate
 }
 
-/// The file whose rate the line steps at: the session's footage row, resolved the one way every flow
-/// resolves a path (`layout::resolve`, the session folder as the project), and only if it is really there.
-///
-/// DECISION where the spec is silent: §1 says "the recording under the line" without saying which file to
-/// ask when a session has several cameras. The footage-marked row is what Prepare filmed and what ▶ plays
-/// (see [`crate::ui::cut_record_play`]), so its rate is the session's; a multi-camera session records at one
-/// frame rate anyway, and asking each row per key press would cost a probe per press for the same number.
+/// The footage row's file, resolved with `layout::resolve`, if it exists.
+/// DECISION where the spec is silent: with several cameras the footage-marked row is what ▶ plays ([`crate::ui::cut_record_play`]) and its rate is the session's.
 fn footage_file(window: &adw::ApplicationWindow) -> Option<PathBuf> {
     let written = crate::ui::cut_lane::footage_source_path(window)?;
     let root = std::env::current_dir().unwrap_or_default();

@@ -11,43 +11,26 @@ use sha1::{Digest, Sha1};
 
 use crate::layout;
 
-/// One line of narration over one clip.
-///
-/// Which keys the prototype omits (`go/narrate.go:116-136`) is what this writes: §4 is
-/// written against that file — it cites three of its read paths — and its example shows
-/// `"pos": "", "roll": 0` as an illustration of the keys, not as bytes. A file written by
-/// this build therefore leaves a zero `at`, an empty `pos` and a zero `roll` out, which
-/// reads back identically, and keeps old files byte-identical the way §4 asks of the
-/// emotion tag.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Entry {
-    /// The clip's bounds, copied verbatim from the cut (§4). They are what a line is
-    /// attached to; nothing here re-derives them.
+    /// The clip's bounds, copied verbatim from the cut (§4).
     pub s: f64,
     pub e: f64,
     /// Seconds from the clip's start on the **recording's own clock**, rate ignored —
-    /// [`output_seconds`] turns that into output seconds. Zero is the head of the clip,
-    /// which is also what every entry written before the field existed means.
+    /// [`output_seconds`] turns that into output seconds.
     #[serde(skip_serializing_if = "is_zero_f64", default)]
     pub at: f64,
-    /// `""` is a line deleted on purpose — deliberately silent, and still an entry, so
-    /// it survives a rebuild of the rows instead of coming back as a blank to fill.
+    /// `""` is a line deleted on purpose — deliberately silent, and still an entry, so it survives
+    /// a rebuild of the rows instead of coming back as a blank to fill.
     pub text: String,
-    /// A delivery tag ("calm"), or the 8-float vector a caller resolved one into.
     pub emotion: String,
-    /// Caption placement: "top", "center", or `""` for the bottom.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub pos: String,
-    /// How many times this line has been asked for a different take. It moves nothing
-    /// but the seed, by salting the cache key ([`tts_key`]).
     #[serde(skip_serializing_if = "is_zero_i32", default)]
     pub roll: i32,
 }
 
-/// A clip whose last line was deleted on purpose. Bounds and nothing else — which is
-/// why this is not a [`crate::cut::Seg`]: it carries no asset, no lane, no rate, and
-/// writing one of those would say something about the cut that this file does not know.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Silent {
@@ -55,26 +38,22 @@ pub struct Silent {
     pub e: f64,
 }
 
-/// The narration, whole.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Narration {
     // Always written: a narration with no lines writes `"entries": []`, which is a file
     // that says every clip was heard and nothing was to be said.
     pub entries: Vec<Entry>,
-    /// Omitted when empty, like the prototype's `omitempty`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub silent: Vec<Silent>,
 }
 
-/// The performer this build speaks through and the blend delivered with it, both in the
-/// cache key so a take from before them is never served as a current one. Fixed on
-/// purpose: §4 asks for a key "deliberately stable across versions", so changing either
-/// means a new prefix, not a new value here.
+/// The performer this build speaks through and the blend delivered with it, both in the cache key
+/// so a take from before them is never served as a current one.
 const TTS_PREFIX: &str = "25e0.85";
 
-/// The voice that speaks the project's own audio: it adds nothing to the cache key, so
-/// a project narrated before the voice picker existed keeps every take it already had.
+/// The voice that speaks the project's own audio: it adds nothing to the cache key, so a project
+/// narrated before the voice picker existed keeps every take it already had.
 const OWN_VOICE: &str = "own";
 
 /// The parts of a take's name after the prefix, in the order they go on: `[roll#]`,
@@ -101,20 +80,15 @@ fn is_zero_i32(v: &i32) -> bool {
 }
 
 impl Narration {
-    /// Playing order: by clip, then by placement within it (§4). Everything downstream
-    /// leans on it — a line's window runs to the next entry — and a hand-edited time can
-    /// break it, so both [`load`] and [`save`] put it back.
+    /// Playing order: by clip, then by placement within it (§4).
     pub fn sort(&mut self) {
         sort_entries(&mut self.entries);
     }
 
-    /// Is this clip marked silent — its last line deleted on purpose, kept by bounds?
     pub fn is_silent(&self, s: f64, e: f64) -> bool {
         self.silent.iter().any(|q| q.s == s && q.e == e)
     }
 
-    /// Does this clip have a line at all? A silent marker means nothing once a line is
-    /// on the clip again, which is what lets the marker become the line.
     pub fn has_line(&self, s: f64, e: f64) -> bool {
         self.entries
             .iter()
@@ -137,32 +111,16 @@ pub fn output_seconds(at: f64, rate: f64) -> f64 {
 }
 
 /// The name of one take: everything that decides how this line comes back (§4).
-///
-/// `25e0.85|[roll#][voiceKey|]text|emotion` — the prefix names the performer and the
-/// blend that reached it, the roll is the user saying "same line, different draw", and a
-/// voice other than [`OWN_VOICE`] must not serve the old speaker from cache nor throw its
-/// lines away. `emotion` is the tag verbatim unless a vector is given, in which case the
-/// vector keys it: a stronger blend, or a tag whose mapping has moved, is a different
-/// performance of the same words.
-///
-/// The named-tag-to-vector mapping itself is 07-narrate's business, not this file's —
-/// that is why the vector arrives as an argument rather than being looked up here.
 pub fn tts_key(entry: &Entry, voice: Option<&str>, emotion_vector: Option<[f64; 8]>) -> String {
     let emotion = match emotion_vector {
         Some(vector) => format_vector(&vector),
         None => entry.emotion.clone(),
     };
-    // The prefix stays first, so a take from before it is unreachable however the rest
-    // of the key is salted.
+    // The prefix stays first, so a take from before it is unreachable however the rest of the key
+    // is salted.
     format!("{}|{}", TTS_PREFIX, key_body(entry, voice, &emotion))
 }
 
-/// The key the PROGRAM builds for one line: the same [`tts_key`], with the emotion field derived from the
-/// entry's own tag through [`crate::narrate_tts::emotion_vector`] — the one mapping that also decides what
-/// the engine is sent (`narrate_tts::options`). Filename, seed and request therefore cannot disagree: a
-/// weighted tag names its take by the eight floats it resolves to, so moving a named blend's recipe moves
-/// the take's identity instead of serving an old performance under a new intent. A bare tag has no vector
-/// and keeps naming itself, which is §4's "deliberately stable across versions".
 pub fn key_for(entry: &Entry, voice: Option<&str>) -> String {
     tts_key(
         entry,
@@ -171,16 +129,12 @@ pub fn key_for(entry: &Entry, voice: Option<&str>) -> String {
     )
 }
 
-/// The eight axes the engine mixes, joined as the key wants them. Rounded to three
-/// decimals and written shortest-form: a blend scaled by a weight lands on numbers like
-/// 0.16499999999999998, and this string is part of a filename.
 fn format_vector(vector: &[f64; 8]) -> String {
     vector
         .iter()
         .map(|v| {
             let rounded = (v * 1000.0).round() / 1000.0;
             if rounded == 0.0 {
-                // -0.0 would print as "-0", and a zero axis has no sign.
                 return "0".to_string();
             }
             format!("{rounded}")
@@ -189,8 +143,6 @@ fn format_vector(vector: &[f64; 8]) -> String {
         .join(",")
 }
 
-/// The cache file holding that take: the first 8 bytes of the key's SHA-1, lowercase hex,
-/// no extension — the caller adds `.wav` and the directory.
 pub fn tts_file(key: &str) -> String {
     let digest = Sha1::digest(key.as_bytes());
     let mut hex = String::with_capacity(16);
@@ -200,9 +152,6 @@ pub fn tts_file(key: &str) -> String {
     hex
 }
 
-/// The take's random seed, cut from the same digest as its filename: one filename, one
-/// seed, and only what moves the filename moves it. Left alone, the engine draws a fresh
-/// seed per request (§4: bytes 8..11 of the digest, big-endian).
 pub fn tts_seed(key: &str) -> u32 {
     let digest = Sha1::digest(key.as_bytes());
     u32::from_be_bytes([digest[8], digest[9], digest[10], digest[11]])
@@ -213,9 +162,8 @@ pub fn sort_entries(entries: &mut [Entry]) {
     entries.sort_by(|a, b| a.s.total_cmp(&b.s).then(a.at.total_cmp(&b.at)));
 }
 
-/// The lines a voice speaks: every entry with words. A blank line is a deliberate silence and is never spoken.
-/// There is no narration switch (§07 §1): a project is narrated exactly when this is not empty, so the speaking
-/// pass, the preview and the render all read through here and none of them can disagree about it.
+/// The lines a voice speaks: every entry with words. A blank line is a deliberate silence and is
+/// never spoken.
 pub fn lines_to_speak(entries: &[Entry]) -> Vec<Entry> {
     entries
         .iter()
@@ -224,13 +172,12 @@ pub fn lines_to_speak(entries: &[Entry]) -> Vec<Entry> {
         .collect()
 }
 
-/// Whether the narration has a line with words, i.e. whether this video is narrated at all.
 pub fn has_lines(entries: &[Entry]) -> bool {
     entries.iter().any(|entry| !entry.text.trim().is_empty())
 }
 
-/// Read `narrate/narration.json`. A project that has never been narrated has no file,
-/// which is the same state as a narration with no entries.
+/// Read `narrate/narration.json`. A project that has never been narrated has no file, which is the
+/// same state as a narration with no entries.
 pub fn load(tree: &layout::Tree) -> Result<Narration, String> {
     let file = tree.narration_json();
     let text = match fs::read_to_string(&file) {
@@ -240,14 +187,12 @@ pub fn load(tree: &layout::Tree) -> Result<Narration, String> {
     };
     let mut narration: Narration =
         serde_json::from_str(&text).map_err(|err| format!("{}: {err}", file.display()))?;
-    // A hand-edited file may be out of playing order; it is put back here rather than
-    // left for every reader to notice.
+    // A hand-edited file may be out of playing order; it is put back here rather than left for
+    // every reader to notice.
     narration.sort();
     Ok(narration)
 }
 
-/// A window's held lines onto the file. The `silent` list stays the file's: a delete writes it there directly, and
-/// the held copy would put a deleted clip back.
 pub fn save_held(held: &Narration, tree: &layout::Tree) -> Result<(), String> {
     let mut record = held.clone();
     record.silent = load(tree)?.silent;
@@ -259,9 +204,6 @@ pub fn save(narration: &Narration, tree: &layout::Tree) -> Result<(), String> {
     let mut sorted = narration.clone();
     sorted.sort();
     let text = serde_json::to_string_pretty(&sorted).map_err(|err| err.to_string())?;
-    // The path comes from layout, so there is one spelling of it; only its prefix inside
-    // the project is taken back off, which is what lets write_file create the directory
-    // and set §1's 0644.
     let file = tree.narration_json();
     let rel = file
         .strip_prefix(tree.dir())

@@ -3,13 +3,6 @@
 //! its answers. This is the one door for that: [`run`] hands `work` a thread of its own and `done` the answer
 //! back on the window thread; [`run_with_notes`] does the same for work that reports as it goes (a run's log
 //! lines, its queue, the stage it is in).
-//!
-//! The window's log is a thread-local the window thread reads ([`crate::ui::window::log_line`]), so a line
-//! written on a worker would land in a list nobody reads. A worker started here is marked, and its lines wait
-//! in [`WORKER_LOGS`] until the window thread's next poll moves them over, in the order they were said.
-//!
-//! The first rewrite ran the whole Prepare walk inside the ▶ handler: ffmpeg, the audio and the model calls,
-//! minutes of them, with the window "Not Responding" until the last stage returned.
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -38,9 +31,6 @@ static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 /// is left in flight, whichever worker is the last to land ([`close_an_orphaned_run`]).
 static ORPHANED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// A run left open with no worker behind it can never end by itself: close it, so the bar does not stand on ⏸
-/// forever over work nobody is doing. Asked after EVERY worker lands, not only the one that died: the first
-/// rewrite asked at the death alone, and a readouts recount still in flight at that moment left the run open.
 fn close_an_orphaned_run() {
     if IN_FLIGHT.load(Ordering::SeqCst) == 0
         && ORPHANED.swap(false, Ordering::SeqCst)
@@ -68,9 +58,6 @@ pub(crate) fn hold_line(line: &str) {
     }
 }
 
-/// Run `call` on the window thread: now when this IS the window thread, else at the window's next poll, in
-/// order with the worker's log lines. For a door deep inside shared code that paints the window (a progress
-/// reading) and would otherwise read the window's thread-locals from a worker, where they are empty.
 pub(crate) fn on_window_thread(call: impl FnOnce() + Send + 'static) {
     if !on_worker() {
         call();
@@ -115,9 +102,6 @@ pub fn run<T: Send + 'static>(
     run_with_notes(name, move |_: &dyn Fn(())| work(), |_| {}, done);
 }
 
-/// [`run`] for work that reports as it goes: every `note` the worker sends reaches `on_note` on the window
-/// thread, in order, before `done` gets the answer. A worker that panics never answers: its lines are still
-/// moved over, the log says so, and `done` is not called.
 pub fn run_with_notes<T: Send + 'static, N: Send + 'static>(
     name: &str,
     work: impl FnOnce(&dyn Fn(N)) -> T + Send + 'static,
@@ -184,9 +168,6 @@ pub fn run_with_notes<T: Send + 'static, N: Send + 'static>(
     });
 }
 
-/// Turn the window thread's loop until every worker has answered, or `limit` passes. A test presses a
-/// button that hands its work to a worker and must see the answer land before it asserts; the app itself
-/// never waits like this.
 pub fn settle_for_test(limit: Duration) -> bool {
     let until = std::time::Instant::now() + limit;
     let context = glib::MainContext::default();
@@ -198,7 +179,6 @@ pub fn settle_for_test(limit: Duration) -> bool {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
-    // One more pass, so whatever `done` scheduled (a repaint, an idle) has run too.
     while context.iteration(false) {}
     true
 }

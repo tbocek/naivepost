@@ -1,28 +1,5 @@
 //! Repair the joins — spec/04-prepare.md F1.10: the seam where one recording stopped and the next
 //! started, and the stumble either side of it that the video has to run over as one piece of speech.
-//!
-//! Three files hold this flow and each owns one part of it, exactly as F1.9's marking pass is split:
-//!
-//! * [`crate::tools::textedit`] — the §3.5 TOOL half: `Join`, `drop_words`, `keep_join`,
-//!   `get_words`, `one_stretch_at_join`, `seam_snap`, `dedupe_joins`, and the `P.machine.seam*`
-//!   constants. It answers a model's call; it knows nothing about sessions or files.
-//! * [`crate::word_list`] — F1.13: the session's word list, the spellings a join is shown, and who
-//!   a printed piece belongs to (`owns`, `joins_token`). This module reads that list; it does not
-//!   build or re-spell one.
-//! * [`crate::edges`] — F1.11: where a mark's two edges actually land on the sound. Called here,
-//!   never reimplemented.
-//! * this module — the FLOW: which seams exist, what each one is asked, whether the answer may be
-//!   used, and the two files written together at the end.
-//!
-//! Why the flow sits apart from the tool: the tool can only ever see ONE join's words, while every
-//! question in the flow depends on the others — the window a join is shown must leave out what the
-//! joins before it already took out (the 2026-09-18 fix), and `final.txt` cannot be written until
-//! all of them have answered. Keeping those rules out of the tool is what lets a test drive fifty-seven
-//! joins without a model.
-//!
-//! What needs a live textedit server is deliberately outside this module: the answers themselves.
-//! Everything else — S1's gate, the seam list, the request wording, matching an answer back, the
-//! ceilings, the dedupe, the marks and both files — settles with no server, and so is testable.
 
 use std::path::Path;
 
@@ -49,22 +26,7 @@ pub const STEP: &str = "textedit";
 /// words any pair is most of the session.
 pub const MIN_WORDS: usize = 4;
 
-// ---- S1: the words a join pass may use ------------------------------------
-
 /// S1: the words this pass may work on, out of the whole session list.
-///
-/// Two exclusions, both load-bearing:
-///
-/// * the narrator mic. Its words are heard by the app and not played by the video, so a seam into
-///   or out of it is not a join in the finished film at all.
-/// * the words earlier joins already took out. A window that still shows them shows a repeat that is
-///   no longer in the video, and the one-stretch check then counts join *k-1*'s stretch against join
-///   *k* and refuses an answer that was right. Measured on the ETH lecture, join 22: leaving them in
-///   produced "2 separate stretches left out, not one at the join"; leaving them out leaves exactly
-///   the hand cut.
-///
-/// Words emptied by a fold stay dropped here too — they are gone from the film whatever their seconds
-/// say — but keep their place in the caller's list, since a cut may still land on those seconds.
 pub fn joinable_words(words: &[Word], narrator: Option<&str>, dropped: &[bool]) -> Vec<Word> {
     words
         .iter()
@@ -80,23 +42,11 @@ pub fn too_few(words: &[Word]) -> bool {
     words.len() < MIN_WORDS
 }
 
-/// S1: the sentence printed when there is too little to join. Distinct from the no-seam line below:
-/// this is arithmetic answering before anyone was asked. The count is the session's own, so a reader
-/// can see how far short of [`MIN_WORDS`] it fell rather than being told a bound with no number.
 pub fn too_few_log(words: usize) -> String {
     format!(">>> text edit: nothing to repair -- {words} joinable words, fewer than {MIN_WORDS}")
 }
 
-// ---- S2: the seams -------------------------------------------------------
-
 /// S2: the seams of a word list — every place one recording ends and another begins.
-///
-/// Returned as the index the later recording's first word sits at, ascending. Index rather than
-/// seconds because everything downstream cuts between words: the seam IS that boundary, and a
-/// second would only have to be looked up again to find it.
-///
-/// The list must already be S1's: a seam into the narrator mic is not a seam in the film, and one
-/// whose earlier half was already taken out is not a seam either.
 pub fn seams(words: &[Word]) -> Vec<usize> {
     let mut out = Vec::new();
     for index in 1..words.len() {
@@ -113,22 +63,7 @@ pub fn no_seam_log() -> String {
     ">>> text edit: one recording, no seam to repair -- every word stands".to_string()
 }
 
-// ---- S3: what one join is asked, and what its answer means ----------------
-
-/// S3: the user message for one join, verbatim as §F1.10 spells it.
-///
-/// The User Context block is assembled by [`prompt_assembly::user_message`], which already omits it
-/// whole when empty — the header never sits over nothing. What this function owns is the material: the
-/// join's number, the two sides labelled as the spec labels them, and the shape of the answer.
-///
-/// BEFORE is the tail of the interrupted take and AFTER the head of the one that follows, capped at
-/// [`SEAM_REACH_WORDS`] each. The cap is not decoration: the ceilings in S3's checks count against
-/// what the model was SHOWN, so a request built from more words than it can count would refuse an
-/// answer for being large when the model was never given the small version.
-///
-/// Thinking is ON for this job (`P.machine.textEditThinking`, [`prompts::thinking`]) — measured at
-/// 15/29 joins right without it against 20/29 with.
-/// The words either side of [`CUT`] the close-up shows: near enough that the restart is in view at once.
+/// The words either side of [`CUT`] the close-up shows.
 pub const CLOSE_WORDS: usize = 15;
 
 /// How many of BEFORE's last words the ask prints as BEFORE: the wide view carries the rest. Measured this way
@@ -141,10 +76,7 @@ pub const CUT: &str = "[CUT]";
 /// Where another join is, in the wide view: marked so the model does not take it for its own.
 pub const OTHER_TAKE: &str = "[another take starts]";
 
-/// One join's ask (§F1.10 S3), the join shown three ways: the WIDE view of the speech around it with this join
-/// marked [`CUT`] and the others [`OTHER_TAKE`]; the words CLOSE to the cut; and BEFORE and AFTER themselves,
-/// AFTER being the whole take that follows up to where the next one starts. `refused` is why the previous
-/// answer at this join was refused, said to the retry so it does not make the same mistake again.
+/// S3: the user message for one join, verbatim as §F1.10 spells it. `refused` is why the previous answer was refused.
 pub fn request(
     context: &str,
     k: usize,
@@ -245,15 +177,6 @@ impl Outcome {
 }
 
 /// S3: read the words the answer removes and say what that comes to (§02 §3.5).
-///
-/// The answer QUOTES what goes: `{"drop_before":"<the last words of BEFORE>","drop_after":"<the first words of
-/// AFTER>"}`. Each quote is matched against the words the join was shown, from the seam outwards, compared bare
-/// (case and punctuation are the transcript's, not the word's), so the model never counts. The counts that fall
-/// out go to the tool, so its ceilings and its sentences decide, the same as for any other removal.
-///
-/// The prototype had the model write the joined text back and matched it backwards to find what was left out;
-/// with tools offered beside that, the 27B answered nothing usable at 125 of 127 asks on 07-news (2026-10-26).
-/// A quote that does not match what was shown is refused with the reason, and the retry is shown that reason.
 pub fn answer_join(
     join: &mut Join,
     reply: &str,
@@ -367,18 +290,6 @@ pub fn ask_slot(base: &str, attempt: u32) -> String {
     seam_retries::ask_slot(base, attempt)
 }
 
-// ---- S5: the doubled saying across a cut ---------------------------------
-
-/// The session's lanes as F1.11's edge placement wants them: one per recording this word list came
-/// off, in the order they sit on the session clock, each keyed as Prepare keys it (`lecture` for
-/// `project:sources/lecture.mkv`) and stamped with the real file's size/mtime so a wave cache made
-/// against a replaced recording reads as a miss.
-///
-/// `hand_edit::session_lanes` builds the same list from the project's source array; this one builds it
-/// from the word list itself because a join pass knows its recordings from the words it was handed,
-/// and a lane for a source with no words would answer with an envelope over silence. A recording that
-/// cannot be stat-ed contributes no lane — there is no recording to have an envelope of — which is the
-/// same `None` the word pad then covers.
 pub fn session_lanes(tree: &Tree, words: &[Word]) -> Vec<crate::edges::Lane> {
     let bases = distinct_sources(words);
     let offsets = crate::fix_transcripts::placement(
@@ -431,34 +342,11 @@ fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
 
 /// S4: at every join still standing, a saying repeated straight across the cut loses its EARLIER
 /// copy, up to [`JOIN_REACH_WORDS`] words either side.
-///
-/// Delegated to [`textedit::dedupe_joins`] rather than rewritten: the reach, the longest-match-first
-/// rule and the note's wording are that function's ground. This wrapper exists so the flow names the
-/// step and so the notes land in the flow's log rather than vanishing.
 pub fn dedupe_across(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -> Vec<String> {
     textedit::dedupe_joins(words, times, kept)
 }
 
-// ---- S5: marks, edges, merged -------------------------------------------
-
 /// S5: the dropped runs as marks, their edges placed by the sound.
-///
-/// The runs come out of `hand_edit::marks_from` (a dropped run is a dropped run whatever made it),
-/// and every edge then goes through [`edges::place_edges`] — F1.11's rule, which fences each edge
-/// with the words on either side and lets the envelope choose inside the fence. This module places no
-/// edge itself; a join's word times are a fence, never a cut point.
-///
-/// `edge_of` answers with the envelope of the recording a session second belongs to, `None` where
-/// there is none: a run with no waveform to ask leaves its marks on the word times, which is what
-/// `press_joins` does when nothing has been audio-extracted yet.
-/// S5: the marks from the dropped runs, with both edges placed by F1.11.
-///
-/// `words` are the session's aligned words (the list every other pass fences a cut with) and `edge_of`
-/// answers with the envelope of the recording a session second belongs to. With no envelope to ask the
-/// marks keep their word times, which is a normal state and not an error: a session that never
-/// extracted audio has no wave cache to read. This module owns no edge arithmetic —
-/// [`edges::place_edges`] fences each edge on the words and lets the sound choose inside the fence, and
-/// copying any of that here would be a second rule the two passes could disagree about.
 pub fn marks_for<'a>(
     times: &[(f64, f64)],
     kept: &[bool],
@@ -472,14 +360,6 @@ pub fn marks_for<'a>(
 
 /// S5: the whole-take flag. When the words one join takes out are EVERY word of a recording, the
 /// mark names that recording and the person is told rather than the join being refused.
-///
-/// Flagged, not refused, on purpose: a take that was nothing but a false start SHOULD go whole, and
-/// a join that misread its window looks identical at this point. Refusing would throw away the good
-/// case to guard the bad one, so the bad one is made visible instead — yellow on the Cut page, with
-/// the log naming the recording and its seconds.
-///
-/// `dropped` indexes the same list as `words`; `recording_of` is the caller's map from a word index
-/// to the recording it came off, which the flow holds and this rule does not care how it is built.
 pub fn whole_takes(words: &[Word], dropped: &[bool]) -> Vec<(String, f64, f64)> {
     let mut out: Vec<(String, f64, f64)> = Vec::new();
     for source in distinct_sources(words) {
@@ -528,34 +408,7 @@ pub fn whole_take_log(base: &str, start: f64, end: f64) -> String {
     )
 }
 
-// ---- S6: the two files, written together --------------------------------
-
 /// S6: write `final.txt` and `retakes.tsv` in ONE step.
-///
-/// Together, not one then the other, because they are two views of the same decision: the text is
-/// what survives and the marks are where it was taken out. Written apart, a crash between them
-/// leaves a text whose marks do not exist, and the next Cut rebuilds a different video from the one
-/// the person approved — `final.txt` newer ⇒ F1.12 remakes the marks from it, and the remade marks
-/// are not the ones the joins chose.
-///
-/// The text is built by grouping the survivors into per-recording runs and joining consecutive runs
-/// with [`textfmt::cut_marker`], because a marker belongs ONLY at a change of recording (spec step
-/// 4) while `write_final` places one at every transition it is given an entry for. The marker's own
-/// S6: write `final.txt` and `retakes.tsv` in ONE step.
-///
-/// Together, not one then the other, because they are two views of the same decision: the text is
-/// what survives and the marks are where it was taken out. Written apart, a crash between them
-/// leaves a text whose marks do not exist, and the next Cut rebuilds a different video from the one
-/// the person approved — `final.txt` newer means F1.12 remakes the marks from it, and the remade
-/// marks are not the ones the joins chose.
-///
-/// The text is built by grouping the survivors into per-recording runs and joining consecutive runs
-/// with [`textfmt::cut_marker`], because a marker belongs ONLY at a change of recording (spec step
-/// 4) while `write_final` places one at every transition it is given an entry for. The marker's own
-/// spelling stays single-sourced in `textfmt`; nothing here writes a pipe by hand.
-///
-/// `whole_bases` names the recordings this pass took out entire; the join on the far side of such a
-/// recording carries the longer `whole take` marker so Cut can tint it yellow.
 pub fn write_pair(
     tree: &Tree,
     sources: &[String],
@@ -621,14 +474,6 @@ fn joined_recording(sources: &[String], _kept: &[bool], step: usize) -> String {
 }
 
 /// S6: the `|cut N|` counts, one per transition where the RECORDING changes.
-///
-/// A marker sits where a recording changed. Between two words of the same recording there is nothing
-/// to mark: the video plays straight through, and a `|cut|` there would tell the reader a splice
-/// exists that the picture never shows. So the count accumulates dropped words and is spent only at
-/// a change of source — which makes the result's length the number of joins, not the number of words.
-///
-/// The last recording's trailing drops are NOT counted here: they belong to no join, and dropping the
-/// tail of the final take is the retake pass' ground (F1.9), not this one's.
 pub fn join_counts_for(sources: &[String], kept: &[bool]) -> Vec<usize> {
     let mut counts = Vec::new();
     let mut pending = 0usize;
@@ -650,17 +495,7 @@ pub fn written_log(removed: usize, total: usize, stretches: usize) -> String {
     format!(">>> text edit: {removed} of {total} words removed in {stretches} stretch(es)")
 }
 
-// ---- the entry points ---------------------------------------------------
-
 /// The one call the ▶ handler makes for the joins pass.
-///
-/// Silent unless the policy names joins, so one press never speaks for both F1.9 and F1.10. With no
-/// model server it settles everything that needs no answer: whether there is anything to repair at
-/// all, whether there is a seam, and the two empty files the pass owes Cut so the next step can
-/// tell "ran, found nothing" from "never ran".
-///
-/// The requests themselves arrive with the runner rounds, exactly as F1.7's plan lines do: what
-/// lands on a press is the flow's own arithmetic, printed.
 pub fn press_joins(
     tree: &Tree,
     project: &Project,
@@ -714,17 +549,6 @@ pub fn press_joins(
 
 /// Reads the session's joinable words out of F1.13's saved list — the SAME list the retakes pass
 /// marks against — falling back to [`session_words`] when it has not been built yet.
-///
-/// `session_words` reads each lane's raw `words.json` and so shows a join the words as heard,
-/// lower case and unpunctuated. §F1.10 wants each word "printed as the fix pass spelled it", and
-/// the word list F1.13 writes is exactly that (with its own raw fallback where the fix pass left a
-/// word no spelling of its own). Two reasons to prefer it beyond the wording: it is the list the
-/// retakes pass and `final.txt` are built from, so a join that worked on a different list would
-/// drop indices that mean something else to the next pass; and it already runs the aligner-over-ASR
-/// preference, so a session that was aligned gets the finer times (§F1.13).
-///
-/// The list is filtered the way S1 asks: the narrator mic out, and, on the live path, the words an
-/// earlier pass already dropped stay out because they are not in the surviving list at all.
 fn session_words_with_list(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>) {
     if let Ok(Some(list)) = crate::word_list::load(tree) {
         let words = list.to_vec();
@@ -764,12 +588,6 @@ fn brief_log(words: &[Word], seam_count: usize) -> String {
 
 /// The session's joinable words, read off disk: every word the aligner heard, on the session clock,
 /// the narrator mic left out.
-///
-/// Returns the words paired with their times rather than a ready-made [`Word`] list because the list
-/// F1.13 builds needs the fixed transcripts and the envelopes to dress its spellings, and a session
-/// mid-Prepare has neither. The `written` form falls back to the word as heard — lower case, no
-/// punctuation added — which is exactly what §F1.10 says happens where the fix pass left a word no
-/// spelling of its own.
 fn session_words(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>) {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut words: Vec<Word> = Vec::new();

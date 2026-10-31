@@ -1,28 +1,12 @@
 //! §08-produce#1-screen item **7** — the ✎ dialog of the thumbnail's text-overlay editor.
-//!
-//! Thin by design: it builds the box, prefills it, and forwards to the page seams that own the rules
-//! (`produce_page::press_words_reword` / `press_words_remove` / `press_words_place`, which in turn
-//! call `produce_screen::{set_words, remove_words, place_words}`). No rule is duplicated here, so a
-//! reworded box and a freshly placed one cannot drift apart.
-//!
-//! WHY no modal `run()`: calling `gtk::Dialog::run()` inside a widget callback nests a second main
-//! loop, and this codebase answers dialogs by wiring their buttons to seams instead (the way
-//! `new_project_confirm` presents and its caller closes). Each button below calls its seam and closes
-//! the window, so the answer travels through the same path a test drives.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::ui::produce_page;
 
-/// The dialog's title, spelled as `spec/inventory/produce.md` §A gives it. Public because §A states the
-/// shape a test pins (heading, explanation, box, Remove/Cancel/Save) through the real dialog: the check
-/// reads this constant rather than retyping the wording and drifting from it.
 pub const DIALOG_TITLE: &str = "Words on the thumbnail";
 
-// The dialog this module has open, if any. An `adw::MessageDialog` is its OWN top-level window rather
-// than a child of the page, so it is not reachable by walking the page's content tree; holding it
-// here is how a caller finds the box it just opened, through [`open_dialog`].
 thread_local! {
     static OPEN_DIALOG: std::cell::RefCell<Option<adw::MessageDialog>> =
         const { std::cell::RefCell::new(None) };
@@ -39,9 +23,6 @@ fn remember(dialog: Option<&adw::MessageDialog>) {
 }
 
 /// A small dialog over the Produce page: the words box, the buttons this box needs, nothing else.
-/// Built as an `adw::MessageDialog` because that is the dialog shape this app already uses and whose
-/// response ids stay readable from a test; `with_remove` is false for a NEW box (§A: the Remove button
-/// belongs to a box that already exists, not to one being drawn for the first time).
 fn build(parent: &adw::ApplicationWindow, current: &str, with_remove: bool) -> adw::MessageDialog {
     let dialog = adw::MessageDialog::new(
         Some(parent),
@@ -49,10 +30,7 @@ fn build(parent: &adw::ApplicationWindow, current: &str, with_remove: bool) -> a
         Some(crate::produce_details::TEXT_CHIP_HINT),
     );
     dialog.set_widget_name("words-dialog");
-    // × answers Cancel, the same convention `new_project_confirm` sets: closing without saying is not a save.
     dialog.set_property("close-response", "cancel");
-    // The order the spec's picture shows: Remove first (it is the destructive answer to a box that exists),
-    // then Cancel, then Save as the suggested action on the right.
     if with_remove {
         dialog.add_response("remove", "Remove");
         dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
@@ -76,8 +54,6 @@ fn build(parent: &adw::ApplicationWindow, current: &str, with_remove: bool) -> a
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     scroller.set_hexpand(true);
     scroller.set_min_content_height(box_height);
-    // The frame is what gives the box its visible edge in the spec's picture; without it a `TextView`
-    // inside a dialog body reads as loose text on the background.
     let frame = gtk::Frame::new(None);
     frame.set_child(Some(&scroller));
     frame.set_hexpand(true);
@@ -128,7 +104,6 @@ pub fn open_reword(parent: &adw::ApplicationWindow, index: usize, current: &str)
             "remove" => {
                 produce_page::press_words_remove(&w, index);
             }
-            // Cancel and × both leave the record alone.
             _ => (),
         }
         remember(None);
@@ -154,9 +129,6 @@ pub fn open_place(parent: &adw::ApplicationWindow, cx: f64, cy: f64, w: f64, h: 
     dialog.present();
 }
 
-/// ✎ on the title band: the words printed ON THE PICTURE, which start as the video's title and are the
-/// picture's own from then on. Rewording them leaves the video's title alone; Remove takes the line off the
-/// picture and it stays off (the prototype's `editTitle`).
 pub fn open_title(parent: &adw::ApplicationWindow, current: &str) {
     let dialog = build(parent, current, true);
     remember(Some(&dialog));

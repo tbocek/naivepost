@@ -1,14 +1,4 @@
 //! Asking a file how many audio streams it really holds (§03-shell.md §4's track menu).
-//!
-//! §4 puts a track menu on a row only "when the file holds ≥ 2 audio streams", and the face of that
-//! button is "<on>/<total>" — the total is a fact about the FILE, not about what the session happens
-//! to have ticked, so it has to be measured. The answer comes from the real ffprobe, in the shape the
-//! project already uses for a tool call: the caller hands over the subprocess leg (`run_ffprobe` in
-//! the program, a stub in a test) so no test ever waits on a binary or needs one installed.
-//!
-//! Nothing here guesses. A probe that fails, answers nothing parseable, or finds no audio stream is an
-//! error naming the file and the reason (§0: failure is specific and local); inventing a count would
-//! put a menu over audio nobody measured, which is worse than a row with no menu.
 
 use std::path::Path;
 
@@ -43,16 +33,6 @@ pub fn run_ffprobe(ffprobe: &str, args: &[&str]) -> Result<String, String> {
 }
 
 /// The file's audio streams, as the tool reported them.
-///
-/// `ffprobe` is the resolved tool name (the caller takes it from `services::ffprobe_for`, so a Settings
-/// folder naming its own ffmpeg gets its neighbour), and `run` is the leg that actually starts it.
-///
-/// Every object under `"streams"` becomes a [`TrackInfo`]. `index` is stored ONE-BASED: ffprobe numbers
-/// streams from 0 inside the container, while §4's popover rows read "Track 1 — …", so the +1 happens
-/// here once rather than at every place a track is drawn or ticked. A stream with no title tag gets a
-/// placeholder naming its number, because an untitled lane still has to be distinguishable from its
-/// neighbour. Absent or unparsable `channels` means mono, which is what a stream with no channel layout
-/// plays as.
 pub fn audio_streams(ffprobe: &str, path: &Path, run: &Tool) -> Result<Vec<TrackInfo>, String> {
     let asked = args(path);
     let flags: Vec<&str> = asked.iter().map(String::as_str).collect();
@@ -61,10 +41,6 @@ pub fn audio_streams(ffprobe: &str, path: &Path, run: &Tool) -> Result<Vec<Track
 }
 
 /// The same question asked of an answer already in hand, instead of a tool that is started.
-///
-/// This is the half that parses; [`audio_streams`] is the half that asks. Splitting them keeps the parse
-/// testable on the JSON ffprobe really prints without any test starting a binary — the leg a caller
-/// swaps for a stub lives one level up, in [`audio_streams`]'s `run` argument.
 pub fn streams_of(answer: &str, path: &Path) -> Result<Vec<TrackInfo>, String> {
     let value: serde_json::Value = serde_json::from_str(answer)
         .map_err(|err| format!("{}: ffprobe answered no JSON ({err})", path.display()))?;

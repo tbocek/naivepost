@@ -1,12 +1,4 @@
 //! §07-narrate#1-screen badge **13** — the pitch control as the spec draws it.
-//!
-//! `spec/img/07-narrate.png` shows `pitch: ─── 0.0` on the sample line: a label, the slider, and the number
-//! the shift currently stands at. A bare `gtk::Scale` carries neither the label nor the value (its tooltip is
-//! not on screen), so this module builds the row the picture shows and keeps the readout in step with whatever
-//! moved the slider — the drag, or the keyboard step in [`crate::ui::narrate_page::press_pitch`].
-//!
-//! Its own file because `narrate_page.rs` is past its size budget; the page calls [`build_row`] where it used
-//! to build the scale itself and [`show_value`] wherever the state changes.
 
 use gtk4 as gtk;
 use gtk4::prelude::*;
@@ -14,7 +6,6 @@ use gtk4::prelude::*;
 use crate::narrate_screen;
 
 /// The slider's floor in px: −6..+6 semitones over at least this, about 12 px a semitone, so a hand can set it.
-/// The first rewrite left it at its natural width, a knob with no track to drag along.
 pub const PITCH_SLIDER_MIN_PX: i32 = 140;
 
 /// The labelled row: `pitch:` · the slider · the current shift. `value` is the page's stored shift, so the
@@ -41,7 +32,6 @@ pub fn build_row(value: f64) -> gtk::Box {
     pitch.set_value(narrate_screen::clamp_pitch(value));
     row.append(&pitch);
 
-    // The face of the same number the slider holds, so the shift is readable at a glance.
     let shown = gtk::Label::new(Some(&narrate_screen::pitch_readout(value)));
     shown.set_widget_name("pitch-value");
     row.append(&shown);

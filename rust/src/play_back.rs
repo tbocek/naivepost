@@ -1,41 +1,21 @@
 //! F2.1's media leg: the player that actually plays the recording.
 //!
-//! Naivepost draws no frames of its own (§0 "the app does the arithmetic"): ▶ hands the session's footage to a
-//! real player and stops it again. Two players answer to the doors here ([`running`], [`halt`], [`set_volume`]):
-//! the built-in one ([`crate::play_built_in`]), which plays inside the preview and is what ▶ uses whenever no
-//! program is named, and the subprocess below, which plays a NAMED program (`NAIVEPOST_PLAYER`) in a process of
-//! its own.
+//! ▶ hands the session's footage to a real player (§0: the app draws no frames). Two players answer to the doors here ([`running`], [`halt`], [`set_volume`]): the built-in one
+//! ([`crate::play_built_in`], used whenever no program is named) and the subprocess below, which plays a NAMED program (`NAIVEPOST_PLAYER`) in its own process.
 //!
-//! # Which program
-//!
-//! The spec names no player program (F2.1 says only what the press means), so this decides: `gst-play-1.0`,
-//! the one media player the container ships (`mpv` and `ffplay` are absent; ffmpeg is here but cuts, it does
-//! not play a timeline). The seam is the environment variable `NAIVEPOST_PLAYER`, checked first, exactly as
-//! [`crate::audio_task::ffmpeg_program`] lets a configured box win over the bare name: a test points it at a
-//! fake script through the same door the program uses, which is the same shape as pointing a server URL at a
-//! loopback fake. No for-test helper is ever asked for an answer.
+//! The spec names no player program, so `gst-play-1.0` (the one media player the container ships) is the default; `NAIVEPOST_PLAYER` wins, as [`crate::audio_task::ffmpeg_program`] lets a configured box win, so a test points it at a fake script.
 
 use std::sync::{Mutex, OnceLock};
 
-/// The player this build reaches for when nobody named another.
 pub const PLAYER: &str = "gst-play-1.0";
 
-/// Where the running player's pid lives. A static rather than a thread-local because the child outlives the
-/// call that started it and ⏹/▶ can be pressed from any main-context turn.
+/// Where the running player's pid lives: a static, since the child outlives the call that started it and ⏹/▶ can be pressed from any main-context turn.
 fn held() -> &'static Mutex<Option<u32>> {
     static SLOT: OnceLock<Mutex<Option<u32>>> = OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(None))
 }
 
-/// Which program plays, in the precedence every other leg of this app uses for a tool: the Settings box
-/// first, then `NAIVEPOST_PLAYER`, then [`PLAYER`].
-///
-/// The spec names no player program (F2.1 says only what the press means), so this decides — and it decides
-/// the way `audio_task::ffmpeg_program` and `speak_leg` decide theirs, so a person who set a path in the
-/// Settings gets it honoured and a test points at a fake script through the same door the program reads.
-/// No for-test helper is ever asked for an answer.
-/// Which program plays: `NAIVEPOST_PLAYER` when set and non-empty, else [`PLAYER`]. Read per press like every
-/// other settings value, so re-pointing it takes effect at once.
+/// Which program plays, in the precedence every other tool leg uses: the Settings box first, then `NAIVEPOST_PLAYER` (read per press), then [`PLAYER`].
 pub fn player_program() -> String {
     let configured = std::env::var("NAIVEPOST_PLAYER").unwrap_or_default();
     let trimmed = configured.trim();
@@ -45,9 +25,7 @@ pub fn player_program() -> String {
     trimmed.to_string()
 }
 
-/// The argv: quiet (`--no-position` prints a position line forever), gapless between the files so a
-/// recording's end walks on without a reload, and `-s` for the red line the press started at. Times go out
-/// to a tenth of a second — finer is below what a preview cares about.
+/// The argv: quiet (`--no-position` prints a position line forever), gapless between files, `-s` for the red line the press started at. Times to a tenth of a second.
 pub fn command_for(files: &[String], at_secs: f64) -> Vec<String> {
     let mut args = vec![
         "--no-position".to_string(),
@@ -59,12 +37,10 @@ pub fn command_for(files: &[String], at_secs: f64) -> Vec<String> {
     args
 }
 
-/// Start the player over `files` at `at_secs` and remember its pid. A failure is returned, never swallowed:
-/// the caller logs it where the press's other lines go.
+/// Start the player over `files` at `at_secs` and remember its pid. A failure is returned; the caller logs it.
 pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, String> {
     halt_process(); // one player at a time: a second cue replaces the run nobody paused instead of doubling sound
-                    // A fresh process has never heard this player's last volume ask, so the stamp starts blank; otherwise an
-                    // apply that looks "already done" would be skipped and the new run would play at the old loudness.
+                    // A fresh process has never heard this player's last volume ask, so the stamp starts blank, or the new run would play at the old loudness.
     if let Ok(mut stamp) = applied_volume().lock() {
         *stamp = None;
     }
@@ -80,8 +56,7 @@ pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, St
     })?;
     let pid = child.id();
     *held().lock().expect("the player slot") = Some(pid);
-    // The list travels beside the pid so [`set_volume`] can re-cue THE SAME files at a new loudness; without
-    // this a gain ask would find nothing to hand back and silently do nothing forever.
+    // The list travels beside the pid so [`set_volume`] can re-cue THE SAME files at a new loudness.
     if let Ok(mut files) = running_files().lock() {
         *files = files_of(&args);
     }
@@ -90,15 +65,13 @@ pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, St
     Ok(pid)
 }
 
-/// The file list the live process was cued with, empty when nothing was ever cued. Kept beside the pid for
-/// exactly one reason: [`set_volume`] has to hand the same files back with a new `--volume`.
+/// The file list the live process was cued with, kept so [`set_volume`] can hand the same files back with a new `--volume`.
 fn running_files() -> &'static Mutex<Vec<String>> {
     static SLOT: std::sync::OnceLock<Mutex<Vec<String>>> = std::sync::OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// The footage names out of a built argv: everything after the flags [`command_for`] puts first (four of them,
-/// and the last is the start position), which is where the files always begin.
+/// The footage names out of a built argv: everything after the four flags [`command_for`] puts first.
 fn files_of(args: &[String]) -> Vec<String> {
     args.iter().skip(4).cloned().collect()
 }
@@ -124,8 +97,7 @@ fn halt_process() -> bool {
     let mut slot = held().lock().expect("the player slot");
     match slot.take() {
         Some(pid) => {
-            // SIGTERM, not KILL: gst-play-1.0 tears its pipeline down on a term signal, which is what makes
-            // the next cue start clean instead of finding the last one holding the file.
+            // SIGTERM, not KILL: gst-play-1.0 tears its pipeline down on term, so the next cue starts clean.
             unsafe { libc::kill(pid as i32, libc::SIGTERM) };
             true
         }
@@ -133,8 +105,7 @@ fn halt_process() -> bool {
     }
 }
 
-/// The loudness the live footage process was last asked for, and the second it was put back at — so a tick
-/// that repeats the previous answer does nothing at all.
+/// The loudness the live footage process was last asked for and the second it was put back at, so a repeating tick does nothing.
 fn applied_volume() -> &'static Mutex<Option<(f64, f64)>> {
     static SLOT: std::sync::OnceLock<Mutex<Option<(f64, f64)>>> = std::sync::OnceLock::new();
     SLOT.get_or_init(|| Mutex::new(None))
@@ -142,14 +113,9 @@ fn applied_volume() -> &'static Mutex<Option<(f64, f64)>> {
 
 /// Ask the live footage process to play at `gain`, in the only way this player can be asked.
 ///
-/// DECISION (`the footage's own sound: muted by property when the scene silences it`): `gst-play-1.0` takes
-/// its loudness as playbin's volume PROPERTY at startup — `--help-all` lists `--volume  Volume` and
-/// `-s, --start-position`, and no runtime volume command — so "by property, never by stopping" is honoured
-/// here by re-cueing the SAME files at the SAME second with a new `--volume`. That is a seek, not a stop:
-/// the stream is never torn down between answers, which is the difference the spec draws, and it costs
-/// nothing while the answer holds still — [`volume_ask`]'s stamp makes a repeating ask do exactly nothing.
-/// `Player::footage_muted` stays the flag the rest of the app reads; this is only how it reaches the box's
-/// player.
+/// DECISION (`the footage's own sound: muted by property when the scene silences it`): `gst-play-1.0` takes its loudness as playbin's volume PROPERTY at startup, with no runtime
+/// volume command, so "by property, never by stopping" is honoured by re-cueing the SAME files at the SAME second with a new `--volume`: a seek, not a stop.
+/// [`volume_ask`]'s stamp makes a repeating ask do nothing. `Player::footage_muted` stays the flag the rest of the app reads.
 pub fn set_volume(gain: f64, at_secs: f64) -> bool {
     // The built-in player has a live property to ask, so it is asked and nothing is re-cued.
     if crate::play_built_in::set_volume(gain) {
@@ -185,15 +151,9 @@ pub fn cued_files() -> Option<Vec<String>> {
     (!files.is_empty()).then_some(files)
 }
 
-/// [`set_volume`] over an explicit file list — the seam a test uses to watch what the mix asks for without
-/// a media process at all (the same reasoning as [`crate::lane_hear::apply_for_test`]). The stamp is still
-/// consulted, so a repeated ask does nothing here either: that is the rule being tested, not an artefact of
-/// spawning. `None` means "nothing was asked", which is what a settled answer looks like.
-/// The argv a loudness ask WOULD make, and whether it is an ask at all: `None` when the live process has
-/// already been asked for exactly this gain at this second, which is what ten ticks out of ten look like.
+/// The argv a loudness ask WOULD make: `None` when the live process was already asked for exactly this gain at this second (ten ticks out of ten).
 ///
-/// A pure door on purpose — it consults and formats but spawns nothing — so "muted by property, never by
-/// stopping" can be read off the argv without a media process. [`set_volume`] is this ask carried out.
+/// Pure: it consults and formats but spawns nothing, so "muted by property, never by stopping" can be read off the argv. [`set_volume`] carries it out.
 pub fn volume_ask(files: &[String], gain: f64, at_secs: f64) -> Option<Vec<String>> {
     let asked = round_gain(gain);
     if already_asked(asked, at_secs) {
@@ -202,9 +162,7 @@ pub fn volume_ask(files: &[String], gain: f64, at_secs: f64) -> Option<Vec<Strin
     Some(volume_args(files, asked, at_secs))
 }
 
-/// Record an ask as having been made, WITHOUT spawning anything. The write half of [`volume_ask`]'s stamp:
-/// together they let a caller (a test, or a future leg that owns its own process) settle the "already asked"
-/// answer without going through [`set_volume`]'s spawn.
+/// Record an ask as made WITHOUT spawning: the write half of [`volume_ask`]'s stamp.
 fn note_ask(gain: f64, at_secs: f64) {
     let asked = round_gain(gain);
     if let Ok(mut stamp) = applied_volume().lock() {
@@ -212,8 +170,7 @@ fn note_ask(gain: f64, at_secs: f64) {
     }
 }
 
-/// [`note_ask`] under a name that says who may call it: the write half of [`volume_ask`]'s stamp, for a test
-/// that has to settle "already asked" without spawning a process. Nothing in the live path calls it.
+/// [`note_ask`] for a test that must settle "already asked" without spawning; nothing in the live path calls it.
 pub fn note_ask_for_test(gain: f64, at_secs: f64) {
     note_ask(gain, at_secs);
 }
@@ -223,8 +180,7 @@ fn round_gain(gain: f64) -> f64 {
     (gain.max(0.0) * 1000.0).round() / 1000.0
 }
 
-/// Has the live process already been asked for exactly this loudness at this second? A tenth of a second is
-/// the finest time any leg of this app speaks in, so two asks inside it are the same ask.
+/// Has the live process already been asked for exactly this loudness at this second? Two asks inside a tenth of a second (the finest time any leg speaks in) are the same ask.
 fn already_asked(asked: f64, at_secs: f64) -> bool {
     applied_volume()
         .lock()
@@ -259,9 +215,7 @@ pub fn set_muted(muted: bool, gain: f64, at_secs: f64) -> bool {
 
 /// Forget what loudness was last asked for, so the next ask is applied whatever it is.
 ///
-/// A test seam with one honest reason to exist: the stamp is process-wide, and a test that wants to watch an
-/// ask it has already made in this same process would otherwise be answered by the earlier one. The live
-/// path never needs it — [`cue`] clears the stamp itself, because a fresh process has not heard any ask.
+/// A test seam: the stamp is process-wide, so a test would otherwise be answered by its own earlier ask. [`cue`] clears the stamp itself on the live path.
 pub fn forget_volume_for_test() {
     if let Ok(mut stamp) = applied_volume().lock() {
         *stamp = None;

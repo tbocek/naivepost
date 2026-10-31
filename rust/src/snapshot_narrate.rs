@@ -1,7 +1,7 @@
 //! The Narrate page's own pictures: `07-narrate` and `07-take`, staged through the page's publish door
 //! (`set_state` + `refresh`) -- the door every flow calls after it edits the narration -- so the rows are
 //! drawn by the page rather than painted here, plus the `narrate/` files that stop a later tab's `build()`
-//! from resetting the shot. Split out of `snapshot.rs`, which is past the size another block fits in.
+//! from resetting the shot.
 
 use std::path::Path;
 
@@ -10,18 +10,6 @@ use crate::layout;
 use crate::ui;
 
 /// The lane's envelope, staged so a shot of the band draws a wave without asking for ffmpeg.
-///
-/// The app's own walk is decode → fold → read (`decode_audio::ensure` → `wave_build::ensure` → `wave::read`),
-/// and the first leg runs the CONFIGURED ffmpeg — this machine's `FFMPEG` setting may name a path that is not
-/// there (the shipped `llm.conf` says `/opt/ffmpeg/ffmpeg`, the container has `/usr/bin/ffmpeg`), in which
-/// case the decode refuses and §1's "reading the recording…" stands where the wave should be. So the bench
-/// writes the two files the program's own writers would have produced — the 16 kHz decode marker and the wave
-/// cache folded from it by [`crate::wave_build::ensure`] — and the band then reads its envelope through
-/// `wave::read` exactly as it does live. Nothing here is painted fake; only the expensive leg is pre-made,
-/// which is the same thing every other snapshot arm does when it stages a file instead of encoding one.
-///
-/// The decode is written at [`crate::transcribe::SAMPLE_RATE`] because that is the rate the fold assumes:
-/// `wave_build::SAMPLES_PER_BUCKET` is `SAMPLE_RATE / PEAK_HZ`, exact at 80 samples per bucket.
 pub(crate) fn stage_envelope(tree: &crate::layout::Tree, source: &std::path::Path) -> bool {
     if !source.is_file() {
         return false;
@@ -42,9 +30,7 @@ pub(crate) fn stage_envelope(tree: &crate::layout::Tree, source: &std::path::Pat
 }
 
 /// Stage the envelope for every file the shot's Narrate band may draw across — the built reference and the
-/// narrator-1 recording, in the order [`crate::ui::narrate_band`] tries them — and say what it managed. The
-/// app would build each through the CONFIGURED ffmpeg, which this machine may point at a path that is not
-/// there; staging instead lets the band read a genuine cache (see [`stage_envelope`]).
+/// narrator-1 recording, in the order [`crate::ui::narrate_band`] tries them — and say what it managed.
 pub(crate) fn stage_seeded_envelopes(tree: &crate::layout::Tree) -> bool {
     let mut staged = vec![stage_envelope(
         tree,
@@ -63,19 +49,13 @@ pub(crate) fn stage_seeded_envelopes(tree: &crate::layout::Tree) -> bool {
 }
 
 /// Stage the shot's narration or take band onto `window`'s Narrate page, through the doors its widgets
-/// fire. Returns true when this module owned `screen`.
+/// fire.
 pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -> bool {
     // §07-narrate's own picture (`spec/img/07-narrate.png`) is FOUR written lines with the app's own
-    // times, estimates and one red fit warning. The fixture cannot show them: `fixtures/demo.naivepost`
-    // carries no `narrate/narration.json`, so a bare shot of the page draws an empty lines column.
-    // Seeded here the way `06-lane` seeds its bars -- the shared fixture file untouched -- through the
-    // page's own publish door (`set_state` + `refresh`), which is what every flow calls after it edits
-    // the narration; the rows are then drawn by `draw_rows` from these entries, not painted here.
+    // times, estimates and one red fit warning.
     if screen == "07-narrate" {
         let mut state = ui::NarrateState::default();
-        // Four clips, one line each, laid out on the spec image's seconds. `s`/`e` are the clip bounds
-        // copied from the cut (§4), `at` the placement inside the clip, so the row's time reads
-        // `s + at` as `time_field` spells it: 3.5, 43.6, 102.2 and 439.1.
+        // Four clips, one line each, laid out on the spec image's seconds.
         state.entries = vec![
             crate::narration::Entry {
                 s: 3.0,
@@ -135,8 +115,7 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         state.clips = 4;
         // §1's shot shows what ▶ would still have to fix, and the row's own red warning was drawn in
         // the shot while the Inputs row stayed bare -- the two read the same counts, so the shot must
-        // publish them. `shell::refit` is what a live page gets these from; a seeded shot has to state
-        // them, exactly as it states the entries and the segs above.
+        // publish them.
         state.unwritten = 1;
         state.off_cut = 1;
         state.has_cut = true;
@@ -149,19 +128,10 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         ui::refresh(window);
         // The take this shot shows is written to `narrate/takes.json` as well as published, because
         // `refresh` re-seeds the page's take list from that file on every repaint — a state-only take
-        // vanishes before the pixels (that is why this lane once drew no take at all). Same door `07-take`
-        // uses, so the band's own rule decides what survives.
-        // The window has a session to seed; which folder it is comes from `dir` below, not from this probe.
+        // vanishes before the pixels (that is why this lane once drew no take at all).
         if crate::ui::window::narrate_session_tree().is_some() {
             // §1's badge **10** is the take band, and its visibility rule (§A.7) is "a narrator slot WITH a
-            // recording", asked of the PROJECT. Two things kept the fixture's narrator-1 row out of reach: the
-            // seed that runs before the window is built asks `narrate_session_tree()`, which resolves the session
-            // from the process CWD — the shot's working folder, whose `session.naivepost` tags no narrator at all
-            // (probed: `sources []`, no `narrate/voice_ref_base.wav`), so §A.7 honestly answered "no recording" and
-            // the scroller stayed hidden. Take the project this shot was ASKED to render (`--project`, the folder
-            // `dir` is) as this window's session folder through the same door an Open pushes it
-            // (`push_session_tree`), then re-ask the app's own seeding door. That is `07-take`'s pattern: after its
-            // take press invalidates the reference it re-runs `seed_voice_reference` rather than inventing files.
+            // recording", asked of the PROJECT.
             crate::ui::window_line_step::push_session_tree(layout::Tree::new(dir).ok());
             let tree =
                 layout::Tree::new(dir).expect("the asked project is a folder ending .naivepost");
@@ -176,9 +146,6 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
             }
         }
         // §1's picture is a page whose narration has been WRITTEN, so the run bar must not be mid-flight:
-        // an open "writing 2/4 clips" bar steals a row and pushes lines 3 and 4 below the fold. F4.1 S7's
-        // done wording goes on the status line and the bar closes through the same doors the run itself
-        // ends with, so the shot shows a state a real run produces rather than one the bench invented.
         crate::ui::window::set_status_line(
             window,
             &crate::narrate_run::Outcome::Spoken {
@@ -187,38 +154,16 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
             }
             .status(),
         );
-        // The bar's own close door (F0.5 S4), reached the way the run reaches it.
         crate::ui::run_close::close_last_narrate_run();
         ui::refresh(window);
         return true;
     }
 
     // §08-produce#1-screen's own picture (`spec/img/08-produce.png`) is a page with work on it:
-    // images in the row, an instruction written, settings chosen and both readouts filled. The
-    // fixture cannot show that -- `fixtures/demo.naivepost` carries no `publish.json`, so a bare
-    // shot draws the empty-images note and two blank readouts. Seeded here the way `07-narrate`
-    // seeds its lines: through the page's own publish door (`set_state` + `refresh`), which is what
-    // every flow calls after it edits the publish state, so the slots, the rows and the readouts
-    // are drawn by the page from this state rather than painted here.
-    // The rows above are published through `set_state`, a process-wide copy, and the shell builds the
-    // Narrate page's box once PER TAB, so any later `build()` seeds itself from what the project's files
-    // hold. For a fixture with none, that answer is "nothing on disk", which would reset the published
-    // voice, shift and take list back to their defaults. Writing the two files here is what §07-narrate#3-data
-    // says a real project has; the renderer is only saying the shot's project did.
-    // §F4.6's own picture (`spec/img/07-take.png`) is the voice column with ONE hand-picked take on
-    // the band. §F4.6's caption spells what the shot has to show — "a 2.6 s take" and the status
-    // "take added: 0:00–0:03 — 1 take(s), 2.6 s of reference (14 s is plenty)" — so this arm seeds a
-    // 2.6 s take and says the sentence through the same door the ＋ press says it from
-    // (`press_take_add`, which adds the selection to the state, repaints and writes the status). The
-    // band, the voice and its wav come from `seed_voice_reference`, which ran before the window built.
     if screen == "07-take" {
         // The CUT this shot needs is the demo project's own three clips, not an empty one: the arm runs
         // after `build_window`'s seed, and `refresh` re-reads the state on every repaint, so the arm's
-        // `has_cut: true` promised a cut the page never had. With no clips the right column showed the
-        // "no narration lines yet — ＋ puts one at the playhead" hint and the Inputs readout read
-        // "0 clip(s) · 00:00", and the take band's own picture had nothing beside it. `cut::load` is
-        // the same door `05-cut` goes through, so the footage, the clock and the readout all agree with
-        // the project the shot was asked to render.
+        // `has_cut: true` promised a cut the page never had.
         let clips = layout::Tree::new(dir)
             .ok()
             .and_then(|tree| cut::load(&tree).ok())
@@ -234,7 +179,7 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
             .unwrap_or(0.0);
         // The 2.6 s take this shot is captioned with is ALSO written to `narrate/takes.json`, because
         // `refresh` re-seeds the page's take list from that file on every repaint — a state-only take
-        // would vanish before the pixels. So the seed writes the file and publishes the same span.
+        // would vanish before the pixels.
         let seeded = crate::ui::window::narrate_session_tree()
             .as_ref()
             .and_then(crate::ui::narrate_seed::take_recording_key)
@@ -263,20 +208,15 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         ui::refresh(window);
         // The lane fitted itself against a 0-second view (the scroller was still hidden then, and an
         // unmapped lane reports 0 px wide), so it asked for its 240 px minimum and the wave stopped a fifth
-        // of the way across the plate. Re-fit now that the band knows its seconds.
+        // of the way across the plate.
         crate::ui::narrate_band::note_lane_size(window);
         // 0.0–2.6 s: 2.6 s of reference, the spec image's own take, said through the same door the
         // ＋ press says it from — which now spells §F4.6's own sentence ("take added: 0:00–0:03 — 1
         // take(s), 2.6 s of reference (14 s is plenty)"): the span of the seconds just dragged, then
         // §6's commit status judged against `P.machine.refWantSeconds`.
-        // `mm_ss` floors, so the span this quotes for these seconds reads "00:00–00:02"; a take
-        // placed at 1.0–3.6 would quote "00:01–00:03" and the shot's status would not line up with
-        // its own caption's seconds.
         ui::press_take_add(window, (0.0, 2.6));
         // §F4.6 S4 is right and the shot has to live with it: making a take removes the built reference, and
-        // `snapshot.rs::seed_voice_reference` ran BEFORE this arm. Re-seed after the press so the lane the
-        // picture is about has its recording under it — §A.7 asks whether the VOICE has a recording, which
-        // an invalidation does not change, and the band's own visibility rule now agrees.
+        // `snapshot.rs::seed_voice_reference` ran BEFORE this arm.
         if let Some(tree) = crate::ui::window::narrate_session_tree() {
             crate::snapshot::seed_voice_reference(&tree);
         }
@@ -296,8 +236,7 @@ pub(crate) fn seed_project_files(screen: &str) {
     // The page seeds its voice, shift and takes from the project's own `narrate/` files (§07-narrate#3-data,
     // `narrate_page::build`), and that seed runs AFTER the publish below: the shell builds the Narrate box
     // once PER TAB, so a `build()` later than this one re-reads the files and a fixture with none would
-    // reset the shot to "own", 0.0 and an empty band. So the renderer writes the files the shot's project
-    // is supposed to have left behind — the same three the spec lists — rather than only pretending to.
+    // reset the shot to "own", 0.0 and an empty band.
     if let Some(tree) = crate::ui::window::narrate_session_tree() {
         let _ = crate::narrate_data::write_voice(&tree, "narrator1");
         if let Some(recording) = crate::ui::narrate_seed::take_recording_key(&tree) {

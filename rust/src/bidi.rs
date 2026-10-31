@@ -1,15 +1,3 @@
-//! F6.1 §2's browser driver: headless Firefox over WebDriver BiDi, as `spec/09-llm-and-tools.md` §2 says and
-//! the prototype does (`go/websearch.go`).
-//!
-//! The first port launched `firefox --headless --dump-dom <url>`. That flag is Chrome's: Firefox (140 ESR and
-//! 158 both) ignores it, prints nothing, and keeps running until it is killed, so every search ended "the page
-//! did not finish" and the model never had a web tool. This is the protocol Firefox does speak: a WebSocket on
-//! `--remote-debugging-port`, `session.new`, `browsingContext.navigate`, `script.evaluate`.
-//!
-//! One browser per call, launched on a throwaway profile and killed on drop (§2: "one headless browser launched
-//! and killed per tool call"). The WebSocket is the smallest client BiDi needs, written here rather than taken
-//! as a dependency: a handshake, masked text frames out, text/ping/close frames in (RFC 6455).
-
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -18,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-/// A headless Firefox and its BiDi session. Dropping it kills the browser and removes its profile.
+/// A headless Firefox and its BiDi session.
 pub struct Browser {
     child: Child,
     profile: PathBuf,
@@ -30,7 +18,7 @@ pub struct Browser {
 impl Drop for Browser {
     fn drop(&mut self) {
         // Kill, not a polite quit: a private window on a throwaway profile holds nothing worth the seconds a
-        // shutdown takes. Both answers are about a process that is going away either way.
+        // shutdown takes.
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = std::fs::remove_dir_all(&self.profile);
@@ -38,14 +26,7 @@ impl Drop for Browser {
 }
 
 impl Browser {
-    /// Launch `firefox` and open its BiDi session, within `deadline`. The first page is navigated to
-    /// afterwards ([`Browser::navigate`]), because a URL on the command line gives no signal for when it has
-    /// loaded.
-    ///
-    /// The port is Firefox's own choice (`--remote-debugging-port=0`), read back from the
-    /// `WebDriverBiDiServer.json` it writes into this launch's profile. A port picked here (§2's "from 9223
-    /// upward") is only this process's guess: a second naivepost, or a test binary beside another, picks the
-    /// same one, and the session is then asked of the OTHER browser ("Maximum number of active sessions").
+    /// Launch `firefox` and open its BiDi session, within `deadline`.
     pub fn launch(firefox: &Path, deadline: Instant) -> Result<Browser, String> {
         static LAUNCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = LAUNCHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -65,7 +46,6 @@ impl Browser {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|why| format!("could not start {}: {why}", firefox.display()))?;
-        // The guard exists from here on, so every early return below kills the browser.
         let mut guard = Guard {
             child: Some(child),
             profile: profile.clone(),
@@ -115,9 +95,7 @@ impl Browser {
         Ok(browser)
     }
 
-    /// Load `url` and wait until it has loaded or `deadline` passes. Answers whether the load completed: a
-    /// search reads a page still loading as it stands (the results are drawn before the last tracker
-    /// arrives), a read of a page that never arrived is a failure.
+    /// Load `url` and wait until it has loaded or `deadline` passes.
     pub fn navigate(&mut self, url: &str, deadline: Instant) -> Result<bool, String> {
         match self.send(
             "browsingContext.navigate",
@@ -143,7 +121,6 @@ impl Browser {
             .to_string())
     }
 
-    /// One BiDi command and its answer. Events (messages with no `id`) are nobody's and are skipped.
     fn send(&mut self, method: &str, params: Value, deadline: Instant) -> Result<Value, String> {
         self.next_id += 1;
         let id = self.next_id;
@@ -187,7 +164,6 @@ impl Drop for Guard {
     }
 }
 
-/// A client WebSocket: just what BiDi needs.
 struct Socket {
     stream: TcpStream,
     reader: BufReader<TcpStream>,
@@ -247,7 +223,6 @@ impl Socket {
         Ok(socket)
     }
 
-    /// Bound the next read and write by `deadline`.
     fn limit(&mut self, deadline: Instant) -> Result<(), String> {
         let left = deadline
             .checked_duration_since(Instant::now())
@@ -285,7 +260,6 @@ impl Socket {
             .map_err(|why| format!("firefox bidi: {why}"))
     }
 
-    /// The next whole text message: fragments joined, pings answered, a close reported.
     fn read_text(&mut self, deadline: Instant) -> Result<String, String> {
         let mut message = Vec::new();
         loop {
@@ -354,8 +328,6 @@ fn accept_for(key: &str) -> String {
     base64(&hash.finalize())
 }
 
-/// Sixteen bytes that differ per call: the handshake key and the frame masks. They need to be unpredictable
-/// to a proxy in the path, and the path is a loopback socket, so the std hasher's random seed is plenty.
 fn nonce16() -> [u8; 16] {
     use std::hash::{BuildHasher, Hasher};
     let state = std::collections::hash_map::RandomState::new();
@@ -374,7 +346,6 @@ fn nonce16() -> [u8; 16] {
     out
 }
 
-/// Standard base64 with padding.
 fn base64(bytes: &[u8]) -> String {
     const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);

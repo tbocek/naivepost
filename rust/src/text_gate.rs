@@ -1,21 +1,4 @@
-//! §04-prepare F1.6 S6 (new): the text gate. The pixel pass (S2's `scdet`) is the rough cut: it catches every
-//! hard switch for free, but a bullet added to a slide or a menu closing scores under its threshold, and a scroll
-//! or a webcam person moving scores over it. The gate asks the decision model (Settings → Decision, a fast vision
-//! model; empty, the main model) one question about two frames of the same recording: did the TEXT on screen change? With it:
-//!
-//! 1. every pixel-pass change is judged across (the frame before against the frame after); a SAME drops it;
-//! 2. every scene left is probed at its start, its end and every [`PROBE_GAP_S`] between, and each pair of
-//!    neighbouring probes judged; a CHANGED pair is halved and both halves judged again, down to [`MIN_SPAN_S`],
-//!    so each change inside a scene is found within a second;
-//! 3. changes no further apart than [`RUN_MERGE_S`] are one run (a scroll), kept as its LAST point: the settled
-//!    view.
-//!
-//! What it finds goes to `textscenes.tsv` beside `scenes.tsv`; F1.7 then sends one frame per change and one every
-//! [`HEARTBEAT_S`] (instead of one every Freq), see [`changes_for_describe`]. A probe of the 06-news footage
-//! (2026-10-25): 9 of 9 text changes, no false alarm, 54 calls for two recordings, against 250 frames described
-//! at Freq 1 s.
-//!
-//! The algorithm is pure over a `judge` closure ([`run`]); the live judge is [`crate::text_gate_call`].
+//! §04-prepare F1.6 S6 (new): the text gate.
 
 use std::path::PathBuf;
 
@@ -40,9 +23,7 @@ const GIVE_UP_AFTER: usize = 3;
 /// Who found a change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Found {
-    /// The pixel pass, confirmed by the gate.
     Pixel,
-    /// The gate, inside a scene the pixel pass saw as one.
     Text,
 }
 
@@ -119,7 +100,7 @@ fn snap_up(at: f64, grid: f64) -> f64 {
 
 /// The gate over one recording: `rough` the pixel pass's changes, `duration` the file's length as F1.7 reads it
 /// (last frame plus one grid step), `grid` the extraction grid; `judge(a, b)` answers whether the text changed
-/// between the frames at `a` and `b`. Errs only when every one of the first calls failed.
+/// between the frames at `a` and `b`.
 pub fn run(
     rough: &[f64],
     duration: f64,
@@ -144,7 +125,6 @@ pub fn run(
     };
     let dead = |gate: &Gate| gate.calls >= GIVE_UP_AFTER && gate.failures.len() == gate.calls;
 
-    // 1. The pixel pass's changes, each judged across.
     let mut starts = vec![0.0];
     for &at in rough.iter().filter(|at| **at > 0.0 && **at < duration) {
         let (before, after) = (snap_down(at - grid, grid), snap_up(at, grid).min(last));
@@ -167,7 +147,6 @@ pub fn run(
         }
     }
 
-    // 2. Each scene probed, CHANGED pairs halved.
     let mut found: Vec<f64> = Vec::new();
     for (index, start) in starts.iter().enumerate() {
         let end = starts.get(index + 1).copied().unwrap_or(duration);
@@ -200,7 +179,6 @@ pub fn run(
     gate.changes
         .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    // 3. Runs kept as their last point.
     let mut merged: Vec<(f64, Found)> = Vec::new();
     for change in gate.changes.drain(..) {
         match merged.last_mut() {
@@ -212,8 +190,6 @@ pub fn run(
     Ok(gate)
 }
 
-/// A CHANGED pair `a`..`b`: shorter than [`MIN_SPAN_S`] places the change at `b`; longer is halved and each
-/// half that changed is halved again, so two changes inside one pair are both found.
 fn halve(
     gate: &mut Gate,
     ask: &mut dyn FnMut(&mut Gate, f64, f64) -> Option<bool>,
@@ -298,10 +274,7 @@ pub fn done_log(lane: &str, gate: &Gate) -> String {
     line
 }
 
-/// The gate's stage: one row per footage source, always (the decision model judges, else the main one). Runs
-/// after the frames and before describe, for every recording first: the decision model and the describe model
-/// may be two models on one server that holds one at a time, and alternating them per recording would load
-/// each again for every one.
+/// The gate's stage: one row per footage source, always (the decision model judges, else the main one).
 pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
     let tasks = project
         .sources
@@ -329,9 +302,7 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
     }
 }
 
-/// One row of the walk: the gate over one footage source, its answer written to `textscenes.tsv`. A gate that
-/// cannot run (no frames, a server that never answers) says why and leaves the pixel pass's
-/// scenes in force: F1.7 describes either way.
+/// One row of the walk: the gate over one footage source, its answer written to `textscenes.tsv`.
 pub fn run_task(
     task: &crate::run_stages::Task,
     log: &mut impl FnMut(&str),
@@ -373,7 +344,6 @@ pub fn gate_source(
     }
     let project = crate::project::load(tree.dir()).ok();
     let start = crate::describe_scale::clock_start(project.as_ref(), index);
-    // The judge is shown the same 896-wide copies describe sends; made once, kept for describe.
     if let Err(why) = crate::describe_scale::ensure(tree, conf, lane, start, &frames, log) {
         log(&format!(
             "!!! [{lane}] text gate: {why} -- the pixel pass's scenes stay"
@@ -394,7 +364,6 @@ pub fn gate_source(
     };
     let duration = frames.last().copied().unwrap_or(0.0) + grid;
     let rough = crate::describe::read_pixel_changes(tree, lane);
-    // The scaled copies are named from the stored folder's first instant: read once, not per judge.
     let base = crate::describe_scale::name_base(tree, lane);
     let mut judge =
         |a: f64, b: f64| crate::text_gate_call::judge(tree, paths, conf, lane, base, a, b);

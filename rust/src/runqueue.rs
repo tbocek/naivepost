@@ -1,17 +1,6 @@
-//! F0.5 — a run's bookkeeping (spec/03-shell.md F0.5), the port of `go/runqueue.go`.
-//!
-//! One press of ▶ turns into work, and the bar has to say where that work is without lying. Two
-//! rules carry the whole module:
-//!
-//! * The **fraction** is never the queue's length. A queue opens as it runs (more work is found
-//!   mid-run, so `push` is called again and again), and a total that grows under a fraction drags
-//!   the needle backwards. Each track reports its own *absolute contribution* and the bar shows
-//!   the sum, mapped through the phase's slice of the bar ([`Queue::phase`]).
-//! * The **words** are two or three per job, with no filename and no count — the queue counts,
-//!   the log names. `describe 1/2: chunk 4/12`, and the counting itself goes in the tooltip.
-//!
-//! Nothing here touches a widget: [`Queue`] is data, and the UI paints from
-//! [`Queue::fraction`]/[`Queue::text_and_tip`] the same way a test reads them.
+//! F0.5: a run's bookkeeping (spec/03-shell.md F0.5), the port of `go/runqueue.go`. Nothing here touches a widget.
+//! * The **fraction** is never the queue's length (work is found mid-run and a growing total drags the needle back). Each track reports its absolute contribution and the bar shows the sum, mapped through [`Queue::phase`].
+//! * The **words** are two or three per job, no filename or count; the counting goes in the tooltip: `describe 1/2: chunk 4/12`.
 
 use std::time::Duration;
 
@@ -19,56 +8,35 @@ use crate::exchanges::RunLog;
 use crate::run::{Run, RunBar, Snapshot, Step};
 use crate::services::{Kind, UNLOAD_IS_BEST_EFFORT, UNLOAD_TIMEOUT};
 
-/// S3: how often a paused run re-asks whether it may go on, between subprocesses. §10 lists this
-/// only inside its prose line (`spec/10-parameters.md`: "… hang watchdog 200 ms / 3 s; … progress
-/// pulse 150 ms; checkpoint poll 200 ms …") and gives it no `P.` id, so it takes the bare
-/// `machine.` prefix here rather than an invented one — the same choice `machine.jpegQuality` made.
+/// S3: how often a paused run re-asks whether it may go on. §10 gives it no `P.` id (only prose), so it takes the bare `machine.` prefix, like `machine.jpegQuality`.
 pub const CHECKPOINT_POLL: Duration = Duration::from_millis(200);
 
-/// The bar's idle pulse while a model thinks: the LLM calls hold nothing countable, so the needle
-/// pulses until something with real news — the first drawing fraction — takes it (§10's prose
-/// "progress pulse 150 ms"; prototype `pulseUntilCounted`, go/runqueue.go:240).
+/// The bar's idle pulse while a model thinks, until something countable arrives (§10 "progress pulse 150 ms"; prototype `pulseUntilCounted`).
 pub const PROGRESS_PULSE: Duration = Duration::from_millis(150);
 
-/// Which half of the bar. The two tracks are concurrent in Prepare (speech recognition on the GPU,
-/// frame extraction on the CPU) and sequential on Describe + Transcript, but the arithmetic is the
-/// same either way: each track owns half and reports its own absolute contribution. Letting either
-/// write a raw fraction would make the bar bounce between them.
+/// Which half of the bar. Each track owns half and reports its absolute contribution, concurrent (Prepare) or sequential (Describe + Transcript); a raw fraction would make the bar bounce.
 pub const TRACK_STT: usize = 0;
 pub const TRACK_FRAMES: usize = 1;
-/// The same two halves under the names Describe + Transcript uses them for: its jobs run one after
-/// the other, but each still owns half the bar and its own line.
+/// The same halves under Describe + Transcript's names.
 pub const TRACK_DESCRIBE: usize = TRACK_STT;
 pub const TRACK_FIX: usize = TRACK_FRAMES;
 
-/// §2: the two tracks' lines are joined by a middle dot with TWO spaces on each side — the spec's
-/// `joined by "  ·  "` (spec/03-shell.md §2). One const so the joiner and its test cannot drift.
+/// §2: the tracks' lines are joined by a middle dot with TWO spaces each side (spec/03-shell.md §2); one const so joiner and test agree.
 pub const TRACK_JOIN: &str = "  \u{00B7}  ";
-/// §2: what the bar's tooltip says when nothing is queued — the standing text that stays until a
-/// track has counting of its own to put in its place.
+/// §2: the bar's tooltip when nothing is queued.
 pub const STANDING_TIP: &str =
     "The run: the job, which of the run's jobs it is, and the task it is on";
 
-/// One half of the bar: the job on it, the work it has left, and what the task at the head of the
-/// queue is doing this second.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Track {
-    /// "describe", "speech", "narrate" — what this half is.
     pub job: String,
-    /// ...and which of the run's jobs it is, when there are two.
     pub phase: usize,
     pub of: usize,
-    /// Tasks known about, including the ones already taken.
     pub queued: usize,
-    /// How many have been picked up: the head's position.
     pub taken: usize,
-    /// What the head is doing, in two or three words.
     pub what: String,
-    /// What a task of this queue is, when nothing else is said.
     pub kind: String,
-    /// The job finished; the other track may still be going.
     pub done_job: bool,
-    /// A queue that was filled and emptied is not an unfilled one.
     pub ever_filled: bool,
 }
 
@@ -85,7 +53,6 @@ impl Track {
     /// simply `thumbnail: drawing`.
     pub fn line(&self) -> String {
         if self.done_job {
-            // A finished job says its name and stops; the line belongs to whatever is still running.
             return if self.job.is_empty() {
                 String::new()
             } else {
@@ -111,8 +78,7 @@ impl Track {
         }
     }
 
-    /// This track's part of the tooltip, where the counting is spelled out for the one moment anyone
-    /// wants it. Empty for a track with no job or one that was never filled.
+    /// This track's part of the tooltip, where the counting is spelled out. Empty for a track with no job or never filled.
     pub fn tip(&self) -> String {
         if self.job.is_empty() || !self.ever_filled {
             return String::new();
@@ -132,7 +98,6 @@ impl Track {
     }
 }
 
-/// The run's bookkeeping: two tracks, their shares of the bar, and the phase the next jobs draw in.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queue {
     tracks: [Track; 2],
@@ -142,13 +107,11 @@ pub struct Queue {
 }
 
 impl Queue {
-    /// An empty queue: both halves read zero and say nothing.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// S1 (`qReset`): empty both halves. A run starts here — the tracks are summed, so last run's
-    /// leftovers would be added to every reading this one takes.
+    /// S1 (`qReset`): empty both halves; the tracks are summed, so leftovers would add to the next run.
     pub fn reset(&mut self) {
         self.tracks = Default::default();
         self.parts = [0.0; 2];
@@ -156,10 +119,7 @@ impl Queue {
         self.share = 0.0;
     }
 
-    /// Say where in the bar the jobs that come next are drawn (`base`, `share`) and clear the queue
-    /// for them. A single-step press never calls this: Prepare's ▶ is two steps back to back, each
-    /// reporting its own whole bar, and the scaling happens here rather than in every place that
-    /// moves the needle. A phase that has reported nothing stands where the one before it finished.
+    /// Say where in the bar the next jobs are drawn (`base`, `share`) and clear the queue. Prepare's ▶ is two steps back to back, each reporting its own whole bar; scaling happens here. A phase that reported nothing stands where the last finished.
     pub fn phase(&mut self, base: f64, share: f64) {
         self.base = base;
         self.share = share;
@@ -167,9 +127,7 @@ impl Queue {
         self.parts = [base / 2.0; 2];
     }
 
-    /// Map a track's own fraction into the phase's slice of the bar. Share 0 means no phase was set,
-    /// which is the whole bar — that is every step but Prepare, and also the headless queue a test
-    /// builds.
+    /// Map a track's fraction into the phase's slice. Share 0 means no phase: the whole bar.
     fn scaled(&self, fraction: f64) -> f64 {
         if self.share == 0.0 {
             fraction
@@ -178,9 +136,7 @@ impl Queue {
         }
     }
 
-    /// S2 (`qJob`): which job now owns a track, and which of the run's jobs it is — "describe 1/2",
-    /// then "transcript 2/2". Pass `of = 0` for a run that is one job, or whose jobs are concurrent
-    /// and named rather than numbered.
+    /// S2 (`qJob`): which job now owns a track and which of the run's jobs it is ("describe 1/2"). `of = 0` for one job or concurrent named jobs.
     pub fn job(&mut self, track: usize, name: &str, phase: usize, of: usize) {
         self.tracks[track] = Track {
             job: name.to_string(),
@@ -190,9 +146,7 @@ impl Queue {
         };
     }
 
-    /// S2 (`qPush`): queue `n` more tasks of one kind. Called again whenever more work is found: a
-    /// run that could count all of its work in advance would not need a queue. `n <= 0` is a no-op
-    /// rather than a way to take work back off.
+    /// S2 (`qPush`): queue `n` more tasks; called again as work is found. `n <= 0` is a no-op.
     pub fn push(&mut self, track: usize, n: usize, kind: &str) {
         if n == 0 {
             return;
@@ -205,36 +159,30 @@ impl Queue {
         }
     }
 
-    /// S2 (`qTake`): pick the next task up. Called once per task whatever becomes of it — work
-    /// already on disk from an earlier run is a task this run is done with, and a queue that skipped
-    /// those would stall at the position where the resume started.
+    /// S2 (`qTake`): pick the next task up, once per task whatever becomes of it; resumed work already on disk is a task too, else the queue stalls.
     pub fn take(&mut self, track: usize) {
         let t = &mut self.tracks[track];
         t.taken += 1;
         t.what = String::new();
     }
 
-    /// S2 (`prog`): how far this track has got and what its task is doing. The fraction is the
-    /// track's absolute contribution; the text is two or three words, no filename, no count.
+    /// S2 (`prog`): the track's absolute contribution and what its task is doing (two or three words).
     pub fn prog(&mut self, track: usize, fraction: f64, text: &str) {
         self.parts[track] = self.scaled(fraction);
         self.tracks[track].what = text.to_string();
     }
 
-    /// S2 (`qDone`): end a track's job. It keeps the half of the bar it earned and stops saying
-    /// anything but its name, so the line belongs to whatever is still running.
+    /// S2 (`qDone`): end a track's job; it keeps its share of the bar and says only its name.
     pub fn done(&mut self, track: usize, share: f64) {
         self.parts[track] = self.scaled(share);
         self.tracks[track].done_job = true;
     }
 
-    /// The bar's fraction: the two halves summed, clamped to what a bar can show.
     pub fn fraction(&self) -> f64 {
         (self.parts[0] + self.parts[1]).clamp(0.0, 1.0)
     }
 
-    /// The status line's words and the bar's tooltip. At most two jobs, joined; the tooltip keeps
-    /// counting even for a job whose short line has gone quiet.
+    /// The status line's words and the bar's tooltip; the tooltip keeps counting for a job whose short line is quiet.
     pub fn text_and_tip(&self) -> (String, String) {
         let mut lines: Vec<String> = Vec::new();
         let mut tips: Vec<String> = Vec::new();
@@ -251,34 +199,24 @@ impl Queue {
         (lines.join(TRACK_JOIN), tips.join("; "))
     }
 
-    /// The short line alone — what the status line shows while a run works.
     pub fn text(&self) -> String {
         self.text_and_tip().0
     }
 
-    /// Read one track, for a test or a painter that wants more than the joined line.
     pub fn track(&self, track: usize) -> &Track {
         &self.tracks[track]
     }
 }
 
-/// S3: what a `checkpoint()` call found between two subprocesses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Checkpoint {
-    /// Neither paused nor stopping: go straight on.
     Ran,
-    /// Paused — wait [`CHECKPOINT_POLL`] and ask again. Not a failure, and not a stop: the run is
-    /// still the run that will carry on.
+    /// Paused: wait [`CHECKPOINT_POLL`] and ask again; not a stop.
     Waited,
-    /// ⏹ was pressed. This carries the stop error, and the caller unwinds rather than continuing.
     Stopped,
 }
 
-/// S3: the check every long flow makes between subprocesses.
-///
-/// Stop wins over pause: a user who pressed ⏹ while a pause was held asked for the run to end, and
-/// making them un-pause first to stop it would be absurd. Pause polls rather than blocks, because
-/// the GUI thread has to stay alive to see the ⏹ press at all.
+/// S3: the check every long flow makes between subprocesses. Stop wins over pause; pause polls so the GUI thread can see ⏹.
 pub fn checkpoint(paused: bool, stop_flag: bool) -> Checkpoint {
     if stop_flag {
         Checkpoint::Stopped
@@ -289,23 +227,14 @@ pub fn checkpoint(paused: bool, stop_flag: bool) -> Checkpoint {
     }
 }
 
-/// What starting a run did to the bookkeeping, so a test can read the order rather than infer it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Started {
-    /// The run context's generation after the bump.
     pub epoch: u64,
-    /// Whether the model log page was open when it got closed.
     pub closed_log_page: bool,
 }
 
-/// S1: `startRun` — running, flags cleared, fresh cancel context, queue reset (which also closes
-/// the model log page), controls, log expanded. Every ▶ and ↻ goes through here, so the order lives
-/// once: the flags are cleared *before* the queue is reset, because a queue reset repaints the bar
-/// and a stale flag in that paint shows a stopped run as still paused.
-///
-/// The cancel context is a generation counter rather than a channel: a model or audio call asks
-/// [`is_cancelled`] with the epoch it started on, so a `cancelled` left by the run before it cannot
-/// abort this one.
+/// S1: `startRun`: running, flags cleared, fresh cancel context, queue reset (closing the model log page), controls, log expanded. Every ▶ and ↻ goes through here. Flags clear BEFORE the queue reset, else its repaint shows a stopped run as paused.
+/// The cancel context is a generation counter: a call asks [`is_cancelled`] with its start epoch, so an old `cancelled` cannot abort this run.
 pub fn start_run(
     bar: &mut RunBar,
     queue: &mut Queue,
@@ -317,17 +246,12 @@ pub fn start_run(
     bar.running = Some(Run {
         step,
         paused: false,
-        // startRun expands the log: a run that says nothing where you can see it did not run.
         log_expanded: true,
         sources,
     });
     queue.reset();
-    // Closing the old exchange page happens here because this is the one call every run makes at its
-    // start: the next LLM call then opens a new one, named for whichever step makes it. The recorder's
-    // own copy of the boundary is raised and closes the live page in the same breath — §7's page is a
-    // run's, and `exchange_leg` is what every chat call files itself with, so the pair cannot drift.
+    // Closing the old exchange page here, the one call every run makes at its start, so the next LLM call opens a new one. The recorder's boundary closes in the same breath (§7).
     crate::exchange_leg::note_run_started();
-    // §10: the run's closing line counts what THIS run sent, so mark where the log stands now.
     crate::request_run::note_run_begins();
     let closed_log_page = log.reset().is_some();
     Started {
@@ -336,78 +260,55 @@ pub fn start_run(
     }
 }
 
-/// S1: the fresh cancel context, on its own so a caller that starts a run without a queue or a log
-/// (a test, a headless driver) still gets a clean one. Bumps the generation and clears both stop and
-/// pause, which is what "fresh" means: neither flag may survive into the new run.
+/// S1: the fresh cancel context on its own for callers with no queue or log; bumps the generation and clears stop and pause.
 pub fn bump_cancel_context(bar: &mut RunBar) -> u64 {
     bar.run_epoch += 1;
     bar.stop_flag = false;
-    // The pause flag lives on the run, not the bar (F0.2's ▶ toggles `Run::paused`), so a fresh
-    // context clears it here for a run already standing as well as starting a clean one.
+    // The pause flag lives on the run (F0.2's ▶ toggles `Run::paused`), so a fresh context clears it.
     if let Some(run) = bar.running.as_mut() {
         run.paused = false;
     }
     bar.cancelled = false;
-    // Open the matching switch in [`crate::cancel_leg`] at the SAME generation number, so a leg
-    // that captured this epoch is cancellable by the next ⏹ and untouched by the last one's.
+    // Open the matching [`crate::cancel_leg`] switch at the SAME generation, so a leg that captured this epoch is cancellable by the next ⏹ only.
     cancel_switch(cancel_epoch(bar));
     bar.run_epoch
 }
 
-/// The generation of the cancel context a leg is riding, read off the bar that owns it.
-///
-/// A flow hands this to [`crate::cancel_leg::cancel_check`] when it starts a request: capturing the
-/// number at start is what makes a stop cancel THIS run's legs and leave a previous run's alone
-/// (F0.5 S1's note on why the context is a counter rather than a channel).
+/// The generation of the cancel context a leg rides; a flow hands it to [`crate::cancel_leg::cancel_check`] at request start so a stop cancels THIS run's legs only (F0.5 S1).
 pub fn cancel_epoch(bar: &RunBar) -> u64 {
     bar.run_epoch
 }
 
-/// Keep the thread-shared cancel switch aligned with the bar's own epoch counter.
-///
-/// Both hold the same generation number on purpose: [`crate::cancel_leg::cancelled_at`] then means
-/// exactly what [`is_cancelled`] means, one read off the bar and one off the atomic, with no second
-/// source of truth about which run is which.
+/// Keep the shared cancel switch on the bar's epoch counter, so [`crate::cancel_leg::cancelled_at`] means what [`is_cancelled`] means.
 pub fn cancel_switch(epoch: u64) {
     crate::cancel_leg::reset_to(epoch);
 }
 
-/// S4: what ending a run handed over.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndRun {
-    /// The housekeeping call the audio server gets: `unload_all_models`, best-effort, 20 s deadline.
-    /// Always present — every run ends with it, even one that used no audio, because leaving weights
-    /// loaded is memory nothing is waiting on any more.
+    /// The audio server housekeeping call: `unload_all_models`, best-effort, 20 s deadline. Always present, even for runs using no audio.
     pub audio_unload: Kind,
 }
 
-/// S4: `endRun` — running off, controls refreshed, and the audio models unloaded off-thread. The unload
-/// is recorded rather than performed here — the runner sends the request off-thread and the window comes
-/// back to life now, not when the server answers.
+/// S4: `endRun`: running off, controls refreshed, audio models unloaded off-thread. The unload is recorded, not performed here.
 pub fn end_run(bar: &mut RunBar) -> EndRun {
     bar.running = None;
     bar.status.clear();
-    // F0.3 S4: the run has unwound, so its stop is spent — clearing the shared switch here is what
-    // keeps a ⏹ aimed at the previous run from cancelling the next one's legs.
+    // F0.3 S4: the run has unwound, so its stop is spent; clearing the shared switch keeps a stale ⏹ from cancelling the next run.
     crate::cancel_leg::clear();
-    // §7's page boundary: with the run gone, the next chat call opens a fresh page rather than adding a
-    // section to a finished run's. Kept in step with `bar.running`, which is what "a run is open" means.
+    // §7: with the run gone the next chat call opens a fresh page.
     crate::exchange_leg::note_run_ended();
     EndRun {
         audio_unload: Kind::UnloadAll,
     }
 }
 
-/// Whether the unload that [`end_run`] asks for really is the best-effort, bounded one §1 describes
-/// (20 s, called quietly, never failing the run that made it). Exposed so a test pins the pair
-/// rather than trusting the constants' names.
+/// Whether the unload [`end_run`] asks for is the bounded best-effort one §1 describes (20 s, quiet, never failing the run); for a test.
 pub fn audio_unload_is_bounded() -> (Duration, bool) {
     (UNLOAD_TIMEOUT, UNLOAD_IS_BEST_EFFORT)
 }
 
-/// Whether a cancellation flagged at `epoch` applies to the run now holding epoch `now`. A call
-/// started in an earlier run must not be aborted by a later run's flag, and vice versa: only equal
-/// epochs talk.
+/// Whether a cancellation flagged at `epoch` applies to the run holding `now`: only equal epochs.
 pub fn is_cancelled(flagged: bool, epoch: u64, now: u64) -> bool {
     flagged && epoch == now
 }
@@ -418,7 +319,6 @@ mod tests {
 
     #[test]
     fn f0_5_s1_start_run_clears_flags_and_opens_the_log() {
-        // F0.5 S1: running, flags cleared, fresh cancel context, queue reset, log expanded.
         let mut bar = RunBar::default();
         let mut queue = Queue::new();
         let mut log = RunLog::new();
@@ -453,8 +353,7 @@ mod tests {
         }
         q.prog(TRACK_STT, 4.0 / 12.0, "chunk 4/12");
         let (text, tip) = q.text_and_tip();
-        // The position is only spelled out when the head has no words of its own: `prog`'s text already
-        // counts, so appending "4/12" on top of "chunk 4/12" would say it twice.
+        // Spell out the position only when the head has no words of its own; `prog`'s text already counts.
         assert_eq!(text, "describe 1/2: chunk 4/12");
         assert_eq!(tip, "describe: task 4 of 12, 8 waiting");
         assert!((q.fraction() - 4.0 / 12.0).abs() < 1e-9);

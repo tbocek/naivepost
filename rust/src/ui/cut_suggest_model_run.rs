@@ -1,24 +1,4 @@
 //! §F2.14 S2b, the live leg: the model mode's cut call, asked from the Cut page's ▶.
-//!
-//! `ui::cut_suggest_land::suggest_press` answered the model arm with nothing at all and opened no bar.
-//! This is the ask: the words path's three inputs are read the same way, the model is shown the session
-//! timeline it copies seconds off, its five tools are answered by [`crate::tools::cutpass::Plan`], and
-//! whatever passed is walked back by [`crate::suggest::apply`] before anyone is told a cut exists.
-//!
-//! Three rules decide the shape of this module, and none of them is style:
-//! - The model answers in **seconds of the session timeline**, the only clock the timeline it was
-//!   shown is measured in (`02-services.md` §3.6: "session seconds copied off lines"). `Plan`'s snap
-//!   points move every edge it accepts and `suggest::apply` moves them again, so a number a model
-//!   typed never reaches a cut unchecked.
-//! - The verdict is [`suggest::whole_cut_problems`], the same check `finish_cut` judges with. A finish
-//!   the tool answered `ok` to is still re-checked here, because §S2 S6's "no valid cut after 3
-//!   attempts" is about the CUT, not about whether the model stopped asking.
-//! - **Nothing is written here.** §S3's landing is `cut_suggest_land::land`'s (one ↶, base moves);
-//!   `run_model` proposes and returns. And no `cache/llm` entry: a reply the whole-cut check refused
-//!   must not be served back on the retry, which is `captions_ask::ask_slot`'s rule and another item's.
-//!
-//! Every network leg is a caller-supplied closure, so no test dials a socket — the shape
-//! `fix_call` and `narrate_tts::speak_line` already use.
 
 use crate::cut_effect_decisions::Candidate;
 use crate::cut_suggest;
@@ -43,10 +23,6 @@ pub const PROMPT_KEY: &str = "cut";
 /// §S2b's first pass, counted from 1. The bound itself is `P.eng.llmAttempts` and is asked through
 /// [`suggest::attempts_exhausted`], so the loop never repeats the number.
 pub const FIRST_ATTEMPT: u32 = 1;
-/// The spans a proposed segment must have a recording under: the filmed runs of this session's kept footage,
-/// read straight off the session's recordings rather than off what the words path happened to keep. `runs_of`
-/// trims a run to its words and drops a recording nobody spoke over, so reading only its spans would drop a
-/// segment inside a real, wordless recording — footage that exists. §8's rule is about footage.
 pub fn filmed_spans(inputs: &cut_suggest_words_run::Inputs) -> Vec<(f64, f64)> {
     let spoken: Vec<(f64, f64)> = inputs.runs.iter().map(|run| run.span).collect();
     let _ = inputs;
@@ -61,25 +37,13 @@ pub fn filmed_spans(inputs: &cut_suggest_words_run::Inputs) -> Vec<(f64, f64)> {
     timeline::filmed_runs(&recordings)
 }
 
-/// The reply text the attempt loop watches, for §8's two "the reply that just arrived" rules: whether the
-/// next call still asks for reasoning, and where the progress line sits. Filled by [`watch_reply`], which
-/// wraps the caller's `ask`, so what is read is the bytes the dial handed back — never a scripted position.
 pub const WATCH_IDLE: &str = "";
-/// §S2 S7's `one rewrite, from the first answer`: the answer a refused attempt had already placed, and
-/// what `correction` is wrapped around. `attempt`'s `complaint` is `None` on the first pass — the model
-/// has not been told anything yet — and [`suggest::answer`]'s join after one, §S2 S6's `every fault at
-/// once, worst first`, in `cutpass`'s words.
 pub fn correction(problems: &[String]) -> String {
     format!(
         "That is not a valid cut: {}. Add, drop or move segments and call finish_cut again.",
         suggest::answer(problems)
     )
 }
-/// The cut job's shared reads, answered from the plan the call is being made against: its footage extent
-/// is the timeline the request was stamped on, so `get_frames(from, to)` names seconds the model can put
-/// an `add_segment` on. `get_lines` and `get_events` get an honest refusal rather than a silence — §3's
-/// rule is that a problem comes back as a sentence the model can act on, and the transcript for this
-/// session is not in scope here (the brief that IS, is already in the prompt the plan was asked with).
 fn read_answer(plan: &cutpass::Plan, call: &ToolCall) -> Option<String> {
     match call.name.as_str() {
         // The transcript this cut was proposed from is already in the brief the plan was asked with; a
@@ -111,8 +75,6 @@ fn read_answer(plan: &cutpass::Plan, call: &ToolCall) -> Option<String> {
 const FRAMES_ANSWER_MAX: usize = 200;
 
 /// The seconds a cut may be aimed at, one per `P.project.frameInterval` out to the end of the footage.
-/// The request shows the model these same stamps, so a `get_frames` answer has to name them and not
-/// another grid: that interval is the only spacing a frame exists at.
 fn frames_of_footage(footage_end: f64) -> Vec<f64> {
     let interval = crate::prepare::MODEL_FRAME_STEP;
     let mut at = 0.0;
@@ -124,11 +86,6 @@ fn frames_of_footage(footage_end: f64) -> Vec<f64> {
     out
 }
 
-/// §05-cut#8: `the checks answer with every fault at once, worst first, joined by "; "`. `check` is the
-/// whole-cut check's own list; `past_end` is a number the model wrote with its colons taken out, which is
-/// faulted with the conversion shown on the model's OWN digits (`2804 … 1684`) because that is the only way
-/// it can tell "too big" from "misread". With no such number the wording is unchanged — `cutpass` words a
-/// count or a length, and §8 is about ordering and joining, not re-wording.
 pub fn correction_from(check: &[String], past_end: Option<u32>) -> String {
     format!(
         "That is not a valid cut: {}. Add, drop or move segments and call finish_cut again.",
@@ -164,9 +121,6 @@ impl Landed {
         }
     }
 
-    /// The status row's sentence for a landed cut. §S3 spells the pair `suggest::apply` returns and
-    /// §S2b has no sentence of its own for a model cut that landed, so the log's own line is what the
-    /// page says; inventing a third wording would be a third thing to keep in step.
     fn landed_log(log: &[String]) -> String {
         log.first()
             .map(|line| line.trim_start_matches(">>> ").to_string())
@@ -176,10 +130,6 @@ impl Landed {
 
 /// The walk the answer is walked back against, from the words path's own three inputs: one reading of
 /// the session, spelled once, so §S2a and §S2b cut on the same seconds.
-///
-/// The aligner's per-word times stay private to `cut_suggest_words_run` (`word_seconds`), so the word
-/// edges here are the run edges that module already trusts — what `trim_run_to_words` yields — and each
-/// silence contributes its midpoint, the two candidate kinds §S3's snap weights name.
 pub fn walk_of(inputs: &cut_suggest_words_run::Inputs) -> suggest::Walk {
     let talked: Vec<(f64, f64)> = inputs.runs.iter().map(suggest::trim_run_to_words).collect();
     let mut snap_points: Vec<(f64, Candidate)> = Vec::new();
@@ -227,17 +177,10 @@ pub fn gaps_of(inputs: &cut_suggest_words_run::Inputs, end: f64) -> Vec<(f64, f6
     holes
 }
 
-/// The request's user turn, assembled the §8 way: the User Context block and the cut's speech rule first
-/// ([`crate::prompt_assembly::user_message`] — only `cut` and `narrate` carry that rule), then the material
-/// [`suggest::message`] spells (SESSION LENGTH, the target block, the dead-air number, the timeline).
 pub fn user_turn(user_context: &str, session_len: f64, target: f64, session_txt: &str) -> String {
     user_turn_named(user_context, session_len, target, session_txt, &[], &[])
 }
 
-/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): the same turn with
-/// the session's camera rows and heard lanes in front of the material, which is what a press holding a real
-/// cut passes. With one row and one lane the message is unchanged — [`crate::effect_overlap::brief_lines`]
-/// says nothing worth saying.
 pub fn user_turn_named(
     user_context: &str,
     session_len: f64,
@@ -260,9 +203,6 @@ pub fn user_turn_named(
     )
 }
 
-/// The system message, assembled the way every other ask does it: the shipped `system` and `cut`
-/// wording, through the settings copy so an edit in Settings wins (§04-prepare#6). `None` when the
-/// shipped text cannot be read — the press then names that instead of asking a model with no job.
 pub fn system_message(user_context: &str, paths: Option<&Paths>) -> Option<String> {
     let job = wording(paths, PROMPT_KEY)?;
     let system = wording(paths, "system")?;
@@ -276,9 +216,6 @@ pub fn system_message(user_context: &str, paths: Option<&Paths>) -> Option<Strin
     ))
 }
 
-/// The wording reader every ask uses: the shipped file, or the settings copy of it. Spelled privately
-/// here for the same reason `captions_ask` spells it: widening that module's helper would make one
-/// flow's setting another flow's default.
 fn wording(paths: Option<&Paths>, key: &str) -> Option<String> {
     let fallback = crate::join_ask::shipped_file(key)?;
     match paths {
@@ -287,18 +224,7 @@ fn wording(paths: Option<&Paths>, key: &str) -> Option<String> {
     }
 }
 
-/// One tool call, answered by the plan. The five names are `tools::Tool`'s and the arguments are
-/// §3.6's: `add_segment` `start`/`end`/`why`, `remove_segment` `start`, `set_speed` `start`/`rate`,
-/// `cut_status` and `finish_cut` with none.
-///
-/// A missing or non-numeric argument answers the tool's own error naming the argument that is absent.
-/// Defaulting it to `0.0` would place a zero-length segment at the head of the session and teach the
-/// model nothing, which is the opposite of what §3.6's result column is for.
 pub fn answer_call(plan: &mut cutpass::Plan, call: &ToolCall) -> String {
-    // §3.1's shared reads first. §3 lists them for every job, and the cut is the one the model most needs
-    // them for: `get_lines` and `get_events` over the footage the request was built from, `get_frames`
-    // over the seconds the tape runs. Tried BEFORE this job's own six names, which never collide with a
-    // shared read, so the plan's answers below are untouched.
     if let Some(answer) = read_answer(plan, call) {
         return answer;
     }
@@ -375,15 +301,10 @@ pub fn acceptable(plan: &cutpass::Plan, target: f64) -> bool {
     suggest::whole_cut_problems(&placed(plan), target).is_empty()
 }
 
-/// The number the model typed that fell past the end of the footage, in ITS OWN digits — the shape §8's
-/// conversion is about. A model that stamps `[28:04]` and drops the colon writes `2804`; the tool refused it
-/// against the footage end in seconds, so the digits are recovered from the refusal the model was given, and
-/// a refusal that quoted no such number answers `None` rather than guessing one.
 pub fn past_end_claim(problems: &[String], footage_end: f64) -> Option<u32> {
     let marker = " is past the end of the footage, which runs to ";
     for said in problems {
         let (claim, _) = said.split_once(marker)?;
-        // The tool quotes its own `mm:ss`; the digits WITHOUT the colon are exactly what the model sent.
         let digits: String = claim.chars().filter(|c| c.is_ascii_digit()).collect();
         let claimed: u32 = digits.parse().ok()?;
         if f64::from(claimed) > footage_end {
@@ -393,20 +314,7 @@ pub fn past_end_claim(problems: &[String], footage_end: f64) -> Option<u32> {
     None
 }
 
-/// One attempt: the two messages, `tool_loop::run` over the offered tools, every call answered from
-/// `plan`, and whether the plan it ended with is a cut. The loop's log lines come back in order — the
-/// `>>>` round lines, §3's per-call notes, and §2's `!!!` line when the rounds ran out.
-///
-/// The loop's `finish` is not this function's verdict: `finished` says the model stopped asking, `ok`
-/// says what it stopped with is a cut. §S2 S6 needs both, because a round that ran out and an answered
-/// finish that failed the checks get different sentences.
 #[allow(clippy::too_many_arguments)]
-/// The conversation one attempt starts from: the two messages §S2b spells, plus the correction round
-/// when there is one. §S2 S7's rewrite is a SECOND REQUEST with the complaint in it and the answer
-/// already placed as its starting point — the same rule `captions_ask::ask_slot` exists for on the
-/// caption batches: a retry must never be served the reply it was just refused for, so the cache is
-/// kept out of this call entirely (`llm_cache::uses_cache(Job::ModelCut)` answers false). Spelled
-/// separately so a test pins what the model is told, in order, with no socket in the way.
 pub fn opening(
     system: &str,
     user: &str,
@@ -423,8 +331,6 @@ pub fn opening(
             parts: vec![Part::Text(user.to_string())],
         },
     ];
-    // §12's SHOULD for a rewrite: say what changed about the call before asking for the answer again. It goes
-    // FIRST of the two so the model reads the terms of this attempt before reading its complaint.
     if let Some(note) = note {
         messages.push(Message {
             role: "user".to_string(),
@@ -465,9 +371,6 @@ where
     )
 }
 
-/// The same attempt with the tool list handed in. §8's web-tool rule decides per attempt which tools go out,
-/// so the list is the caller's to own — reading `tools::offered` inside would put the decision in two places
-/// and let the loop log a withdrawal the request then ignored.
 #[allow(clippy::too_many_arguments)] // one argument per thing an attempt is asked with; folding them hides it
 pub fn attempt_with_tools<F>(
     system: &str,
@@ -508,14 +411,6 @@ where
     attempt_with(system, user, None, None, plan, target, ask)
 }
 
-/// §S2b then §S3, over everything the page holds: the attempts, then the walk-back of the one answer
-/// that passed. `ask` is the network leg — nothing else here reaches a socket, and nothing here writes
-/// a file.
-///
-/// A plan that `finish_cut` accepted still goes through [`suggest::apply`], which is §S3 in one call:
-/// talked-in holes closed, both edges snapped, marks and dead air out, coalesced, effects clamped
-/// against the footage that survived. Hand-placed inserts go in untouched — §S3 keeps them — so they
-/// are read off the cut on screen rather than proposed.
 pub fn run_model<F>(
     tree: &Tree,
     project: &Project,
@@ -539,10 +434,6 @@ where
         return Landed::refused(suggest::NO_TIMELINE);
     }
     let walk = walk_of(&inputs);
-    // §9's last paragraph at the cut pass's own door: once there is more than one camera row or heard lane to
-    // tell apart, the brief names them, and a suggested scene can then say which camera it is shown from
-    // ([`crate::effect_overlap::suggested_scene_cam`] reads a named row back at the placement door).
-    // Rows are spelled the way the other passing briefs spell them — the page's 1-based camera number.
     let mut rows: Vec<String> = cut
         .segs
         .iter()
@@ -628,9 +519,6 @@ where
             &offered,
             &mut watch,
         );
-        // The progress this attempt's replies earned, reported now that the loop owns `call` again.
-        // `Call::report` answers the bar's sentence, its fraction and whether it still pulses; `watch` is the
-        // page's door, and no door means no page to tell (a logic test), which is the same answer.
         for reply in last_reply.borrow().iter() {
             let progress = call.report(reply, end);
             crate::ui::cut_suggest_progress::watch(&progress);
@@ -639,7 +527,6 @@ where
         // §8: an answer that was all reasoning and no answer gets its next call asked WITHOUT thinking, and
         // the log says why the question changed.
         logs.extend(retry_note(&mut call, &last_reply));
-        // A run cut off mid-answer (⏹, a dropped connection) holds a partial cut, however long it already is.
         if finished && ok {
             // §8's drop runs BEFORE the length is judged, so the count the walk-back is built from is the one
             // the page ends up with: a segment with no recording at either end names a stretch of session that
@@ -666,10 +553,6 @@ where
                 applied,
             };
         }
-        // A refused answer counts against BOTH of §8's rules: the check below is the correction's source, and
-        // the web tools are withdrawn on the first one. An EMPTY reply was already charged as the first
-        // rejection when the thinking rule read it, so charging it twice would move the withdrawal one attempt
-        // early and make the web-tool rule depend on which of two readers looked first.
         if call.answered(&replies_text(&last_reply)) {
             call.note_rejected();
         }
@@ -687,12 +570,6 @@ where
 
 /// The wrapper that keeps §8's three "the reply that just arrived" rules honest: the attempt loop reads the
 /// text the dial ACTUALLY handed back, so neither the thinking rule nor the progress numbers can be scripted.
-/// The request is streamed (`live_ask` passes `streaming: true`), but the reply this loop reads is still one
-/// snapshot per call — the delta pump in [`crate::llm_stream_leg`] belongs to another item, so a call's whole
-/// answer arrives at once — and the loop needs EVERY call of an attempt, not the last one: a model that asked
-/// for three segments and then
-/// called `finish_cut` wrote its answer in the first reply and said nothing in the second. So the running text
-/// is a log of every reply this attempt received, and "wrote nothing" means not one reply wrote anything.
 pub fn watch_reply<'a, F>(
     ask: &'a mut F,
     seen: &'a std::cell::RefCell<Vec<String>>,
@@ -735,9 +612,6 @@ pub fn read_session_txt(tree: &Tree) -> String {
     std::fs::read_to_string(tree.session_txt()).unwrap_or_default()
 }
 
-/// The network half of the ask, spelled once: the same timed, retried chat call every LLM job makes,
-/// with this step's row and the window's log. Answers the reply's content type and body, so a test can
-/// substitute its own and no test dials a socket.
 pub fn dial(
     tree: &Tree,
     model: &str,
@@ -757,9 +631,6 @@ pub fn dial(
     Ok((sent.content_type, sent.body))
 }
 
-/// The live ask leg: body → [`dial`] → turn. §S2b's row says thinking ON, which is `Mode::Thinking`;
-/// the web tools come from `tools::offered`, which already carries them for this job (§S2b's "dropped
-/// after a first rejection" is `cut_suggest::offers_web`'s rule and another item's).
 pub fn live_ask<'a>(
     tree: &'a Tree,
     conf: &'a settings::Conf,
@@ -804,9 +675,6 @@ pub fn live_ask<'a>(
 
 pub use crate::ui::cut_suggest_land::session;
 
-/// What [`press`] reads off the window before anything is asked. `None` answers §S1's
-/// own sentence for the case §S1 could not see, and an unreadable settings file answers its reason
-/// rather than a dial to a guessed address (§02-services#1: settings are re-read per request).
 pub(crate) struct Press {
     paths: Option<Paths>,
     project: Project,
@@ -848,20 +716,12 @@ pub(crate) fn blocked(why: Blocked) -> Landed {
 
 /// The window's door for `suggest_press`'s model arm: read the settings this press dials, ask, walk
 /// back, answer.
-///
-/// `busy` is taken and unused on purpose: the press that refused a busy bar never reaches here — §S1's
-/// order (busy → hand edits → timeline → the word gate) is answered upstream in
-/// `cut_suggest_land::refuse_suggest_run` and is not re-decided here. The cut is landed by the caller,
-/// which owns the one-↶ write.
 pub fn press(window: &adw::ApplicationWindow, busy: bool) -> Landed {
     let _ = busy;
     let (tree, parts) = match press_parts(window) {
         Ok(got) => got,
         Err(why) => return blocked(why),
     };
-    // `press_parts` already proved the file reads; reading it twice is what honours a change made
-    // between the check and the dial, which is the whole point of reading settings per request. No
-    // settings folder at all is no settings: the compiled-in loopback default, as every other ask.
     let conf = match parts.paths.as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         _ => settings::Conf::default(),
@@ -885,10 +745,6 @@ pub(crate) fn ask_on_worker(tree: Tree, parts: Press) -> Landed {
 }
 
 /// `P.policy.targetLengthSeconds` — the length this cut aims at, seconds; §10's default is 0 = none.
-///
-/// Read on the press path rather than hardcoded at the call: the day F0.7 derives a number from the User
-/// Context it writes the policy field and every `suggest::target_block`/length-gate answer on this page moves
-/// with it, with nothing rewired. F0.7's derivation is another item's round.
 pub fn target_length_seconds(policy: &crate::project::Policy) -> f64 {
     policy.target_length_seconds.value.max(0.0)
 }

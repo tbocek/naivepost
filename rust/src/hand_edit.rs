@@ -1,12 +1,5 @@
-//! Hand-edit the text (spec/04-prepare.md F1.12): the user deletes words in `prepare/transcript/final.txt`
-//! in any text editor — there is no editor in the app — and the next Cut ▶ remakes the marks from that
-//! text without asking a model.
-//!
-//! The match runs backwards, which is what makes an edit cheap: the text's tail lines up with the
-//! speech's tail, so deleting a word in the middle cannot shift everything after it out of place. A word
-//! in the file that nothing spoken matches was never said and is left out — there is no sound for it —
-//! and an edit that removes more than the retake ceiling is refused outright rather than quietly cutting
-//! half the video away.
+//! Hand-edit the text (spec/04-prepare.md F1.12): the user deletes words in `prepare/transcript/final.txt` in any editor and the next Cut ▶ remakes the marks from it without a model.
+//! The match runs backwards (the tails line up, so a middle deletion cannot shift the rest). A word nothing spoken matches was never said and is left out; an edit removing more than the retake ceiling is refused.
 
 use std::time::SystemTime;
 
@@ -16,18 +9,14 @@ use crate::textfmt::{self, read_final, Retake};
 use crate::tools::mm_ss;
 use crate::tools::retakes::RETAKE_CEIL;
 
-/// How many words back the match may look for the text's next word: past that, the word was not said —
-/// it is a typing, or a word from a sentence the user rewrote, and there is no sound for it.
+/// How many words back the match may look for the text's next word; past that the word was not said (a typing or a rewrite).
 pub const KEEP_REACH: usize = 200;
 
-/// What the run says when it takes the edit over. The model is not asked, which is the point: the text
-/// is the edit, and asking again would let a model undo what the user just typed.
+/// What the run says when it takes the edit over; the model is not asked, or it could undo the user's edit.
 pub const EDITED_NOTE: &str =
     ">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked";
 
-/// S2: is the text newer than the marks? A missing `final.txt` is nothing to read; a missing
-/// `retakes.tsv` means nothing has been marked yet, so an edit there is one waiting to be used. Equal
-/// times are not newer — the model's marks stand and no work is redone.
+/// S2: is the text newer than the marks? A missing `final.txt` is nothing to read; a missing `retakes.tsv` means an edit is waiting. Equal times are not newer.
 pub fn edited(final_mtime: Option<SystemTime>, marks_mtime: Option<SystemTime>) -> bool {
     match final_mtime {
         Some(text) => marks_mtime.is_none_or(|marks| text > marks),
@@ -35,9 +24,7 @@ pub fn edited(final_mtime: Option<SystemTime>, marks_mtime: Option<SystemTime>) 
     }
 }
 
-/// The words of the edited text, join marks read out by [`read_final`] and any pause marker the file was
-/// written with dropped along with them. A hand edit can break the lines anywhere it likes; a pipe never
-/// occurs in a transcript, so even a mangled mark goes rather than becoming a word.
+/// The words of the edited text, with join marks ([`read_final`]) and pause markers dropped. A pipe never occurs in a transcript, so a mangled mark goes rather than becoming a word.
 fn text_words(text: &str) -> Vec<String> {
     let bare = PAUSE_MARK.replace_all(text, " ");
     read_final(bare.as_ref())
@@ -47,25 +34,16 @@ fn text_words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// The pause marker `final.txt` can hold — `(pause 1.2s)` — which is a mark, never a word.
 static PAUSE_MARK: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"\(pause [0-9.]+s\)").unwrap());
 
-/// S2: which spoken words the edited text still holds, and how many of its words were never said.
-///
-/// Walked from the end in both: the edit is a deletion, so the tails agree, and matching forwards would
-/// let one mismatch near the start misalign every word after it — turning an edit of two words into an
-/// apparent edit of two hundred.
+/// S2: which spoken words the edited text still holds, and how many of its words were never said. Walked from the end in both, since the edit is a deletion; matching forwards would let one mismatch misalign every word after it.
 pub fn keep_mask(words: &[String], out: &[String]) -> (Vec<bool>, usize) {
     let mut kept = vec![false; words.len()];
     let mut extra = 0usize;
     let mut cursor = words.len();
     for wanted in out.iter().rev() {
-        // Search back from the cursor, no further than the reach: a word that only matches across half
-        // the recording is not this word. The window is `KEEP_REACH` *candidates*, counted off the
-        // cursor itself — which is what makes it independent of how much was deleted above.
-        // The window is KEEP_REACH *candidates*, counted off the cursor rather than off the word's own
-        // index — so how far the match may look does not depend on how much was deleted above it.
+        // Search back from the cursor within the reach; the window is `KEEP_REACH` candidates counted off the cursor, independent of how much was deleted above.
         let found = (1..=cursor.min(KEEP_REACH)).find(|&back| words[cursor - back] == *wanted);
         match found {
             Some(back) => {
@@ -79,12 +57,7 @@ pub fn keep_mask(words: &[String], out: &[String]) -> (Vec<bool>, usize) {
     (kept, extra)
 }
 
-/// S2: every maximal run of dropped words becomes one mark.
-///
-/// The seconds come in beside the words rather than inside them, which is what lets a test hand over a
-/// synthetic session and keeps this function about runs. Hand-editing has no notion of "said again":
-/// there is no second take to read instead, so `again` stays nought and `to` equals the run's own end —
-/// the words are all that goes.
+/// S2: every maximal run of dropped words becomes one mark. Seconds come in beside the words so a test can hand over a synthetic session. No second take exists, so `again` stays nought and `to` equals the run's end.
 pub fn marks_from(times: &[(f64, f64)], kept: &[bool]) -> Vec<Retake> {
     let mut marks = Vec::new();
     let mut run: Option<(usize, usize)> = None;
@@ -116,26 +89,17 @@ fn mark(times: &[(f64, f64)], first: usize, last: usize) -> Retake {
     }
 }
 
-/// What remaking the marks says and produces.
 #[derive(Debug, Clone, Default)]
 pub struct Outcome {
     pub marks: Vec<Retake>,
     pub logs: Vec<String>,
     pub dropped: usize,
     pub extra: usize,
-    /// The edit took more than the ceiling away: nothing is marked, and what was there stands.
     pub refused: bool,
 }
 
-/// S2: the marks remade from the edited text, no model asked.
-///
-/// `edge_of` answers with the envelope of the recording a session second belongs to — the same lookup
-/// [`crate::edges`] takes — so an edge can move onto the sound; `None` leaves it on the word times, which
-/// is what a run with no audio to ask has.
-///
-/// Not here on purpose: `dedupeJoins` (the "said again straight after the cut" note) and the join-repair
-/// pass belong to the passes that produce those marks (F1.9, F1.10). This remakes marks from the text it
-/// was handed, and [`textfmt::read_final`] already tolerates the join marks staying or going.
+/// S2: the marks remade from the edited text, no model asked. `edge_of` gives the envelope of the recording a session second belongs to ([`crate::edges`]); `None` leaves edges on the word times.
+/// `dedupeJoins` and join repair belong to F1.9/F1.10; [`textfmt::read_final`] tolerates join marks staying or going.
 pub fn remake<'a>(
     text: &str,
     words: &[String],
@@ -156,7 +120,6 @@ pub fn remake<'a>(
 
     out.dropped = kept.iter().filter(|keep| !**keep).count();
     if times.is_empty() {
-        // Nothing was ever spoken, so there is nothing to mark and nothing to refuse.
         return out;
     }
     if out.dropped as f64 > RETAKE_CEIL * times.len() as f64 {
@@ -170,9 +133,7 @@ pub fn remake<'a>(
     }
 
     let mut marks = marks_from(times, &kept);
-    // The text names the words, so the marks can: it is what a person reads in `retakes.tsv`. Named off
-    // the spoken list and clipped to the run's own seconds, which is what keeps the name identical whether
-    // or not an envelope went on to move the edges.
+    // The text names the words, so the marks can (what a person reads in `retakes.tsv`); named off the spoken list and clipped to the run, so the name is the same whether or not an envelope moved the edges.
     for mark in marks.iter_mut() {
         mark.text = words
             .iter()
@@ -203,8 +164,7 @@ pub fn remake<'a>(
     out
 }
 
-/// Write the text where Prepare keeps it — through the same 0644 writer, so a hand edit lands on a file
-/// the app made and the folder that holds it.
+/// Write the text where Prepare keeps it, via the same 0644 writer.
 pub fn write_final(tree: &Tree, text: &str) -> Result<(), String> {
     let path = tree.final_txt();
     if let Some(parent) = path.parent() {
@@ -213,15 +173,12 @@ pub fn write_final(tree: &Tree, text: &str) -> Result<(), String> {
     std::fs::write(&path, text).map_err(|err| format!("{}: {err}", path.display()))
 }
 
-/// Write the remade marks where Cut reads them. The fresh file's own mtime is what stops the next Cut ▶
-/// remaking the same edit — "remade once" is structural rather than remembered.
+/// Write the remade marks where Cut reads them. Their fresh mtime stops the next Cut ▶ remaking the same edit.
 pub fn write_marks(tree: &Tree, marks: &[Retake]) -> Result<(), String> {
     textfmt::write_retakes(marks, &tree.retakes_tsv())
 }
 
-/// The per-source folder key: the base name without its extension, off whatever form the project stored
-/// (`project:sources/lecture.mkv`, `sources/lecture.mkv` or a bare `lecture.mkv`). Same rule as
-/// [`crate::prepare_data`]'s row name — the two have to agree or this reads a file Prepare never wrote.
+/// The per-source folder key: the base name without extension, from any stored form (`project:sources/lecture.mkv`, `sources/lecture.mkv`, `lecture.mkv`); must agree with [`crate::prepare_data`]'s row name.
 fn source_key(stored: &str) -> String {
     let name = stored.rsplit('/').next().unwrap_or(stored);
     match name.rfind('.') {
@@ -230,19 +187,10 @@ fn source_key(stored: &str) -> String {
     }
 }
 
-/// The session's lanes as F1.11's edge placement wants them: each source keyed as Prepare keys it,
-/// placed on the session clock by its OWN file name, and stamped with the recording's size/mtime so a
-/// cache made against a replaced file reads as a miss.
-///
-/// The offsets come from `clock::clock` through [`crate::fix_transcripts::placement`], which MUST be
-/// handed the WHOLE session: leaving a take out moves second nought and slides every other lane to a
-/// different second, which would place every edge in the wrong audio. A source whose file cannot be
-/// stat-ed contributes no lane at all — there is no recording to have an envelope of — and the word
-/// pad covers that second exactly as it did before this lookup existed.
+/// The session's lanes for F1.11's edge placement: keyed as Prepare keys them, placed by their OWN file name, stamped with size/mtime so a cache for a replaced file misses.
+/// [`crate::fix_transcripts::placement`] MUST get the WHOLE session (leaving a take out moves second nought and slides every lane). A source that cannot be stat-ed contributes no lane.
 pub(crate) fn session_lanes(tree: &Tree, sources: &[String]) -> Vec<edges::Lane> {
-    // The clock is keyed on the file NAME, so take the base for it; but the stat needs the WHOLE
-    // stored path, since `project:sources/lecture.mkv` lives inside the project and a bare
-    // `lecture.mkv` resolves to nothing. Both travel together so neither is guessed at later.
+    // The clock is keyed on the file NAME but the stat needs the WHOLE stored path (`project:sources/lecture.mkv` lives inside the project); both travel together.
     let named: Vec<(&str, &str)> = sources
         .iter()
         .map(|stored| (stored.rsplit('/').next().unwrap_or(stored), stored.as_str()))
@@ -264,12 +212,7 @@ pub(crate) fn session_lanes(tree: &Tree, sources: &[String]) -> Vec<edges::Lane>
         .collect()
 }
 
-/// The recording's own size and mtime, off the path the project stored. `project:`-prefixed paths
-/// resolve inside the project folder; anything else is taken as it stands.
-///
-/// These are the stamps [`crate::wave::read`] checks the cache header against, so they must come from
-/// the recording and never from the cache file itself — reading them back out of the file being checked
-/// makes the staleness test unable to fail.
+/// The recording's own size and mtime from the stored path (`project:` resolves inside the project). These are what [`crate::wave::read`] checks the cache header against, so never take them from the cache file itself.
 fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
     let path = match stored.strip_prefix("project:") {
         Some(rel) => tree.dir().join(rel),
@@ -285,33 +228,17 @@ fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
     Some((meta.len() as i64, mtime))
 }
 
-/// A file's own modification time, or `None` when there is no such file to ask. Both halves of §F1.12's
-/// question are answered off the disk rather than off a remembered flag, which is what makes an edit
-/// seen by *any* program (not only this one) count.
+/// A file's modification time, or `None`; read off the disk so an edit by any program counts.
 fn mtime(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path)
         .ok()
         .and_then(|meta| meta.modified().ok())
 }
 
-/// The session's spoken words and their seconds, read back from each source's `words.json` in the order
-/// the sources were added — the same order `final.txt` was written from, so word *n* of the list is
-/// word *n* of the text.
+/// The session's spoken words and seconds from each source's `words.json`, in source order (the order `final.txt` was written from, so word *n* matches).
 ///
-/// `start_sample`/`end_sample` are 16 kHz samples off the source's own start (§04 F1.3), turned into
-/// seconds through [`crate::transcribe::SAMPLE_RATE`]; the session offset is not added because
-/// hand-editing moves marks within the material that was marked, and the marks written here are read
-/// against the same list they were made from.
-///
-/// Spec silent on a source with no `words.json`: it contributes nothing and the rest carry on — the
-/// same reading as the ASR stage, where a missing sidecar means that source was never transcribed, and
-/// inventing words for it would mark silence.
-///
-/// Each stored path is turned into the folder key Prepare writes under — the base name without its
-/// extension (`project:sources/lecture.mkv` → `lecture`, landing on
-/// `prepare/inputs/lecture/words.json`) — which is what [`crate::prepare_data`] calls a recording's
-/// row name and what `prepare_data_written`'s expected listing shows. The bare form the logic tests
-/// pass (`"lecture.mkv"`) reduces to the same key, so both spellings read the same file.
+/// `start_sample`/`end_sample` are 16 kHz samples off the source start (§04 F1.3), converted via [`crate::transcribe::SAMPLE_RATE`]; the session offset is not added since the marks are read against the same list.
+/// A source with no `words.json` contributes nothing (never transcribed). Stored paths become the folder key Prepare writes under (`project:sources/lecture.mkv` → `lecture`); the bare form reduces to the same key.
 pub fn session_words(tree: &Tree, sources: &[String]) -> (Vec<String>, Vec<(f64, f64)>) {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut words = Vec::new();
@@ -331,19 +258,9 @@ pub fn session_words(tree: &Tree, sources: &[String]) -> (Vec<String>, Vec<(f64,
     (words, times)
 }
 
-/// S2: the step the next Cut ▶ takes when the text has been edited since the marks were written.
+/// S2: the step the next Cut ▶ takes when the text was edited since the marks were written. `None` when the text is not newer than `retakes.tsv` (§F1.12 `N -- no`). Otherwise the lines and marks; marks are already written unless the edit crossed the ceiling (`P.machine.retakeCeil`, [`RETAKE_CEIL`]), when nothing was written.
 ///
-/// Returns `None` when there is nothing to do — the text is not newer than `retakes.tsv`, so
-/// §F1.12's `N -- no` branch holds and the model's marks stand untouched. Otherwise the outcome
-/// carries the lines to show and the marks; the marks are already written out unless the edit crossed
-/// the ceiling (`P.machine.retakeCeil`, [`RETAKE_CEIL`]), in which case nothing was written and what
-/// is on disk stays.
-///
-/// The edges are asked of the wave cache: each lane's `cache/waves/<key>.wave` is read and, when it is
-/// present and stamped against this very recording, its envelope moves the mark onto the sound. With no
-/// such cache the marks sit on the word times instead — a normal state, not an error, because nothing
-/// in `src/` writes that cache yet (the producer arrives with the audio-lane rounds). Either way the
-/// words fence the edge; the envelope only chooses inside the fence.
+/// Edges: each lane's `cache/waves/<key>.wave` is read and, if stamped against this recording, its envelope moves the mark onto the sound; without one the marks sit on word times (normal, nothing in `src/` writes that cache yet). The words fence the edge either way.
 pub fn before_cut(tree: &Tree, sources: &[String]) -> Option<Outcome> {
     let final_mtime = mtime(&tree.final_txt());
     let marks_mtime = mtime(&tree.retakes_tsv());
@@ -351,13 +268,11 @@ pub fn before_cut(tree: &Tree, sources: &[String]) -> Option<Outcome> {
         return None;
     }
     let Ok(text) = std::fs::read_to_string(tree.final_txt()) else {
-        // Readable a moment ago and not now: treat it as no edit rather than failing the run over a
-        // file the user may still be saving.
+        // Readable a moment ago and not now: treat as no edit, the user may still be saving.
         return None;
     };
     let (words, times) = session_words(tree, sources);
-    // Nothing was ever spoken, so there is nothing to remake and nothing to refuse — the same shape
-    // `remake` returns for an empty session, kept here so no marks file is written over a good one.
+    // Nothing was ever spoken: nothing to remake or refuse, and no marks file written over a good one.
     if times.is_empty() {
         return Some(Outcome {
             logs: vec![EDITED_NOTE.to_string()],
@@ -367,8 +282,7 @@ pub fn before_cut(tree: &Tree, sources: &[String]) -> Option<Outcome> {
     let held = edges::load(tree, &session_lanes(tree, sources));
     let outcome = remake(&text, &words, &times, edges::finder(&held));
     if !outcome.refused {
-        // Writing the marks is what ends the edit: the new file's mtime answers S2's question with
-        // "no" from here on, so the remake happens once without any flag to remember it by.
+        // Writing the marks ends the edit: the new mtime answers S2 with "no", so the remake happens once.
         if let Err(reason) = write_marks(tree, &outcome.marks) {
             let mut outcome = outcome;
             outcome.logs.push(format!("!!! text edit: {reason}"));

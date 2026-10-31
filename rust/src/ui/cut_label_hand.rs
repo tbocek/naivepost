@@ -1,9 +1,4 @@
 //! F3.7 🏷 Label by hand — the page half of the flow: the press, the form drawer, the Apply.
-//!
-//! Split out of `window.rs` unchanged: the rules live in [`crate::fx_label`], and what is here is only
-//! the state a press leaves behind and the widgets that show it — the name entry, the length stepper and
-//! the two buttons. No decision of its own. A label has no box and nothing to arm; unlike Volume it also
-//! has a second refusal, the one for a missing NAME, which is why its Apply can fail twice over.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -26,15 +21,10 @@ use crate::ui::window::{
 // decision of its own. A label has no box and nothing to arm; unlike Volume it also has a second refusal, the
 // one for a missing NAME, which is why its Apply can fail twice over.
 
-/// This window's label-form holder name. Only the Cut tab's instance is ever drawn into or read from —
-/// `page_box` runs once per tab, so an unscoped name exists four times per window and every lookup lands on
-/// whichever box the walk reaches first (the `fold-badges` / `camera-rows` / `zoom-form` / `volume-form` rule).
 fn cut_label_form_name() -> String {
     format!("label-form-{}", Page::Cut.label())
 }
 
-/// Resolve THIS window's label-form holder through its own content, so a closed window's surviving tree cannot
-/// answer for a live one.
 fn label_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     let content = window.content()?;
     find_widget_by_name(&content, &cut_label_form_name())?
@@ -42,15 +32,9 @@ fn label_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
         .ok()
 }
 
-/// F3.7 S1: what pressing 🏷 Label did — as the sentence for the status line, with the form opened when there
-/// is a moment to name. NOTHING is recorded on this press: the record happens in [`press_label_apply`], because
-/// until someone gives the name there is nothing to mark ("nothing is placed until then").
-///
-/// The refusal is answered BEFORE any form is drawn, so a cancelled dialog can never cost the user a refusal
-/// (the F2.12 Insert lesson). A band under [`cut_speed::MIN_MARKED_SECONDS`] is not a band at all and falls
-/// through to the line exactly as the flowchart draws it; the line is read through the same seam Paste, Insert,
-/// Speed and Volume use (`paste_line`) and gated by whether one was ever placed, so the page has one notion of
-/// "a line exists".
+/// F3.7 S1: what pressing 🏷 Label did — as the sentence for the status line, with the form opened
+/// when there is a moment to name. The refusal is answered BEFORE any form is drawn, so a cancelled
+/// dialog can never cost the user a refusal (the F2.12 Insert lesson).
 pub fn press_label_item(window: &adw::ApplicationWindow) -> String {
     let band = selection(window)
         .filter(|band| band.length() > 0.0)
@@ -63,10 +47,7 @@ pub fn press_label_item(window: &adw::ApplicationWindow) -> String {
             fx_label::NO_SECONDS.to_string()
         }
         pressed => {
-            // `initial` is the mark the press opens the form with: two seconds wide, unnamed. Its `t`/`dur` are
-            // the form's Length; its empty `text` is the Name field waiting to be filled. For the line branch
-            // `initial` cannot know the playhead (it leaves 0.0), so `initial_at_line` supplies the real second
-            // rather than letting the title read `Label at 00:00`.
+            // `initial` is the mark the press opens the form with: two seconds wide, unnamed.
             let fx = match (pressed, line) {
                 (fx_label::Pressed::MarkAtLine, Some(at)) => fx_label::initial_at_line(at),
                 (pressed, _) => fx_label::initial(pressed).unwrap_or_default(),
@@ -78,8 +59,6 @@ pub fn press_label_item(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// Hide and empty the label form. Used by the refusal path too, so a form left open from an earlier press cannot
-/// sit on screen while the page says there is no moment to work on.
 pub(crate) fn close_label_form(window: &adw::ApplicationWindow) {
     set_label_form(None);
     if let Some(holder) = label_form_box_raw(window) {
@@ -87,13 +66,12 @@ pub(crate) fn close_label_form(window: &adw::ApplicationWindow) {
     }
 }
 
-/// F3.7 S3: draw the form "Label at m:ss" — the two fields in [`fx_label::FORM_FIELDS`]'s order on one row as
-/// `spec/img/06-label.png` lays them out, plus Apply / Cancel. Built into locals and appended LAST in one pass:
-/// a widget that already has a parent cannot be appended again and GTK asserts it, so nothing here may travel
-/// between calls.
+/// F3.7 S3: draw the form "Label at m:ss" — the two fields in [`fx_label::FORM_FIELDS`]'s order on
+/// one row as `spec/img/06-label.png` lays them out, plus Apply / Cancel.
 pub(crate) fn show_label_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
-    // Hidden FIRST, before anything is touched: while invisible its children cannot read as "already parented
-    // here" to a later pass, and the clear below then removes exactly what this holder owns.
+    // Hidden FIRST, before anything is touched: while invisible its children cannot read as
+    // "already parented here" to a later pass, and the clear below then removes exactly what this
+    // holder owns.
     let Some(holder) = label_form_box_raw(window) else {
         return;
     };
@@ -137,9 +115,6 @@ pub(crate) fn show_label_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         &trim_seconds(fx.dur),
     ));
 
-    // The spec's picture carries only a ✕ in the corner; every other effect form pairs an explicit Apply with a
-    // Cancel, and §F3.7's TAG node needs a deliberate "mark it" — so both buttons are here, named like the
-    // volume form's.
     let buttons = super::cut_form_buttons::form_buttons_row("label");
 
     let footer = super::cut_form_buttons::form_note("label");
@@ -155,8 +130,6 @@ pub(crate) fn show_label_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     wire_label_buttons(window);
 }
 
-/// The form a press starts from, built out of the record so no default is invented in the widget layer. The name
-/// is whatever the mark holds — empty until the human types one.
 fn label_form_of(fx: &cut::Fx) -> fx_label::Form {
     fx_label::Form {
         t: fx.t,
@@ -165,8 +138,7 @@ fn label_form_of(fx: &cut::Fx) -> fx_label::Form {
     }
 }
 
-/// F3.7 S2/S3: the form waiting on the page, before Apply. What a widget test reads to assert the same state
-/// the logic test asserts ([`fx_label::Form`]) rather than a painted field.
+/// F3.7 S2/S3: the form waiting on the page, before Apply.
 pub fn label_form_open() -> Option<fx_label::Form> {
     LABEL_FORM.with(|cell| cell.borrow().clone())
 }
@@ -176,13 +148,11 @@ fn set_label_form(form: Option<fx_label::Form>) {
 }
 
 thread_local! {
-    /// The form a Label press left waiting on the page. `None` is no form open, which is also what hides the
-    /// holder — one slot answers both questions so they cannot disagree.
     static LABEL_FORM: std::cell::RefCell<Option<fx_label::Form>> =
         const { std::cell::RefCell::new(None) };
 
-    /// The window whose label form was last shown, so the field readers have THIS window's tree to look in and
-    /// a stale window cannot answer for a live one.
+    /// The window whose label form was last shown, so the field readers have THIS window's tree to
+    /// look in and a stale window cannot answer for a live one.
     static LAST_LABEL_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -196,7 +166,6 @@ fn label_form_owner(window: &adw::ApplicationWindow) -> bool {
     })
 }
 
-/// One of this window's label-field entries, by name, looked up through the window that owns the form.
 fn label_entry(name: &str) -> Option<gtk::Entry> {
     LAST_LABEL_WINDOW.with(|cell| {
         cell.borrow()
@@ -206,7 +175,6 @@ fn label_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
-/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
 fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
     find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
@@ -222,8 +190,8 @@ pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
     let Some(stored) = label_form_open() else {
         return "no label to apply \u{2014} press \u{1f3f7} Label first".to_string();
     };
-    // A field that does not parse keeps what the form held rather than becoming 0: a half-typed "1." must not
-    // collapse the marked moment. Same rule as the volume and speed forms' readers.
+    // A field that does not parse keeps what the form held rather than becoming 0: a half-typed
+    // "1." must not collapse the marked moment.
     let read = |name: &str, keep: f64| -> f64 {
         label_entry(name)
             .map(|entry| entry.text().trim().to_string())
@@ -241,7 +209,6 @@ pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
     let effect = match fx_label::apply(&form) {
         Ok(effect) => effect,
         Err(reason) => {
-            // The reason prints verbatim and the form STAYS OPEN: an empty-name refusal that closed the form
             log_line(&reason);
             live_form_refused();
             return reason;
@@ -250,7 +217,8 @@ pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
     let mut cut_ = review_cut_of(window);
     cut_.fx.push(effect.clone());
     save_insert_cut(&cut_);
-    // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes
+    // it back.
     live_form_answer_is_undo(window);
     record_edit(window, &cut_);
     refresh_effects_lane(window);
@@ -276,9 +244,6 @@ pub fn press_label_esc(window: &adw::ApplicationWindow) -> Option<String> {
     Some(press_label_cancel(window))
 }
 
-/// Wire the form's two buttons BY NAME. Each forwards one press and prints what comes back; neither holds a rule.
-/// The debounced commit: this label form's fields into its stored state, then the kept length on the status row.
-/// Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
 fn keep_label_fields(window: &adw::ApplicationWindow) {
     let Some(stored) = label_form_open() else {
         return;
@@ -324,8 +289,8 @@ fn wire_label_buttons(window: &adw::ApplicationWindow) {
     super::cut_form_buttons::wire_live_fields(window, "label", keep_label_fields);
 }
 
-/// Esc releases an open label form, wired after `set_content` like every other control. Claims Escape only when
-/// this window owns a form; otherwise the key travels on to whatever else is listening.
+/// Esc releases an open label form, wired after `set_content` like every other control. Claims
+/// Escape only when this window owns a form.
 pub(crate) fn wire_label_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();

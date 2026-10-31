@@ -1,11 +1,5 @@
 //! F3.8 S5: every effect form ends with the same row — "Apply" and "Cancel", left to right — and under it the
 //! note "Kept as you type — ↶ Undo takes the whole edit back."
-//!
-//! The six forms built that row six times, in three different orders, and one of them (Label's and Volume's
-//! picture) carried only a corner ✕ until the row was added. The row is built once here so the NAMES and the
-//! LEFT-TO-RIGHT ORDER are one fact: `<kind>-apply-button`, `<kind>-cancel-button`, inside one box named
-//! `form-buttons-<kind>` whose children are [Apply, Cancel]. Each form keeps its own click handlers: the row's
-//! shape is shared, the doors behind the two buttons are not.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -24,18 +18,6 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-/// F3.8 S5 (`every keystroke lands after a debounce`): wire a live form's number entries so typing lands on a
-/// pause rather than per character. Every `<kind>-field-*` entry in the window gets a `changed` handler that stamps
-/// the keystroke and, when no timer is pending, arms one `glib::timeout_add_local` of [`fx_band::DEBOUNCE_MS`]. On
-/// fire the gate is [`fx_band::keystroke_lands`]: if the pause ran out the commit runs ONCE for the whole burst, if
-/// something arrived during the wait the timer simply waits again. A second keystroke before the fire restarts the
-/// wait — that is what a debounce is, and why one edit of "12" is one commit rather than two.
-///
-/// THE DECISION, since the spec does not spell it out: the debounced commit writes the FORM'S OWN stored state and
-/// prints the kept reading; it does NOT write the cut. The cut record still changes only at Apply, through
-/// `record_edit`. That is what makes the footer's promise true as written — "↶ Undo takes the whole edit back", not
-/// a step per keystroke — and it keeps one edit from becoming two history entries. The footer this module draws and
-/// this timer serve the same rule.
 pub fn wire_live_fields(
     window: &adw::ApplicationWindow,
     kind: &str,

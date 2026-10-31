@@ -1,20 +1,8 @@
 //! Gaps this audit closed — `spec/12-decisions.md` §5.
-//!
-//! §5 is the closing page of the directive-B audit: what had to be **added** to the tool catalogue so
-//! every job can see as much as its brief claims, and which prototype behaviours are recorded as
-//! defects rather than designs. Siblings: [`crate::decision_audit`] (the five homes),
-//! [`crate::prepare_decisions`] (§3 Prepare), [`crate::cut_effect_decisions`] (§4 Cut and effects)
-//! and [`crate::hands_off`] (§4 hands-off list). This module holds the two tables plus the plain logic
-//! behind the four defects; the tools themselves are live in [`crate::tools`] and were not written here.
-//!
-//! The through-line is the same one §1 states: a model told nothing cannot be right about what it was
-//! not shown. Every addition below is a thing the app knew and did not say.
 
 use crate::narration::{self, Entry, Silent};
 use crate::roles::Job;
 use crate::tools::{self, Tool};
-
-// --- the catalogue additions -------------------------------------------------------------------
 
 /// Whether an addition is a whole tool or an argument added to one that already existed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,9 +77,6 @@ pub fn additions() -> [Added; 8] {
 }
 
 /// The read set — tools whose answer tells the model something rather than changing anything.
-///
-/// Kept as data because §5's claim is exactly about these: a job with no read tool has a brief that
-/// silently bounds what the model could be right about.
 const READS: [Tool; 9] = [
     Tool::GetContext,
     Tool::GetLines,
@@ -110,11 +95,6 @@ pub fn is_read(tool: Tool) -> bool {
 }
 
 /// The jobs §5's every-job-names-its-reads claim covers.
-///
-/// The audio-only jobs are excluded on purpose: [`tools::offered`] returns nothing for Asr, Align,
-/// Diarize and Separate because they are single audio.cpp task calls, not conversations with a brief
-/// the model could be wrong about. `finish` is likewise not a read — it ends the job. So the claim is
-/// about the seven LLM jobs listed here, all of which have a brief and therefore a possible gap.
 pub fn covered_jobs() -> [Job; 7] {
     [
         Job::Describe,
@@ -157,11 +137,6 @@ pub fn policy_pair() -> Vec<Tool> {
 }
 
 /// Whether a tool reply says more than bare success.
-///
-/// §5's second half: *every write tool's result now carries what the app made of the item, not just
-/// ok*. Asked over the parsed body so a future write tool that answers `{}` fails the test that runs
-/// it, instead of passing a prose claim. An error reply is not a success and returns false — its own
-/// shape is checked separately.
 pub fn result_carries_more_than_ok(reply: &str) -> bool {
     let Ok(body) = serde_json::from_str::<serde_json::Value>(reply) else {
         return false;
@@ -174,8 +149,6 @@ pub fn result_carries_more_than_ok(reply: &str) -> bool {
         None => false,
     }
 }
-
-// --- the four defects ---------------------------------------------------------------------------
 
 /// A prototype behaviour §5 marks as a defect rather than a design.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,11 +214,6 @@ impl Defect {
 }
 
 /// The user's silent list survives a rewrite of the lines.
-///
-/// F4.1: the list is the user's, keyed by the clip's bounds, and a narration pass that replaces every
-/// entry leaves it alone. Returning the input unchanged *is* the rule — the prototype rebuilt it from
-/// what the model wrote, which is how a hand-made "this clip plays its own audio" went away on the next
-/// ▶. Nothing here consults `entries`, deliberately: if it did, the defect would still be open.
 pub fn silent_survives_entry_rewrite(
     silent: &[Silent],
     _old_entries: &[Entry],
@@ -255,22 +223,11 @@ pub fn silent_survives_entry_rewrite(
 }
 
 /// Where a line lands in the clip's output seconds.
-///
-/// Delegated whole to [`narration::output_seconds`]: `at` is on the recording's own clock, so the
-/// line stays on the same picture whatever rate the clip plays at, and the render divides by the rate
-/// exactly once. The prototype read the same field three ways — clamped against the on-screen length on
-/// write, treated as a session offset when refitting, divided again in the render — which is why one
-/// line could move depending on which code path touched it last.
 pub fn lands_at(at: f64, rate: f64) -> f64 {
     narration::output_seconds(at, rate)
 }
 
 /// Whether a placement comes from the app rather than from translated text.
-///
-/// True for any `pos` in the app's own vocabulary (top, center and its spellings, bottom, or empty for
-/// the default). The point is that the tag is put back on return from the `pos` field the entry
-/// carries, never trusted from the words the model sent back — which is why the tag used to travel as a
-/// word and vanish when the model dropped it.
 pub fn tag_is_app_owned(pos: &str) -> bool {
     matches!(
         pos.trim().to_ascii_lowercase().as_str(),
@@ -279,25 +236,11 @@ pub fn tag_is_app_owned(pos: &str) -> bool {
 }
 
 /// Whether the picture's title gets reprinted.
-///
-/// F5.6: reprint whenever the text changes, until the picture is edited by hand — the prototype printed
-/// the title only if it was the first title to exist, so later rewrites left stale words burned in.
-/// Equal text prints nothing (nothing changed); a hand-edited picture is the user's and is left alone.
 pub fn reprint_title_on_change(previous: &str, now: &str, picture_edited_by_hand: bool) -> bool {
     !picture_edited_by_hand && previous != now
 }
 
-// --- cited ids ---------------------------------------------------------------------------------
-
 /// The parameter ids §5's rows turn on.
-///
-/// Checked against the catalogue before listing. Absent on purpose: `P.eng.llmToolRounds` appears only
-/// as a comment on `roles::TOOL_ROUNDS` (`src/roles.rs:50`) with no params row, and
-/// `P.project.frameInterval` is mentioned in `params.rs:76` as the one Project id but is not emitted
-/// as a row either — both recorded here as gaps in the catalogue rather than invented.
-/// `P.policy.minSceneSeconds` is left out too: it appears in *both* the effects and the cut sections of
-/// the catalogue (two homes for one bound), so an exactly-one lookup cannot name it and this round does
-/// not pick a side.
 pub const CITED_PARAMS: [&str; 1] = ["P.policy.subtitleRowChars"];
 
 /// Every tool §5 names as added, plus the policy tool the read/write split turns on.

@@ -1,12 +1,4 @@
 //! F5.6 S2: the real `youtube` call — §3.9's six tools answered by the rules that already exist.
-//!
-//! [`crate::produce_upload`] holds each tool's RULE (what a title fits, how far a picked frame really is,
-//! what `finish` still needs). This module is the wire around them: it builds the request the way §3.9 and
-//! §02-services#1 say (shipped `youtube` prompt as the system message, thinking ON, the job's tools
-//! offered), dials the LLM through [`crate::server_leg`] with the settings re-read per round, runs the
-//! conversation through [`crate::tool_loop`], and answers every call by CALLING its rule and returning the
-//! result text §3.9 promises. The calls are then collected into [`upload::Answers`]; a model that used no
-//! tools at all falls back to [`upload::peel`], which is §3.9's documented prose shape.
 
 use crate::exchanges::{Message, Mode, Part, ToolCall};
 use crate::layout::Tree;
@@ -24,19 +16,17 @@ use crate::tools::Tool;
 /// The step name on this call's rows in `requests.tsv` (§09 §10: one line per request).
 pub const STEP: &str = "youtube";
 
-/// What the call collected: the record the model would have written, plus what it said back.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Collected {
-    /// The publish record as the tools left it — what `walk` then writes (S5) and draws from.
     pub publish: Publish,
-    /// Whether any write tool ran at all. Prose-only replies leave this false, and the caller peels instead.
     pub wrote: bool,
     /// Every tool's answer text, in the order it was given, so a test can pin §3.9's wording.
     pub answers: Vec<String>,
 }
 
-/// S5's resend: the SAME messages and mode with no `tools` field, dialled through the same timed leg so the
-/// refused request and its resend both leave a row behind (§09 §10: one line per request).
+/// S5's resend: the SAME messages and mode with no `tools` field, dialled through the same timed
+/// leg so the refused request and its resend both leave a row behind (§09 §10: one line per
+/// request).
 #[allow(clippy::too_many_arguments)]
 fn resend_without_tools(
     tree: &Tree,
@@ -50,9 +40,7 @@ fn resend_without_tools(
     spoken: &std::rc::Rc<std::cell::RefCell<String>>,
 ) -> Result<tool_loop::Turn, String> {
     let bare = llm_request::body(STEP, model, conversation, mode, None, true)?.to_string();
-    // §3's patience is for a transient. A 4xx that refuses the `tools` FIELD is not one: F6.1's own rule is to
-    // resend the identical messages WITHOUT the field, which only the caller can do, so those are handed back
-    // unretried (see [`crate::llm_retry_leg::answered`]). Everything else, including a plain 500, gets its retry.
+    // §3's patience is for a transient.
     let reply = crate::llm_retry_leg::dial(
         STEP,
         tree,
@@ -73,16 +61,14 @@ fn resend_without_tools(
     }
 }
 
-/// Say S5's refusal where every headless flow says its lines: the run's own `log` closure cannot be reached from
-/// inside the ask closure (it borrows the loop's state), and the window's log is the sink both a test and the
-/// user read. §2 wants this line said ONCE per server, which [`crate::llm_tools_offer`] is what guarantees.
+/// Say S5's refusal where every headless flow says its lines: the run's own `log` closure cannot be
+/// reached from inside the ask closure (it borrows the loop's state), and the window's log is the
+/// sink both a test and the user read. §2 wants this line said ONCE per server, which
+/// [`crate::llm_tools_offer`] is what guarantees.
 fn say_refused(why: &str) {
     crate::ui::window::log_line(&tool_loop::refused_log(STEP, why));
 }
 
-/// Read one dialled response as the loop's turn, recording the prose it spoke. A plain function rather than a
-/// closure so every leg -- the ordinary one and S5's resend-without-tools -- can call it without the borrow
-/// checker holding two closures over the same state.
 fn read_turn(
     sent: &server_leg::Sent,
     dial_error: &std::rc::Rc<std::cell::RefCell<Option<String>>>,
@@ -100,15 +86,13 @@ fn read_turn(
         calls: reply.tool_calls.clone(),
         finish: finishing,
     };
-    // The last quiet round wins; a round that said nothing alongside its calls does not clear what was said.
     if !turn.content.trim().is_empty() {
         *spoken.borrow_mut() = turn.content.clone();
     }
     Ok(turn)
 }
 
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With no
-/// settings folder at all, the shipped `spec/prompts/youtube.md` is what goes out.
+/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
 fn wording(paths: Option<&Paths>, key: &str) -> String {
     let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
     match paths {
@@ -117,8 +101,6 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
     }
 }
 
-/// The SYSTEM for the upload call: the house rules cut to this job's section plus the shipped `youtube`
-/// prompt. No User Context — §3.9's material is the brief, which already says what is in the video.
 pub fn system(paths: Option<&Paths>) -> String {
     crate::prompt_assembly::system_message(
         &wording(paths, "system"),
@@ -130,7 +112,6 @@ pub fn system(paths: Option<&Paths>) -> String {
     )
 }
 
-/// The two messages of one upload call: the assembled system prompt and the brief as the user turn.
 pub fn messages(system: &str, brief: &str) -> Vec<Message> {
     vec![
         Message {
@@ -144,16 +125,16 @@ pub fn messages(system: &str, brief: &str) -> Vec<Message> {
     ]
 }
 
-/// The body of one round: thinking ON (§F5.6 S2, and `prompts::THINKING_ON` lists `youtube`) and the job's
-/// tools offered. `llm_request::body` is the one place the switch and the token cap are written.
+/// The body of one round: thinking ON (§F5.6 S2, and `prompts::THINKING_ON` lists `youtube`) and
+/// the job's tools offered.
 pub fn body(model: &str, system: &str, brief: &str) -> Result<String, String> {
     let tools = crate::tools::offered(Job::UploadText);
     let body = llm_request::body(
         STEP,
         model,
         &messages(system, brief),
-        // §4 gives the upload text thinking ON; read from the prompt table so this and the retry path
-        // below cannot drift apart (§10 §4).
+        // §4 gives the upload text thinking ON; read from the prompt table so this and the retry
+        // path below cannot drift apart (§10 §4).
         crate::prompts::mode_of(STEP),
         Some(&tools),
         // §4: every chat call is streamed; the reply is read by response content type
@@ -169,17 +150,12 @@ pub struct Frames<'a> {
     pub moments: &'a [f64],
     /// Each kept clip's start on the produced clock, 1-based `clip` numbers index into this.
     pub starts: &'a [f64],
-    /// The project's `P.project.frameInterval`: how far apart two frames ever are, so a named
-    /// moment resolves and a window narrows on the grid this session was extracted on.
     pub interval: f64,
     /// The session's spoken rows, the same ones [`crate::produce_upload::brief`] was built from:
     /// `get_lines` reads back through these what the brief's fold left out.
     pub lines: &'a [crate::textfmt::SessionLine],
 }
 
-/// Run one `youtube` call over the brief and answer its tools. Returns what the record looks like after the
-/// conversation; `Err` names the model and the reason when the call itself did not happen (§Failure is
-/// specific), which the caller reports as `words_failed` rather than writing anything.
 pub fn call<FLog>(
     tree: &Tree,
     brief: &str,
@@ -205,8 +181,8 @@ where
         edited_by_hand,
     };
     let offered = crate::tools::offered(Job::UploadText);
-    // §2: the web tools ride on this job only if a browser can actually be driven, and the reason they do not is
-    // said once. Offering `web_search` to a machine with no firefox costs a call and buys an error line.
+    // §2: the web tools ride on this job only if a browser can actually be driven, and the reason
+    // they do not is said once.
     let web_firefox = paths
         .as_ref()
         .and_then(|paths| settings::read(paths).ok())
@@ -216,24 +192,19 @@ where
     if let Some(line) = web_line {
         log(&line);
     }
-    // The first dial error, kept so a call that never got an answer can name the model and the reason
-    // instead of reporting an empty success.
+    // The first dial error, kept so a call that never got an answer can name the model and the
+    // reason instead of reporting an empty success.
     let dial_error: std::rc::Rc<std::cell::RefCell<Option<String>>> =
         std::rc::Rc::new(std::cell::RefCell::new(None));
-    // The prose the model spoke on a round that called no tool. `tool_loop` only records an assistant turn when
-    // that round carried calls, so a §3.9 prose answer (three labelled lines, no calls) would otherwise be
-    // heard by nobody but this closure — and it is the whole of what the record gets.
-    // The prose a round spoke, held behind a share so both `ask` and the shared turn-reader can write it while
-    // the loop holds only one of them at a time.
     let spoken_ref = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
-    // How many times this call has dialled, so S5's resend is honoured only on the loop's first round.
     let mut rounds = 0u32;
-    // Read one dialled response as the loop's turn, recording the prose it spoke. Declared before `ask` because
-    // every leg -- the ordinary one and S5's resend-without-tools -- ends by calling it.
+    // Read one dialled response as the loop's turn, recording the prose it spoke. Declared before
+    // `ask` because every leg -- the ordinary one and S5's resend-without-tools -- ends by calling
+    // it.
     let mut conversation = messages(&system, brief);
-    // One dial per round, each writing its own timed row: a five-round conversation leaves five lines behind.
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
-        // Settings are re-read per round so an address edited mid-call lands on the next request (§1).
+        // Settings are re-read per round so an address edited mid-call lands on the next request
+        // (§1).
         let conf = match paths.as_ref().map(settings::read) {
             Some(Ok(conf)) => conf,
             Some(Err(reason)) => {
@@ -260,8 +231,9 @@ where
             };
         let endpoint = services::llm_endpoint(&conf);
         let base = server_leg::base_row(Server::Llm, &model, "chat", "", STEP, "upload");
-        // §3's patience, except for a 4xx that refuses the `tools` field: that answer is not transient and the
-        // caller's own resend-without-tools is the next move, so the door hands it back unretried.
+        // §3's patience, except for a 4xx that refuses the `tools` field: that answer is not
+        // transient and the caller's own resend-without-tools is the next move, so the door hands
+        // it back unretried.
         let reply = crate::llm_retry_leg::dial(
             STEP,
             tree,
@@ -276,9 +248,10 @@ where
             Ok(sent) => sent,
             Err(why) => {
                 let why = format!("{STEP} call to {model}: {why}");
-                // S5: the loop's first round, offered with tools, and an error that says the FIELD is the problem
-                // -- resend the identical request without it, said once. A remembered refusal or a dead server
-                // falls through to the plain failure, because re-asking a down box answers the same way.
+                // S5: the loop's first round, offered with tools, and an error that says the FIELD
+                // is the problem -- resend the identical request without it, said once. A
+                // remembered refusal or a dead server falls through to the plain failure, because
+                // re-asking a down box answers the same way.
                 if offered.is_some()
                     && rounds == 1
                     && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
@@ -302,17 +275,18 @@ where
             }
         };
         if !sent.ok() {
-            // The server's OWN message is what says whether this is a refusal of the `tools` field: §1 keeps the
-            // body beside the status for exactly this reason, and "answered 400" alone cannot tell a schema it
-            // dislikes from a broken server.
+            // The server's OWN message is what says whether this is a refusal of the `tools` field:
+            // §1 keeps the body beside the status for exactly this reason, and "answered 400" alone
+            // cannot tell a schema it dislikes from a broken server.
             let why = format!(
                 "{STEP} call to {model} at {} answered {}: {}",
                 endpoint.url,
                 sent.status,
                 sent.body.trim()
             );
-            // A status answering "the tools field is not supported" arrives as a 400, not as a transport error,
-            // so the same door applies here: honour it once and resend without the field.
+            // A status answering "the tools field is not supported" arrives as a 400, not as a
+            // transport error, so the same door applies here: honour it once and resend without the
+            // field.
             if offered.is_some()
                 && rounds == 1
                 && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
@@ -337,7 +311,8 @@ where
         read_turn(&sent, &dial_error, &spoken_ref)
     };
     let mut run_tool = |asked: &ToolCall| -> String {
-        // The web tools are answered by the real browser leg (§2), everything else by §3.9's own tools.
+        // The web tools are answered by the real browser leg (§2), everything else by §3.9's own
+        // tools.
         if let Some(answer) = crate::web_browser::dispatch(STEP, &web_firefox, asked) {
             return answer;
         }
@@ -358,10 +333,12 @@ where
     for line in run.joined().lines() {
         log(line);
     }
-    // A round that could not be made is the call's own failure, named: §Failure is specific says which
-    // server and why, and the caller writes nothing (S5 keeps the thinking only for a FAILED DRAW).
+    // A round that could not be made is the call's own failure, named: §Failure is specific says
+    // which server and why, and the caller writes nothing (S5 keeps the thinking only for a FAILED
+    // DRAW).
     if let tool_loop::Outcome::Exhausted = run.outcome {
-        // `take` rather than `is_some()` + `expect`: the loop only logs a failure when its ask returned one.
+        // `take` rather than `is_some()` + `expect`: the loop only logs a failure when its ask
+        // returned one.
         if !state.wrote {
             if let Some(why) = dial_error.borrow_mut().take() {
                 return Err(why);
@@ -386,7 +363,6 @@ where
     })
 }
 
-/// Everything the tools act on, held across the rounds: the record being written and the frames to choose from.
 struct State {
     publish: Publish,
     wrote: bool,
@@ -399,8 +375,6 @@ struct State {
 }
 
 impl State {
-    /// Answer one call by running its rule. Every arm returns §3.9's promised RESULT TEXT, because §5 asks
-    /// each write to carry more than `ok` and the model has to see what was actually applied.
     fn run_tool(&mut self, asked: &ToolCall) -> String {
         let args: serde_json::Value =
             serde_json::from_str(&asked.args).unwrap_or(serde_json::Value::Null);
@@ -427,7 +401,6 @@ impl State {
                 let offset = number_of(&args, "offset").unwrap_or(0.0);
                 match upload::pick_frame(clip, offset, &self.starts, &self.frames_moments) {
                     Ok(picked) => {
-                        // S3: the frame IS the thumbnail — one entry in the row, `own` true, nothing drawn.
                         self.publish.own = true;
                         self.publish.frames = vec![format!("frame:{:.1}", picked.taken)];
                         self.wrote = true;
@@ -511,8 +484,8 @@ impl State {
                 let answer = if missing.is_empty() {
                     "finished".to_string()
                 } else {
-                    // S8 keeps the previous value for what is missing, so `finish` NAMES it rather than
-                    // quietly shipping last run's words under this video.
+                    // S8 keeps the previous value for what is missing, so `finish` NAMES it rather
+                    // than quietly shipping last run's words under this video.
                     format!("still missing: {}", missing.join(", "))
                 };
                 self.answers.push(answer.clone());
@@ -522,9 +495,6 @@ impl State {
         }
     }
 
-    // The model's own words, if it left any on a round that called tools (the prose fallback's other material).
-    // A quiet round's text is NOT here — the loop only records turns that carried calls — which is why `call`
-    // keeps what it heard in its own `spoken`.
     fn content_of(&self, run: &tool_loop::Run) -> Option<String> {
         let text = run
             .messages
@@ -545,8 +515,7 @@ impl State {
     }
 }
 
-/// A clip's `(start, end)` on the produced clock; an unknown clip reads as the whole video rather than
-/// nothing, so `get_frames` still shows the model something to look at.
+/// A clip's `(start, end)` on the produced clock.
 fn clip_span(starts: &[f64], clip: usize) -> (f64, f64) {
     let Some(index) = clip.checked_sub(1) else {
         return (0.0, f64::MAX);
@@ -569,8 +538,6 @@ fn peel_into(publish: &mut Publish, reply: &str, starts: &[f64], frames: &[f64])
         wrote = true;
     }
     if let Some(thumbnail) = thumbnail {
-        // A `frame:` inside the thumbnail line picks a frame; anything else is an instruction (§3.9's
-        // folding rule lives in `details`, and a frame still beats an instruction here).
         match crate::produce_details::frame_line(thumbnail.trim()) {
             Some(FrameAt::Clip(clip, offset)) => {
                 if let Ok(picked) = upload::pick_frame(clip, offset, starts, frames) {
@@ -600,7 +567,6 @@ fn string_of(args: &serde_json::Value, key: &str) -> String {
         .to_string()
 }
 
-/// A numeric argument that may arrive as a number or as a quoted number — servers do both.
 fn number_of(args: &serde_json::Value, key: &str) -> Option<f64> {
     let value = args.get(key)?;
     if let Some(number) = value.as_f64() {
@@ -609,7 +575,6 @@ fn number_of(args: &serde_json::Value, key: &str) -> Option<f64> {
     value.as_str()?.trim().parse().ok()
 }
 
-/// A counting argument (`clip`), same two shapes as [`number_of`] but read as an index.
 fn usize_of(args: &serde_json::Value, key: &str) -> Option<usize> {
     number_of(args, key).map(|number| number.max(0.0) as usize)
 }

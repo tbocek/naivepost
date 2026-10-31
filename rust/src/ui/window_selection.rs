@@ -1,9 +1,4 @@
-//! §05-cut#1-screen — the selection band, the held effect and its live form, and the preview's own
-//! volume. Split out of `window.rs`, which is past its size budget; its doors are re-exported through
-//! `window`.
-//!
-//! The rules are `cut_select`'s, `fx_band`'s and `cut_hear`'s; what is here is the per-window state a
-//! press leaves behind, the widgets it repaints, and the sentence it prints.
+//! §05-cut#1-screen: the selection band, the held effect and its live form, and the preview's volume. Re-exported through `window`. Rules are `cut_select`'s, `fx_band`'s and `cut_hear`'s; this holds per-window state, the repainted widgets and the sentences.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -37,46 +32,35 @@ use crate::ui::cut_volume_hand::{close_volume_form, show_volume_form, volume_for
 use crate::ui::window as ui;
 use crate::ui::window::refresh_effects_lane;
 
-/// The narration this window holds, newest slot -- the handle a flow re-seeds after it re-read the
-/// folder. Crate-visible because only the flows that own a re-read may replace the lines.
+/// The narration this window holds, newest slot; crate-visible so only flows that re-read the folder replace the lines.
 pub(crate) fn held_narration() -> Option<Rc<std::cell::RefCell<Narration>>> {
     HELD_NARRATION.with(|held| held.borrow().last().cloned())
 }
 thread_local! {
-    /// The narration this window holds, newest last — the same newest-slot rule as [`WINDOW_SHELLS`].
-    /// S5's refit and S3's flush are two different switches over one set of lines, so the lines live
-    /// here rather than in whatever a single switch happened to read from disk.
+    /// The narration this window holds, newest last (as [`WINDOW_SHELLS`]); S5's refit and S3's flush share one set of lines.
     pub(crate) static HELD_NARRATION: std::cell::RefCell<Vec<Rc<RefCell<Narration>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-// The app's ONE preview volume (F2.5 S6), held per window beside [`PREVIEW_PLAYERS`] with the same
-// newest-slot rule. It is a `PreviewVolume` and not a bare number because the type is what keeps the
-// slider's 0..100 and the property's 0..1 from drifting apart, and because the tooltip promises every
-// slider shows the same setting — two stored copies would be two answers.
+// The app's ONE preview volume (F2.5 S6), per window with the newest-slot rule. A `PreviewVolume` keeps the slider's 0..100 and the property's 0..1 from drifting.
 thread_local! {
     pub(crate) static PREVIEW_VOLUMES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut_hear::PreviewVolume>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-// This window's selection band (F2.6), newest-slot rule as everywhere else here. `None` is no band:
-// the page then reads the empty marks and every verb that needs a selection is off.
+// This window's selection band (F2.6), newest slot; `None` is no band, and every verb needing a selection is off.
 thread_local! {
     pub(crate) static SELECTED: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Option<cut_select::Selection>>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-// The surface the current band was drawn on, kept beside [`SELECTED`] so a resize or a move stays on
-// the ground it started from. S1 scopes a band by what it was drawn on, and a later drag on a lane
-// must not silently turn a footage selection into a sound one (or the reverse) mid-adjust.
+// The surface the band was drawn on (S1 scopes a band by it), so a later lane drag cannot turn a footage selection into a sound one mid-adjust.
 thread_local! {
     pub(crate) static SELECT_SURFACES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Option<cut_select::Surface>>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// F2.6 S1: a left-drag from `from` to `to` on `surface` selected what it was drawn on. The rule is
-/// [`cut_select::draw`]'s alone — including its refusal for the effects lane, which answers `None` and
-/// leaves this window with no band rather than a half-made one. Returns the same answer it stored.
+/// F2.6 S1: a left-drag from `from` to `to` on `surface` selected what it was drawn on, by [`cut_select::draw`] alone (the effects lane answers `None`, leaving no band). Returns what it stored.
 pub fn draw_selection(
     window: &adw::ApplicationWindow,
     surface: cut_select::Surface,
@@ -99,14 +83,12 @@ pub fn draw_selection(
     band
 }
 
-/// F2.6: this window's band, or `None`. Read by the readout, the verbs and every later flow that acts
-/// on a selection — all of them through this one value, so none can hold a stale copy.
+/// This window's band, or `None`; the one value all selection readers use.
 pub fn selection(window: &adw::ApplicationWindow) -> Option<cut_select::Selection> {
     let _ = window;
     SELECTED.with(|slots| slots.borrow().last().and_then(|s| s.borrow().clone()))
 }
 
-/// The surface the current band came from, defaulting to the ruler when nothing has been drawn yet.
 pub fn selection_surface(window: &adw::ApplicationWindow) -> cut_select::Surface {
     let _ = window;
     SELECT_SURFACES
@@ -114,8 +96,7 @@ pub fn selection_surface(window: &adw::ApplicationWindow) -> cut_select::Surface
         .unwrap_or(cut_select::Surface::Ruler)
 }
 
-/// F2.6 S2: the cross. Routes through [`cut_select::clear`] and returns whether there was anything to
-/// clear, which is also what turns the button insensitive again — a press on nothing reports nothing.
+/// F2.6 S2: the cross; routes through [`cut_select::clear`] and returns whether anything was cleared (which also greys the button).
 pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
     let had = selection(window).is_some();
     SELECTED.with(|slots| {
@@ -127,12 +108,7 @@ pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
     had
 }
 
-/// F2.6 S2: drag one part of the band to `to` (session seconds) at `pps` pixels-per-second. The snap
-/// marks are rebuilt each call from this window's cut, its lanes and the playhead, because the borders a
-/// handle may snap to change as the cut changes — a cached list would go stale against an edit.
-///
-/// `Part::Outside` moves nothing: a press clear of the band starts a new selection instead, which is
-/// S1's job, not a nudge.
+/// F2.6 S2: drag one part of the band to `to` (session seconds) at `pps`. Snap marks are rebuilt each call from the cut, lanes and playhead. `Part::Outside` moves nothing (a new selection is S1's job).
 pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, to: f64, pps: f64) {
     let Some(band) = selection(window) else {
         return;
@@ -153,21 +129,15 @@ pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, 
     refresh_selection_readout(window);
 }
 
-/// F2.6 S4: the verbs' state for the band there is now — Add/Split/Remove greyed for a sound selection,
-/// Copy and Insert re-aimed at it. The ＋ Add / | Split / － Remove buttons F2.7 added read THIS answer
-/// (`refresh_verb_buttons`), so the page's greying and the logic tests' assertions cannot drift apart;
-/// ⧉ Copy / Insert are still not drawn (F2.9/F0.6 rounds).
+/// F2.6 S4: the verbs' state for the current band: Add/Split/Remove greyed for a sound selection, Copy and Insert re-aimed; `refresh_verb_buttons` reads this.
 pub fn selection_verbs(window: &adw::ApplicationWindow) -> cut_select::Verbs {
     let (cut_, _) = selection_snap_inputs(window);
-    // "is there a recording to cut": a cut with no segment has nothing to split, which is the only
-    // thing S4 asks of the page beyond the band itself.
+    // "is there a recording to cut": a cut with no segment has nothing to split.
     let has_footage = !cut_.segs.is_empty();
     cut_select::verbs(selection(window).as_ref(), has_footage)
 }
 
-/// What this window can offer the snap-mark builder. The cut model round owns where a real `Cut` comes
-/// from; until then the page's own review-cut slot stands in, so `nudge_selection` snaps against real
-/// borders whenever one has been seeded and against nothing otherwise.
+/// What this window can offer the snap-mark builder: the review-cut slot until the cut model round supplies a real `Cut`.
 fn selection_snap_inputs(_window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut::Lane>) {
     let cut_ = ui::REVIEW_CUTS.with(|slots| {
         slots
@@ -180,13 +150,7 @@ fn selection_snap_inputs(_window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut
     (cut_, lanes)
 }
 
-/// F2.7: which of the three buttons is live right now, as (add, split, remove).
-///
-/// | Split stays live with no band on purpose: F2.6's `verbs()` answers `false` for everything when
-/// there is no selection, but F2.7 gives a band-less Split a real job — one border at the red line,
-/// right half in hand — so greying it would take away the verb the spec says works there. An empty case
-/// explains itself through the refusal sentence instead. With a band up, `verbs()` decides all three,
-/// which is what greys them for a recording's sound.
+/// F2.7: which of the three buttons is live, as (add, split, remove). Split stays live with no band (F2.6's `verbs()` says false): one border at the red line, right half in hand. With a band up, `verbs()` decides all three.
 pub fn verb_buttons_state(window: &adw::ApplicationWindow) -> (bool, bool, bool) {
     let verbs = selection_verbs(window);
     let split_live = match selection(window) {
@@ -196,9 +160,7 @@ pub fn verb_buttons_state(window: &adw::ApplicationWindow) -> (bool, bool, bool)
     (verbs.add, split_live, verbs.remove)
 }
 
-/// F2.7: set the three verb buttons from this window's live state, so a greyed button is always today's
-/// answer and never a leftover from an earlier band. Runs from `refresh_selection_readout`, which every
-/// draw, nudge and clear already calls — one refresh path for the whole selection row.
+/// F2.7: set the three verb buttons from live state; runs from `refresh_selection_readout`, the one refresh path for the selection row.
 pub(crate) fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
     let (add, split, remove) = verb_buttons_state(window);
     let sensitivity = [add, split, remove];
@@ -207,21 +169,16 @@ pub(crate) fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
             button.set_sensitive(live);
         }
     }
-    // ＋ Add wears its sound warning as a tooltip while a sound band makes it the wrong button.
     if let Some(button) = ui::line_step_button(window, "add-button") {
         let tip = cut_verbs::add_tip_now(selection(window).as_ref())
             .unwrap_or_else(|| cut_verbs::BUTTONS[0].2.to_string());
         button.set_tooltip_text(Some(&tip));
     }
-    // F2.2 S1: ▶✂ greys with no clips, so every write that adds or removes one re-checks it here too.
     crate::ui::cut_cut_play::paint(window);
-    // F2.3 S1: and the same for ▶✂✂, which additionally wears ⏸ only while a review is the running preview.
     crate::ui::cut_review_play::paint(window);
 }
 
-/// F2.7 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's
-/// own marks (`cut_select::marks`), not a second copy, so the two cannot disagree with the handle being
-/// dragged. The tent-of-a-second form comes from `preview::clock`, the Cut page's one clock face.
+/// F2.7 S3: write the band into the readout and set the cross's sensitivity. The readout IS the band's marks (`cut_select::marks`); the form comes from `preview::clock`.
 pub(crate) fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     let band = selection(window);
     let text = match cut_select::marks(band.as_ref()) {
@@ -243,40 +200,29 @@ pub(crate) fn refresh_selection_readout(window: &adw::ApplicationWindow) {
             button.set_sensitive(band.is_some());
         }
     }
-    // F3.2: the Aspect ratio row rides this same path, so a pick, an Undo or a Clear all move it with the
-    // cut rather than leaving whatever shape was last painted.
+    // F3.2: the Aspect ratio row rides this path so it moves with the cut.
     refresh_aspect_readout(window);
     refresh_verb_buttons(window);
-    // F2.12: Insert rides the same refresh path — greyed with nowhere to go, and wearing "Edit" while a card
-    // is held. A greyed or mislabelled Insert is always today's answer, never a leftover from an earlier band.
+    // F2.12: Insert is greyed with nowhere to go and wears "Edit" while a card is held.
     ui::refresh_insert_button(window);
-    // F2.9: the copy buttons ride the same refresh path, so a band drawn, nudged or cleared updates them
-    // without a second place to remember.
+    // F2.9: the copy buttons.
     ui::refresh_copy_buttons(window);
-    // §05-cut#1-screen: and so do the four history buttons — one refresh path sets every greyed
-    // control on the page, from the rule that owns each of them.
+    // §05-cut#1-screen: the four history buttons.
     ui::refresh_history_buttons(window);
-    // F2.10: and the camera rows, whose badges, plates and gutter switches read the same live cut on
-    // every draw, nudge and clear — a badge showing a state the next press contradicts is a lie.
+    // F2.10: the camera rows (badges, plates, gutter switches).
     refresh_camera_rows(window);
-    // F2.6 S3: the in/out marks are PAINTED marks on the band, so every change to the band queues a repaint
-    // of it — the painter reads this window's band through `cut_view::band_scene_for` and draws its blue
-    // span and its in/out flags from that, so the marks follow a draw, a nudge or a clear with no second
-    // copy of the numbers anywhere.
+    // F2.6 S3: the in/out marks are painted on the band, so every change queues a repaint; the painter reads the band via `cut_view::band_scene_for`.
     crate::ui::cut_view::repaint_page(window);
-    // §06-effects#2-the-lane-and-the-preview: the lane and the preview read the same live cut on every
-    // draw, nudge and clear, so a bar or an overlay never lags the record it stands for.
+    // §06-effects#2: the lane and preview read the live cut on every change.
     refresh_effects_lane(window);
 }
 
-/// The playhead the snap marks are built around (F2.6 S2 lists the line among the snap targets).
 pub fn preview_playhead(window: &adw::ApplicationWindow) -> f64 {
     ui::live_player(window)
         .map(|player| player.borrow().playhead.unwrap_or(0.0))
         .unwrap_or(0.0)
 }
 
-/// This window's drag gesture, so a test can fire it the way GTK does. `None` on a page that drew none.
 pub fn selection_gesture(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
     let _ = window;
     SELECT_GESTURES.with(|cell| cell.borrow().clone())
@@ -286,13 +232,11 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// F2.6 S1: what ground the current drag started on, or `None` when no press has been remembered yet.
 pub fn pressed_surface(window: &adw::ApplicationWindow) -> Option<cut_select::Surface> {
     let _ = window;
     SELECT_SURFACES.with(|slots| slots.borrow().last().and_then(|s| *s.borrow()))
 }
 
-/// F2.6 S1: remember the surface a press landed on for this window's drag.
 pub(crate) fn set_pressed_surface(surface: cut_select::Surface) {
     SELECT_SURFACES.with(|slots| {
         if let Some(slot) = slots.borrow().last() {
@@ -301,8 +245,7 @@ pub(crate) fn set_pressed_surface(surface: cut_select::Surface) {
     });
 }
 
-/// F3.8 S5 (`Forms are live`): close whichever per-kind form this page has open, so ✎ Edit from a band cannot
-/// leave two forms showing at once. Each kind's own Cancel keeps its own wording; this only hides the panel.
+/// F3.8 S5 (`Forms are live`): close whichever per-kind form is open so ✎ Edit cannot leave two showing. Each kind's Cancel keeps its own wording.
 pub(crate) fn close_any_effect_form(window: &adw::ApplicationWindow) {
     if ui::zoom_form_open().is_some() {
         ui::set_zoom_form(None);
@@ -328,17 +271,12 @@ pub(crate) fn close_any_effect_form(window: &adw::ApplicationWindow) {
     cut_form_frame::set_pinned(window, None);
 }
 
-/// F3.8 S1 (`a click: the form opens`): the ONE door from a band to the form of its kind. Every kind in §06
-/// that has a form routes here — Zoom, Speed, Text, SVG, Volume and Label each got one in their own round; a
-/// kind with no form returns `None` so the caller prints nothing rather than inventing a panel. Kept as a
-/// dispatch rather than five calls at the press site so "click a band → its form" cannot half-work: adding a
-/// seventh kind without a form shows up here as a missing arm.
+/// F3.8 S1 (`a click: the form opens`): the ONE door from a band to its kind's form; a kind with no form returns `None`. A dispatch, so a new kind without a form shows as a missing arm.
 pub fn open_effect_form(window: &adw::ApplicationWindow, fx: &cut::Fx) -> Option<&'static str> {
     let kind = fx.effect_kind()?;
     match kind {
         cut::EffectKind::Zoom => {
-            // The zoom form takes a `fx_zoom::Form`, not the stored record: rebuild the six fields from it so
-            // the door works for a band clicked rather than a box just dragged.
+            // The zoom form takes a `fx_zoom::Form`, so rebuild its six fields from the record.
             let form = fx_zoom::Form {
                 at: fx.t,
                 dur: fx.dur,
@@ -346,13 +284,11 @@ pub fn open_effect_form(window: &adw::ApplicationWindow, fx: &cut::Fx) -> Option
                 trans: fx.trans,
                 tout: fx.tout,
                 curve: fx.ease.clone(),
-                // The zoom form holds its box as plain fractions; a record with no box shows the centre, the
-                // same stand-in `zoom_drag_ended` leaves when the hand never sized one.
+                // No box shows the centre, as `zoom_drag_ended` leaves.
                 cx: fx.cx.unwrap_or(0.5),
                 cy: fx.cy.unwrap_or(0.5),
                 hf: fx.hf.unwrap_or(0.5),
-                // The camera row is the page's own answer, not a field of the record: `ui::press_row` is what
-                // every other zoom opener uses.
+                // The camera row is the page's answer (`ui::press_row`), not a record field.
                 row: ui::press_row(window),
             };
             ui::show_zoom_form(window, &form);
@@ -381,14 +317,8 @@ pub fn open_effect_form(window: &adw::ApplicationWindow, fx: &cut::Fx) -> Option
     }
 }
 
-/// F3.8 S1/S2/S3: a press on one bar of the effects lane, answered by the rules in [`fx_band`] and nothing
-/// else. The seam a real widget (and a test firing by name) goes through: `index` is the record's place in the
-/// cut's `fx` list, which is what the widget is named after (`fx-bar-<index>`), `x_px` where in the bar the
-/// press landed, `width_px` the bar's drawn width, `travel_px` how far the pointer went, and `over_kill`
-/// whether it was on the ✕.
-///
-/// Named `press_effect_bar`, NOT `press_band`: this file already owns `press_band` / `set_press_band`, which
-/// pick which RECORDING a press refers to (§05). The two are unrelated and must not be conflated.
+/// F3.8 S1/S2/S3: a press on one bar of the effects lane, answered by [`fx_band`] alone. `index` is the record's place in the cut's `fx` list (`fx-bar-<index>`), `x_px` the press within the bar, `width_px` the bar's width, `travel_px` the pointer travel, `over_kill` whether on the ✕.
+/// Named `press_effect_bar`, NOT `press_band` (which picks which RECORDING a press refers to, §05).
 pub fn press_effect_bar(
     window: &adw::ApplicationWindow,
     index: usize,
@@ -401,8 +331,7 @@ pub fn press_effect_bar(
     let Some(fx) = cut_.fx.get(index).cloned() else {
         return fx_band::Press::Dropped;
     };
-    // Where the hand grabbed decides whether a drag slides or resizes; `fx_band` answers it from the same
-    // pixel reach the lane draws with.
+    // Where the hand grabbed decides slide or resize, from the lane's own pixel reach.
     let grab = fx_band::grab_at(x_px, width_px);
     let answer = fx_band::press_band(fx.t, width_px, travel_px, over_kill, true, grab);
     match answer {
@@ -418,8 +347,7 @@ pub fn press_effect_bar(
         }
         fx_band::Press::Hold { t, from_end: _ } => {
             ui::set_held_effect(Some(fx.clone()));
-            // S1: `picked up` puts the line on the band's start. `ui::set_line_position` also marks that a line
-            // exists, which is what makes the placement known to every other flow.
+            // S1: `picked up` puts the line on the band's start; `ui::set_line_position` marks that a line exists.
             ui::set_line_position(window, cut_line::LinePos { t });
             ui::refresh_insert_button(window);
             refresh_effects_lane(window);
@@ -446,8 +374,7 @@ pub fn press_effect_bar(
     answer
 }
 
-/// F3.8 S3: take ONE record out of the cut by its index. Goes through `ui::record_edit`, NEVER `ui::seed_review_cut`:
-/// the removal must sit on the history so F2.13's ↶ puts the effect back.
+/// F3.8 S3: take ONE record out by index via `ui::record_edit`, NEVER `ui::seed_review_cut`, so F2.13's ↶ restores it.
 pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String {
     let mut cut_ = ui::review_cut_of(window);
     if index >= cut_.fx.len() {
@@ -456,8 +383,7 @@ pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String
     let taken = cut_.fx.remove(index);
     ui::save_insert_cut(&cut_);
     ui::record_edit(window, &cut_);
-    // The thing in hand was this record: holding a removed effect would leave the lane asking for an overlay of
-    // nothing.
+    // The held thing was this record; holding a removed effect would leave an overlay of nothing.
     if ui::held_effect().is_some_and(|held| held.kind == taken.kind && held.t == taken.t) {
         ui::set_held_effect(None);
     }
@@ -469,8 +395,7 @@ pub fn remove_effect_at(window: &adw::ApplicationWindow, index: usize) -> String
     said
 }
 
-/// F3.8 S3 (`⌦ with an effect held removes it`): the keyboard's kill. The held record is found in the LIVE
-/// cut the same way the lane finds it (kind + start), never by remembering an index across edits.
+/// F3.8 S3 (`⌦ with an effect held removes it`): the held record is found in the LIVE cut by kind + start, never by a remembered index.
 pub fn remove_held_effect(window: &adw::ApplicationWindow) -> String {
     let Some(held) = ui::held_effect() else {
         return fx_band::GONE.to_string();
@@ -482,10 +407,7 @@ pub fn remove_held_effect(window: &adw::ApplicationWindow) -> String {
     remove_effect_at(window, index)
 }
 
-/// F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): the keyboard's move of the record in
-/// hand. `fx_band::nudged` IS `effect_rules::nudge`, so there is no snap in this path by construction — the
-/// keyboard moves a band, it does not stretch one, and a nudge walked past a segment end stays exactly that
-/// many seconds off it.
+/// F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): `fx_band::nudged` IS `effect_rules::nudge`, so no snap; the band moves, never stretches.
 pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String {
     let Some(held) = ui::held_effect() else {
         return fx_band::GONE.to_string();
@@ -497,13 +419,11 @@ pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String 
     let (t, dur) = fx_band::nudged(&held, delta);
     cut_.fx[index].t = t;
     cut_.fx[index].dur = dur;
-    // §7's mid-drag rule: a drag tick that happens while a gesture is in flight is refused by `cut_save` itself,
-    // so the file waits for the release. A keyboard nudge is a whole act of the hand and writes.
+    // §7 mid-drag rule: `cut_save` refuses a write while a gesture is in flight; a keyboard nudge is a whole act and writes.
     ui::save_insert_cut(&cut_);
     ui::record_edit(window, &cut_);
     ui::set_held_effect(Some(cut_.fx[index].clone()));
-    // Same rule as `drag_held_band`: the line rides with the band it is sitting on, so a nudge never leaves
-    // the held record "behind the viewer" for the refresh to give up.
+    // As in `drag_held_band`: the line rides with the band so the hold is not given up.
     ui::set_line_position(window, cut_line::LinePos { t });
     refresh_effects_lane(window);
     let said = fx_band::moved(fx_record::label_of(
@@ -516,11 +436,7 @@ pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String 
     said
 }
 
-/// F3.8 S2: a drag of the record in hand, on the lane. `from_end == None` slides the WHOLE band, snapped
-/// against `marks`; `Some(end)` moves that end only. `marks` MUST arrive with the moved effect's own two ends
-/// filtered out (§A.9: "the held effect's own ends excluded") — a band that snaps to itself cannot be dragged
-/// once it lines up with its own start. The page builds those marks; this seam takes them as given so the rule
-/// stays testable without a rendered timeline.
+/// F3.8 S2: a drag of the record in hand. `from_end == None` slides the WHOLE band snapped against `marks`; `Some(end)` moves that end. `marks` MUST arrive without the moved effect's own two ends (§A.9). The page builds them, keeping the rule testable.
 pub fn drag_held_band(
     window: &adw::ApplicationWindow,
     to: f64,
@@ -542,12 +458,9 @@ pub fn drag_held_band(
     };
     cut_.fx[index].t = t;
     cut_.fx[index].dur = dur;
-    // §7's `cut.json is written by one function`: the write is refused while a gesture is in flight
-    // ([`crate::cut_save::gesture_in_flight`]), so a drag tick updates state and the release writes the answer.
+    // §7: the write is refused while a gesture is in flight ([`crate::cut_save::gesture_in_flight`]); the release writes.
     ui::save_insert_cut(&cut_);
-    // §7's one Undo per drag: while a bar gesture is in flight the FIRST tick spends the history entry and the
-    // rest ride on it (a mouse-move loop would otherwise cost one step per pixel). A direct call with no
-    // gesture in flight keeps recording every time, which is what `band_hold_widgets` pins.
+    // §7 one Undo per drag: the FIRST tick in a bar gesture spends the history entry and the rest ride on it. A direct call with no gesture keeps recording (`band_hold_widgets`).
     if !crate::ui::cut_band_press::band_drag_in_flight()
         || crate::ui::cut_band_press::take_history_step()
     {
@@ -556,9 +469,7 @@ pub fn drag_held_band(
         crate::ui::window_history_zoom::amend_edit(window, &cut_);
     }
     ui::set_held_effect(Some(cut_.fx[index].clone()));
-    // S1 put the line on the band's start when the band was picked up; a drag that moves the band carries the
-    // line along with it, or the refresh below would read the OLD line against the NEW position and drop the
-    // hold as "walked off the band".
+    // A drag carries the line with the band, else the refresh reads the OLD line against the NEW position and drops the hold.
     ui::set_line_position(window, cut_line::LinePos { t });
     refresh_effects_lane(window);
     let label = fx_record::label_of(held.effect_kind().unwrap_or(cut::EffectKind::Zoom));
@@ -573,11 +484,7 @@ pub fn drag_held_band(
     said
 }
 
-/// F3.8 S4 (`✎ Edit: found by kind and start · the box from the live effect`): reopen the form of the record
-/// in hand. A miss says so and changes NOTHING — the sentence's own promise. On a hit the form is opened from
-/// the LIVE record, and the four box fractions go through [`fx_band::live_box`] with whatever the form or the
-/// hold carried as a snapshot: the argument exists to make the live read visible at the call site, because a
-/// form that redrew from its own earlier copy would overwrite a box someone moved since it opened.
+/// F3.8 S4 (`✎ Edit: found by kind and start · the box from the live effect`): reopen the form of the record in hand. A miss says so and changes NOTHING. The box goes through [`fx_band::live_box`] so a stale form copy cannot overwrite a moved box.
 pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
     let Some(held) = ui::held_effect() else {
         return fx_band::GONE.to_string();
@@ -588,8 +495,7 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
         return fx_band::GONE.to_string();
     };
     let live = &cut_.fx[index];
-    // What the form last showed, as the stale side of the comparison. `held` is the copy that went into the
-    // hand, so its fractions ARE the snapshot: they may be older than `live`'s.
+    // `held` went into the hand, so its fractions are the snapshot and may be older than `live`'s.
     let stale = (
         held.cx.unwrap_or(0.0),
         held.cy.unwrap_or(0.0),
@@ -603,7 +509,7 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
     shown.wf = wf;
     shown.hf = hf;
     ui::set_held_effect(Some(shown.clone()));
-    // One form on the page at a time: opening this record's form over another would leave both visible.
+    // One form on the page at a time.
     close_any_effect_form(window);
     open_effect_form(window, &shown);
     cut_form_frame::set_pinned(
@@ -625,61 +531,44 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
     said
 }
 
-/// F3.8 S3 (`Esc drops the hold and disarms ("cancelled" for a bare disarm)`): Escape when an effect is in
-/// hand. Returns `None` when this window holds nothing, so the key travels on to whichever form or arm does
-/// own it — with nothing held the per-kind controllers keep their precedence, and this one only claims the
-/// leftover (see `window.rs`: it is wired FIRST among the Esc controllers, which is what lets it disarm below).
-///
-/// Both halves of S3 happen here, because claiming the key means no other Esc handler runs after this one:
-/// the hold goes, and every hand-armed drag comes down with it. One word covers both — `fx_band::CANCELLED`
-/// is the bare-disarm sentence §A.9 spells, and the armed kinds' own sentences belong to their own Cancel.
+/// F3.8 S3 (`Esc drops the hold and disarms ("cancelled" for a bare disarm)`): `None` when nothing is held, so the key travels on to the per-kind controllers (this one is wired FIRST among the Esc controllers). Claiming the key drops the hold and every hand-armed drag; `fx_band::CANCELLED` is the one sentence (§A.9).
 pub fn press_band_esc(window: &adw::ApplicationWindow) -> Option<String> {
     let _ = ui::held_effect()?;
-    // The arms come down BEFORE the hold is cleared, so a door that refuses (a caption form this window does
-    // not own) still leaves the press having done what it said: nothing is claimed and then half-done.
+    // The arms come down BEFORE the hold clears, so a refusing door leaves nothing half-done.
     if ui::zoom_armed() {
         let _ = ui::press_zoom_esc(window);
     }
     if text_armed() && press_text_esc(window).is_none() {
-        // This window did not draw the caption form, so its own door left the arm up; S3's "disarms" half
-        // needs the arm gone regardless of which window raised it.
+        // This window did not draw the caption form, so its door left the arm up; S3 needs it gone.
         release_text_arm_only();
     }
     if svg_armed() && press_svg_esc(window).is_none() {
         release_svg_arm_only();
     }
     ui::set_held_effect(None);
-    // A held effect plus an OPEN form is out of S3's way: this press drops the hold and the arms, and the form
-    // takes the next Esc (or the heading's ✕, which forwards to the same doors). The spec names no other shape.
+    // A held effect plus an OPEN form: this press drops the hold and arms; the form takes the next Esc.
     refresh_effects_lane(window);
     ui::refresh_insert_button(window);
     Some(fx_band::CANCELLED.to_string())
 }
 
-// F3.8 S5 (`Forms are live: first answer pushes Undo ... refusals reset that`): the visit-level bookkeeping
-// every live form shares. One entry per visit, held here rather than in each field, because "↶ takes the whole
-// edit back" means the visit, not the keystroke.
+// F3.8 S5 (`Forms are live`): visit-level Undo bookkeeping shared by live forms, one entry per visit.
 thread_local! {
     pub(crate) static LIVE_FORM: std::cell::RefCell<fx_band::LiveForm> =
         std::cell::RefCell::new(fx_band::LiveForm::default());
 }
 
-/// F3.8 S5: does THIS accepted answer take the visit's single Undo entry? True the first time, false for
-/// every change after it. Called by the Apply seams right before they write.
+/// F3.8 S5: does THIS accepted answer take the visit's single Undo? True the first time only.
 pub fn live_form_answer_is_undo(_window: &adw::ApplicationWindow) -> bool {
     LIVE_FORM.with(|cell| cell.borrow_mut().first_answer())
 }
 
-/// F3.8 S5: a refused answer wrote nothing, so it gives the Undo entry back and the next accepted answer is
-/// again the first. Called on every Apply refusal path.
+/// F3.8 S5: a refused answer wrote nothing, so it gives the Undo entry back.
 pub fn live_form_refused() {
     LIVE_FORM.with(|cell| cell.borrow_mut().refusal_resets());
 }
 
-/// F2.6 S1: a press on the effects lane -- the only ground that refuses a selection. With an effect in
-/// hand the press PUTS IT DOWN (that is what the lane is for); with nothing held it does nothing. Either
-/// way NO band is drawn, so the existing selection stays exactly as it was. Callable without a widget so
-/// the rule is testable on its own; the gesture handler just calls this when `surface_at` says `FxLane`.
+/// F2.6 S1: a press on the effects lane, the only ground that refuses a selection. With an effect in hand it PUTS IT DOWN; otherwise nothing. No band is drawn, so the selection stays.
 pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress {
     let _ = window;
     let answer = cut_select::fx_lane_press(ui::held_effect().is_some());
@@ -687,8 +576,7 @@ pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress
         cut_select::FxLanePress::PutsHeldEffectDown => {
             ui::set_held_effect(None);
             ui::log_line("effect put down on the effects lane");
-            // The preview's held overlay goes with it: a dashed outline around nothing would claim an
-            // effect is still in hand.
+            // The preview's held overlay goes too, else a dashed outline claims an effect is in hand.
             refresh_effects_lane(window);
         }
         cut_select::FxLanePress::Nothing => {}
@@ -696,12 +584,7 @@ pub fn press_fx_lane(window: &adw::ApplicationWindow) -> cut_select::FxLanePress
     answer
 }
 
-/// The surface the placeholder track area draws today, and how many rows of it exist. §7's `a selection is of
-/// what it was drawn on` is what this answers: the strip is a 48 px box holding a ruler, ONE picture row with
-/// its wave strip, and the effects lane along the bottom, so every band is reachable by y — read off that split
-/// rather than off the painted band's taller geometry, which would answer most of this box as "past the last
-/// row". Both press paths on this widget go through here ([`crate::ui::cut_line_press::press_strip`] and
-/// `wire_select_surface`'s drag) so a click and a drag cannot disagree about a y.
+/// The surface the placeholder track area draws, and its rows (§7 `a selection is of what it was drawn on`): a 48 px box with a ruler, ONE picture row with its wave strip and the effects lane, read by y. Both [`crate::ui::cut_line_press::press_strip`] and `wire_select_surface` go through here.
 pub(crate) fn placeholder_surface_bands() -> (cut_select::SurfaceBands, usize) {
     (
         cut_select::PLACEHOLDER_BANDS,
@@ -709,31 +592,25 @@ pub(crate) fn placeholder_surface_bands() -> (cut_select::SurfaceBands, usize) {
     )
 }
 
-/// This window's ✕ Clear selection button (F2.6 S2), looked up by its stable name.
 pub fn clear_selection_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     ui::find_widget_by_name(window.upcast_ref(), "clear-selection")?
         .downcast()
         .ok()
 }
 
-/// This window's Selection readout label (F2.6 S3).
 pub fn selection_readout(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
     ui::find_widget_by_name(window.upcast_ref(), "selection-readout")?
         .downcast()
         .ok()
 }
 
-/// This window's drag surface (F2.6 S1).
 pub fn select_surface(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
     ui::find_widget_by_name(window.upcast_ref(), "select-surface")?
         .downcast()
         .ok()
 }
 
-/// F2.5 S6: set this window's one preview volume from a slider's percent (0..100) and push the result
-/// into the live player, so every preview of this window shares the one number. Returns the gain written
-/// (`0..=1`), which is what the caller would read back — the clamp lives in [`cut_hear::clamp_volume`],
-/// never here.
+/// F2.5 S6: set this window's one preview volume from a slider percent (0..100) and push it to the live player. Returns the gain written (`0..=1`); the clamp is [`cut_hear::clamp_volume`].
 pub fn set_preview_volume(window: &adw::ApplicationWindow, percent: f64) -> f64 {
     let _ = window;
     let volume = PREVIEW_VOLUMES.with(|slots| {
@@ -751,8 +628,7 @@ pub fn set_preview_volume(window: &adw::ApplicationWindow, percent: f64) -> f64 
     gain
 }
 
-/// F2.5 S6: the one number, as a gain — what every preview multiplies its sound by, and the value
-/// [`cut_hear::mix_at`] is handed. A window that never showed a slider reads the default full.
+/// F2.5 S6: the one number as a gain, which [`cut_hear::mix_at`] is handed; default full if no slider was shown.
 pub fn preview_volume(window: &adw::ApplicationWindow) -> f64 {
     let _ = window;
     PREVIEW_VOLUMES.with(|slots| {
@@ -764,12 +640,7 @@ pub fn preview_volume(window: &adw::ApplicationWindow) -> f64 {
     })
 }
 
-/// F2.5: ask the hearing rules what this tick means and store the answer on this window's player.
-///
-/// The page calls this instead of computing anything: `cut_hear::mix_at` decides which lanes start,
-/// whether the footage's own sound is muted and how loud and fast to play, at this window's one
-/// preview volume. Nothing here re-decides a part of that answer; it only lands `footage_muted` where a
-/// later round's pipeline can read it.
+/// F2.5: ask the hearing rules what this tick means and store it on this window's player. `cut_hear::mix_at` decides lanes, footage mute, loudness and speed; this lands `footage_muted` for the pipeline.
 pub fn apply_mix(
     window: &adw::ApplicationWindow,
     segs: &[cut::Seg],
@@ -778,10 +649,7 @@ pub fn apply_mix(
     t: f64,
 ) -> cut_hear::Mix {
     let mut mix = cut_hear::mix_at(segs, lanes, fx, t, preview_volume(window));
-    // F2.12 S7 (`card sound is its own pipeline`): while a SPLICED card plays the footage is held on the wall
-    // clock, so its pipeline may not carry on under a frozen picture — `card_hold_advance` says the line does
-    // not move, and the same rule mutes the footage here. The card's OWN sound is what plays instead, which is
-    // why this mutes the footage and never the card.
+    // F2.12 S7 (`card sound is its own pipeline`): while a SPLICED card plays the footage is held on the wall clock (`card_hold_advance`), so the footage is muted here, never the card.
     let held_by_card = crate::ui::cut_card_preview::card_hearing(
         &cut::Cut {
             segs: segs.to_vec(),
@@ -793,22 +661,14 @@ pub fn apply_mix(
     if held_by_card {
         mix.footage_muted = true;
     }
-    // §05-cut#8 bullet 2: ONE line per CHANGE of the footage's own mute, naming the reason. Asked with the
-    // answer the player held a tick ago and before it is overwritten below, which is what keeps a 100 ms tick
-    // from printing the same mute eight times. The wording is `preview::sound_change`'s; this door only says
-    // WHEN, and the reason is which of the two causes this tick's silence has.
+    // §05-cut#8 bullet 2: ONE line per CHANGE of the footage mute, naming the reason (wording `preview::sound_change`'s); asked before the answer is overwritten so a 100 ms tick does not repeat it.
     crate::ui::preview_sound::report_mute_change(
         crate::ui::preview_sound::heard_before(window),
         crate::ui::preview_sound::heard_now(&mix),
         held_by_card,
         &|line| ui::log_line(line),
     );
-    // §06-effects#2 (`the two 1× sound answers cannot be previewed`, §9's `it SHOULD say "sound at 1× in the
-    // render only"`): a speed asking for its sound at 1× to the effect's or the scene's end needs a clock this
-    // preview does not have, so it plays the sound with the picture and says so. Asked of the MIX, which is where
-    // the question belongs — that way a speed reaching the cut by any door (this form, a loaded project, F3.10's
-    // speeds pass) gets the sentence, not only the one placed by hand. One line per entry: the notice is asked
-    // against what the last tick was told, exactly as the mute line above is.
+    // §06-effects#2 (§9 `it SHOULD say "sound at 1× in the render only"`): a speed asking its sound at 1× needs a clock this preview lacks, so it plays with the picture and says so. Asked of the MIX so any door (form, loaded project, F3.10) gets the sentence; one line per entry.
     crate::ui::preview_sound::report_sound_clock_change(
         crate::ui::preview_sound::sound_clock_noticed(),
         mix.sound_needs_two_clocks,

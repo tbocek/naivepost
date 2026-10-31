@@ -1,20 +1,4 @@
 //! The Settings dialog's Test rows (spec/03-shell.md §5, spec/inventory/shell.md §D).
-//!
-//! This module owns **widgets and nothing else**. Every pass rule lives in [`crate::checks`], which
-//! is handed what a probe answered and returns the verdict — so nothing here opens a socket, runs a
-//! binary or reads a file. What a Test button does is: read its own box, hand that value plus an
-//! answer to [`press_test`], paint the badge with what came back, and mirror the line into both the
-//! dialog's log and the main window's.
-//!
-//! The answer comes from an injected provider rather than a live server because this container has no
-//! LLM, no ffmpeg and no firefox to ask; a real session hands in one that actually probes. A press
-//! with nothing wired fails loudly instead of going green.
-//!
-//! A probe is a network call or a subprocess (60 s for the LLM, 120 s for vision, a headless browser for
-//! firefox), so it never runs on the window's thread: each press runs its provider on a thread of its own and
-//! the verdict is painted when it lands, the row's spinner turning meanwhile. The first port called the
-//! provider inline, so one Test froze the window until it answered and Test All froze it for minutes, with
-//! the spinner painted and replaced inside the same call.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -34,15 +18,8 @@ use crate::settings::Conf;
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
 pub type Answer = Result<String, String>;
 
-/// Who answers a row's probe. `key` is the row's key, `typed` the value read out of its box at the
-/// press — the provider is expected to go and ask *that* address, not the one in the file, which
-/// still lags the keyboard by [`checks::CONF_SAVE_WAIT`].
-///
-/// `Send + Sync` because a press runs it on a thread of its own (see the module's last paragraph).
 pub type Provider = Arc<dyn Fn(&str, &str) -> Answer + Send + Sync>;
 
-/// Every row with a Test button, in dialog order, with the name its log line carries. "Test All runs every
-/// test" (§5): all twelve, not the six service kinds the first port ran.
 const KINDS: [(&str, &str); 12] = [
     ("llm", "LLM"),
     ("llm-vision", "LLM vision"),
@@ -63,12 +40,8 @@ thread_local! {
     static IN_FLIGHT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// How often the window's thread looks for a probe's answer: short enough to feel immediate, long enough to
-/// cost nothing while a 120 s vision probe runs.
 const ANSWER_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// Pump the main loop until every pressed Test has answered, or `limit` passes; answers whether they all
-/// did. The door a widget test uses after a press, since a press now returns before its verdict.
 pub fn wait_for_tests(limit: std::time::Duration) -> bool {
     let started = std::time::Instant::now();
     let context = glib::MainContext::default();
@@ -83,8 +56,6 @@ pub fn wait_for_tests(limit: std::time::Duration) -> bool {
     true
 }
 
-/// The row's name in the log for its widget key. The log is read after the dialog has closed, so the
-/// row spells itself out there rather than only sitting beside the mark on screen.
 fn name_for(key: &str) -> &'static str {
     KINDS
         .iter()
@@ -94,10 +65,6 @@ fn name_for(key: &str) -> &'static str {
 }
 
 /// The seam every Test button goes through: the TYPED value in, a finished [`checks::Phase`] out.
-///
-/// Deliberately a free function over [`checks::TestRow`] rather than a method with a server behind
-/// it — §5's "each Test reads what is TYPED" is the whole input side, and keeping it that way is
-/// what lets a headless test assert that a press tested the box and not the file.
 pub fn press_test(key: &str, typed: &str, answer: Answer) -> checks::Phase {
     let mut row = checks::TestRow::new(name_for(key));
     row.press(typed);
@@ -117,9 +84,6 @@ pub fn press_all(answers: &[AllAnswer]) -> Vec<checks::Row> {
     checks::test_all(&pairs)
 }
 
-/// Paint one badge from a phase: blank while idle, `…` while spinning, ✓/✗ with the verdict as its
-/// tooltip once answered (§5: "✓ / ✗ · verdict as tooltip" — the mark says *that* row failed, only
-/// its sentence says which of the reasons it failed).
 pub fn paint_badge(badge: &gtk::Label, phase: &checks::Phase) {
     // The row's spinner sits just before its badge in the same cell (`spinner-<key>`); rows without one (Fetch
     // models, Use) show the mark alone.
@@ -155,17 +119,11 @@ pub fn paint_badge(badge: &gtk::Label, phase: &checks::Phase) {
 }
 
 thread_local! {
-    /// The dialogs open this session. The dialog is its own top-level window, so a name walk from the
-    /// main window cannot reach it; the accessors below look here first.
     static OPEN: RefCell<Vec<Rc<Dialog>>> = const { RefCell::new(Vec::new()) };
 }
 
-/// The dialog: the grid of rows, their badges, Test All, and the log pane that opens on the first
-/// failure ([`checks::TestLog`]).
 struct Dialog {
     window: adw::Window,
-    /// §5's no-Save write: what is on disk, when the next one is due, and where it goes. Built over
-    /// the conf as it stood when the dialog opened, which is also what seeds the boxes.
     store: RefCell<Option<machine_store::Store>>,
     /// Wall-clock origin for the 600 ms beat, so `flush`/`touched` get one consistent "now".
     started: std::time::Instant,
@@ -174,8 +132,6 @@ struct Dialog {
     entries: RefCell<Vec<(String, gtk::Entry)>>,
     badges: RefCell<Vec<(String, gtk::Label)>>,
     buttons: RefCell<Vec<(String, gtk::Button)>>,
-    /// The ids the last Fetch brought back, kept so Use can check its pick against what the server
-    /// actually served rather than trusting the widget's memory.
     fetched: RefCell<Vec<String>>,
     list: gtk::DropDown,
     /// Set while a save timer is waiting, so a burst of keystrokes arms one timeout, not fifty.
@@ -192,8 +148,6 @@ impl Dialog {
         self.started.elapsed()
     }
 
-    /// Every box's key and current text — the whole store as the user sees it, which is what a save
-    /// writes (§5 has no per-row save: the file always holds all of the boxes).
     fn typed_all(&self) -> Vec<(String, String)> {
         self.entries
             .borrow()
@@ -202,8 +156,6 @@ impl Dialog {
             .collect()
     }
 
-    /// Put the conf's own values into the boxes, so the dialog shows what is on disk rather than
-    /// placeholders. A key with no conf field (Vision) keeps its placeholder.
     fn seed_entries(&self) {
         let base = self.store_base();
         let seeded: Vec<(String, String)> = self
@@ -221,8 +173,6 @@ impl Dialog {
         }
     }
 
-    /// The settings as the boxes stand: every typed value laid over the saved ones, which is what a Test reads
-    /// (§5: "each Test reads what is typed"), the Server box and the keys included, not only its own box.
     fn typed_conf(&self) -> Conf {
         let mut conf = if self.store.borrow().is_some() {
             self.store_base()
@@ -246,7 +196,6 @@ impl Dialog {
             .unwrap_or_default()
     }
 
-    /// Put `conf`'s ids and counts into the boxes WITHOUT a store, so a picture of the dialog can show
     // what a real machine's settings look like while §5's no-Save beat stays unarmed (nothing to write
     // to: a snapshot must not touch `$XDG_CONFIG_HOME`).
     fn paint_from(&self, conf: &Conf) {
@@ -386,11 +335,6 @@ impl Dialog {
     }
 
     /// Ask the provider for one row and report what it said.
-    ///
-    /// The provider alone answers, whatever the row: a test's canned provider must get its own rows
-    /// back unchanged. The live HTTP routing lives in [`crate::settings_probe::live_provider`],
-    /// which the window installs — hard-coding it here would send a test's LLM row to port 8731 and
-    /// replace its verdict with a connection error.
     fn ask(self: &Rc<Self>, key: &str) {
         let typed = self.typed(key);
         self.report(key, &checks::Phase::Running);
@@ -401,9 +345,6 @@ impl Dialog {
         });
     }
 
-    /// Run the provider for `key` on a thread of its own with the boxes as typed, and hand its answer to
-    /// `then` back on the window's thread. A probe that panics answers with a failure rather than leaving
-    /// its spinner turning for ever.
     fn off_thread(
         self: &Rc<Self>,
         key: &str,
@@ -441,11 +382,6 @@ impl Dialog {
     }
 
     /// Fetch models: ask the server what it serves and fill the dropdown.
-    ///
-    /// Not a pass/fail service test like the six rows — it discovers an id rather than proving a
-    /// server healthy — but it reports through the same badge and log so an empty or unreachable
-    /// listing is visible in exactly one place (§5's mirroring rule). The address asked is the one
-    /// TYPED, not the one saved: the file lags the keyboard by `checks::CONF_SAVE_WAIT`.
     fn fetch_models(self: &Rc<Self>) {
         // The Server box: the address to list from. The Model box had been passed here, so a listing asked
         // the model's name as if it were a host.
@@ -466,7 +402,6 @@ impl Dialog {
                     &serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({})),
                 );
                 // The list is rebuilt wholesale from a `gtk::StringList`, which is what gives a
-                // clean replace: DropDown has no remove-all, and appending to the old model would
                 // leave last fetch's ids under this one's.
                 let strings = gtk::StringList::new(&[]);
                 for id in &ids {
@@ -486,9 +421,6 @@ impl Dialog {
     }
 
     /// Use: copy the chosen id into Model, only if the server really listed it.
-    ///
-    /// Checked against [`Self::fetched`] rather than the widget, because the dropdown can hold a
-    /// selection from a listing that has since been replaced.
     fn use_model(&self) {
         let chosen = if self.list.selected() == gtk::INVALID_LIST_POSITION {
             String::new()
@@ -532,8 +464,6 @@ impl Dialog {
         }
     }
 
-    /// Test All: every row, all started at once, each reporting on its own as it lands. Nothing stops at a
-    /// failure — one early ✗ hiding the rest would send the user through the dialog ten times.
     fn ask_all(self: &Rc<Self>) {
         for (key, _) in KINDS {
             self.ask(key);
@@ -569,8 +499,6 @@ pub fn log_lines_px(view: &gtk::TextView) -> i32 {
     view.create_pango_layout(Some(&rows)).pixel_size().1 + view.top_margin() + view.bottom_margin()
 }
 
-/// §5's line between two sections: a horizontal rule across every cell column, named for the section
-/// it introduces ("the sections … divided by separator lines"). Writing, the first section, gets none.
 fn divider(grid: &gtk::Grid, row: i32, section: &str, cells: u32) {
     let key = settings_info::section_key(section).unwrap_or(section);
     let line = gtk::Separator::new(gtk::Orientation::Horizontal);
@@ -583,9 +511,6 @@ pub fn build(parent: Option<&gtk::Window>, provider: Provider) -> adw::Window {
     build_owned(parent, provider).window.clone()
 }
 
-/// The same dialog showing `conf`'s own values, for the `03-settings` picture only: a real session
-/// seeds from the file through [`Dialog::seed_entries`], and this is the one door that paints a conf
-/// handed in rather than read. It writes nothing anywhere.
 pub fn build_from(parent: Option<&gtk::Window>, provider: Provider, conf: &Conf) -> adw::Window {
     let dialog = build_owned(parent, provider);
     dialog.paint_from(conf);
@@ -792,11 +717,6 @@ model answers through judge_text that nothing changed",
     ));
     // §5 puts Use in the Test column — it is this line's action button, beside every other row's Test.
     grid.attach(&use_choice, COL_TEST, row, 1, 1);
-    // These two verdicts are not `add(...)` rows, so their badges are made here. Without a named
-    // badge widget `Dialog::report` has nowhere to paint and a failed listing would show up only in
-    // the log — §5 wants the ✓/✗ with its verdict as tooltip on the dialog itself. Both marks take
-    // the badge cell every other row's mark sits in, side by side in the order the controls they
-    // report on sit in: this row has no Test button, so the pair cannot share that cell with one.
     let marks = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     marks.set_halign(gtk::Align::Center);
     for key in [FETCH_KEY, USE_KEY] {
@@ -1001,8 +921,6 @@ model answers through judge_text that nothing changed",
     dialog
 }
 
-/// §5's named server entries: picking one fills its section's boxes and puts every one of its settings (the
-/// voices folder, which has no box, included) into what the next write puts in `llm.conf`.
 fn wire_servers(dialog: &Rc<Dialog>) {
     let fill = {
         let dialog = Rc::downgrade(dialog);
@@ -1059,9 +977,6 @@ fn wire_servers(dialog: &Rc<Dialog>) {
     );
 }
 
-/// Every value box the dialog draws, the ones without a Test of their own included: the Server and API key
-/// boxes had been registered only through their row's Test button, which they do not have, so they were
-/// neither filled from the file nor written back, and a Test could not read them as typed.
 fn register_value_boxes(dialog: &Rc<Dialog>) {
     fn walk(node: &gtk::Widget, out: &mut Vec<(String, gtk::Entry)>) {
         if let (Some(key), Some(entry)) = (
@@ -1088,8 +1003,6 @@ fn register_value_boxes(dialog: &Rc<Dialog>) {
     }
 }
 
-/// Use fills the model box entered last: Model or Decision. Wired after every value box is registered, the
-/// Decision box having no Test button of its own.
 fn wire_use_target(dialog: &Rc<Dialog>) {
     for key in ["llm", "decision"] {
         if let Some(entry) = dialog
@@ -1183,8 +1096,6 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
     }
 }
 
-/// The provider key for the model listing. Not one of [`KINDS`]: Test All proves services, while
-/// this looks up an id — it still reports through the same badge and the `settings:` log line.
 pub const FETCH_KEY: &str = "fetch-models";
 
 /// The provider key for adopting the chosen id into Model.
@@ -1213,8 +1124,6 @@ fn test_keys() -> [&'static str; 12] {
     ]
 }
 
-/// The provider a build with nothing wired uses: every row fails with a reason that says so, rather
-/// than showing a ✓ nobody probed for.
 pub fn no_probe() -> Provider {
     Arc::new(|key, _| {
         Err(format!(
@@ -1245,13 +1154,6 @@ pub fn dialog_open(_window: &adw::ApplicationWindow) -> bool {
     OPEN.with(|open| !open.borrow().is_empty())
 }
 
-/// Land every open dialog's owed write, from wherever the app is being brought down. Returns how many
-/// dialogs had a store to land.
-///
-/// The dialog is its OWN top level, so closing the main window never runs the hook `open_with` puts on
-/// it — without this door the last ≤600 ms of typing would be dropped when the process exits (§5 "on
-/// close", §6 precedence "dialog box → this file"). [`Dialog::close_store`] takes the store out, so a
-/// dialog closed later (or by its own hook first) lands nothing twice.
 pub fn flush_owed() -> usize {
     let dialogs: Vec<Rc<Dialog>> = OPEN.with(|open| open.borrow().clone());
     let mut landed = 0usize;
@@ -1272,9 +1174,6 @@ pub fn settings_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 }
 
 /// The ids the open dialog's model list currently offers, newest first by fetch order.
-///
-/// A test reads the listing this way rather than reaching into the DropDown's `StringList`, so the
-/// widget shape stays private to this module.
 pub fn listed_models(_window: &adw::ApplicationWindow) -> Vec<String> {
     let Some(list) = find_named("model-list")
         .and_then(|w| w.downcast::<gtk::DropDown>().ok())
@@ -1298,8 +1197,6 @@ pub fn listed_models(_window: &adw::ApplicationWindow) -> Vec<String> {
         .collect()
 }
 
-/// The open settings dialog's window, for tests that need to reach a control inside it. Its own
-/// top-level, so the main window's tree does not contain it.
 pub fn open_settings_window() -> Option<adw::Window> {
     last_dialog().map(|dialog| dialog.window.clone())
 }
@@ -1347,8 +1244,6 @@ pub fn dialog_log(window: &adw::ApplicationWindow) -> String {
     String::new()
 }
 
-/// Whether the dialog's log expander is open — the rule that opened it lives in
-/// [`checks::TestLog::push`], this only reports what the widget shows.
 pub fn dialog_log_open(window: &adw::ApplicationWindow) -> bool {
     if let Some(dialog) = last_dialog() {
         return dialog.log_expander.is_expanded();

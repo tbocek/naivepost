@@ -1,13 +1,4 @@
 //! §06-effects#2-the-lane-and-the-preview — `spec/06-effects.md` §2.
-//!
-//! The lane's colours, how its bars are packed into rows, and what the preview draws for each effect: all of it
-//! is a rule about numbers, so it lives here as plain functions rather than inside a draw callback. The Cut page
-//! is still drawn only for Prepare in `rust/src/ui/window.rs` (as with F2.1–F2.12), so there are no widgets of
-//! this lane to compare yet; the three images §2 shows (`spec/img/06-lane.png`, `06-preview.png`,
-//! `06-effect-menu.png`) were read here for the Effect menu's ORDER and for the colours, not for a widget diff.
-//!
-//! Two ramps in this tree look alike and must not be merged: [`crate::cut_hear::envelope`] is a volume effect's
-//! GAIN over the seconds under it, while [`visibility_at`] below is an overlay's ALPHA.
 
 use crate::cut::{EffectKind, Fx};
 use crate::cut_screen;
@@ -18,11 +9,9 @@ use crate::timeline;
 pub type Rgb = (f64, f64, f64);
 
 /// §06-effects#2-the-lane-and-the-preview (`Colours: zoom …, staying zoom …, speed/stop …`): a kind's bar
-/// colour, verbatim from §2's list. Only a zoom has a second form — a reframing that stays is a different thing
-/// to see, so it is a different colour rather than an outline or a badge.
+/// colour, verbatim from §2's list.
 pub fn bar_colour(kind: EffectKind, staying: bool) -> Rgb {
     match kind {
-        // The staying zoom's orange against the normal cyan: same record, opposite intentions.
         EffectKind::Zoom if staying => (0.95, 0.62, 0.15),
         EffectKind::Zoom => (0.25, 0.72, 0.82),
         // inventory/effects.md §A draws this at alpha 0.4 — the bar is a wash over the lane, not a solid block.
@@ -36,17 +25,13 @@ pub fn bar_colour(kind: EffectKind, staying: bool) -> Rgb {
     }
 }
 
-/// §06-effects#2-the-lane-and-the-preview: does this kind mean something different when it stays? Only a zoom:
-/// every other kind's `stay` is never read (§06#1's table), so no other colour could change.
+/// §06-effects#2-the-lane-and-the-preview: does this kind mean something different when it stays?
 pub fn staying_is_a_different_effect(kind: EffectKind) -> bool {
     matches!(kind, EffectKind::Zoom)
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`// effects.washAlpha` — §10 gives this no `P.` id): the alpha a bar's
-/// colour is laid down at. inventory/effects.md §A.2 spells one speed bar out as `fill RGBA(0.92,0.42,0.6,0.4)`,
-/// and that 0.4 is the lane's rule rather than the speed's: a bar is a WASH over the pictures beneath it, not a
-/// block that hides them (the spec's own lane image reads exactly that way). One number here so the CSS class and
-/// the painted surface cannot disagree about how transparent a lane is.
+/// colour is laid down at.
 pub const WASH_ALPHA: f64 = 0.4;
 
 /// §06-effects#2-the-lane-and-the-preview (`// effects.labelTagAlpha`, inventory/effects.md §A.7: "grey-white tag
@@ -54,8 +39,7 @@ pub const WASH_ALPHA: f64 = 0.4;
 /// effect's — a solid block would read as though something happened there.
 pub const LABEL_TAG_ALPHA: f64 = 0.22;
 
-/// The alpha this kind's bar is washed on: the label's paler tag, everyone else's ordinary wash. The view asks
-/// THIS instead of carrying an alpha of its own, so both numbers stay in the module whose rule they are.
+/// The alpha this kind's bar is washed on: the label's paler tag, everyone else's ordinary wash.
 pub fn bar_wash_alpha(kind: EffectKind) -> f64 {
     match kind {
         EffectKind::Label => LABEL_TAG_ALPHA,
@@ -66,9 +50,7 @@ pub fn bar_wash_alpha(kind: EffectKind) -> f64 {
 // --- the Effect menu -----------------------------------------------------------------------------------------
 
 /// §06-effects#2-the-lane-and-the-preview — the Effect dropdown's rows, top to bottom, as
-/// `spec/img/06-effect-menu.png` shows them: Zoom, Text, SVG, Speed, Volume, Label. That is NOT
-/// [`EffectKind`]'s declaration order (which groups speed with the time kinds), so the menu cannot be built by
-/// iterating that enum.
+/// `spec/img/06-effect-menu.png` shows them: Zoom, Text, SVG, Speed, Volume, Label.
 pub const MENU_ORDER: [EffectKind; 6] = [
     EffectKind::Zoom,
     EffectKind::Text,
@@ -82,8 +64,7 @@ pub const MENU_ORDER: [EffectKind; 6] = [
 
 /// §06-effects#2-the-lane-and-the-preview (`span floor 0.4 s`; `// effects.packMinSeconds` — §10 gives this no
 /// `P.` id, and inventory/effects.md §F calls it fxPackMin): below this a bar is too narrow to be a row's owner,
-/// so it is drawn on the lane without claiming a row of its own. Packing everything would make a 0.1 s label
-/// push three real effects apart.
+/// so it is drawn on the lane without claiming a row of its own.
 pub const PACK_MIN_SECONDS: f64 = 0.4;
 
 /// One effect's place in the lane: the row it is drawn on, and whether it claims that row's seconds.
@@ -94,27 +75,12 @@ pub struct Packed {
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`Rows: first-fit by seconds`, `span floor 0.4 s`): the lane's
-/// packing, one entry per effect, in the order given. An effect takes the first row nothing already on it
-/// overlaps; a new row appears only when every existing one is busy at those seconds.
-///
-/// This is THE ONLY place the span floor is tested, and it tests it on [`Fx::dur`] — §1 says `dur` already
-/// includes the fades and IS the bar's width. Testing it on a recomputed `(t + dur) - t` instead was the bug:
-/// for `t = 1.0, dur = 0.4` that subtraction answers `0.3999999999999999`, under the floor, so packing sent
-/// the effect to row 0 and left its seconds unclaimed while the painted bar still said it reserved a row —
-/// two doors, two answers, and the painter (which iterates [`lane_layout`]) inked the bar over whatever else
-/// shared row 0. Overlap itself still asks [`Fx::spans`], which is where the window on the timeline belongs.
-///
-/// Packed by SECONDS and not by pixels, so the answer does not change when the timeline is zoomed: what fits
-/// beside an effect at 4 px/s still fits at 240 px/s. [`timeline::rows_for`] is the sibling for recordings on
-/// rows — same first-fit, different thing being packed (an effect lane has no pins and no camera rows).
+/// packing, one entry per effect, in the order given.
 pub fn pack(fx: &[Fx]) -> Vec<Packed> {
-    // What each row is busy with, as the spans already placed on it.
     let mut taken: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut packed = Vec::with_capacity(fx.len());
 
     for effect in fx {
-        // Under the floor: drawn at the lane's top, reserving nothing — which is what keeps a scatter of tiny
-        // labels from pushing three real effects apart.
         if effect.dur < PACK_MIN_SECONDS {
             packed.push(Packed {
                 row: 0,
@@ -147,17 +113,13 @@ pub fn rows_for_effects(fx: &[Fx]) -> Vec<usize> {
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`lane one row deep even when empty`): how many rows the lane shows.
-/// Never nought — an empty lane still costs one row, because a lane that disappears when its last effect is
-/// deleted moves every row under it, and a person reaches for a bar by where it was.
 pub fn row_count(fx: &[Fx]) -> usize {
     // One pass over the rows this packing produced; `max(1)` is §2's "one row deep even when empty".
     let rows = rows_for_effects(fx);
     1 + rows.iter().copied().max().unwrap_or(0)
 }
 
-/// §06-effects#2-the-lane-and-the-preview: the lane's height. `// layout.effectRowPx`, read from
-/// [`cut_screen::EFFECT_ROW_PX`] rather than repeated — the row height is the timeline's number and this only
-/// multiplies it, so a zoom of the lane that changes one cannot leave the other behind.
+/// §06-effects#2-the-lane-and-the-preview: the lane's height.
 pub fn lane_height_px(rows: usize) -> f64 {
     rows.max(1) as f64 * cut_screen::EFFECT_ROW_PX
 }
@@ -173,16 +135,11 @@ pub const DIM_ALPHA: f64 = 0.45;
 pub const RECT_STROKE_PX: f64 = 1.5;
 
 /// §06-effects#2-the-lane-and-the-preview (`the held one full with a dashed violet outline`): the outline's
-/// colour. "Violet" is §2's word; these components are ours, in the family an audio insert is drawn in, so the
-/// two "this is not footage yet" marks agree.
+/// colour.
 pub const HELD_OUTLINE: [f64; 3] = [0.62, 0.44, 0.86];
 
 /// §06-effects#2-the-lane-and-the-preview (`visible overlays at real alpha`): how visible an effect is at the
 /// session second `t` — nought outside its span, ramping in across `trans`, out across `tout`, full between.
-/// Both fades live INSIDE `dur` (§06#1), so a long-enough fade simply never reaches full visibility.
-///
-/// This is an overlay's ALPHA; [`crate::cut_hear::envelope`] is a volume effect's GAIN. They look like the same
-/// ramp and are not: one is what you see through, the other is how loud the bed is.
 pub fn visibility_at(fx: &Fx, t: f64) -> f64 {
     let (from, to) = fx.spans();
     if t < from || t >= to {
@@ -206,9 +163,7 @@ pub fn visibility_at(fx: &Fx, t: f64) -> f64 {
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`visible overlays at real alpha`): is this kind an overlay, i.e.
-/// something the paused preview draws as it will be seen? A text, a drawing and a label are; a zoom's rect and
-/// a rate's mask are guides rather than overlays (the first has its own line above, the second only matters when
-/// something is playing), and a volume is heard — §2 lists no visual for it, so drawing one would be inventing.
+/// something the paused preview draws as it will be seen?
 pub fn drawn_paused(kind: EffectKind) -> bool {
     matches!(kind, EffectKind::Text | EffectKind::Svg | EffectKind::Label)
 }
@@ -255,7 +210,7 @@ pub fn camera_clock_is_smoothed() -> bool {
 
 /// §06-effects#2-the-lane-and-the-preview (`A stop's still: rendered from the scene's own camera, fitted on the
 /// footage's transform`): a held frame borrows its framing from where it stands and never invents one, so it is
-/// placed by the zoom that was already there. Only a stop does this — a rate of 1 is not a still.
+/// placed by the zoom that was already there.
 pub fn still_come_from_scene_camera(fx: &Fx) -> bool {
     fx_record::is_stop(fx)
 }
@@ -263,8 +218,7 @@ pub fn still_come_from_scene_camera(fx: &Fx) -> bool {
 // --- preview and render, deliberately different --------------------------------------------------------------------
 
 /// §06-effects#2-the-lane-and-the-preview (`preview runs speed at one flat rate`): [`crate::cut_hear::rate_under`]
-/// answers the rate for the second under the line and nothing else. A rate change is a flushing seek, so following
-/// a ramp would mean seeking per frame — the preview would spend its time seeking instead of playing.
+/// answers the rate for the second under the line and nothing else.
 pub fn previews_flat_rate() -> bool {
     true
 }
@@ -277,8 +231,7 @@ pub fn render_follows_ramps() -> bool {
 
 /// §06-effects#2-the-lane-and-the-preview (`the two 1× sound answers cannot be previewed`; inventory/effects.md
 /// §A.3): `own` (1× to the effect's end) and `scene` (1× to the scene's end) both need the sound running at a
-/// different clock from the picture, which is what a preview with one player cannot do. The empty answer,
-/// `pitch` and `mute` all can be.
+/// different clock from the picture, which is what a preview with one player cannot do.
 pub fn previewable_sound(snd: &str) -> bool {
     !matches!(snd, "own" | "scene")
 }
@@ -298,13 +251,11 @@ pub const DEBT_TAIL_MIN_SECONDS: f64 = 0.05;
 
 /// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead" plate once wider than 60 px`;
 /// `// effects.plateMinPx`): a plate narrower than the words in it is an unreadable smudge, so the number waits
-/// until there is room. inventory/effects.md §A.3 writes this bound as "≥ 60 px"; §2's own wording is "once
-/// wider than", which is what [`plate_shown`] implements — the two differ at exactly 60.0 and nowhere else.
+/// until there is room.
 pub const PLATE_MIN_PX: f64 = 60.0;
 
 /// §06-effects#2-the-lane-and-the-preview (`Debt = dur − Σ on-screen seconds (positive: sound behind)`): how far
-/// the sound is out of step with the picture. Positive means the sound still has seconds left to play after the
-/// picture moved on — it is BEHIND.
+/// the sound is out of step with the picture.
 pub fn debt(dur: f64, on_screen: f64) -> f64 {
     dur - on_screen
 }
@@ -333,19 +284,12 @@ pub struct Bar {
     /// A staying zoom is a different bar (§2 gives it its own colour).
     pub staying: bool,
     pub colour: Rgb,
-    /// Whether this bar claims its row for its seconds. Under the floor a bar is still drawn and reserves
-    /// nothing, which is what keeps a scatter of tiny labels from growing the lane. `effects.packMinSeconds 0.4`
+    /// Whether this bar claims its row for its seconds.
     pub reserves_a_row: bool,
 }
 
 /// §06-effects#2-the-lane-and-the-preview: the lane as one value.
-///
-/// Empty input answers an empty list of bars — and the lane is still one row deep, because [`row_count`]
-/// answers 1 for no effects at all (§2: "lane one row deep even when empty"). The view sizes itself from
-/// `row_count`, never from this list's length.
 pub fn lane_layout(fx: &[Fx]) -> Vec<Bar> {
-    // One entry per element of the SAME list `fx` is, so zipping keeps indices aligned even though unknown
-    // kinds are dropped below: `index` counts the list, and `packed[index]` is that effect's placement.
     let packed = pack(fx);
     fx.iter()
         .zip(packed)
@@ -373,18 +317,14 @@ pub fn lane_layout(fx: &[Fx]) -> Vec<Bar> {
 pub struct PausedScene {
     pub dim_alpha: f64,
     pub rect_stroke_px: f64,
-    /// `(index, kind, alpha)` for each overlay the paused frame draws. An invisible one (alpha 0) is STILL
-    /// listed, so the view hides it by opacity rather than by removing a widget: adding and removing children
-    /// mid-drag is what trips `gtk_box_append`'s parent assertion in a refresh path.
+    /// `(index, kind, alpha)` for each overlay the paused frame draws.
     pub overlays: Vec<(usize, EffectKind, f64)>,
     pub held_full: bool,
     pub held_outline_dashed: bool,
     pub box_dashed: bool,
 }
 
-/// §06-effects#2-the-lane-and-the-preview: the paused frame. Outside the camera rect is dimmed black at
-/// [`DIM_ALPHA`], the rect is stroked, and visible overlays sit at their real alpha — except the one in the
-/// hand, which is drawn full with the dashed violet outline and therefore left out of `overlays`.
+/// §06-effects#2-the-lane-and-the-preview: the paused frame.
 pub fn paused_scene(
     fx: &[Fx],
     t: f64,
@@ -416,10 +356,6 @@ pub fn paused_scene(
 }
 
 /// §06-effects#2-the-lane-and-the-preview: the playing frame — titles only, at their real alpha.
-///
-/// The camera layer is deliberately NOT part of this answer: while playing the page paints only the black mask
-/// over what the finished frame hides ([`mask_only_while_playing`]), and the camera rides the smoothed live
-/// clock ([`camera_clock_is_smoothed`]) rather than anything computed per frame here.
 pub fn playing_scene(fx: &[Fx], t: f64) -> Vec<(usize, EffectKind, f64)> {
     fx.iter()
         .enumerate()
@@ -434,8 +370,7 @@ pub fn playing_scene(fx: &[Fx], t: f64) -> Vec<(usize, EffectKind, f64)> {
         .collect()
 }
 
-/// Does this bar earn the dashed debt tail? One question about one bar: the record's own sound answer, the
-/// debt against its on-screen seconds, and whether the scene runs on past it.
+/// Does this bar earn the dashed debt tail?
 pub fn debt_tail_for(fx: &[Fx], index: usize, on_screen: f64, scene_runs_on: bool) -> bool {
     let Some(effect) = fx.get(index) else {
         return false;
@@ -443,8 +378,7 @@ pub fn debt_tail_for(fx: &[Fx], index: usize, on_screen: f64, scene_runs_on: boo
     draws_debt_tail(&effect.snd, debt(effect.dur, on_screen), scene_runs_on)
 }
 
-/// The plate's words, if there is room for the plate. No debt means no plate, and a narrow bar cannot hold
-/// one either — `effects.plateMinPx 60`, read as "wider than".
+/// The plate's words, if there is room for the plate.
 pub fn plate_for(debt: f64, width_px: f64) -> Option<String> {
     if !plate_shown(width_px) {
         return None;
@@ -453,9 +387,7 @@ pub fn plate_for(debt: f64, width_px: f64) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-/// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead"`): the plate's words. One tenth of a second
-/// is the finest thing worth telling someone to wait for; an exact zero has nothing to say, and a plate reading
-/// "sound 0.0 s" would be a bug dressed as information.
+/// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead"`): the plate's words.
 pub fn plate_text(debt: f64) -> String {
     if debt == 0.0 {
         return String::new();
@@ -472,8 +404,7 @@ pub fn plate_shown(width_px: f64) -> bool {
 
 /// §06-effects#2-the-lane-and-the-preview (`The earliest covering effect's answer wins`, inventory/effects.md
 /// §A.3): what the speed under `t` does with its sound — the first effect that both covers the second and named
-/// an answer, in the order they were placed. An empty `snd` is no answer and does not silence a later one; a
-/// non-speed says nothing about sound at all (§06#1's table gives it no `snd`).
+/// an answer, in the order they were placed.
 pub fn sound_answer_at(fx: &[Fx], t: f64) -> Option<String> {
     fx.iter()
         .filter(|effect| effect.effect_kind() == Some(EffectKind::Speed))
@@ -487,22 +418,13 @@ pub fn sound_answer_at(fx: &[Fx], t: f64) -> Option<String> {
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead" plate once wider than 60 px`): the room
-/// the plate has to speak in. A panel that has been laid out answers with its allocated width; one that has not
-/// answers `0`, which is NOT "no room" — it is "not measured yet", and reporting that as no room would hide the
-/// plate from every headless check while a real window shows it. So before allocation the width the widget asked
-/// for stands in, and afterwards the larger of the two wins: a panel never shrinks below what it requested here.
+/// the plate has to speak in.
 pub fn room_px(allocated: f64, requested: f64) -> f64 {
     allocated.max(requested)
 }
 
 /// §06-effects#2-the-lane-and-the-preview (the debt tail and its plate): how far the sound under the red line
-/// is from where the picture is. The winner is the same record [`sound_answer_at`] picks — the earliest one that
-/// both covers `t` and names a sound answer, since §2 gives only a speed a `snd` (§06#1's table) — and the debt
-/// is its total length less the seconds it has run by then. That clamp is the app's own arithmetic between two
-/// numbers it already holds (the record's start and the line), never a model's estimate; clamping keeps the
-/// answer inside the bar even when the line sits past its end, so a stale line cannot print a debt bigger than
-/// the effect. Past the last covered second there is no covering record and the answer is `0.0`, which
-/// `plate_text` calls no plate.
+/// is from where the picture is.
 pub fn plate_debt_at(fx: &[Fx], t: f64) -> f64 {
     let Some(winner) = fx
         .iter()
@@ -525,8 +447,7 @@ pub fn plate_debt_at(fx: &[Fx], t: f64) -> f64 {
 
 /// §06-effects#2-the-lane-and-the-preview (`sndDip 0.15 s fades at the rejoin`, inventory/effects.md §A.3): the
 /// fade in and back out where delayed sound rejoins the picture — short enough not to hear, long enough that the
-/// rejoin does not click. `// P.eng.soundDipSeconds`, whose row lives in spec/10-parameters.md; this is the
-/// effects side of it, so the number sits with the rule that fades.
+/// rejoin does not click.
 pub const SOUND_DIP_SECONDS: f64 = 0.15;
 
 /// §06-effects#2-the-lane-and-the-preview: the rejoin's dip, read as a function so a caller cannot pick its own.
@@ -535,40 +456,16 @@ pub fn rejoin_dip() -> f64 {
 }
 
 /// `P.eng.effectMinSeconds` (spec/10-parameters.md §5.1: 0.1, "shortest an effect band may be dragged down
-/// to"; prototype `fxMinDur` in go/cut_fx.go). The floor a hand dragging either end of a band runs into.
-///
-/// Why there is a floor at all is the prototype's reason, unchanged: a band of no length does nothing, cannot be
-/// grabbed again, and so silently destroys the very thing the hand was adjusting. 0.1 s is short enough that a
-/// deliberate tiny effect still exists on screen at the deepest zoom yet cannot be shrunk out of reach.
-///
-/// Not to be confused with the two neighbours that also bound a band's length from below:
-/// [`crate::cut_clamp::MIN_SURVIVING_SECONDS`] (`P.eng.effectMinSurvivingSeconds`, 1.0) is what a CLAMPED band
-/// must have left or it is dropped outright, and [`crate::cut_select::MIN_SECONDS`]
-/// (`P.eng.minPieceSeconds`, 0.04) is the SELECTION band's floor. This one is the EFFECTS lane's drag floor.
+/// to"; prototype `fxMinDur` in go/cut_fx.go).
 pub const MIN_BAND_SECONDS: f64 = 0.1;
 
 /// §06-effects#7-rules (`effects cannot leave the timeline`) plus `P.eng.effectMinSeconds`: where a band lands
-/// when one of its ends is dragged to `to`. Returns the new `(t, dur)`; the original is never shorter than
-/// [`MIN_BAND_SECONDS`] whichever end moves, and the start never goes before second 0.
-///
-/// What this function deliberately does NOT do, because the spec keeps those rules elsewhere:
-/// * **snapping** — the pixel rule lives in [`crate::cut_select::snap`] / [`crate::cut_select::snap_span`], so
-///   the caller snaps `to` (offering it to clip borders, recording ends, other effects' ends and the red line)
-///   and hands the snapped second here. Mixing the two would put a pixel constant inside a seconds rule.
-/// * **the fades** — a shorter band may no longer fit its two fades, so the caller routes the result through the
-///   one fade rule [`crate::cut_speed::clamp_fades`] exactly as every kind's `apply` already does. It stays the
-///   caller's job rather than being called here because `drag_end` answers in `(t, dur)` pairs, not `Fx` records,
-///   and folding the record in would make this the second place that knows a band's field layout.
-///
-/// Mirrors go/cut_fx.go `dragFx` minus its `snapFx` call: each end is clamped from the STATIONARY end, so an
-/// end dragged past its own still stops at the floor instead of crossing over and inverting the band.
+/// when one of its ends is dragged to `to`.
 pub fn drag_end(t: f64, dur: f64, end: bool, to: f64) -> (f64, f64) {
     if end {
-        // Trailing end: the start holds, so the LENGTH is what the drag answers with, clamped at the floor.
         (t, (to - t).max(MIN_BAND_SECONDS))
     } else {
-        // Leading end: the stop holds and the START is what moves. Two clamps — never before second 0
-        // (§06#7 `effects cannot leave the timeline`), and never within the floor of the stationary stop.
+        // Leading end: the stop holds and the START is what moves.
         let stop = t + dur;
         let start = to.min(stop - MIN_BAND_SECONDS).max(0.0);
         (start, stop - start)

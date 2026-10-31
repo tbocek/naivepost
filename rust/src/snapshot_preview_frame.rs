@@ -1,16 +1,5 @@
 //! The `06-preview` screen's second image: the preview FRAMED, painted on its own at a legible size the way
 //! `snapshot_lane` paints the lane on its own.
-//!
-//! §2's second picture is not "the Cut page with a blue plate in it" — it is the frame during the zoom and the
-//! caption: the recorded picture, the area outside the camera rect dimmed black, the rect stroked white, the
-//! caption fitted into its box, and a stop's still where the stop stands. In the window shot the panel is a
-//! ~300 px island in a 790 px plate and none of that reads, so this paints the SAME scene through the SAME
-//! painters — [`crate::ui::cut_preview_frame`] (`describe` → `observe` → `paint_paused`/`paint_playing`) — onto a
-//! cairo surface the size of the spec's frame and writes `<name>-frame.png` beside the window shot.
-//!
-//! Nothing is composed here: the dim's alpha, the rect's stroke, the caption's fitting and the stop's borrowed
-//! camera all come from the doors the live panel calls. The only thing this file decides is the surface's size and
-//! which second to draw.
 
 use std::path::Path;
 
@@ -27,18 +16,12 @@ const FRAME_H: f64 = 540.0;
 /// Is this screen's SUBJECT the framed preview? §06-effects#2's second picture (`spec/img/06-preview.png`) is the
 /// frame during the zoom and the caption -- record, dimmed surround, stroked camera rect, fitted caption, a stop's
 /// still -- not the page with a blue plate in it, so the frame takes `<name>.png` and the page goes beside it.
-/// Same door shape as [`crate::snapshot_effect_menu::is_menu_subject`] and
-/// [`crate::snapshot_lane::is_lane_subject`]: `snapshot::run` asks each subject module instead of naming screens.
 pub fn is_frame_subject(screen: &str) -> bool {
     screen == "06-preview"
 }
 
 /// Paint the paused preview of `cut` at second `t` into `out`, with `frame` as the picture behind it. Returns the
 /// log sentence naming what was drawn, so a wrong staging shows up in the run's output rather than as a blank PNG.
-///
-/// `playing` picks §2's two halves: paused draws the dim, the stroked rect and every visible overlay; playing
-/// draws the black mask, a stop's still and the titles. The spec's image is the PAUSED one (the red line stands
-/// on a second, which is what a screenshot of the app shows), so `paint` is called with `playing: false`.
 pub fn write_png(
     cut: &Cut,
     t: f64,
@@ -72,10 +55,6 @@ pub fn write_png(
     if !plate_said.is_empty() {
         drawn.push_str(&format!(" | plate: {plate_said}"));
     }
-    // The frame's own size and the camera rect it paints, printed from the ARTIFACT and from the same door the
-    // painter lays the rect out by: §2's paused half is "outside the camera rect dimmed black 0.45; rect stroked
-    // white", so a shot whose crop fills the whole box (nothing outside it to dim) has to show up here rather than
-    // only in someone's eyes.
     let (file_w, file_h) = crate::snapshot_face::png_size(out);
     // The staged frame's pixels decide the fitted box, exactly as they do inside `draw_into`: same path, same
     // door, so the rect printed here is the rect that was painted.
@@ -105,28 +84,6 @@ pub fn write_png(
     Ok(drawn)
 }
 
-/// §2's paused half is `rect stroked white with a plate`, and in the live panel that plate is the
-/// `preview-plate` label — `refresh_effects_lane` writes its wording through `fx_lane::plate_for` and GTK lays it
-/// centred over the picture (`cut_preview_panel::install`, `cut_lane_rows`). A surface painted on its own has no
-/// label to lean on, so without this the frame shot shows the rect and never the plate §2 pairs with it.
-///
-/// `room_px` is the room the plate is measured against ([`crate::fx_lane::room_px`] over
-/// [`crate::fx_lane::PLATE_MIN_PX`], "wider than"), and that is the caller's question, not one this file can answer:
-/// the live panel asks it in the px of the plate it actually has, and a surface painted on its own has to say what ITS
-/// plate is. Ask it of the shape the fractions were resolved against instead (the declared 240 px panel) and a crop
-/// that fills §2's frame is told there is no room for a plate in an image four times that wide — so the plate vanishes
-/// from exactly the shot whose caption promises it.
-///
-/// The debt sentence itself is drawn beside the stroked rect, in px of the fitted box; the words come from the same
-/// door the live panel's refresh uses (`fx_lane::plate_debt_at` + `fx_lane::plate_for`), at the centre the overlay
-/// puts it at.
-/// The debt sentence drawn beside the stroked rect, in px of the fitted box.
-///
-/// §2's paused half is `rect stroked white with a plate`, and in the live panel that plate is the
-/// `preview-plate` label — `refresh_effects_lane` writes its wording through `fx_lane::plate_for` and GTK lays it
-/// centred over the picture (`cut_preview_panel::install`, `cut_lane_rows`). A surface painted on its own has no
-/// label to lean on, so without this the frame shot shows the rect and never the plate §2 pairs with it. Same
-/// door for the words (`fx_lane::plate_debt_at` + `fx_lane::plate_for`), same centre the overlay puts it at.
 fn plate_on_rect(
     cr: &cairo::Context,
     cut: &Cut,
@@ -244,11 +201,6 @@ fn draw_into(
     };
     let frame_state = cut_preview_frame::describe_at(cut, t, playing, false, fit, &held);
     let seen = cut_preview_frame::observe(&frame_state, None);
-    // The stop's still, BEFORE the paused half's dim: §2 puts it on the footage's transform (it is part of the
-    // picture, held while the clock runs) and the dim belongs to the camera crop, so the still has to sit under
-    // it exactly as a filmed frame does. `stop_px` is the one door to the borrowed box -- and it is drawn AT that
-    // box, never stretched over the whole fit: the staged frame now carries structure, so a cropped still reads as
-    // a crop, which is the difference §2's "fitted on the footage's transform" is about.
     if let Some(still) = cut_preview_frame::stop_px(&cut.fx, t, fit) {
         cut_preview_frame::paint_still(cr, still, frame);
     }

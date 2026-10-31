@@ -1,6 +1,4 @@
-//! F0.8 / §1's Save door: where a press of Save goes, and the dialog that names the project. Split out
-//! of `window.rs`, which is past its size budget; the door is re-exported through `window` so the call
-//! site in `build_window` keeps the path it had.
+//! F0.8 / §1 Save door: where a press of Save goes, and the dialog that names the project.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -14,11 +12,8 @@ use crate::run;
 use crate::save_as;
 use crate::ui::save_apply;
 
-/// Where a press of Save goes: [`save_as::press`] decides whether it may happen at all, and the
-/// chooser only names the project. [`save_apply`] says every sentence and moves the open-folder memory.
-///
-/// Save reads the LIVE session (the handle [`wire_new`] and [`wire_open`] swap), not the `&Project`
-/// the window was built from, so what reaches disk is tonight's work.
+/// Where a press of Save goes: [`save_as::press`] decides whether it may happen; the chooser only names the project.
+/// Reads the LIVE session (swapped by [`wire_new`] and [`wire_open`]), not the `&Project` the window was built from.
 pub(crate) fn wire_save(
     save_: &gtk::Button,
     bar: &Rc<RefCell<run::RunBar>>,
@@ -33,15 +28,12 @@ pub(crate) fn wire_save(
             save_apply::refused(reason, &status);
             return;
         }
-        // The folder this window took on: a Save's rename or an Open's pick, whichever it was.
         let open = save_apply::save_target();
         ask_save_project(&status, &session, &open);
     });
 }
 
-/// S2: the dialog that names the project. `select_folder` rather than `save_folder` because a
-/// project is a folder (01 §1) and a file chooser would insist on a file; the name typed in the
-/// sheet is what S3 renames to, so it starts as the open folder's own name.
+/// S2: the dialog that names the project. `select_folder` because a project is a folder (01 §1); starts as the open folder's name.
 fn ask_save_project(status: &gtk::Label, session: &Rc<RefCell<Project>>, open: &Path) {
     let dialog = gtk::FileDialog::builder()
         .title(save_as::TITLE)

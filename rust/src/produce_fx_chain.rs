@@ -1,28 +1,8 @@
-//! §06-effects#4-render (`how each effect becomes ffmpeg`) — the render's ASSEMBLY step.
-//!
-//! [`crate::render_fx`] already knows how to say each single effect in filter text: the crop-and-scale pair for a
-//! parked camera, `zoompan` on piecewise expressions for a moving one, the still that covers a stop, the looped
-//! title input with its alpha fades, one `volume=<expr>:eval=frame` per cue. None of it used to be CALLED from
-//! anywhere: the encode chain carried only `setpts`, `atempo` and a placeholder per volume cue, so a rendered video
-//! came out with no zoom, no freeze, no caption and no duck in it while every rule still passed its own test.
-//!
-//! This file is the missing caller. It decides NOTHING about filters — every string comes from `render_fx` — it only
-//! puts them in §4's order for one clip, asks for the inputs those filters read (a still, a generated title sheet,
-//! the user's drawing), and writes the files ffmpeg will open. That split is what makes it checkable: a test can hand
-//! a clip's effects to [`for_clip`] and read back which builders ran, without an encoder.
-//!
-//! # What §4 leaves to be decided here, and how
-//!
-//! - **Where the pieces go in the graph.** `render_fx::picture_order()` says camera → burned subtitles → text/svg,
-//!   and `render_fx::audio_order()` says lane mix → volume cues → narration. [`for_clip`] answers the halves of those
-//!   two orders that belong to effects; [`crate::produce_render`] splices them into its own chain at exactly those
-//!   seams, so neither file lists the order twice.
-//! - **A generated title has to exist as a file.** §4 says "each from a looped input", and an input is a path. So the
-//!   SVG `render_fx::title_svg` builds is WRITTEN into the scratch folder before the command is built — see
-//!   [`Built::title_files`], which the caller writes to disk. A title that was only ever a string could not be fed to
-//!   `-loop 1`.
-//! - **The box fractions become pixels** by [`box_px`]: §1 gives text a lower-third default and svg a middle default,
-//!   `Fx::centre` already answers the centre, and the width/height fall back to each kind's shipped band.
+//! §06-effects#4-render: the render's ASSEMBLY step. [`crate::render_fx`] says each effect in filter text; this puts them in §4's order for one clip, asks for the inputs they read (a still, a generated title sheet, the user's drawing) and writes the files ffmpeg opens. It decides nothing about filters, so a test can read back which builders ran via [`for_clip`] without an encoder.
+//! # What §4 leaves to be decided here
+//! - **Where the pieces go in the graph.** `render_fx::picture_order()` and `render_fx::audio_order()` fix the order; [`for_clip`] answers the effect halves and [`crate::produce_render`] splices them at those seams.
+//! - **A generated title must exist as a file.** §4 says "each from a looped input", so the SVG from `render_fx::title_svg` is WRITTEN to scratch first ([`Built::title_files`]) for `-loop 1`.
+//! - **Box fractions become pixels** by [`box_px`]: text defaults to a lower third and svg to the middle; size falls back to each kind's shipped band.
 
 use std::path::{Path, PathBuf};
 
@@ -30,38 +10,23 @@ use crate::cut::{EffectKind, Fx};
 use crate::produce_render::Clip;
 use crate::render_fx;
 
-/// Everything one clip's effects add to its encode, in the four shapes the caller needs them in.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Built {
-    /// Filter text for the picture, in §4's order among themselves: the camera first, then the frozen spans, then
-    /// whatever is printed on top. The caller puts these around the burned-subtitle filter.
+    /// Picture filters in §4's order: camera, frozen spans, then whatever is printed on top; the caller puts them around the burned-subtitle filter.
     pub video: Vec<String>,
-    /// Filter text for the sound: the sped-sound answer and the volume cues, in `render_fx::audio_order()`'s order.
     pub audio: Vec<String>,
-    /// Volume cues aimed at one lane, as `(lane name, filter)`: they run on that lane before the mix.
     pub lane_gains: Vec<(String, String)>,
-    /// Pictures laid over the clip, one per entry of `inputs` and in its order.
     pub overlays: Vec<render_fx::Overlay>,
-    /// Extra inputs the filters above read, as `(kind, path)` pairs in the order they must appear after `-i` #0 —
-    /// the same shape [`crate::produce_render::encode_command`] takes.
+    /// Extra inputs the filters read, as `(kind, path)` in the order after `-i` #0 ([`crate::produce_render::encode_command`]).
     pub inputs: Vec<(String, Option<String>)>,
-    /// Lines the run should print: the > 10× cap, a drawing whose file went missing. Naming them here keeps the
-    /// reason next to the decision rather than in the caller's head.
     pub logs: Vec<String>,
-    /// Files this clip's encode reads but the program has to create first: `(path, contents)`. §4's generated title
-    /// sheets are the whole list today — nothing else the render invents needs writing.
+    /// Files the encode reads but the program must create first: `(path, contents)`; today only §4's generated title sheets.
     pub title_files: Vec<(PathBuf, String)>,
 }
 
-/// One clip's effects as the render's filters, its extra inputs and its written files.
-///
-/// `fx` is what the segment carries (the caller reads it through the same `fx_for` door `plan_clips` uses, so a clip
-/// and its filters cannot disagree); `src` is the footage's own shape, which is what a camera rectangle is measured
-/// against; `scratch` is `produce/clips/`, where a generated title sheet belongs (§3 lists it as scratch, cleared
-/// every run).
+/// One clip's effects as render filters, extra inputs and written files. `fx` is read through `fx_for` as `plan_clips` does; `src` is the footage shape a camera rectangle is measured against; `scratch` is `produce/clips/` (§3, cleared every run).
 pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Built {
     let mut built = Built::default();
-    // A label is §4's "nothing": filtered out before any builder sees it, so it cannot reach a filter by accident.
     let drawn: Vec<Fx> = fx
         .iter()
         .filter(|e| render_fx::is_rendered(&e.kind))
@@ -69,19 +34,14 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         .collect();
     let footage = footage_length(clip);
 
-    // --- the camera: sampled, capped, then either crop+scale or zoompan -------------------------------------
-    // §4's `> 10× capped and logged` runs BEFORE the chain is built, because the log names the depth ffmpeg refused
-    // and the chain has to carry what was actually rendered, not what was asked for.
+    // The camera: §4's `> 10× capped and logged` runs BEFORE the chain is built, so the chain carries what was actually rendered.
     let samples = render_fx::camera_samples(&drawn, clip.seg_s, footage);
     let (samples, capped) = render_fx::cap_zoom(&samples, src, clip.frame, clip.no);
     if let Some(line) = capped {
         built.logs.push(line);
     }
-    // Nothing moved and nothing cropped: the clip is already its frame's size and shape, and a crop+scale pair over
-    // the whole picture would only give the encoder something to resample. §4's static branch is a CROP, so a parked
-    // camera that looks anywhere but at the full frame does get its pair.
+    // A parked camera that looks at the full frame needs no crop+scale (§4's static branch is a CROP).
     if !samples.is_empty() && (!render_fx::is_static(&samples) || !fills_frame(&samples[0])) {
-        // The stream is frame-sized by now, and its clock starts at the clip with the rate already applied.
         let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
         let on_clip_clock: Vec<render_fx::Sample> = samples
             .iter()
@@ -97,7 +57,6 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         ));
     }
 
-    // --- the stop: a still over footage that runs on ----------------------------------------------------------------
     for stop in drawn.iter().filter(|e| crate::fx_record::is_stop(e)) {
         let Some((window, fades)) = on_clip(stop, clip) else {
             continue;
@@ -105,13 +64,11 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         built
             .overlays
             .push(render_fx::still_overlay(window, fades, clip.frame));
-        // The moment, not a file: the encode reads that frame off the clip's own footage.
         built
             .inputs
             .push(("still".to_string(), Some(format!("{}", stop.t))));
     }
 
-    // --- words and drawings: after the camera and the burned cues -------------------------------------------------
     for (index, effect) in drawn
         .iter()
         .filter(|e| {
@@ -138,8 +95,7 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
                     .push(("text".to_string(), Some(sheet.display().to_string())));
             }
             Some(EffectKind::Svg) => {
-                // Their document, our box. An empty path is a drawing whose file went away: say so and draw nothing
-                // rather than hand ffmpeg an input it cannot open and lose the whole clip over it.
+                // An empty path is a drawing whose file went away: say so and draw nothing rather than lose the clip.
                 if effect.src.trim().is_empty() {
                     built.logs.push(missing_drawing_log(clip.no));
                     continue;
@@ -155,9 +111,7 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
             .push(render_fx::overlay(window, fades, box_px));
     }
 
-    // --- the sound of a re-timed stretch ----------------------------------------------------------------------------
-    // `snd` is stored on the speed effect itself; a stop carries rate 0 and its own sound answer, so the first
-    // sped effect with a spelling wins and a clip nobody re-timed gets nothing from here.
+    // `snd` is stored on the speed effect; a stop carries rate 0 and its own sound, so the first sped effect with a spelling wins.
     if let Some(speed) = drawn.iter().find(|e| {
         e.effect_kind() == Some(EffectKind::Speed)
             && !crate::fx_record::is_stop(e)
@@ -166,16 +120,9 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         built.audio.extend(sound_of(clip, speed));
     }
 
-    // --- volume: one filter per cue, in turn ------------------------------------------------------------------------
-    // §4's `after the lane mix, before the narration` is the CALLER's seam (see produce_render::audio_chain); this
-    // only answers what goes there. The cues come back in seconds already divided by the clip's rate, so a duck under
-    // a 2× stretch moves and narrows with the sound it rides.
+    // Volume: §4's `after the lane mix, before the narration` is the CALLER's seam (`produce_render::audio_chain`). Cues come in seconds already divided by the clip's rate.
     let cues = render_fx::all_gain_cues(&drawn, clip.seg_s, clip.rate, clip.on_screen);
-    // §9's lane reach: a cue naming a lane runs BEFORE the lane mix, where that one
-    // recording can still be taken apart, and the rest ride after it. One list per side
-    // is what keeps the order honest — a lane-named duck appended to the summed bed would
-    // have no lane to act on any more.
-    // A card hears no lane, so a named cue over one rides its own sound (§9's MUST row).
+    // §9's lane reach: a cue naming a lane runs BEFORE the lane mix, the rest after it. A card hears no lane, so a named cue over one rides its own sound (§9 MUST row).
     let (before, after): (Vec<_>, Vec<_>) = cues
         .into_iter()
         .partition(|cue| cue.before_the_mix() && clip.source.is_empty());
@@ -190,21 +137,13 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     built
 }
 
-/// §4 (`a planned 1× read head with 0.15 s dips at run ends for own/scene`): the sound that stayed at 1× while the
-/// picture ran ahead is read from the recording on its own clock, and the only thing that reaches the graph is where
-/// it fades in and out — two real `afade`s at the run's ends, [`crate::fx_lane::SOUND_DIP_SECONDS`] apiece, computed
-/// through [`render_fx::read_head`] so the dip length lives in one place. Pitch and mute answer with their own
-/// filters instead, and both replace the plain seam dip rather than stacking on it.
+/// §4 (`a planned 1× read head with 0.15 s dips at run ends for own/scene`): sound held at 1× while the picture runs ahead is read on its own clock; only the fades at the run ends reach the graph, [`crate::fx_lane::SOUND_DIP_SECONDS`] each, via [`render_fx::read_head`]. Pitch and mute use their own filters and replace the seam dip.
 fn sound_of(clip: &Clip, speed: &Fx) -> Vec<String> {
     match speed.snd.as_str() {
-        // §8 bullet 4: the head opens where the planner said it does (`clip.read_head`,
-        // which is the drift and the tape question together), and the whole 0.15 s dip
-        // is split HALF to each side of the join — the outgoing side loses half, the
-        // incoming side the other half, so the join as a whole is dipped once.
+        // §8 bullet 4: the head opens where the planner said (`clip.read_head`), and the 0.15 s dip is split half to each side of the join.
         "own" | "scene" => match clip.read_head {
             None => render_fx::sound_filters(clip.rate, ""),
             Some(_) => {
-                // On the clip's own clock: the sound holds 1× for as long as the picture shows.
                 let half = crate::effect_details::dip_each_side();
                 vec![
                     format!("afade=t=in:st=0:d={half}"),
@@ -219,10 +158,7 @@ fn sound_of(clip: &Clip, speed: &Fx) -> Vec<String> {
     }
 }
 
-/// §1's box fractions as pixels: `(x, y, w, h)` of the OUTPUT frame, positioned by its centre. Text defaults to the
-/// lower third and svg to mid-frame — both already answered by [`Fx::centre`] — and a size nobody drew falls back to
-/// that kind's shipped band (0.8×0.16 for a caption, 0.6×0.6 for a drawing, the prototype's numbers). Even sides
-/// again: the overlay lands on a 4:2:0 picture.
+/// §1 box fractions as pixels: `(x, y, w, h)` of the OUTPUT frame, positioned by centre. Defaults via [`Fx::centre`]; an undrawn size falls back to the kind's shipped band (0.8×0.16 caption, 0.6×0.6 drawing). Even sides for 4:2:0.
 pub fn box_px(effect: &Fx, frame: (i32, i32)) -> (i32, i32, i32, i32) {
     let (cx, cy) = effect.centre();
     let fallback = match effect.effect_kind() {
@@ -247,12 +183,7 @@ pub fn box_px(effect: &Fx, frame: (i32, i32)) -> (i32, i32, i32, i32) {
     (x.min(frame.0 - w).max(0), y.min(frame.1 - h).max(0), w, h)
 }
 
-/// Seconds of FOOTAGE the clip plays through, which is what a camera walk and a read head are measured on — as
-/// opposed to [`Clip::on_screen`], the shorter time it spends in the finished file. A rated clip shows `dur / rate`
-/// seconds of film; a stop is not a rate (§4 means "a frame held") so it divides by 1 like the footage it covers.
-/// Where an effect shows inside one clip, on the clip's own clock: its window and its fades, or `None` when it does
-/// not reach this clip. Every clip is handed the whole list, and an effect may run across clips, so a fade belongs
-/// only to the clip holding that end of the band.
+/// Where an effect shows inside one clip on the clip's own clock (window and fades), or `None` when it does not reach this clip. A fade belongs only to the clip holding that end of the band.
 fn on_clip(effect: &Fx, clip: &Clip) -> Option<((f64, f64), (f64, f64))> {
     let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
     let start = (effect.t - clip.seg_s) / rate;
@@ -284,26 +215,20 @@ fn footage_length(clip: &Clip) -> f64 {
     played.max(0.0)
 }
 
-/// Does this camera take the whole source? Then there is nothing to crop and nothing to scale beyond the frame box
-/// the caller already applied.
 fn fills_frame(sample: &render_fx::Sample) -> bool {
     sample.hf >= 1.0 - 1e-9
 }
 
-/// Round up to a whole even pixel: the overlay lands on a 4:2:0 picture, which refuses a chroma sample on an odd
-/// edge — the same reason [`crate::render_fx::frame_box`] answers even sides.
+/// Round up to a whole even pixel: 4:2:0 refuses a chroma sample on an odd edge (as [`crate::render_fx::frame_box`]).
 fn even(v: i32) -> i32 {
     v + v % 2
 }
 
-/// The scratch name of one clip's generated title sheet. Numbered by position, not by second: two captions in the
-/// same clip must not overwrite each other, and §3 lists these as scratch that is cleared every run.
+/// Scratch name of a clip's title sheet, numbered by position so two captions in one clip do not overwrite each other.
 fn title_name(no: usize, index: usize) -> String {
     format!("c{no:03}_t{index}.svg")
 }
 
-/// §4's drawing that is not there: named and skipped, in keeping with `Failure is specific and local`. Losing the
-/// decoration costs less than losing the clip.
 pub fn missing_drawing_log(no: usize) -> String {
     format!("clip {no}: its svg drawing is not there any more \u{2014} nothing is drawn over it")
 }

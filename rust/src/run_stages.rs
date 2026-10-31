@@ -1,23 +1,4 @@
 //! F0.5 S2/S3 — the walk that puts a step's work on the bar and runs it under the bookkeeping.
-//!
-//! `runqueue` holds the vocabulary (`job`/`push`/`take`/`prog`/`done`, `checkpoint`) and nothing
-//! else walks it: before this module a ▶ press opened the run, printed its lines, and left the
-//! progress bar at zero with no task ever taken. §F0.5 says *every* step uses this bookkeeping, so
-//! one place turns a step into stages of tasks and drives them in the order the spec draws:
-//! `qJob → qPush → (checkpoint → qTake → run → prog)* → qDone`.
-//!
-//! Two rules decide everything here:
-//! - **The checkpoint is between tasks, never inside one** (§S3/S4). A pause therefore costs one
-//!   [`runqueue::CHECKPOINT_POLL`] per poll and a stop lands in the gap, where nothing half-written
-//!   can be corrupted and a killed subprocess is not a failure.
-//! - **A task is taken whatever becomes of it** (§S2's parenthetical). Work already on disk from an
-//!   earlier run is still a task this run is done with; skipping the `take` would stall the bar at
-//!   the resume point forever.
-//!
-//! The commands are real argv built by the modules that own each tool ([`crate::frames`],
-//! [`crate::asr`], [`crate::align`]) and spawned through [`crate::subprocess`], which logs the
-//! command as a shell would take it *before* running it. Nothing here invents a command line and
-//! nothing here answers for a tool that did not run: if ffmpeg is not on PATH the error names it.
 
 use crate::prepare_run;
 use crate::project::Project;
@@ -26,9 +7,6 @@ use crate::runqueue::{self, Queue};
 use crate::subprocess;
 use std::path::Path;
 
-/// The program every stage spawns. Same single name the produce tree writes
-/// ([`crate::produce_exec::FFMPEG`]): one place holds the tool's name so a configured path
-/// replaces it here rather than at every call site.
 pub const FFMPEG: &str = "ffmpeg";
 
 /// One unit of subprocess work: what to run, and what the bar says while it runs.
@@ -43,8 +21,6 @@ pub struct Task {
     /// Already on disk from an earlier run: still taken, never run (§S2's resume rule).
     pub already_done: bool,
     /// The session folder this row belongs to, for a dial that has to read and write project files.
-    /// `None` means the working folder's own session, which is what a shell walk means. Only the dial
-    /// rows set it; a spawned task is given its paths in its argv.
     pub session: Option<String>,
 }
 
@@ -96,10 +72,6 @@ pub enum Drive {
     Failed { stage: &'static str, error: String },
 }
 
-/// Say what a walked step came to, in the log. A failure names the stage and the reason (§Failure-is-
-/// specific: "a step failed" three stages in says nothing about which box to look at); a stop says how
-/// far it got, because that is what the next ▶ resumes from. A finished step says NOTHING -- F0.2 S4:
-/// one step gets no "all done" line. Returns whether anything was logged.
 pub fn say_outcome(drive: &Drive, mut log: impl FnMut(&str)) -> bool {
     match drive {
         Drive::Done { .. } => false,
@@ -115,15 +87,8 @@ pub fn say_outcome(drive: &Drive, mut log: impl FnMut(&str)) -> bool {
 }
 
 /// The work one page step consists of, planned from the live project.
-///
-/// Frames come from [`crate::frames::scene_pass_plan`] — the scene-detect pass every Prepare run
-/// starts with, one task per recording source. Speech comes from [`crate::asr::cut_plan`], one
-/// chunk per recording, over the span the project covers. Both builders return real ffmpeg argv, so
-/// a plan made from an empty project yields no tasks rather than a made-up one: an empty session
-/// has no work, and saying so with an empty queue is honest in a way a canned success is not.
 pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
     match step {
-        // Prepare: frames first (the scene pass), then speech over each recording.
         run::Step::Prepare => {
             let mut stages = Vec::new();
             let frames = crate::frames_run::stage(project);
@@ -134,7 +99,6 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             if !speech.tasks.is_empty() {
                 stages.push(speech);
             }
-            // The rows that ticked ✂: split off the voice, same dial door, another stage.
             let separation = crate::separate_run::stage(project);
             if !separation.tasks.is_empty() {
                 stages.push(separation);
@@ -160,19 +124,12 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             }
             stages
         }
-        // Cut's suggest step reads what Prepare wrote: alignment happens in Prepare's speech pass
-        // through [`crate::audio_task`], so the step asks this module for nothing.
         run::Step::Suggest => Vec::new(),
-        // Narrate and Produce own their queues and their spawner already (F4.1 / F5.1), so they ask
-        // this module for nothing rather than being driven twice over the same work.
         run::Step::Narrate | run::Step::Produce => Vec::new(),
     }
 }
 
 /// The marker [`drive_walk`] reads as “dial the vision server for this row” rather than “spawn this”.
-/// A second marker rather than a flag on [`AUDIO_TASK`] because the audio rows already carry one of
-/// their own (`separate_run::SEPARATE_MARK`) and a third kind would make the branch read arguments
-/// for a question the row can answer by its own program name.
 pub const VISION_TASK: &str = "naivepost:vision";
 
 /// The marker [`drive_walk`] reads as “dial the text model for this row” rather than “spawn this”: the
@@ -182,10 +139,6 @@ pub const TEXT_TASK: &str = "naivepost:text";
 /// The marker [`drive_walk`] reads as “dial the servers for this row” rather than “spawn this”.
 pub const AUDIO_TASK: &str = "naivepost:audio";
 
-/// Speech recognition: one row per recording, each a DIAL of audio.cpp through [`crate::audio_task`]
-/// rather than a spawned process — the chunking, the cut of each chunk and the upload are the door's
-/// (§F1.3), so the bar only counts the ask. [`drive_walk`] reads [`AUDIO_TASK`] and calls instead of
-/// forking; the row carries the source and the session language, which is all the dial needs.
 fn speech_stage(project: &Project) -> Stage {
     let tasks = project
         .sources
@@ -211,18 +164,7 @@ fn speech_stage(project: &Project) -> Stage {
     }
 }
 
-// Align's clip cut lived here until F1.5: one `align::clip_plan` ffmpeg call per recording, whose
-// output nothing read — the aligner is asked over the network in Prepare's speech pass now, and Cut's
-// suggest step reads the `words.aligned.json` that pass wrote. Dead argv and its chunk length went with
-// it; `align::clip_plan` is still used, by `audio_task::align_plan` reading back the note.
-
 /// Which phase of Prepare's bar a stage belongs to (§S6), by the name [`plan`] gives it.
-///
-/// Keyed off the stage's own name rather than its position because `plan` already drops stages with no
-/// work in them — a session with nothing to separate has no separation stage at all, and an index would
-/// then point at the wrong slice. The names matched are exactly the ones `plan(Step::Prepare, …)`
-/// builds: `frames`, `speech` (ingest, run in parallel per §S6), `separation`, `describe`, `fix`;
-/// anything else (`align`, or a stage added later) answers `None` and keeps the whole bar.
 pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
     match name {
         "separation" => Some(prepare_run::Phase::Separate),
@@ -232,9 +174,6 @@ pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
     }
 }
 
-/// §S6's numbers for one plan: `(base, share)` per stage, in `plan`'s order so the walk can zip them
-/// by position. Each stage gets its own phase's slice — separation 0–10 % when asked, ingest to 30 %,
-/// understand 30–100 % — and a stage outside those phases keeps the whole bar.
 pub fn phase_slices(stages: &[Stage], separation_asked: bool) -> Vec<(f64, f64)> {
     let phases: Vec<Option<prepare_run::Phase>> = stages
         .iter()
@@ -247,9 +186,6 @@ pub fn phase_slices(stages: &[Stage], separation_asked: bool) -> Vec<(f64, f64)>
             let Some(phase) = phase else {
                 return (0.0, 1.0);
             };
-            // `share` answers where the phase starts and ENDS; `Queue::phase` takes a base and a WIDTH. The first
-            // rewrite handed the end over as the width, so understand ran from 30 % to 130 % and the bar stood
-            // full from the moment a stage was 70 % through.
             let (start, end) = prepare_run::share(*phase, separation_asked);
             let width = end - start;
             let same = phases
@@ -267,9 +203,6 @@ pub fn phase_slices(stages: &[Stage], separation_asked: bool) -> Vec<(f64, f64)>
         .collect()
 }
 
-/// The run's ⏸ and ⏹ as the walk reads them. The walk runs on a worker (§03-shell §1, "The window thread never
-/// waits"), so it cannot borrow the window's run bar: the window copies the bar's two flags here whenever a press
-/// changes them ([`mirror_switches`]) and the walk reads them at every checkpoint.
 static PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -328,9 +261,6 @@ pub fn take_progress() -> Option<(String, Option<f64>)> {
     PROGRESS.lock().ok().and_then(|mut held| held.take())
 }
 
-/// The children a walk on a worker has running, so ⏹ on the window thread can reach them. A child is
-/// listed from the moment it exists until it is reaped ([`spawn_task`]), so a stop never signals a pid that
-/// has since been handed to somebody else.
 static RUNNING_CHILDREN: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
 
 /// List a child a run on a worker has started, so ⏹ reaches it. Every listed child is unlisted once reaped.
@@ -355,10 +285,6 @@ pub fn take_running_children() -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// The page step's own walk, on the worker the ▶ press handed it to. `queue` is the window's queue as
-/// `start_run` left it; every change the walk makes is handed to `on_queue` with the stage it is in, so the
-/// window can paint the bar while the walk goes on. ⏸ and ⏹ arrive through [`mirror_switches`]. Narrate and
-/// Produce return no stages ([`plan`]) because those steps drive their own queues already.
 pub fn drive_worker(
     step: run::Step,
     project: &Project,
@@ -393,10 +319,6 @@ pub fn drive_worker(
 
 /// Walk a prepared plan under the run's bookkeeping: the S2 sequence per stage, with §S3's
 /// checkpoint asked between every task.
-///
-/// `paused` and `stop_flag` are read fresh at each checkpoint rather than captured once, because both
-/// change mid-run: ⏸ parks the walk for one poll at a time and ⏹ ends it in the gap between two
-/// tasks, which is the only place either can safely land.
 pub fn drive_walk<FN, FS>(
     stages: &[Stage],
     queue: &mut Queue,
@@ -469,10 +391,6 @@ where
     )
 }
 
-/// [`drive_walk`] with §S6's phase slices handed alongside the stages: one `(base, share)` per stage,
-/// applied through `Queue::phase` just before that stage's jobs are queued. An empty slice list — or a
-/// short one — leaves the bar unscaled, which is what every non-Prepare step wants. `on_queue` sees the
-/// queue after every change, with the stage's name: how a walk on a worker shows the window its progress.
 #[allow(clippy::too_many_arguments)] // the walk's whole state: stages, bar, switches, log, children, slices, hook
 fn walk<FN, FS>(
     stages: &[Stage],
@@ -488,7 +406,6 @@ where
     FN: Fn() -> bool,
     FS: Fn() -> bool,
 {
-    // The slices pair with the stages by position; `phase_slices` keeps `plan`'s order for that reason.
     let walked: Vec<(&Stage, Option<(f64, f64)>)> = if slices.len() == stages.len() {
         stages
             .iter()
@@ -555,10 +472,7 @@ where
                 queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
-            // The audio tasks are dials, not processes: same checkpoint, same `take`, same bar, and the
-            // work is a request rather than a fork. The door answers with the lines it logged.
             if task.program == AUDIO_TASK {
-                // Same dial door, two different asks: the walk does not decide which, the row says.
                 let worked = if task.args.first().map(String::as_str)
                     == Some(crate::separate_run::SEPARATE_MARK)
                 {
@@ -577,9 +491,6 @@ where
                 queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
-            // The frames rows are this module's own dial too (S2's sweep plus one ffmpeg per frame is far
-            // more than one spawn can carry), so the walk calls instead of forking; `frames_run::stage`
-            // marks them with the program word it reads.
             if task.program == crate::frames_run::FRAMES_TASK {
                 if let Err(error) = crate::frames_run::run_task(task, &mut log) {
                     return Drive::Failed {
@@ -594,8 +505,6 @@ where
             }
             // The text gate's rows (F1.6 S6) are chat requests too, a stage of their own before describe.
             if task.program == crate::text_gate::TEXT_GATE_TASK {
-                // The gate judges for minutes per recording: its every answer moves the bar inside this task's
-                // share and says where it is, so a person sees the stage working rather than a frozen line.
                 let done = progress.done;
                 let mut reached = |at: crate::text_gate::Reached| {
                     report_within(
@@ -619,11 +528,7 @@ where
                 queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
-            // The vision rows are a chat request rather than an audio task: same checkpoint, same
-            // `take`, different door. `drive_walk` does not decide which, the row says by its program.
             if task.program == VISION_TASK {
-                // A recording is described for minutes, chunk by chunk: each answer moves the bar inside this
-                // task's share and says which chunk it is on, as the text gate does.
                 let done = progress.done;
                 let before = requests_done;
                 let mut answered_here = None;
@@ -644,7 +549,6 @@ where
                 let described = crate::describe_call::run_task(task, &mut log, &mut reached);
                 match answered_here {
                     Some(answered) => requests_done = before + answered,
-                    // A row that sent nothing (no frames, an every-frame folder) leaves the total.
                     None => {
                         requests_total -= planned[index];
                         planned[index] = 0;
@@ -675,8 +579,6 @@ where
                 queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
-            // The fix rows are a chat request too, same checkpoint and same door shape: the row says
-            // which job by its program, `drive_walk` does not decide.
             if task.program == TEXT_TASK {
                 if let Err(error) = crate::fix_call::run_task(task, &mut log) {
                     return Drive::Failed {
@@ -689,13 +591,9 @@ where
                 queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
-            // Fix's two session rows (S1's placement, S5-S7's merge) are dials of the same stage: the
-            // row says which by its program, `drive_walk` does not decide.
             if task.program == crate::fix_session::PLACEMENT_TASK
                 || task.program == crate::fix_session::SESSION_TASK
             {
-                // The merge row runs the marking pass, one model ask per join: each one moves the bar inside this
-                // row's share and names itself in the status, the way the text gate's judges do.
                 let done = progress.done;
                 let mut reached = |within: f64, words: &str| {
                     report_within(queue, on_queue, stage, &label, done, within, words);
@@ -732,9 +630,6 @@ where
     Drive::Done { ran, skipped }
 }
 
-/// How much of the fix stage's bar its merge row takes when it is the stage's last task. The row is one task among
-/// a hundred but asks the model about every join: on 08-dex (94 joins, 2026-10-30) it ran about an hour against some
-/// fifteen minutes for all the blocks before it, and on an even split the bar stood full for that hour.
 pub const MERGE_ROW_SHARE: f64 = 0.75;
 
 /// Where the bar stands in `stage` with `done` of its tasks finished, 0..1. Tasks share the stage evenly, except
@@ -756,9 +651,6 @@ pub fn stage_at(stage: &Stage, done: usize) -> f64 {
     }
 }
 
-/// A long task's own progress, said while it runs: the bar moves `within` (0..1) through this task's share of the
-/// stage, and the status reads "<task> -- <words>". The text gate's judges and the merge row's join asks both
-/// report through here, so a stage that asks a model for minutes is never a frozen line on a full bar.
 fn report_within(
     queue: &mut Queue,
     on_queue: &mut dyn FnMut(&Queue, &str),
@@ -799,10 +691,6 @@ impl Progress {
     }
 }
 
-/// Ask the checkpoint until it lets the task go; false when the stop won.///
-/// Pause polls at [`runqueue::CHECKPOINT_POLL`] (§S3's 200 ms) rather than blocking, because the
-/// GUI thread has to stay alive to see ⏹ at all, and rather than spinning, because a parked run
-/// should cost nothing.
 fn wait_for_go(paused: &impl Fn() -> bool, stop_flag: &impl Fn() -> bool) -> bool {
     loop {
         match runqueue::checkpoint(paused(), stop_flag()) {
@@ -822,10 +710,6 @@ fn position(done: usize, total: usize) -> f64 {
     }
 }
 
-/// Run one dial task: the recording's speech, alignment and diarization over audio.cpp, at the
-/// addresses and model ids the settings file says right now (§1's re-read-per-request). The duration is
-/// the one the machine can be asked for — ffprobe on the decoded pcm, whose absence is the honest
-/// reason a row gets nothing rather than a silent zero.
 fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = crate::settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
@@ -850,11 +734,6 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
         ));
     }
     let pcm = crate::decode_audio::ensure(&tree, &lane, &source_path, &conf.ffmpeg, log)?;
-    // §F1.11: the words fence a cut's edge and the cached envelope chooses where inside the fence it
-    // falls. Measuring it here, under the lane key `joins::session_lanes` and `hand_edit::session_lanes`
-    // will later ask the cache with, is what makes the sound half of F1.11 run at all — without this call
-    // every live `place_edges` gets `None` and edges land on aligned word times alone. Its failure stops
-    // the row by name rather than being logged and skipped: an unmeasured lane means unmeasured edges.
     crate::wave_build::ensure(&tree, &lane, &source_path, log)?;
     let duration = probe_duration(&conf.ffmpeg, &pcm, log)?;
     let passage =
@@ -865,12 +744,6 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     Ok(())
 }
 
-/// Seconds of an audio file, by ffprobe — the tool §1 names for reading, taken from the same folder as
-/// the configured ffmpeg ([`crate::services::ffprobe_for`]'s rule), and its command goes to the log
-/// before it runs like every other subprocess line.
-///
-/// Public because the frames door asks the same question of a video (§F1.6 S3 needs the take's length to
-/// know where its grid stops), and one ffprobe rule belongs in one place.
 pub fn probe_duration(
     configured_ffmpeg: &str,
     path: &Path,
@@ -893,11 +766,6 @@ pub fn probe_duration(
 
 /// Spawn one task, registering its pid so ⏹ can reach it, and keep `subprocess`'s logging rule:
 /// the command goes to the log before it runs, and a failure carries the command plus its tail.
-///
-/// `subprocess::run` cannot serve here because `.output()` reaps the child before any caller could
-/// register it, leaving F0.3 nothing to kill. This spawns the same program with piped stdio, records
-/// the pid the moment it exists, waits, and formats its error through the same
-/// [`subprocess::failure`] the rest of the tree uses.
 pub fn spawn_task(
     task: &Task,
     procs: &mut Subprocesses,

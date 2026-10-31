@@ -1,14 +1,4 @@
 //! Applying a project that ＋ New just created (spec/03-shell.md F0.8 S6).
-//!
-//! `new_project::create` writes the folder and answers with what to say; this is the half that makes
-//! the window actually BE that project: the log line, the session swap, the remembered pair, the
-//! status sentence, and the folder the source choosers should open at next. It lives here rather than
-//! in `window.rs` because that file is past its size budget and none of this needs a widget — it takes
-//! the same handles the Open flow takes and forwards to the same doors.
-//!
-//! The order matters: the log first, so the line belongs to the folder being left behind only if it
-//! names it (it does — `Created::log` carries the NEW path), then the swap, then the memory, then the
-//! status, which is what a person reads last.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -20,11 +10,6 @@ use crate::new_project::Created;
 use crate::project::Project;
 
 /// Make the new project this window's project and say so.
-///
-/// S6's "apply the blank project via the load's apply list" is Open's S4: the window is built again on the
-/// new folder ([`crate::ui::window_project::reopen_window_on`]), so every page, the tab locks and every
-/// step's folder belong to the new project. Swapping the session alone (the first port) left the steps
-/// writing into the folder that was open before and the pages showing what they had drawn from it.
 pub fn apply(created: &Created, _session: &Rc<RefCell<Project>>, status: &gtk::Label) {
     let window = crate::ui::window_project::reopen_window_on(&created.project, &created.path);
     let status = crate::ui::window::find_status(gtk::prelude::Cast::upcast_ref(&window))
@@ -37,7 +22,6 @@ pub fn apply(created: &Created, _session: &Rc<RefCell<Project>>, status: &gtk::L
     // S6 remembers the project for this root through the SAME door Open uses, so both paths write the
     // `PROJECT_<n>` pair the settings' writer owns. A conf that cannot be read costs the memory, never
     // the new project — the session is already switched, and saying so is the whole remedy.
-    // "This root" is the folder the app was launched from (F0.6 S2's key), as for Open.
     let file = crate::open_project::project_file_in(&created.path);
     let launch_root = std::env::current_dir().unwrap_or_default();
     REMEMBERED.with(|list| {

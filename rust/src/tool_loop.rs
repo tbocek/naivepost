@@ -1,19 +1,9 @@
 //! F6.1 — `spec/09-llm-and-tools.md` §2, the tool protocol.
 //!
-//! A model is offered its job's tools and may keep asking for them for [`roles::TOOL_ROUNDS`] rounds. This
-//! module holds that loop as plain state and pure functions, driven by two closures — one that asks the model
-//! and one that runs a tool — so every rule in §2 (the round log, the once-only nudge, stopping before
-//! undeliverable tools, the remembered refusal) is testable with no server and no browser.
-//!
-//! The steps are numbered as the spec numbers them: S1 the offer with its schemas, S2 the loop and its round
-//! line, S3 a round without calls, S4 rounds exhausted, S5 a server refusing the `tools` field, S6 tool errors
-//! as text, S7 everything reaching the exchange page.
-//!
-//! # Names
-//!
-//! A log line names a step by its client name (`suggest`, `narrate`, `publish`, `transcript`), never by its
-//! prompt key (`cut`, `youtube`, `fix`) — §2's prototype note, and the reason [`run`] takes `step: &str`: the
-//! caller passes the name a person would read in the log, not the key a config file is filed under.
+//! A model may keep asking for its job's tools for [`roles::TOOL_ROUNDS`] rounds. The loop is plain state and
+//! pure functions driven by two closures (ask the model, run a tool), so every §2 rule is testable with no
+//! server. Steps are numbered as the spec numbers them (S1 offer ... S7 exchange page). A log line names a
+//! step by its client name (`suggest`, `narrate`, `publish`, `transcript`), never its prompt key.
 
 use std::collections::BTreeSet;
 
@@ -25,26 +15,18 @@ use crate::exchanges::{Message, Part, ToolCall};
 use crate::roles;
 use crate::tools::{self, Tool};
 
-/// machine.argsPreviewBytes — how much of a call's raw argument JSON a log line carries. 60 bytes because the
-/// line is one of many in a run and its job is to identify the call, not to reproduce it: an argument can hold
-/// a whole paragraph of narration text, which would push the rest of the round off the screen. Cut on bytes so
-/// the cap means what it says; cut back to a character boundary so it never prints half a letter.
+/// machine.argsPreviewBytes — how much of a call's raw argument JSON a log line carries. Cut on bytes, then
+/// back to a character boundary so it never prints half a letter.
 pub const ARGS_PREVIEW_BYTES: usize = 60;
 
-/// §2 S3's one sentence, asked once. It is a question rather than an instruction because the model may genuinely
-/// be finished and simply not have called `finish`; the next round is taken as finished whatever it says.
+/// §2 S3's one sentence, asked once. A question, because the model may be finished without having called
+/// `finish`; the next round is taken as finished whatever it says.
 pub const FINISH_NUDGE: &str = "Call finish when you are done, or continue with the tools.";
 
-// ---- S1: the offer -------------------------------------------------------------------
-
-/// The job's tools as the wire wants them: a name, and the description that *is* the instruction telling the
-/// model when to reach for the tool.
+/// The job's tools as the wire wants them: a name, and the description that tells the model when to reach for it.
 ///
-/// Descriptions come from the caller rather than from this module because each is written by the section that
-/// owns the tool — `web_search`/`web_read` quote [`crate::prompts`] wording (§2's "descriptions verbatim in
-/// prompts/tools.md"), and a job-specific tool's description belongs to its own §3 row. A tool with no
-/// description yet is offered name-only: inventing one here would be an instruction the model reads that no
-/// section wrote.
+/// Descriptions come from the caller, written by the section that owns each tool (`web_search`/`web_read` quote
+/// [`crate::prompts`]). A tool with no description yet is offered name-only rather than given an invented one.
 pub fn schemas(offered: &[Tool], describe: &dyn Fn(&Tool) -> Option<&'static str>) -> Vec<Value> {
     offered
         .iter()
@@ -61,16 +43,13 @@ pub fn schemas(offered: &[Tool], describe: &dyn Fn(&Tool) -> Option<&'static str
         .collect()
 }
 
-// ---- S2: the loop's round line --------------------------------------------------------
-
-/// A call's arguments as the log shows them: raw JSON, cut at [`ARGS_PREVIEW_BYTES`] bytes on a character
-/// boundary, with `…` only when something was actually removed — an ellipsis after a short argument would tell
-/// a reader the model said more than it did.
+/// A call's arguments as the log shows them: raw JSON cut at [`ARGS_PREVIEW_BYTES`] on a character boundary,
+/// with `…` only when something was actually removed.
 pub fn args_preview(args: &str) -> String {
     if args.len() <= ARGS_PREVIEW_BYTES {
         return args.to_string();
     }
-    // Walk back from the cap until the byte is a UTF-8 boundary: slicing at 60 would panic mid-character.
+    // Walk back to a UTF-8 boundary: slicing at 60 would panic mid-character.
     let mut cut = ARGS_PREVIEW_BYTES;
     while cut > 0 && !args.is_char_boundary(cut) {
         cut -= 1;
@@ -78,14 +57,13 @@ pub fn args_preview(args: &str) -> String {
     format!("{}…", &args[..cut])
 }
 
-/// One call as the round line names it: `name{args}` — the arguments directly after the name, which is how the
-/// prototype wrote them and how a reader tells `finish` (no braces) from `finish{}`.
+/// One call as the round line names it: `name{args}`, so a reader tells `finish` from `finish{}`.
 pub fn call_preview(call: &ToolCall) -> String {
     format!("{}{}", call.name, args_preview(&call.args))
 }
 
-/// Did the model ask for exactly what it asked for last round? Compared on name and arguments together, because
-/// a same-named call with different arguments is progress, not a loop.
+/// Did the model ask for exactly what it asked last round? Name and arguments together: same name with
+/// different arguments is progress.
 pub fn same_calls(previous: &[ToolCall], calls: &[ToolCall]) -> bool {
     previous.len() == calls.len()
         && previous
@@ -95,8 +73,7 @@ pub fn same_calls(previous: &[ToolCall], calls: &[ToolCall]) -> bool {
 }
 
 /// `>>> <step>: round 2 of 8 — the model asked for get_lines{"from":1,"to":9}` (§2 S2 verbatim: em dash, calls
-/// joined by `", "`). When the set is identical to last round's the line says so instead — that repetition is
-/// the tell for a model stuck in a loop, and it is worth more to a reader than the arguments again.
+/// joined by `", "`). An identical set to last round's says so instead: the tell for a model stuck in a loop.
 pub fn round_log(step: &str, round: u32, calls: &[ToolCall], repeats: bool) -> String {
     let asked = calls
         .iter()
@@ -115,25 +92,18 @@ pub fn round_log(step: &str, round: u32, calls: &[ToolCall], repeats: bool) -> S
     )
 }
 
-// ---- S3: a round without calls --------------------------------------------------------
-
-/// What a round decided the caller should do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Next {
-    /// The model asked for tools: run them and ask again.
     RunTools,
-    /// The flow is complete — `finish` was called, or the nudge round passed without one.
     Finished,
-    /// Ask [`FINISH_NUDGE`] once, then treat the next quiet round as finished.
     AskFinish,
 }
 
-/// S3: calls → run them; none and `finish` called → complete; none and this is the first quiet round → ask
-/// [`FINISH_NUDGE`] once; none again after that → taken as finished with what was produced.
+/// S3: calls → run them; none and `finish` called → complete; none and the first quiet round → ask
+/// [`FINISH_NUDGE`] once; none again → taken as finished.
 ///
-/// `silent_rounds` counts the rounds already spent quiet, so 0 means "this one asks". The cap is
-/// [`tools::asked_to_finish`]'s — a rule this module reuses rather than restates, because a caller that asked
-/// twice would be running a round the spec does not give the model.
+/// `silent_rounds` counts rounds already spent quiet, so 0 means "this one asks". The cap is
+/// [`tools::asked_to_finish`]'s, reused rather than restated.
 pub fn after_round(calls: &[ToolCall], finish_called: bool, silent_rounds: u32) -> Next {
     if !calls.is_empty() {
         return Next::RunTools;
@@ -147,11 +117,8 @@ pub fn after_round(calls: &[ToolCall], finish_called: bool, silent_rounds: u32) 
     Next::Finished
 }
 
-// ---- S4: rounds exhausted -------------------------------------------------------------
-
-/// Whether this round's tools may run at all. The prototype ran the last round's calls and then threw their
-/// results away — a web search of up to 45 seconds each, never sent, never logged, never recorded. §2 says the
-/// rewrite MUST NOT keep that, so the loop asks this first and stops before running work it cannot deliver.
+/// Whether this round's tools may run at all. The prototype ran the last round's calls and threw the results
+/// away (a web search is up to 45 s); §2 says the rewrite MUST NOT, so the loop stops before undeliverable work.
 pub fn runs_tools(round: u32) -> bool {
     !tools::rounds_exhausted(round)
 }
@@ -159,8 +126,7 @@ pub fn runs_tools(round: u32) -> bool {
 /// `!!! <step>: still calling tools after 8 rounds — the step gets no answer from this call` (§2 S4 verbatim,
 /// counting from [`roles::TOOL_ROUNDS`]).
 ///
-/// This is §2's wording; [`tools::exhausted_log`] carries an earlier item's shorter one (`-- no answer from it`)
-/// and its test still pins that, so both exist until one round reconciles them.
+/// [`tools::exhausted_log`] carries an earlier item's shorter wording and its test still pins it.
 pub fn exhausted(step: &str) -> String {
     format!(
         "!!! {step}: still calling tools after {} rounds \u{2014} the step gets no answer from this call",
@@ -168,11 +134,8 @@ pub fn exhausted(step: &str) -> String {
     )
 }
 
-// ---- S5: a server that refuses the tools field ----------------------------------------
-
-/// Which servers have already refused a `tools` field. The prototype re-offered the field on every attempt and
-/// re-logged the refusal each time — narrate's three attempts logged it three times for one server. Remembering
-/// per server means the second attempt simply does not send it.
+/// Which servers have already refused a `tools` field, so a second attempt simply does not send it (the
+/// prototype logged the refusal on every attempt).
 #[derive(Debug, Default, Clone)]
 pub struct Refused {
     servers: BTreeSet<String>,
@@ -188,17 +151,15 @@ impl Refused {
         self.servers.insert(server.to_string());
     }
 
-    /// Has this server already said no? True means do not offer the field again and do not log it again.
+    /// Has this server already said no? True means do not offer the field or log it again.
     pub fn server(&self, server: &str) -> bool {
         self.servers.contains(server)
     }
 }
 
 /// S5: an error on round 0 that is not a stop is read as a refusal of the `tools` field, so the identical
-/// request goes out again without it. "Not a stop", "refused" and "round 0 or 1" are already
-/// [`degraded::tools_fallback`]'s judgement — reused rather than re-derived, which is also what keeps a dead
-/// server (a transport death, a 500) from being misread as a refusal. A refusal already honoured does not get
-/// asked twice.
+/// request goes out again without it. The judgement is [`degraded::tools_fallback`]'s, which keeps a dead
+/// server (a transport death, a 500) from being misread as a refusal. A refusal already honoured is not asked twice.
 pub fn retry_without_tools(error: &str, round: u32, already_refused: bool) -> bool {
     if already_refused {
         return false;
@@ -209,25 +170,20 @@ pub fn retry_without_tools(error: &str, round: u32, already_refused: bool) -> bo
     ) && degraded::tools_refused(error)
 }
 
-/// `>>> <step>: the server refused the request with tools (<error>) -- asked again without them`. The reason is
-/// quoted because "refused" covers a 400 about a schema, a 501 and a proxy that strips the field, and those want
-/// different fixes.
+/// `>>> <step>: the server refused the request with tools (<error>) -- asked again without them`. The reason
+/// is quoted because "refused" covers a 400 about a schema, a 501 and a proxy that strips the field.
 pub fn refused_log(step: &str, error: &str) -> String {
     format!(">>> {step}: the server refused the request with tools ({error}) -- asked again without them")
 }
 
-/// Where a transport retry starts from: the index of the first message this loop added, so the whole tool loop
-/// is re-run from the original messages rather than continuing a conversation whose last request never arrived.
-/// Continuing from the grown list would leave an assistant turn with no matching tool results — which some
-/// servers reject outright, turning one dropped connection into a hard failure.
+/// Where a transport retry starts from: the first message this loop added, so the tool loop re-runs from the
+/// original messages; continuing from the grown list would leave an assistant turn with no matching tool
+/// results, which some servers reject outright.
 pub fn rerun_from(original_len: usize) -> usize {
     original_len
 }
 
-// ---- S6: a tool that fails -------------------------------------------------------------
-
-/// A tool's text back to the model. A problem is [`tools::error`]'s `{"error": "…"}`, which is an answer the
-/// model can act on — it may pick another tool, or another argument, or call `finish` with what it has.
+/// A tool's text back to the model. A problem is [`tools::error`]'s `{"error": "…"}`, an answer the model can act on.
 pub fn tool_result(call: &ToolCall) -> String {
     if call.result.is_empty() {
         return tools::error("the tool returned nothing");
@@ -235,23 +191,19 @@ pub fn tool_result(call: &ToolCall) -> String {
     call.result.clone()
 }
 
-/// S6: never. A tool failing is information for the model, not a reason to lose the step; the job's answer comes
-/// from a later round or from `finish`, and the only way to end the flow is S3 or S4.
+/// S6: never. A tool failing is information for the model; the flow ends only by S3 or S4.
 pub fn fails_the_job(_tool_failed: bool) -> bool {
     false
 }
 
-// ---- S7: the exchange page -------------------------------------------------------------
-
-/// A call as §7's page shows it: `[tool call name(args)]`, appended to the reply. The page is written by
-/// [`crate::exchanges`], and neither drawing it nor a tool failing may fail the call — recording is a report on
-/// the work, never part of it.
+/// A call as §7's page shows it: `[tool call name(args)]`, appended to the reply. Recording is a report on
+/// the work, never part of it: neither drawing the page nor a tool failing may fail the call.
 pub fn call_note(call: &ToolCall) -> String {
     format!("[tool call {}({})]", call.name, args_preview(&call.args))
 }
 
-/// The `tool` message carrying one result to the next round. One per call, in the order the model asked for
-/// them, because a reply that names its answers by position reads them wrongly if they arrive shuffled.
+/// The `tool` message carrying one result to the next round, one per call in the order asked (a reply naming
+/// answers by position reads them wrongly if shuffled).
 pub fn tool_message(call: &ToolCall) -> Message {
     Message {
         role: "tool".to_string(),
@@ -259,9 +211,8 @@ pub fn tool_message(call: &ToolCall) -> Message {
     }
 }
 
-/// The assistant turn that asked for the calls, so the next request shows what it already asked for. Its text is
-/// whatever the model said alongside the calls — often nothing, and an empty text part is kept rather than
-/// dropped so the turn exists at all.
+/// The assistant turn that asked for the calls. Its text is whatever the model said alongside, often nothing;
+/// an empty text part is kept so the turn exists.
 pub fn assistant_turn(turn: &Turn) -> Message {
     Message {
         role: "assistant".to_string(),
@@ -269,45 +220,35 @@ pub fn assistant_turn(turn: &Turn) -> Message {
     }
 }
 
-// ---- the loop --------------------------------------------------------------------------
-
 /// One round's answer from the model.
 #[derive(Debug, Clone, Default)]
 pub struct Turn {
     pub content: String,
     pub calls: Vec<ToolCall>,
-    /// The job's own `finish` tool was called.
     pub finish: bool,
 }
 
 /// How a run ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// S3: complete, whether or not the nudge was needed. `asked_finish` says the model never called `finish`.
     Finished { asked_finish: bool },
-    /// S4: still calling tools when the budget ran out, so this call answers nothing.
     Exhausted,
 }
 
-/// What a run left behind: the grown conversation, every log line in order, and how it ended.
 #[derive(Debug, Clone)]
 pub struct Run {
     pub messages: Vec<Message>,
     pub logs: Vec<String>,
     pub outcome: Outcome,
-    /// Which of §1's homes actually carried an announcement during this run, in the order they first did.
-    /// [`crate::decision_audit`] sorts decisions by what the model is told; this says what THIS run told it,
-    /// so the two hearing homes are observable on a live run rather than only in the classifier.
+    /// Which of §1's homes carried an announcement during this run, in the order they first did, so the two
+    /// hearing homes are observable on a live run ([`crate::decision_audit`] is the classifier).
     pub announced: Vec<&'static str>,
 }
 
 /// The line saying a round's calls went unanswered because the budget was spent (§2 S4's consequence).
 ///
-/// It names the home the news should have travelled in — [`crate::decision_audit::Home::ToolResult`], the
-/// row that exists because *"if the app changes what the model said, the model hears about it"*. The wording
-/// is only honest while that home announces, so the sentence is built from the predicate rather than
-/// assumed: if the audit ever stopped treating a tool result as heard, this line would say nothing had been
-/// withheld instead of promising a report that never arrives.
+/// It names the home the news should have travelled in ([`crate::decision_audit::Home::ToolResult`]), and
+/// is built from the predicate so it never promises a report that never arrives.
 pub fn unannounced_calls_log(step: &str, unrun: usize) -> String {
     let home = decision_audit::Home::ToolResult;
     if !decision_audit::change_is_announced(home) {
@@ -321,22 +262,18 @@ pub fn unannounced_calls_log(step: &str, unrun: usize) -> String {
 }
 
 impl Run {
-    /// The lines a caller appends to its own log; kept as a slice so a test can pin the whole run at once.
+    /// The lines a caller appends to its own log.
     pub fn joined(&self) -> String {
         self.logs.join("\n")
     }
 }
 
-/// F6.1's loop in one call: ask, run what was asked for, feed the results back, and stop at
-/// [`roles::TOOL_ROUNDS`] rounds.
+/// F6.1's loop in one call: ask, run what was asked for, feed the results back, stop at [`roles::TOOL_ROUNDS`].
 ///
-/// A round that arrives with calls when the budget is already spent is answered by S4 without running anything.
-/// The loop therefore asks once more than it can run tools: `rounds_exhausted(9)` is only reachable after eight
-/// rounds of work, so the ninth ask is where "still calling tools" is discovered — and nothing runs there.
+/// A round with calls after the budget is spent is answered by S4 without running anything, so the loop asks
+/// once more than it can run tools: "still calling tools" is discovered on the ninth ask.
 ///
-/// `ask` is the model (it sees the messages and the offer; an `Err` is a transport or server error), `call` runs
-/// one tool and returns its text. The loop never decides what a tool means — that is each tool's own section —
-/// which is what lets every rule here be tested with two closures.
+/// `ask` is the model (an `Err` is a transport or server error), `call` runs one tool and returns its text.
 pub fn run(
     step: &str,
     messages: Vec<Message>,
@@ -358,20 +295,17 @@ pub fn run(
     for round in 1..=roles::TOOL_ROUNDS + 1 {
         let turn = match ask(&run.messages, offered) {
             Ok(turn) => turn,
-            // S5 is the caller's to honour (it owns the request and its refusal memory); the loop reports the
-            // error and stops rather than inventing a retry it cannot perform.
+            // S5 is the caller's to honour (it owns the request and its refusal memory); the loop reports and stops.
             Err(why) => {
                 run.logs.push(format!(">>> {step}: {why}"));
                 return run;
             }
         };
 
-        // §2 S3's end signal is the `finish` CALL, not the absence of other calls: a model closes a job by
-        // asking for its work AND saying it is done, in one round (`add_caption(…) + finish`, `set_clip_speed(…)
-        // + finish`). Answering that round and then dialling again for an answer already given charges the step a
-        // request for nothing, and with the budget spent (§2 S4) it ends as "still calling tools" -- so a round
-        // that called `finish` ENDS the run, after its own calls were answered below. The flag on the Turn means
-        // the same thing and is honoured too, so a caller may set it either way.
+        // §2 S3's end signal is the `finish` CALL, not the absence of other calls: a model may ask for work AND say
+        // it is done in one round (`add_caption(…) + finish`). Dialling again would waste a request and, with the
+        // budget spent (§2 S4), end as "still calling tools"; so a round that called `finish` ENDS the run after its
+        // calls are answered below. `Turn::finish` means the same and is honoured too.
         let closed = turn.finish
             || turn
                 .calls
@@ -379,8 +313,7 @@ pub fn run(
                 .any(|call| call.name == Tool::Finish.name());
 
         if turn.calls.is_empty() {
-            // `finish` is the flow's own end and says so here: a model that was nudged and then called it did
-            // call it, so the run is not recorded as having needed asking.
+            // A model that was nudged and then called `finish` did call it, so the run is not recorded as having needed asking.
             if turn.finish {
                 run.outcome = Outcome::Finished {
                     asked_finish: false,
@@ -394,8 +327,7 @@ pub fn run(
                     return run;
                 }
                 Next::AskFinish => {
-                    // Count the round as quiet *before* pushing the nudge: `silent_rounds` is what the next
-                    // round's `after_round` reads, and a second quiet round must fall through to Finished.
+                    // Count the round as quiet *before* pushing the nudge: a second quiet round must fall through to Finished.
                     silent_rounds += 1;
                     asked_finish = true;
                     let finish_home = decision_audit::Home::FinishAnswer;
@@ -415,13 +347,11 @@ pub fn run(
             continue;
         }
 
-        // S4 before S2: the budget is spent before this round's work, so nothing runs that cannot be delivered.
+        // S4 before S2: nothing runs that cannot be delivered.
         if !runs_tools(round) {
             run.logs.push(exhausted(step));
-            // §1's rule of thumb says the model must not be left holding calls it never heard about: the news
-            // those calls would have carried (their tool result, per item) was never sent. The audit decides
-            // whether that sentence is true — see [`unannounced_calls_log`] — and when it is not, §2's line
-            // above stands alone, because then nothing was withheld.
+            // The model must not be left holding calls it never heard about; the audit decides whether that sentence is
+            // true ([`unannounced_calls_log`]), and when it is not, §2's line above stands alone.
             if decision_audit::change_is_announced(decision_audit::Home::ToolResult) {
                 run.logs.push(unannounced_calls_log(step, turn.calls.len()));
             }
@@ -438,16 +368,14 @@ pub fn run(
             // S7: the note goes on the reply as well as into the next request's `tool` message.
             run.logs.push(call_note(&done));
             run.messages.push(tool_message(&done));
-            // The result text just fed back IS §1's second home: what the app made of the model's answer,
-            // sent to it per item so it can act on it in this same conversation.
+            // The result text just fed back IS §1's second home: per-item, so the model can act on it in this conversation.
             note_home(&mut run.announced, decision_audit::Home::ToolResult);
         }
         previous = turn.calls;
         silent_rounds = 0;
         if closed {
-            // A `finish` that arrived with calls still ends the flow — the tool ran and was answered, and the
-            // model has said it is done. Its verdict on the WHOLE travelled in that result, so this run did
-            // use §1's third home as well as the per-item one.
+            // A `finish` that arrived with calls still ends the flow; its verdict on the WHOLE travelled in that result,
+            // so this run used §1's third home as well.
             note_home(&mut run.announced, decision_audit::Home::FinishAnswer);
             run.outcome = Outcome::Finished {
                 asked_finish: false,
@@ -456,8 +384,7 @@ pub fn run(
         }
     }
 
-    // The budget is spent and the model went quiet only after the last round's tools ran: S4's line belongs to a
-    // round that arrived with calls, so this is the one other way a run ends without an answer.
+    // The budget is spent and the model went quiet only after the last round's tools ran: the other way a run ends without an answer.
     run.logs.push(exhausted(step));
     run.outcome = Outcome::Exhausted;
     run
@@ -471,8 +398,7 @@ pub fn note_home(announced: &mut Vec<&'static str>, home: decision_audit::Home) 
     }
 }
 
-/// A branch the spec does not have. Logged rather than panicked on: a tool loop that dies takes a person's whole
-/// run with it, and an honest line in the log is cheaper than a lost session.
+/// A branch the spec does not have. Logged rather than panicked on: a dead tool loop takes the whole run with it.
 fn unreachable_run(logs: &mut Vec<String>, where_: &str) {
     logs.push(format!(
         ">>> tool loop reached a round it should not have: {where_}"

@@ -1,27 +1,9 @@
 //! F1.10 S3's live half: the ask itself.
 //!
-//! [`crate::joins`] owns every rule that settles with no server — which seams exist, what a reply
-//! means, the ceilings, the marks and both files. What it never did was *telephone*: on a session
-//! with seams the pass stopped at its own brief line, so the answers that decide the cut arrived
-//! from nobody. This module is that leg. It builds the two messages §F1.10 spells, dials the LLM
-//! over HTTP through the same [`crate::llm_retry_leg`] every chat ask rides (which is [`crate::server_leg`]
-//! plus §3's patience), and hands the reply
-//! to [`crate::joins::answer_join`] so the tool's ceilings — not a copy of them — decide what
-//! may go.
-//!
-//! The seam a test drives this through is the settings address: point `LLM_SERVER` (or the
-//! `LLM_SERVER` line of `llm.conf`) at a local fake and the very same endpoint resolution a
-//! typed address goes through reaches it. Nothing here takes a canned reply, and a server that is
-//! down answers `Err` naming it, which the pass carries as a refusal — "A refusal still keeps the
-//! stumble" (§F1.10), so the video keeps the stumble rather than losing words to a guess.
-//!
-//! Why the wording arrives as an argument to the builders rather than as something hunted for:
-//! the shipped text lives in `spec/prompts/<key>.md` and is read through
-//! [`crate::prompts::shipped_text`], so — exactly as [`crate::narrate_call`] does — the door reads
-//! the two wordings from [`crate::settings::prompt_text`] with that shipped wording as the fallback,
-//! which is what the settings box itself shows when this machine holds no edit.
-//!
-//! could not be read either way, and new code goes in a new file in a tree this size.
+//! [`crate::joins`] owns every rule that settles with no server. This module is the live leg: it builds the two messages §F1.10 spells, dials the LLM through
+//! [`crate::llm_retry_leg`] (as every chat ask does) and hands the reply to [`crate::joins::answer_join`] so the tool's ceilings decide what may go.
+//! A server that is down answers `Err` naming it, which the pass carries as a refusal: the video keeps the stumble (§F1.10). Tests point `LLM_SERVER` at a local fake.
+//! Wordings come from [`crate::settings::prompt_text`] with [`crate::prompts::shipped_text`] as fallback, as in [`crate::narrate_call`].
 
 use crate::cancel_leg;
 use crate::exchanges::{Message, Part};
@@ -37,9 +19,7 @@ use crate::settings::{self, Conf, Paths};
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
 use crate::word_list::{self, Word};
 
-/// The shipped wording of one prompt key: the fenced ``` block of `spec/prompts/<key>.md`.
-/// The reader moved to [`crate::prompts::shipped_text`] once the Prepare bench started showing the
-/// same wording; this stays as the name every ask module already dials through.
+/// The shipped wording of one prompt key: the fenced ``` block of `spec/prompts/<key>.md` (reader in [`crate::prompts::shipped_text`]).
 pub fn shipped_file(key: &str) -> Option<String> {
     crate::prompts::shipped_text(key)
 }
@@ -54,13 +34,10 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
     }
 }
 
-/// The first ``` fenced block of a markdown file: [`crate::prompts::fenced_block`], re-exported
-/// under the name this module's callers learned first.
+/// Re-exported [`crate::prompts::fenced_block`] under the name callers learned first.
 pub use crate::prompts::fenced_block;
 
-/// The settings folder, read from this process's environment each time an ask is built so a change
-/// made while a run is going is honoured by its next request (§02-services#1: settings are
-/// re-read per request).
+/// The settings folder, read from the environment each time an ask is built, so a change mid-run is honoured (§02-services#1).
 fn current_paths() -> Option<Paths> {
     settings::from_environment()
 }
@@ -68,30 +45,22 @@ fn current_paths() -> Option<Paths> {
 /// What one seam's ask came to, and whether it is finished asking.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Answered {
-    /// What the answer means, in the pass's own terms.
     pub outcome: Outcome,
     /// Whether this seam may be asked again. `false` only when a retry is still worth making.
     pub settled: bool,
     /// The answer text, so the caller can log it as it arrived. Empty when nothing was answered.
     pub reply: String,
-    /// The ask failed at the server rather than at the answer, so the join is NOT asked again:
-    /// a down server answers the same way however often it is called, and `seam_retries` counts
-    /// refusals of answers, not failures of the wire.
+    /// The ask failed at the server, not the answer, so the join is NOT asked again: `seam_retries` counts refused answers, not wire failures.
     pub failed: bool,
-    /// Whether this answer came back from `cache/llm/textedit` instead of the model. §6's summary line
-    /// ("N join(s) repaired, M from the cache") counts exactly this, so the pass cannot guess it from
-    /// whether a reply arrived — a cached one arrives looking identical.
+    /// Whether this answer came from `cache/llm/textedit` (§6's "N join(s) repaired, M from the cache"); a cached reply arrives looking identical.
     pub from_cache: bool,
 }
 
 /// One seam's live ask: build the two messages, honour the cache, dial, read the reply.
 ///
-/// `attempt` is which ask this is, 0-based: the first, then each retry. It selects the cache slot
-/// ([`seam_retries::ask_slot`]) so a retry cannot be served by the reply that was just refused —
-/// the whole reason `P.machine.seamRetries` needed a parameter round.
+/// `attempt` is 0-based and selects the cache slot ([`seam_retries::ask_slot`]), so a retry is not served the reply just refused.
 ///
-/// A cache hit returns without a socket being opened: the answer was paid for already, and §6 keys
-/// on the exact request so an edited prompt misses instead.
+/// A cache hit opens no socket; §6 keys on the exact request, so an edited prompt misses.
 #[allow(clippy::too_many_arguments)]
 pub fn ask(
     tree: &Tree,
@@ -108,8 +77,7 @@ pub fn ask(
     let conf = match current_paths().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         Some(Err(reason)) => {
-            // An unreadable settings file is reported the way a down server is: the pass keeps the
-            // stumble and says why, rather than dialling a guessed address.
+            // An unreadable settings file is reported like a down server: the pass keeps the stumble rather than dialling a guessed address.
             return Answered {
                 outcome: Outcome::Refused(format!("settings could not be read: {reason}")),
                 settled: true,
@@ -135,11 +103,8 @@ pub fn ask(
     )
 }
 
-/// A join refused on every try keeps its words, and that outcome is filed under the join's input like an
-/// answer: the next run asks nothing about a join nothing about has changed. "Nothing removed" is the answer
-/// filed, so the replay keeps the join exactly as the give-up did. Only a refused ANSWER settles this way: a
-/// call that never reached the model ([`Answered::failed`]) is asked again next run. The first rewrite filed
-/// nothing, so a join the model could not get right was asked again, every try of it, on every run.
+/// A join refused on every try keeps its words, and that outcome is filed under the join's input like an answer, so the next run asks nothing about an unchanged join.
+/// Only a refused ANSWER settles this way: a call that never reached the model ([`Answered::failed`]) is asked again next run.
 #[allow(clippy::too_many_arguments)]
 pub fn keep_for_good(
     tree: &Tree,
@@ -186,8 +151,7 @@ pub fn ask_at(
     let user = joins::request(user_context, k, n, wide, before, after, refused);
     let parts = seam_parts(&system, &user, &model, attempt);
     if let Some(cached) = llm_cache::read(tree, joins::STEP, &parts) {
-        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
-        // the record that this ask cost nothing, not a second count of the request that earned it.
+        // §09 §10: the cached answer writes its own `cache` line with no wire time: the record that this ask cost nothing.
         let outcome = judge(&cached, before, after);
         crate::request_timing::record_cached(tree, base_row(&model));
         return Answered {
@@ -198,8 +162,7 @@ pub fn ask_at(
             from_cache: true,
         };
     }
-    // No model configured: asking again answers the same way, so this settles. Checked before the
-    // loop dials, because a body cannot even be built without one.
+    // No model configured: asking again answers the same way, so this settles; checked before dialling since a body cannot be built without one.
     if let Err(reason) = chat_body_with(&model, &messages0(&system, &user)) {
         return Answered {
             outcome: Outcome::Refused(reason.clone()),
@@ -233,8 +196,7 @@ pub fn ask_at(
         &crate::ui::window::log_line,
     ) {
         Ok(sent) => sent,
-        // A transport failure is not a refusal of an answer: the join is not retried against a server that
-        // is not there, and nothing is cached.
+        // A transport failure is not a refusal: the join is not retried against a missing server, and nothing is cached.
         Err(reason) => {
             return Answered {
                 outcome: Outcome::Refused(reason),
@@ -277,8 +239,7 @@ pub fn body_for_test(shown: &[String]) -> String {
         .unwrap_or_default()
 }
 
-/// SYSTEM for a join call: the house rules cut to textedit's sections, the job's own wording, and
-/// the precedence rule only when there is a User Context to outrank anything (§09 §8 puts it last).
+/// SYSTEM for a join call: house rules cut to textedit's sections, the job's wording, and the precedence rule only with a User Context (§09 §8).
 fn join_system(context: &str) -> String {
     let paths = current_paths();
     crate::prompt_assembly::system_message(
@@ -307,11 +268,9 @@ fn messages0(system: &str, user: &str) -> Vec<Message> {
 
 /// The chat body of a join ask: thinking on (§4, `joins::thinking_on`), streamed, and no tools offered (§3.5).
 fn chat_body_with(model: &str, conversation: &[Message]) -> Result<serde_json::Value, String> {
-    // §4's "every call is streamed": the request ASKS for `stream`, and the reader routes on the RESPONSE's
-    // content type (`llm_request::reply_from` / `is_event_stream`), so a server that answers plain JSON to a
-    // streaming request is still read correctly. That is what lets a one-shot fake keep answering while the
-    // real llama.cpp gets chunks a person can watch arrive.
-    // §4 gives the text edit thinking ON; read from the prompt table (§10 §4) rather than named here.
+    // §4: every call is streamed. The request ASKS for `stream` and the reader routes on the RESPONSE's content type
+    // (`llm_request::reply_from` / `is_event_stream`), so a one-shot fake that answers plain JSON is still read.
+    // §4 gives the text edit thinking ON, read from the prompt table (§10 §4).
     llm_request::body(
         joins::STEP,
         model,
@@ -322,22 +281,17 @@ fn chat_body_with(model: &str, conversation: &[Message]) -> Result<serde_json::V
     )
 }
 
-/// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an
-/// event-stream body is read as chunks, anything else as one JSON envelope.
+/// The answer text out of a chat reply: `content`, never the reasoning; an event-stream body is read as chunks, anything else as one JSON envelope (§1).
 fn answer_of(content_type: &str, reply: &str) -> String {
     llm_request::reply_from(content_type, reply)
         .map(|parsed| parsed.answer().to_string())
-        // A body that is neither JSON nor a stream answers with nothing here; `judge` turns the empty
-        // answer into the step's own degraded verdict, which is what it did before this door existed.
+        // Neither JSON nor a stream answers with nothing; `judge` turns the empty answer into the step's degraded verdict.
         .unwrap_or_default()
 }
 
-/// The deciding parts for one join ask, and so the cache key [`ask_at`] looks up. The retry's slot rides
-/// in `state` — the texts, model and thinking flag are otherwise identical, and the slot is what keeps the
-/// two asks apart (§6). Public because a caller that wants to plant or check an answer must reach the very
-/// door the pass hashes: the bytes on the wire, the system prompt's wording included, decide the key, so
-/// the caller passes the two finished messages rather than the seam's numbers (`joins::request` and
-/// `join_system` are private, and re-deriving them here would let a planted reply drift from the ask).
+/// The deciding parts for one join ask, and so the cache key [`ask_at`] looks up; the retry's slot rides in `state` to keep two asks apart (§6).
+/// Public so a caller can plant or check an answer through the door the pass hashes: it takes the two finished messages,
+/// since `joins::request` and `join_system` are private.
 pub fn seam_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
     let state = seam_retries::ask_slot(system, attempt);
     let request = llm_cache::Request {
@@ -373,7 +327,6 @@ fn base_row(model: &str) -> Request {
 pub struct Pass {
     /// Per word of the input list: whether it survives into `final.txt`.
     pub kept: Vec<bool>,
-    /// Every line the pass spoke, in order, for the run's page.
     pub logs: Vec<String>,
     /// Words removed at the seams, before dedupe.
     pub by_seams: usize,
@@ -388,10 +341,8 @@ pub struct Pass {
 /// The whole join pass with the wire in it: every seam asked in order, each answer matched back,
 /// then S4's dedupe, S5's marks and S6's two files written together.
 ///
-/// The BEFORE and AFTER windows are taken off the words still standing, which is what makes a
-/// later seam see a clean join: showing it what an earlier seam already removed made the
-/// one-stretch check count that stretch here and refuse an answer that was right (join 22 of the
-/// ETH lecture, fixed 2026-09-18).
+/// The BEFORE and AFTER windows are taken off the words still standing, so a later seam sees a clean join: showing what an earlier seam removed made
+/// the one-stretch check count that stretch and refuse a right answer.
 pub fn run_seams(
     tree: &Tree,
     project: &Project,
@@ -401,8 +352,7 @@ pub fn run_seams(
 ) -> Pass {
     let total = words.len();
     let mut kept = vec![true; total];
-    // What was standing when the pass began, so the whole-take flag below can tell a word this pass
-    // removed from one that was already gone.
+    // What was standing when the pass began, so the whole-take flag can tell a word this pass removed from one already gone.
     let started_kept: Vec<bool> = kept.clone();
     let mut pass = Pass {
         kept: kept.clone(),
@@ -411,8 +361,7 @@ pub fn run_seams(
     if total == 0 {
         return pass;
     }
-    // S1: too few joinable words to hold a join. `press_joins` has already reported the count, so
-    // this says nothing rather than printing the same sentence twice.
+    // S1: too few joinable words to hold a join; `press_joins` already reported the count.
     if joins::too_few(words) {
         return pass;
     }
@@ -422,20 +371,17 @@ pub fn run_seams(
     let cancelled = cancel_leg::cancel_check_now();
     let mut applied = 0usize;
     let mut from_cache = 0usize;
-    // Joins whose every ask ended without a usable answer: kept as recorded, and said loudly at the end, since
-    // a pass that quietly kept every stumble reads exactly like one that found none.
+    // Joins whose every ask ended without a usable answer: kept as recorded and said loudly at the end, since quietly keeping every stumble reads like finding none.
     let mut unanswered = 0usize;
     for (index, seam) in seams.iter().enumerate() {
         let k = index + 1;
-        // Each join is a thinking ask that can take minutes: say which one is asked, so the bar moves and the
-        // status names it, instead of standing still for the whole pass.
+        // Each join is a thinking ask that can take minutes: say which one, so the bar moves and the status names it.
         reached(
             index as f64 / n as f64,
             &format!("repairing join {k} of {n}"),
         );
         let before = window_before(words, &kept, *seam);
-        // AFTER is the take that follows and stops where the next one starts: past it lies the NEXT join's
-        // stumble, which the model took for this one's and cut into the good take (07-news, 2026-10-26).
+        // AFTER stops where the next take starts: past it lies the NEXT join's stumble, which the model would cut into the good take.
         let until = seams.get(index + 1).copied().unwrap_or(words.len());
         let after = window_after(words, &kept, *seam, until);
         let wide = joins::wide_view(words, &kept, *seam, &seams, WIDE_WORDS);
@@ -509,8 +455,7 @@ pub fn run_seams(
         pass.logs.push(unanswered_log(unanswered, n));
     }
     pass.by_seams = kept.iter().filter(|keep| !**keep).count();
-    // The seconds actually spoken, which F1.11 asks for when it decides whether a retake's onset is
-    // clear of speech — read off the same word list the marks came from so the two never disagree.
+    // The seconds actually spoken, for F1.11's check that a retake's onset is clear of speech; read off the list the marks came from.
     let spoken: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
     let written: Vec<String> = words.iter().map(|word| word.written.clone()).collect();
     let sources: Vec<String> = words.iter().map(|word| word.source.clone()).collect();
@@ -518,10 +463,8 @@ pub fn run_seams(
         pass.logs
             .push(crate::tools::textedit::dedupe_log_head(&note));
     }
-    // S5: the dropped runs become marks, and F1.11 places their edges on the sound — the words fence
-    // both edges and each lane's cached envelope chooses where inside the fence. No envelope (no wave
-    // cache for that recording) leaves the mark on its word times, which is the pass's documented
-    // fallback, not a failure.
+    // S5: the dropped runs become marks and F1.11 places their edges: the words fence both edges, each lane's cached envelope chooses inside the fence.
+    // No envelope leaves the mark on its word times (the documented fallback, not a failure).
     let aligned: Vec<crate::edges::AlignedWord> = words
         .iter()
         .map(|word| crate::edges::AlignedWord {
@@ -534,9 +477,7 @@ pub fn run_seams(
     let (marks, edge_notes) =
         joins::marks_for(times, &kept, &aligned, crate::edges::finder(&held), &spoken);
     pass.logs.extend(edge_notes);
-    // Only words THIS pass removed count toward the flag: `kept` also carries words that were
-    // already gone before the joins ran, and blaming those would hang a whole-take wash on a
-    // recording no join touched.
+    // Only words THIS pass removed count toward the flag: `kept` also holds words gone before the joins, which would hang a whole-take wash on an untouched recording.
     let removed_by_pass: Vec<bool> = kept
         .iter()
         .enumerate()
@@ -557,13 +498,9 @@ pub fn run_seams(
     }
     pass.removed = kept.iter().filter(|keep| !**keep).count();
     pass.stretches = stretches(&kept);
-    // The completion line is spoken only when this pass changed the text: each seam already said
-    // "nothing removed there", and a line of two zeroes on top of that reads as a repair that
-    // forgot what it did.
+    // The completion line is spoken only when this pass changed the text: each seam already said "nothing removed there".
     if pass.removed > 0 {
-        // §6's own summary of the asks, said before the arithmetic line so a reader learns where the
-        // answers came from before being told what they cost. `applied` counts the seams repaired; a
-        // reply read back from `cache/llm/textedit` is counted in both halves, which is the point.
+        // §6's summary of the asks, before the arithmetic line. `applied` counts repaired seams; a reply read back from `cache/llm/textedit` counts in both halves.
         pass.logs.push(crate::tools::textedit::joins_repaired_log(
             applied, from_cache,
         ));
@@ -574,8 +511,7 @@ pub fn run_seams(
     pass
 }
 
-/// What every line this pass speaks starts with. One constant so a reader, and the pass's own
-/// "did I speak at all" check, have one thing to look for.
+/// What every line this pass speaks starts with.
 pub const JOIN_PREFIX: &str = ">>> text edit:";
 
 /// How many standing words the wide view shows either side of a join: enough for the sentence a restart
@@ -628,8 +564,7 @@ pub fn window_after(words: &[Word], kept: &[bool], seam: usize, until: usize) ->
     out
 }
 
-/// Take `count` surviving words off the end of the run before `seam`. Only surviving words are
-/// counted, so a second join on the same seam cannot charge for the same word twice.
+/// Take `count` surviving words off the end of the run before `seam`; only survivors count, so a second join on the seam cannot charge a word twice.
 pub fn take_off_end(kept: &mut [bool], seam: usize, count: usize) {
     let edge = seam.min(kept.len());
     for _ in 0..count {
@@ -666,8 +601,7 @@ pub fn stretches(kept: &[bool]) -> usize {
     out
 }
 
-/// The bare form a window's words are matched on, exposed so a caller can check a window against
-/// the session list it came from.
+/// The bare form a window's words are matched on, exposed to check a window against the session list.
 pub fn bare(text: &str) -> String {
     word_list::bare(text)
 }

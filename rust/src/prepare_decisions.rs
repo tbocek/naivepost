@@ -1,16 +1,4 @@
 //! Where each Prepare decision lives — `spec/12-decisions.md` §3, "Prepare".
-//!
-//! The ten rows of that section are the prototype's behind-the-model behaviours and where the rewrite
-//! moves each. Almost all of the machinery already exists elsewhere in the crate — the retake marks,
-//! the envelope placement, the seam tools, the transcript fixer, the describe batch, the tool loop —
-//! so this module holds only the two pieces the audit needed that nothing else had: the fuzzy
-//! word-suffix matcher that cuts a mark inside a line (S1), and the classifier that names a mark's
-//! case in one sentence for the tool's answer (S3). Everything else is stated here as a routing row
-//! pointing at the function that really makes the decision, so the table cannot claim a behaviour
-//! this build does not have.
-//!
-//! The rule the whole section turns on is §1's: what the model is told. A trim it can see is a
-//! result; a move it never sees must be mechanical, explainable and visible afterwards.
 
 /// At least this share of the marked tail has to turn up again for the cut to count as a repeat.
 ///
@@ -28,34 +16,22 @@ pub const TAIL_MATCH_MIN: f64 = 0.7;
 /// `params::prepare()` rows it from this constant. It bounds the step-over in [`suffix_match`] directly.
 pub const TAIL_SKIP_MAX: usize = 3;
 
-/// How many words may match imperfectly — heard differently, one edit away — before the run is refused.
-///
-/// §12 S1: "one edit allowed", again with no `P.` id.
+/// How many words may match imperfectly — heard differently, one edit away — before the run is
+/// refused.
 pub const TAIL_EDIT_MAX: usize = 1;
 
-/// What the matcher found: where the repeated tail starts in the later take, and how it got there.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SuffixMatch {
-    /// Index into the later take where the repeat begins.
     pub starts_at: usize,
-    /// Tail words accounted for, exact and edited together.
     pub matched: usize,
     /// Later-take words stepped over without consuming a tail word.
     pub skipped: usize,
-    /// Tail words that matched only imperfectly.
     pub edits: usize,
-    /// `matched / tail.len()`, the share that had to clear [`TAIL_MATCH_MIN`].
     pub share: f64,
 }
 
-/// Whether two heard words are the same word.
-///
-/// Exact first, then a shared prefix or a single edit: ASR hears one word three ways across three
-/// passes, and a matcher that demanded equality would refuse most real repeats. Short words are held
-/// to exactness because "to" and "two" differ by one edit and are not the same word.
-///
-/// Crate-visible so the join dedupe ([`crate::tools::textedit::dedupe_joins`]) compares words with
-/// the *same* equality this matcher uses rather than a second, stricter version of its own.
+/// Whether two heard words are the same word. Short words are held to exactness because "to" and
+/// "two" differ by one edit and are not the same word.
 pub(crate) fn same_word(a: &str, b: &str) -> bool {
     if a == b {
         return true;
@@ -66,7 +42,6 @@ pub(crate) fn same_word(a: &str, b: &str) -> bool {
     a.starts_with(b) || b.starts_with(a) || one_edit(a, b)
 }
 
-/// One insertion, deletion or substitution apart.
 fn one_edit(a: &str, b: &str) -> bool {
     let (long, short) = if a.chars().count() >= b.chars().count() {
         (a, b)
@@ -92,7 +67,6 @@ fn one_edit(a: &str, b: &str) -> bool {
         }
         seen = true;
         if long.len() > short.len() {
-            // The extra letter belongs to the longer word: skip it and keep both cursers moving forward.
             i += 1;
         } else {
             i += 1;
@@ -102,18 +76,6 @@ fn one_edit(a: &str, b: &str) -> bool {
     !(seen && (long.len() - i > 0 || short.len() - j > 0))
 }
 
-/// Where the tail of what was said first comes again in the later take.
-///
-/// Earliest anchor, not longest run: the whole stutter goes, not the part of it that happens to
-/// match best. The tail is looked for anywhere in the later take, because a retake does not always
-/// resume at its first word; once a run is going, a word that does not match is stepped over rather
-/// than ending it, since one word heard differently must not lose the repeat. Both bounds still hold
-/// — [`TAIL_SKIP_MAX`] steps and [`TAIL_EDIT_MAX`] imperfect matches — and the run only counts when
-/// at least [`TAIL_MATCH_MIN`] of the tail turned up.
-///
-/// This is the cut inside the line: the model marked whole lines, and the app trims to where the
-/// repetition actually starts. The trimmed stretch is what `mark_abandoned` reports as `removed`, so
-/// the model sees the seconds that will really go rather than the line bounds it sent.
 pub fn suffix_match(tail: &[&str], later: &[&str]) -> Option<SuffixMatch> {
     if tail.is_empty() || later.is_empty() {
         return None;
@@ -135,9 +97,6 @@ pub fn suffix_match(tail: &[&str], later: &[&str]) -> Option<SuffixMatch> {
 }
 
 /// How much of the tail turns up in the later take starting at `from`, in order, within the bounds.
-///
-/// Steps over up to [`TAIL_SKIP_MAX`] later words per tail word looking for the next one, and allows
-/// [`TAIL_EDIT_MAX`] imperfect matches across the whole run.
 fn run_from(tail: &[&str], later: &[&str], from: usize) -> SuffixMatch {
     let mut j = from;
     let mut matched = 0usize;
@@ -167,7 +126,6 @@ fn run_from(tail: &[&str], later: &[&str], from: usize) -> SuffixMatch {
             break;
         }
     }
-    // Skips are the later-take positions consumed beyond the one each matched word needed.
     let skipped = (j - from).saturating_sub(matched);
     let share = matched as f64 / tail.len() as f64;
     SuffixMatch {
@@ -186,16 +144,9 @@ pub enum MarkCase {
     WholeTake,
     /// Only the broken-off fragment goes; what the speaker rephrased after it stays.
     RephraseFragment,
-    /// The first pass refused the mark; a second ASR pass heard it and the mark is lifted.
     Resurrected,
 }
 
-/// Which of the three cases a mark is.
-///
-/// The second pass wins over everything: a refusal that a fresh listen contradicts is a refusal that
-/// was wrong, and saying so is better than keeping a mark against audio that turns out to exist. With
-/// no second-pass finding, a take whose replacement covers the whole thing is the whole-take case;
-/// anything else is a fragment off the front of a rephrase.
 pub fn classify(again_is_whole_take: bool, second_pass_found: bool) -> MarkCase {
     if second_pass_found {
         MarkCase::Resurrected
@@ -207,10 +158,6 @@ pub fn classify(again_is_whole_take: bool, second_pass_found: bool) -> MarkCase 
 }
 
 impl MarkCase {
-    /// The one sentence the tool answers with.
-    ///
-    /// Written as the reply, not as prose about the reply: a model reading this acts on it, so it says
-    /// what happened to the mark rather than what the code did.
     pub fn reason(&self) -> &'static str {
         match self {
             MarkCase::WholeTake => {
@@ -224,22 +171,15 @@ impl MarkCase {
     }
 }
 
-/// One row of the Prepare audit: the behaviour, the home it moved to, and the code that owns it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ruled {
-    /// The prototype behaviour, close to §12's wording.
     pub what: &'static str,
     /// Where the decision lives now, in §1's terms.
     pub home: &'static str,
-    /// The function that actually makes it.
     pub lives_in: &'static str,
 }
 
 /// The ten rows of §12 §3 Prepare, in order.
-///
-/// Kept beside the matcher and the classifier rather than in a doc comment so the pairing of a
-/// behaviour with its owner is checkable: a row naming a function that no longer exists fails a test
-/// rather than drifting quietly.
 pub fn audit() -> [Ruled; 10] {
     [
         Ruled {

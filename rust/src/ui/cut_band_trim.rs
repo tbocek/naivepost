@@ -3,10 +3,6 @@
 //! first rewrite wired these two gestures only to `track-strip`, a placeholder strip packed under the band, so on
 //! the band a person sees no border could be dragged and no clip moved: a real drag there drew a selection or
 //! held nothing. The rules are the strip's own (`cut_trim_press`), measured here at the band's zoom and scroll.
-//!
-//! A left press on a border CLAIMS the sequence at once, so the selection drag and the line click on the same
-//! band stand down (a border drag must not also draw a selection). A right press claims only once it travels,
-//! so an unmoved right click still reaches the card hold and F2.8 S3's "this one".
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -100,12 +96,6 @@ fn trim_to(window: &adw::ApplicationWindow, drag: &mut BorderDrag, x: f64, last:
     cut_view::repaint_page(window);
 }
 
-/// §F2.8 S1: what the pointer shows at band pixel `(x, y)`, from the same doors a press asks, so the pointer
-/// can never promise a grab the press would not make (the prototype's `wantCursor`): a badge (✕, fold) is a
-/// button, the pointing hand; within reach of a clip border on the pictures or a green bar, the resize arrow;
-/// over the rest of a scene's green bar, the open hand, since a drag there moves the scene; anywhere else the
-/// page's own pointer. The first rewrite never changed the pointer: a border could be dragged, but nothing
-/// showed where.
 pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'static str> {
     let scene = cut_view::band_scene_for(window);
     let rows = crate::ui::cut_tracks::rows_for_press(&scene);

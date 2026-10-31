@@ -1,9 +1,6 @@
 //! §1's widget doors — the named lookups, readouts and tooltip readers every other module and test asks
 //! the page for. Split out of `window.rs`, which is past its size budget; every name is re-exported from
 //! `window` under the path callers already use.
-//!
-//! These resolve through the window's own content, so a closed window's surviving tree cannot answer for
-//! a live one. No decisions: each reads a widget by its stable name or a slot this window published.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -89,22 +86,15 @@ pub fn outputs_folder_button(window: &adw::ApplicationWindow) -> Option<gtk::But
 }
 /// §1's badge **15** as a whole: the `Outputs:` label, the folder button (which draws no word of its own) and
 /// the count after it, read back as ONE sentence so a caller sees the row the way it is drawn
-/// (`Outputs: Prepare: 5 files, 1.4 MB`). The sentence is the label's text and the count joined by the space
-/// the button's own edge supplies.
+/// (`Outputs: Prepare: 5 files, 1.4 MB`).
 pub fn outputs_sentence(window: &adw::ApplicationWindow) -> Option<String> {
     let word = outputs_label(window)?.text();
     Some(format!("{word} {}", outputs_readout(window)?.text()))
 }
 /// Mark this window's narration write as owed — the state a half-typed line leaves behind.
-///
-/// S3 owns the decision whether leaving the tab writes (`shell::Pending::owe`); this only raises
-/// the flag, through the same type the switch reads. The Narrate page's row boxes raise it from their
-/// own `changed` handler (`crate::ui::narrate_text::note_typing`), which is what makes typing on the
-/// page owe a write rather than only a test being able to.
 pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
     let _ = window;
     if let Some(shell) = ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
-        // `now` is irrelevant here: leaving the tab writes whatever is owed, even a beat early.
         shell
             .borrow_mut()
             .narration_pending
@@ -112,18 +102,14 @@ pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
     }
 }
 /// §1 badge **4** — the header's project name/path label, so a caller (a switch, an Open, a Save that
-/// renamed the folder) can redraw it without reaching into the header tree. Newest slot wins, the same
-/// rule every per-window door here uses: a process that built two windows shows the newest one's label.
-/// The header's project label, by its window. Re-exported where every other §1 door lives.
+/// renamed the folder) can redraw it without reaching into the header tree.
 pub fn project_title(window: &adw::ApplicationWindow) -> Option<gtk::Label> {
     let _ = window;
     project_title_of()
 }
 
 /// Build §1 badge **4** — the header's project name/path label, packed after Save — publish
-/// it as this window's title label, and draw it once so a freshly built window never opens blank. Every
-/// later repaint goes through [`paint_project_title`], which `window_bench::paint_readouts` calls beside
-/// the readouts on every switch.
+/// it as this window's title label, and draw it once so a freshly built window never opens blank.
 pub fn install_project_title(header: &adw::HeaderBar) {
     let label = super::header_title::install(header);
     push_project_title(&label);
@@ -131,10 +117,6 @@ pub fn install_project_title(header: &adw::HeaderBar) {
 }
 
 /// Re-draw §1 badge **4** from the folder the window believes is open and the page its shell shows.
-/// Read through the same two slots every other door here uses, so a flow that moved the session or
-/// switched the page has nothing left to remember to do. With no folder published yet (a window built
-/// before any flow took one on) the launch's own session folder answers — the same fallback `save_target`
-/// uses — so the header never opens blank.
 pub fn paint_project_title() {
     let Some(title) = project_title_of() else {
         return;
@@ -153,7 +135,6 @@ pub(crate) fn project_title_of() -> Option<gtk::Label> {
     HEADER_TITLES.with(|titles| titles.borrow().last().cloned())
 }
 
-/// Publish this window's header label. Private to this module: only [`install_project_title`] hands one out.
 fn push_project_title(label: &gtk::Label) {
     HEADER_TITLES.with(|titles| titles.borrow_mut().push(label.clone()));
 }
@@ -168,9 +149,7 @@ pub fn tab_info_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     let _ = window;
     ui::INFO_BUTTON.with(|slots| slots.borrow().last().cloned())
 }
-/// The §1 header ⓘ's tooltip — the door a test reads instead of matching a raw glyph. §1: the ⓘ's
-/// tooltip is "current tab's label + help text", which is `Shell::info_tip`'s sentence joined by that
-/// dash. `None` when the button carries no tooltip at all.
+/// The §1 header ⓘ's tooltip — the door a test reads instead of matching a raw glyph.
 pub fn tab_info_parts(window: &adw::ApplicationWindow) -> Option<(String, String)> {
     let tip = tab_info_button(window)?.tooltip_text()?.to_string();
     let join = tip.find(" \u{2014} ")?;
@@ -214,9 +193,7 @@ pub fn rescan_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
         .ok()
 }
 /// One widget from Prepare's sources list, found by the name §4's rows are built with — `sources-list`,
-/// `source-row-<i>`, `footage-<i>`, `narrator-<i>`, `remove-<i>`, `source-name-<i>`. One accessor for
-/// the whole list rather than six, because the row count is the project's business: a test asking for
-/// `remove-7` of a two-row session gets `None`, which is the honest answer.
+/// `source-row-<i>`, `footage-<i>`, `narrator-<i>`, `remove-<i>`, `source-name-<i>`.
 pub fn find_source_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     find_widget_by_name(window.upcast_ref(), name)
 }
@@ -226,13 +203,7 @@ pub fn open_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
         .downcast()
         .ok()
 }
-/// The sources of the project this window currently holds. `build_window` keeps its own `Rc`, so the
-/// handle is published here at build time for a test to read back — the same copy the Prepare page's
-/// rows mutate, not a snapshot of it.
-/// The live session — the last window's handle, which is the one this check just opened into. Each
-/// `build_window` publishes its own, so reading the newest avoids mixing in earlier windows' copies.
-/// The live session handle itself, newest-slot like [`session_sources`]. F0.8's apply needs the `Rc`,
-/// not a read of it: swapping this exact copy is what every page sees.
+/// The sources of the project this window currently holds.
 pub fn session_handle(window: &adw::ApplicationWindow) -> Rc<RefCell<Project>> {
     let _ = window;
     ui::SESSION
@@ -257,7 +228,7 @@ pub fn session_sources(window: &adw::ApplicationWindow) -> Vec<String> {
     })
 }
 /// The run bar's queue (F0.5) this window shows, so a test reads the state `drive_page` writes
-/// rather than only the painted fraction. Newest slot wins, as every published handle here does.
+/// rather than only the painted fraction.
 pub fn run_queue(_window: &adw::ApplicationWindow) -> Option<Rc<RefCell<runqueue::Queue>>> {
     ui::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned())
 }
@@ -267,15 +238,14 @@ pub fn open_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
         .tooltip_text()
         .map(|text| text.to_string())
 }
-/// The run's progress bar (F0.5 S2), found the same way as [`play_button`]. Window-level, so a name
-/// lookup cannot land on a per-page copy.
+/// The run's progress bar (F0.5 S2), found the same way as [`play_button`].
 pub fn progress_bar(window: &adw::ApplicationWindow) -> Option<gtk::ProgressBar> {
     find_widget_by_name(window.upcast_ref(), "run-progress")?
         .downcast()
         .ok()
 }
 /// The log expander (F0.5 S1), whose header carries the status line and whose body holds the run's
-/// lines. `is_expanded()` is what `state().log_expanded` reports.
+/// lines.
 pub fn log_expander(window: &adw::ApplicationWindow) -> Option<gtk::Expander> {
     find_widget_by_name(window.upcast_ref(), "log-expander")?
         .downcast()
@@ -307,8 +277,7 @@ pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckBu
         .ok()
 }
 /// The step the run bar is holding, if any — read off `RunBar::running` rather than off a button's
-/// face. A widget test needs the same field `runqueue::start_run` writes and F1.1's refusal skips,
-/// otherwise it would only prove that ⏹ looked sensitive.
+/// face.
 pub fn running_step(window: &adw::ApplicationWindow) -> Option<crate::run::Step> {
     let _ = window;
     ui::RUN_BARS.with(|bars| {
@@ -318,9 +287,7 @@ pub fn running_step(window: &adw::ApplicationWindow) -> Option<crate::run::Step>
     })
 }
 /// The marking pass the LIVE session runs under — the same field `▶` reads when it decides whether
-/// F1.9's retake pass or F1.10's joins pass speaks. Read from `ui::PLAY_SESSION`, not from a window
-/// widget: the policy has no control of its own on this page (it lives in the gear), so the session
-/// is the truth and a test that read anything else would be reading a copy.
+/// F1.9's retake pass or F1.10's joins pass speaks.
 pub fn marking_pass(_window: &adw::ApplicationWindow) -> MarkingPass {
     ui::PLAY_SESSION
         .with(|slots| slots.borrow().last().cloned())
@@ -328,11 +295,6 @@ pub fn marking_pass(_window: &adw::ApplicationWindow) -> MarkingPass {
         .unwrap_or(MarkingPass::Retakes)
 }
 /// Move the live session's marking pass, as saving a project that names Joins would.
-///
-/// This is the seam a person's saved project arrives through: `build_window` publishes the argument
-/// into `ui::PLAY_SESSION`, and F0.7's derive door may then replace it. A test that wants to know which
-/// pass a press will run changes it HERE, after the window exists, because changing the build-time
-/// argument can be overwritten before the handler ever sees it.
 pub fn set_marking_pass(window: &adw::ApplicationWindow, pass: MarkingPass) {
     let _ = window;
     if let Some(session) = ui::PLAY_SESSION.with(|slots| slots.borrow().last().cloned()) {
@@ -386,8 +348,7 @@ pub(crate) fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk:
     }
     None
 }
-/// The window's page stack, so a flow that moved the shell can move what is on screen too. Found by
-/// type rather than by name: the stack is the divider's top half and carries no widget name of its own.
+/// The window's page stack, so a flow that moved the shell can move what is on screen too.
 pub fn view_stack(window: &adw::ApplicationWindow) -> Option<adw::ViewStack> {
     fn find(node: &gtk::Widget) -> Option<adw::ViewStack> {
         if let Some(stack) = node.downcast_ref::<adw::ViewStack>() {
@@ -411,14 +372,13 @@ pub fn view_stack(window: &adw::ApplicationWindow) -> Option<adw::ViewStack> {
 }
 
 /// The newest window's re-entrancy latch (`wire_switching`'s own), so a flow that moves the stack
-/// itself can hold off the notify handler exactly as a bounce does. `None` only before any window exists.
+/// itself can hold off the notify handler exactly as a bounce does.
 pub fn switch_latch() -> Option<Rc<std::cell::Cell<bool>>> {
     ui::WINDOW_SWITCH_LATCH.with(|latch| latch.borrow().clone())
 }
 
 /// The status line, named rather than searched for by text: an empty label is the ordinary state and
-/// would match any label in the tree. Public so a widget test can read the sentence a press printed —
-/// the page's one output channel, and the thing F2.7 pins.
+/// would match any label in the tree.
 pub fn find_status(root: &gtk::Widget) -> Option<gtk::Label> {
     if root.widget_name() == "status-line" {
         return root.downcast_ref::<gtk::Label>().cloned();

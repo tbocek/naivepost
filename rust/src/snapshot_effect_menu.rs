@@ -3,10 +3,6 @@
 //! `snapshot_effects.rs`, whose blocks all stage cut state; this one opens a widget, and painting it needs its
 //! own top level for the same reason `snapshot_face::write_face_png` paints the run bar's ▶ apart from the
 //! window: a popover's child is a separate surface, so the window's own render node does not contain it.
-//!
-//! Nothing here decides a rule. The rows are the app's — the buttons `ui` builds into the `effect-menu` box, in
-//! the order that box holds them — and this module only pops the dropdown, reads them back off the widget tree,
-//! and paints the same box the popover is showing.
 
 use std::path::Path;
 
@@ -17,36 +13,17 @@ use crate::cut::EffectKind;
 use crate::fx_lane;
 use crate::ui;
 
-/// How wide the painted menu shot is. Wide enough for the longest row (`🔊 Volume`) to sit inside its button with
-/// the icon's padding, which the measure call above does not account for; the height IS measured.
 const MENU_SHOT_W: i32 = 180;
 /// The gap between the button's bottom edge and the painted menu's top edge — one row of air, as GTK leaves it.
 const PANEL_GAP_PX: f32 = 2.0;
-/// The panel's own frame padding below its rows, so the last row is not flush with the border.
 const PANEL_PAD_PX: i32 = 8;
 
 /// Pop this window's real ✚ Effect dropdown and read its rows back off the app's own popover.
-///
-/// Returns the header row's text first, then one `"<name>: <label>"` per entry, in the order the `effect-menu`
-/// box actually holds them — which is what makes this a check rather than a restatement: if a future edit
-/// reordered the buttons, dropped one, or dropped the header §2's picture draws, the strings this returns change
-/// and the caller's assert fires. The order the spec gives is
-/// [`fx_lane::MENU_ORDER`]; the labels are `cut_screen::EFFECT_ITEMS`'s.
-///
-/// Public because `snapshot::run` → `snapshot_effects::paint` calls it for the `06-effect-menu` screen (that is
-/// the program's path), and `tests/suite/sec_06_effects_2_staging.rs` calls it to prove the same door the shot uses.
 pub fn stage(window: &adw::ApplicationWindow) -> Vec<String> {
     let button = menu_button(window, "effect-button");
-    // The same state a click produces: `MenuButton::set_open` is what the button's own toggle does, so the
-    // popover that appears is the app's, with the app's children — nothing is built for the shot.
     button.set_active(true);
-    // Map the window and pump what the popover needs to lay its rows out, BEFORE they are read. A popover inside
-    // a window that was never mapped produces no render node and no mapped children -- which is why the shot of
-    // this screen has to do exactly this and nothing less (`snapshot_face::write_face_png` learned it the same
-    // way for the run bar's glyph).
+    // Map the window and pump what the popover needs to lay its rows out, BEFORE they are read.
     window.present();
-    // The rows go in `cut_effect_menu` while the page is being built, from this very window, so by now the
-    // popover holds them; the map makes them real on screen.
     crate::snapshot_face::pump_context(64);
     assert!(
         button.is_active(),
@@ -55,7 +32,6 @@ pub fn stage(window: &adw::ApplicationWindow) -> Vec<String> {
     let popover = button
         .popover()
         .expect("snapshot: 06-effect-menu's ✚ Effect has no popover");
-    // The popover's child is an outer box now: the header label first, then the six-row `effect-menu` box.
     let shell = popover
         .child()
         .and_then(|child| child.downcast::<gtk::Box>().ok())
@@ -97,10 +73,6 @@ pub fn stage(window: &adw::ApplicationWindow) -> Vec<String> {
 }
 
 /// The label [`crate::fx_lane::MENU_ORDER`] implies for each kind, spelled the way the popover spells it.
-///
-/// A lookup against the table the page builds from, not a second copy of it: the strings come from
-/// `cut_screen::EFFECT_ITEMS`, matched by the kind id each entry carries in its `tip`, so this cannot drift from
-/// what the dropdown actually draws.
 pub fn labels_in_menu_order() -> Vec<String> {
     fx_lane::MENU_ORDER
         .iter()
@@ -117,8 +89,7 @@ pub fn labels_in_menu_order() -> Vec<String> {
 }
 
 /// The dropdown entry's kind id for an [`EffectKind`] — the word `cut::Fx::parse_kind` accepts, which is what
-/// each row's `tip` holds. Written here because `EffectKind::parse` is private to `cut` and this is the reverse
-/// direction of the same table.
+/// each row's `tip` holds.
 fn effect_id(kind: &EffectKind) -> &'static str {
     match kind {
         EffectKind::Zoom => "zoom",
@@ -131,32 +102,15 @@ fn effect_id(kind: &EffectKind) -> &'static str {
 }
 
 /// Ask `snapshot::run` to paint THIS screen's shot from the dropdown's own box instead of from the window.
-///
-/// A `gtk::Popover` lives on its own surface, so the window's render node does not contain it: a whole-window
-/// shot of the popped menu shows the page with no menu in it. The frame-taking step reads this flag and calls
-/// [`write_png`] with the button, exactly as `03-runbar-busy` asks for the run bar's ▶ on its own.
-///
-/// Deliberately NOT a parameter of `snapshot_effects::paint`: that one call site is one of five module entry
-/// points `snapshot::run` invokes before the pixels are taken, and threading a return value through it for one
-/// screen would move four other modules' signatures for no gain. Process-wide and set-once, like the snapshot
-/// staging every other screen here already relies on.
 pub fn note_shot_sidecar() {
     REQUESTED.with(|flag| flag.set(true));
 }
 
-/// Has [`note_shot_sidecar`] been called? `snapshot::run` asks once, when it chooses what to paint.
+/// Has [`note_shot_sidecar`] been called?
 pub fn shot_sidecar_wanted() -> bool {
     REQUESTED.with(|flag| flag.get())
 }
 
-/// Is this screen's SUBJECT the popover itself? It no longer is.
-///
-/// `spec/QUESTIONS.md`, §06 answer 3(b): "06-effect-menu is the Cut page with the '+ Effect' menu open under its
-/// button, the toolbar and the tracks around it: the render shows the menu alone, stretched over the whole window…
-/// the snapshot draws the window first and the open menu on top of it, where it opens and at its own size". So the
-/// PAGE keeps `<name>.png` and [`paint_staged`] hangs the menu over it — the same reversal
-/// `snapshot_prompt_picker::is_picker_subject` records for `04-prompt-picker`. The door stays (and stays asked) so
-/// the naming rule has one source rather than a screen name hardcoded in `snapshot::run`.
 pub fn is_menu_subject(_screen: &str) -> bool {
     false
 }
@@ -171,9 +125,7 @@ fn panel_width() -> i32 {
     MENU_SHOT_W
 }
 
-/// The panel's height: the header line plus every row's own measured natural height, never a guess. Measured off
-/// the rows and not off the box because a `gtk::Box` that has never been allocated answers 0 there (the same lesson
-/// `snapshot_prompt_picker::panel_height` records).
+/// The panel's height: the header line plus every row's own measured natural height, never a guess.
 fn panel_height(list: &gtk::Widget) -> i32 {
     let rows: i32 = list
         .observe_children()
@@ -191,8 +143,7 @@ fn panel_height(list: &gtk::Widget) -> i32 {
 }
 
 /// Where the painted menu's left edge sits: GTK points a menu's own left edge at the button's centre, clamped
-/// so the panel stays inside the window. `spec/img/06-effect-menu.png` draws exactly that — the rows hanging
-/// under the middle of the ✚ Effect button, not flush with its left border.
+/// so the panel stays inside the window.
 pub fn panel_x(button_x: f32, button_w: f32, panel_w: i32, win_w: i32) -> f32 {
     (button_x + button_w / 2.0)
         .max(0.0)
@@ -208,17 +159,6 @@ pub fn panel_y(button_y: f32, button_h: f32, panel_h: i32, win_h: i32) -> f32 {
 
 /// Paint the Cut page with the ✚ Effect menu open OVER it, into `out`: the window shot first, then the app's own
 /// menu rows blitted where the popover would sit, at their own size.
-///
-/// This is what `spec/img/06-effect-menu.png` shows — the toolbar, ruler, green kept-scene bands and thumbnail
-/// rows around a compact popup under ✚ Effect — and `spec/QUESTIONS.md` answer 3(b) asks for it in these words:
-/// "the snapshot draws the window first and the open menu on top of it, where it opens and at its own size".
-/// The precedent is [`crate::snapshot_prompt_picker::paint_open_over_window`], for the same technical reason: a
-/// `gtk::Popover` lives on its own surface, so the window's render node cannot contain it and a whole-window shot
-/// of the popped menu shows a page with no menu. The panel gets its own mapped top level only long enough to gain
-/// a render node, sized from its OWN measure (never the window's ask, which is what once stretched six rows over
-/// a 1343×900 frame).
-/// What [`paint_staged`] reports: how many menu entries were painted, the panel's own size, and where
-/// its top-left landed in the frame. Named because the bare tuple tripped `clippy::type_complexity`.
 pub type MenuShot = (usize, (i32, i32), (i32, i32));
 
 /// The menu's holder: its own top level, shown before the shot so GTK has laid it out by the time the
@@ -277,8 +217,7 @@ pub fn stage_open_over_window(window: &adw::ApplicationWindow) -> Result<StagedM
 }
 
 /// Paints the Cut page with the staged menu OVER it, into `out`: the window first, then the menu where the
-/// popover would sit, at its own size; then closes the holder. A holder not painted yet has no render node:
-/// that is an error, and the holder stays open for another try.
+/// popover would sit, at its own size; then closes the holder.
 pub fn paint_staged(
     window: &adw::ApplicationWindow,
     menu: &StagedMenu,
@@ -325,8 +264,6 @@ fn copied_rows(button: &gtk::MenuButton) -> Result<(gtk::Box, usize), String> {
         .and_then(|popover| popover.child())
         .and_then(|child| child.downcast::<gtk::Box>().ok())
         .ok_or("the ✚ Effect dropdown has no row box to paint")?;
-    // The popover's child is the outer shell (header + `effect-menu` box); find the inner box by name rather than
-    // assuming the child IS the rows.
     let mut list: Option<gtk::Box> = None;
     let mut header: Option<String> = None;
     for child in source
@@ -345,8 +282,7 @@ fn copied_rows(button: &gtk::MenuButton) -> Result<(gtk::Box, usize), String> {
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.set_widget_name("effect-menu");
     copy.set_homogeneous(false);
-    // The header first, as §2's picture draws it. Inside a popover GTK gives the label the menu row's own ink; on
-    // a bare top level nothing does, so the words are spelled in `color` by `install_shot_css`.
+    // The header first, as §2's picture draws it.
     if let Some(words) = header {
         let head = gtk::Label::new(Some(&words));
         head.set_widget_name("effect-menu-title");
@@ -367,8 +303,6 @@ fn copied_rows(button: &gtk::MenuButton) -> Result<(gtk::Box, usize), String> {
         let held = gtk::Button::with_label(row.label().unwrap_or_default().as_str());
         held.set_widget_name(row.widget_name().as_str());
         held.set_tooltip_text(row.tooltip_text().as_deref());
-        // Left-aligned WITHIN the row, and the row itself fills the panel's width: `halign(Start)` on the button
-        // collapsed each one to its own text and centred it, so the rows printed as fragments floating mid-box.
         held.set_halign(gtk::Align::Fill);
         let words = row.label().unwrap_or_default().to_string();
         held.set_child(Some(&row_label_left(&words)));
@@ -387,7 +321,6 @@ fn row_label_left(words: &str) -> gtk::Label {
     label
 }
 
-/// Has [`install_shot_css`] run? One provider for the process; a snapshot paints one screen.
 static SHOT_CSS_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Spell the menu shot's own ground and ink, because a snapshotted box gets no theme painting behind it.
@@ -413,8 +346,7 @@ pub fn effect_button() -> gtk::MenuButton {
     menu_button(&ui::window::main_window(), "effect-button")
 }
 
-/// Find this window's `MenuButton` by name. The same walk `tests/suite/effect_menu_record_widgets.rs` uses: the
-/// toolbar's effect trigger is a `MenuButton`, so the plain-Button lookup in `tests/common` cannot reach it.
+/// Find this window's `MenuButton` by name.
 fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {
     fn walk(node: &gtk::Widget, name: &str, out: &mut Option<gtk::MenuButton>) -> bool {
         if node.widget_name() == name && node.downcast_ref::<gtk::MenuButton>().is_some() {

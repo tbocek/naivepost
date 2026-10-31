@@ -1,7 +1,6 @@
 //! The pieces every snapshot shares: read the run bar's ▶ back off its widgets, paint one widget into a
-//! PNG, open the shell's log, and put one frame on disk where Prepare would have extracted it. Split out of
-//! `snapshot.rs`, which is past the size another block fits in; nothing here decides a rule -- each reads or
-//! paints what the app already drew.
+//! PNG, open the shell's log, and put one frame on disk where Prepare would have extracted it. Nothing here
+//! decides a rule; each reads or paints what the app already drew.
 
 use std::path::Path;
 
@@ -12,9 +11,8 @@ use gtk4 as gtk;
 use crate::layout;
 use crate::ui;
 
-/// The bar's ▶ as the picture sees it: its icon, its tooltip, and whether ⏹ can be pressed — the three
-/// properties `paint_run_bar` is the only writer of, read back off the widgets rather than recomputed
-/// from [`crate::run::controls`] so a missed repaint shows up as a wrong face here.
+/// The bar's ▶ as the picture sees it: icon, tooltip, and whether ⏹ can be pressed, read back off the widgets
+/// (not recomputed from [`crate::run::controls`]) so a missed repaint shows up as a wrong face.
 pub(crate) fn face_of(window: &adw::ApplicationWindow) -> (String, String, bool) {
     let play = ui::play_button(window).expect("the run bar has a ▶");
     (
@@ -26,8 +24,7 @@ pub(crate) fn face_of(window: &adw::ApplicationWindow) -> (String, String, bool)
     )
 }
 
-/// Run the main context until nothing is pending, at most `rounds` rounds. Bounded and non-blocking: a snapshot
-/// must not park on a context with nothing in it. Shared with [`write_face_png`], which needed the same.
+/// Run the main context until nothing is pending, at most `rounds` rounds; bounded so a snapshot never parks.
 pub(crate) fn pump_context(rounds: usize) {
     let context = glib::MainContext::default();
     for _ in 0..rounds {
@@ -37,14 +34,11 @@ pub(crate) fn pump_context(rounds: usize) {
     }
 }
 
-/// Draw the run bar's ▶ at a legible size into a PNG on its own. A whole-window shot cannot show which
-/// glyph the button wears: at 1334 px wide the icon is ~16 px and reads as a blue blob whether it is ▶ or
-/// ⏸, so the face this screen exists to record is invisible in it. The widget has to be laid out first --
-/// one painted inside a window that was never mapped produces no render node -- hence its own top level,
-/// the way `03-new-confirm` paints a dialog rather than the window behind it.
+/// Draw the run bar's ▶ at a legible size into a PNG on its own: at 1334 px wide the icon is ~16 px and
+/// reads as a blue blob whether it is ▶ or ⏸. The widget must be laid out first (one in a window that was
+/// never mapped produces no render node), hence its own top level, as `03-new-confirm` paints a dialog.
 pub(crate) fn write_face_png(face: &gtk::Button, out: &Path) -> Result<(), String> {
-    // A copy, not the bar's own button: reparenting a widget out of a mapped window leaves it with no
-    // render node, which is what made an earlier attempt of this print "window produced no render node".
+    // A copy, not the bar's own button: reparenting a widget out of a mapped window leaves it with no render node.
     // The copy carries the same icon and tooltip because those ARE the face being recorded.
     let glyph = gtk::Button::from_icon_name(face.icon_name().unwrap_or_default().as_str());
     if let Some(tip) = face.tooltip_text() {
@@ -64,11 +58,10 @@ pub(crate) fn write_face_png(face: &gtk::Button, out: &Path) -> Result<(), Strin
     result
 }
 
-/// Open the shell's log and paint what has been logged, through the same door a run repaints it from.
+/// Open the shell's log and paint what has been logged, through the door a run repaints it from.
 ///
-/// `paint_progress` is the only thing that expands the expander AND fills its body — it reads openness
-/// off the run bar, so a snapshot with no run open cannot get an open log any other way. This hands it
-/// the window's own widgets and the idle queue, asking for the one state a real run shows: expanded.
+/// `paint_progress` is the only thing that expands the expander AND fills its body (it reads openness off the
+/// run bar), so this hands it the window's widgets and the idle queue, asking for the state a real run shows.
 pub(crate) fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String> {
     let progress = ui::progress_bar(window).ok_or("the shell has no progress bar")?;
     let expander = ui::log_expander(window).ok_or("the shell has no log expander")?;
@@ -86,8 +79,7 @@ pub(crate) fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String
         },
         true,
     );
-    // §1's open-log sentence needs the DIVIDER too, not just the expander: a snapshot window is never dragged,
-    // so nothing moves the handle up for the body the line above just opened (`window_shot::opened_px`).
+    // §1's open-log sentence needs the DIVIDER too: a snapshot window is never dragged (`window_shot::opened_px`).
     if let Some(divider) =
         ui::find_source_widget(window, "main-divider").and_then(|w| w.downcast::<gtk::Paned>().ok())
     {
@@ -96,9 +88,9 @@ pub(crate) fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String
     Ok(())
 }
 
-/// Write one extracted frame into the folder Prepare would have put it in, so a Cut-page shot has a real
-/// picture to show. PNG bytes under the `.jpg` name `cut_tracks::frame_paths` lists (Prepare's own stamping
-/// rule, `frames.rs` S4): gdk-pixbuf decodes by content, and no JPEG encoder is linked here.
+/// Write one extracted frame into the folder Prepare would have put it in, so a Cut-page shot has a picture.
+/// PNG bytes under the `.jpg` name `cut_tracks::frame_paths` lists (`frames.rs` S4): gdk-pixbuf decodes by
+/// content and no JPEG encoder is linked.
 pub(crate) fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64) {
     let Ok(tree) = layout::Tree::new(dir) else {
         return;
@@ -108,7 +100,7 @@ pub(crate) fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64
         return;
     }
     let path = dir.join(format!("{}.jpg", crate::clock::frame_name(second)));
-    // A frame already on disk (one Prepare really extracted) is the better picture; write only when absent.
+    // A frame Prepare really extracted is the better picture; write only when absent.
     if path.exists() {
         return;
     }
@@ -129,18 +121,14 @@ pub(crate) fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64
 }
 
 /// The staged frame's own size: the shape of §06's preview image (960 x 540), so `fit_size` is a no-op and the
-/// still's box can be told from the whole frame. Not a tuning value -- it is the size the shot is compared at.
-//
-// PUBLIC because this is the INPUT the `06-preview` shot paints over, and §00-principles §5 says to measure the
-// artifact: a check that wants to prove "the still's pixels differ from the dimmed surround" has to know what the
-// picture underneath was, and deriving it from these same consts is the one source of truth for that.
+/// still's box can be told from the whole frame.
+///
+/// PUBLIC because the `06-preview` shot paints over it and §00-principles §5 says to measure the artifact: a
+/// check must know the picture underneath.
 pub const STRUCTURED_FRAME_W: i32 = 960;
 pub const STRUCTURED_FRAME_H: i32 = 540;
-/// The three full-width bands and the one off-centre block. These are staged INPUT pixels for a headless shot:
-/// nothing decodes video in this container, so the picture behind the preview has to be written here. A FLAT
-/// colour ([`seed_snapshot_frame`]) cannot show a camera crop -- every fraction of it is the same colour as all
-/// the rest -- so these numbers exist to make a crop distinguishable: three bands of clearly different lightness
-/// plus one bright block that only exists in the upper-left half of the frame.
+/// Three full-width bands and one off-centre block: staged INPUT pixels, since nothing decodes video here.
+/// A FLAT colour ([`seed_snapshot_frame`]) cannot show a camera crop, so these make a crop distinguishable.
 pub const BAND_SKY: (f64, f64, f64) = (0.78, 0.86, 0.94);
 pub const BAND_MID: (f64, f64, f64) = (0.42, 0.5, 0.44);
 pub const BAND_LOWER: (f64, f64, f64) = (0.12, 0.14, 0.18);
@@ -148,11 +136,10 @@ pub const BLOCK_BRIGHT: (f64, f64, f64) = (0.98, 0.82, 0.2);
 
 /// Write a frame with STRUCTURE where Prepare would have extracted one, and hand back the path.
 ///
-/// Same contract as [`seed_snapshot_frame`] -- into `tree.frames_dir(base)`, a real extracted frame wins if one is
-/// already there, `None` when nothing could be written -- but at [`STRUCTURED_FRAME_W`] x [`STRUCTURED_FRAME_H`]
-/// and banded, because the `06-preview` screen has to show a stop's STILL, which `cut_preview_frame::stop_px`
-/// frames as the camera's FRACTION of the footage. Over a flat frame that fraction is indistinguishable from the
-/// whole picture, which is how the shot came out claiming a still while showing none.
+/// Same contract as [`seed_snapshot_frame`] (into `tree.frames_dir(base)`, a real frame wins, `None` when
+/// nothing could be written) but at [`STRUCTURED_FRAME_W`] x [`STRUCTURED_FRAME_H`] and banded: the
+/// `06-preview` screen shows a stop's STILL, which `cut_preview_frame::stop_px` frames as a FRACTION of the
+/// footage, indistinguishable from the whole picture over a flat frame.
 pub fn seed_structured_frame(
     dir: &std::path::Path,
     base: &str,
@@ -162,10 +149,8 @@ pub fn seed_structured_frame(
     let folder = tree.frames_dir(base);
     std::fs::create_dir_all(&folder).ok()?;
     let path = folder.join(format!("{}.jpg", crate::clock::frame_name(second)));
-    // The flat 160x90 stand-in (`seed_snapshot_frame`) may well have been written for this second already by the
-    // page staging above — and it is NOT structured, so a crop of it and all of it are the same pixels and §2's
-    // "still fitted on the footage's transform" would be invisible. So unlike that helper, this one OVERWRITES:
-    // what makes this frame the still's input is its structure, not its precedence on disk.
+    // The flat 160x90 stand-in may already be written by the page staging, and is not structured, so unlike
+    // that helper this one OVERWRITES: the structure is what makes this frame the still's input.
     let surface = cairo::ImageSurface::create(
         cairo::Format::ARgb32,
         STRUCTURED_FRAME_W,
@@ -190,22 +175,15 @@ pub fn seed_structured_frame(
     Some(path)
 }
 
-/// Paint `widget` into a PNG. Called once the first frame is ready.
-///
-/// A cairo surface, not `gsk::Renderer::render_texture`: that one needs a realized
-/// renderer, i.e. a native surface, and the headless run has none to offer. Any widget will do —
-/// the confirm dialog's screen paints the dialog, not the window behind it.
-/// §1 fixes every shell screenshot at the window's minimum size, so the PNG is written at that size even
-/// where the headless window's own allocation came out a little under it (under xvfb the allocated box is
-/// 1230×890 for a window whose floor is 1240×900). `write_png` asks the widget for its size; this is what
-/// it asks instead. Zero means "the widget's own size", which is what a dialog's shot wants.
+/// The size a shot is taken at when one was asked for, as two packed numbers. §1 fixes every shell screenshot
+/// at the window's minimum size, even where the headless allocation came out a little under it (xvfb: 1230×890
+/// for a floor of 1240×900). Zero means "the widget's own size", which a dialog's shot wants.
 static SHOT_SIZE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
 /// Ask for the shot at `width`×`height` pixels (0×0 restores "whatever the widget was allocated").
 pub fn set_shot_size(width: i32, height: i32) {
-    // One slot is enough: a snapshot run renders exactly one screen, and the two numbers are packed so a
-    // single atomic carries both. The shift happens on u32: a heading row is 700 px wide, and `700 << 16`
-    // overflows i32, which would pack a negative value and make every wide sidecar come out 1x1.
+    // One slot is enough (one screen per run); the numbers are packed in one atomic. The shift happens on u32:
+    // `700 << 16` overflows i32 and would make every wide sidecar come out 1x1.
     SHOT_SIZE.store(
         (i64::from(u32::try_from(width).unwrap_or(0)) << 16)
             | i64::from(u32::try_from(height).unwrap_or(0)),
@@ -213,9 +191,8 @@ pub fn set_shot_size(width: i32, height: i32) {
     );
 }
 
-/// The ask [`set_shot_size`] recorded, as two numbers: `(0, 0)` when nothing was asked and a shot therefore
-/// takes its widget's own box. Read by [`crate::snapshot_band`]'s report so the printed line says both the
-// size the shot was taken at and the size the window had.
+/// The ask [`set_shot_size`] recorded, as `(0, 0)` when nothing was asked. Read by [`crate::snapshot_band`]'s
+/// report so the printed line says both the size the shot was taken at and the window's.
 pub(crate) fn asked_shot_wh() -> (i32, i32) {
     let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
     ((packed >> 16) as i32, (packed & 0xffff) as i32)
@@ -234,10 +211,10 @@ fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
     )
 }
 
-/// Draw one widget into an ARGB surface at `width`x`height` (the same route `snapshot_face::write_png`
-/// takes, kept there because the two surfaces have to be composited before anything reaches disk).
-/// A widget's top-left inside its window, as whole pixels — the offset a crop of the window's render node needs.
-/// `compute_bounds` answers in the window's own coordinates, which is exactly the frame the surface is drawn in.
+/// Draw one widget into an ARGB surface at `width`x`height` (as `snapshot_face::write_png` does; the two
+/// surfaces have to be composited before anything reaches disk).
+/// A widget's top-left inside its window, as whole pixels: the offset a crop of the window's render node needs.
+/// `compute_bounds` answers in the window's own coordinates, which is the frame the surface is drawn in.
 pub fn widget_offset(
     window: &adw::ApplicationWindow,
     widget: &gtk::Widget,
@@ -264,11 +241,9 @@ pub(crate) fn render_surface(
     Ok(surface)
 }
 
-/// The pixel size of a PNG on disk, read from its own IHDR (bytes 16..24, big-endian width then height). §2's
-/// shot checks ask "is this file the window's shape or the menu's?" — a question about the ARTIFACT, so it is
-/// answered off the file rather than off whatever size was last asked for (`spec/00-principles` §5). One helper
-/// for every such check, so no test re-implements the header layout differently. The program calls it too:
-/// `snapshot_lane::write_png` ends its log sentence with the size the file actually has.
+/// The pixel size of a PNG on disk, read from its own IHDR (bytes 16..24, big-endian width then height).
+/// Answered off the file, not the last size asked (`spec/00-principles` §5); `snapshot_lane::write_png`
+/// ends its log sentence with it.
 pub fn png_size(path: &Path) -> (i32, i32) {
     let bytes = std::fs::read(path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
     assert!(
@@ -299,8 +274,7 @@ pub(crate) fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> 
         .map_err(|err| err.to_string())?;
     {
         let cr = cairo::Context::new(&surface).map_err(|err| err.to_string())?;
-        // gsk_render_node_draw is the one call that paints a render node onto an
-        // arbitrary cairo context; no realized renderer needed.
+        // gsk_render_node_draw is the one call that paints a render node onto an arbitrary cairo context; no realized renderer needed.
         unsafe { gsk::ffi::gsk_render_node_draw(node.as_ref().to_glib_none().0, cr.to_raw_none()) };
     }
     let mut file = std::fs::File::create(out).map_err(|err| err.to_string())?;

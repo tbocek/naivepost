@@ -1,16 +1,4 @@
 //! Voice separation on the run path: the walk's row that asks audio.cpp to split a recording.
-//!
-//! [`crate::separate`] holds the split's rules and takes a `join` closure "the real ▶ hands over";
-//! §02-services.md §1 lists voice separation as one of the five things audio.cpp serves, and until
-//! this module nothing did hand it over — `separate::separate` had no caller outside its tests. So
-//! this is the ▶ half, on the same two pieces the speech row
-//! already uses: [`stage`] turns the rows that ticked ✂ into planned tasks, and [`run_task`] is what
-//! [`crate::run_stages`] calls when it walks one, which does the real upload, the real
-//! `POST /v1/tasks/run`, and the real download of the two stems that come back.
-//!
-//! Nothing is answered here: every byte crosses through [`crate::audio_task`] and
-//! [`crate::server_leg`], so pointing the Settings box at another address moves this work exactly as it
-//! moves the transcription's.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -32,10 +20,6 @@ use crate::settings::Paths;
 pub const SEPARATE_MARK: &str = "separate";
 
 /// The separation stage: one row per recording whose ✂ is ticked and still has a voice to split off.
-///
-/// It rides [`crate::runqueue::TRACK_STT`] because it is the same recording's audio work, and it is a
-/// dial (`program: AUDIO_TASK`), not a spawn. A row whose scissors are dead is left out here for the
-/// same reason the ✂ is greyed on the page: asking would produce a voice split off a voice.
 pub fn stage(project: &Project) -> Stage {
     let tasks = project
         .sources
@@ -73,15 +57,7 @@ pub fn stage(project: &Project) -> Stage {
 }
 
 /// The row [`run_stages::drive_walk`] hands here: split one recording and say what came out.
-///
-/// The session's own `naivepost.json` is what is split — the walk's `project` argument belongs to the
-/// page that was pressed, and the row index refers to the file the split will rewrite. F1.2 says the
-/// "project saved" belongs to the caller of `separate`, so the two rows this turns into are saved here
-/// once, after both halves are on disk, and never half-way.
 pub fn run_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
-    // The machine's settings folder, always from the environment. The session is the working folder's
-    // own: `startup::session_dir(cwd)`, which is where a run's session sits for the app as it is walked
-    // today (the transcription dial resolves it the same way).
     let paths = crate::settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
     let session = crate::startup::open_dir();
@@ -112,24 +88,16 @@ pub fn run_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     for line in &outcome.logs {
         log(line);
     }
-    // S7 landed: the row became two, and that is only true once the file says so.
     crate::project::save(&project, tree.dir())
 }
 
 /// Ask for the split, through the doors, and hand back what [`crate::separate`] decided.
-/// The split's fixed surroundings, so [`split`] takes what it works ON rather than eight arguments.
 struct SplitWhere<'a> {
     paths: &'a Paths,
     model: &'a str,
     configured_ffmpeg: &'a str,
 }
 
-/// S1-S7 for one row, sequenced. Flat and guard-clause first, because six legs fail for six different
-/// reasons and each error has to say which one it was: decode (S1), measure the quiet stretches (S2),
-/// cut at them and ask the model per piece (S3), join each half and mux the rest with the picture
-/// (S4/S5), report the loudness of both (S6) and turn the row into two (S7). The ffmpeg legs are
-/// [`crate::separate_media`], the wire legs [`crate::audio_task`], the decisions [`crate::separate`];
-/// this function only sequences them.
 fn split(
     project: &mut Project,
     tree: &Tree,
@@ -167,12 +135,10 @@ fn split(
         return Ok(done);
     }
     media::clear_work(&work)?;
-    // S1 once, then every piece is cut from THAT decode rather than re-decoded from the source.
     let decoded = media::decode(&ffmpeg, &source, &media::decoded_file(&work, &lane), log)?;
     let seconds = probe_duration(where_.configured_ffmpeg, &decoded, log, &|program, args| {
         crate::subprocess::run(program, args, |_| {})
     })?;
-    // S2: where the recording is quiet long enough to cut in, at the same threshold the ASR cuts on.
     let silences = media::silences(&ffmpeg, &decoded)?;
     let plan = separate::chunk_plan(seconds, &silences);
     let logs = split_parts(
@@ -189,8 +155,6 @@ fn split(
         &rest_path,
         log,
     )?;
-    // S6 wants the mix as it was recorded, which is the decode itself: same tool, same filter, so the
-    // three numbers in the line are comparable.
     let mix = loudness(where_.configured_ffmpeg, &decoded, log);
     let outcome = separate::finish(project, tree, tree.dir(), index, &logs, &mix, |path| {
         loudness(where_.configured_ffmpeg, path, log)
@@ -202,12 +166,6 @@ fn split(
 }
 
 /// S3/S4: every chunk up to the model, every stem down, both halves assembled in place.
-///
-/// One request per chunk because that is what the ceiling is for ([`separate::CHUNK_MAX_SECONDS`]): a
-/// stems task answers for the audio it was given, so a long take has to be cut, asked piece by piece,
-/// and joined back. Chunks go up in order and their replies are kept in order, which is the only thing
-/// that makes the join produce the recording rather than a shuffle of it. Returns the lines the caller
-/// logs; the halves are on disk by then.
 #[allow(clippy::too_many_arguments)]
 fn split_parts(
     ffmpeg: &str,
@@ -252,14 +210,10 @@ fn split_parts(
         let parsed: serde_json::Value = serde_json::from_str(&reply)
             .map_err(|why| format!("the stems answer is not JSON: {why}"))?;
         let stems = crate::audio_task::chunk_stems(&parsed)?;
-        // Which stem holds the speech is decided by the rule that owns the question, not by position:
-        // a RoFormer answers `vocals`+`instrumental`, an HTDemucs four instruments.
         let ids = stem_names(&parsed, &stems);
         separate::pick_stems(&ids)?;
         voices.push(match stems.voice {
             Some(which) => Half::One(stems.voices[which].clone()),
-            // A silent chunk has no voice file, but it still occupies its place in the join or the
-            // voice half comes back shifted by however many gaps the recording has.
             None => Half::Parts(vec![]),
         });
         rests.push(match stems.rests.len() {
@@ -324,8 +278,6 @@ fn stem_names(parsed: &serde_json::Value, stems: &crate::audio_task::ChunkStems)
     } else if let Some(map) = reply.as_object() {
         names = map.keys().cloned().collect();
     }
-    // A reply that named nothing still has to satisfy the rule, and the shape it arrived in says which
-    // two roles it meant.
     if names.is_empty() {
         if stems.voice.is_some() {
             names.push("vocals".to_string());
@@ -337,10 +289,6 @@ fn stem_names(parsed: &serde_json::Value, stems: &crate::audio_task::ChunkStems)
     names
 }
 
-/// S4: bring every stem down and assemble both halves. Each downloaded stem is written into the work
-/// dir under a name that sorts in join order, so assembling a half is one concat of a sorted listing
-/// and nothing is copied twice. Several stems for one chunk's rest are mixed PER CHUNK first, because
-/// mixing everything at once would sum across chunks as well as across stems.
 #[allow(clippy::too_many_arguments)]
 fn fetch_halves(
     ffmpeg: &str,
@@ -367,8 +315,6 @@ fn fetch_halves(
     )?;
     let rest_parts = sorted_parts(&work.join("r"));
     if rest_parts.is_empty() {
-        // An all-voice recording legitimately has no rest, and an empty file is a worse answer than a
-        // silent one: write nothing and let the loudness pass say what it finds.
         return Ok(());
     }
     if rest_path
@@ -390,7 +336,6 @@ fn fetch_halves(
 }
 
 /// The rest's pieces joined into one audio file in the work dir, ready to be muxed with the picture.
-/// Skipped when there is only one piece, which is the usual case (one chunk, or a video of minutes).
 fn rest_joined(
     ffmpeg: &str,
     work: &Path,
@@ -458,20 +403,11 @@ fn sorted_parts(folder: &Path) -> Vec<PathBuf> {
 }
 
 /// Bring one stem down off the server and write it where the split wants it.
-///
-/// audio.cpp answers a stems task with a path inside its own container (§1: every task works in the
-/// server's folders). How those bytes come back is not in §1's table, so this is a decision written
-/// down: the server answers a plain GET of the path it just named (the same address an upload was
-/// posted to), which is the one read that needs no invented endpoint. A refusal or a miss fails the
-/// row — a half that was never downloaded is not a half.
 fn fetch_stem(tree: &Tree, paths: &Paths, stem: &ServerPath, out: &Path) -> Result<(), String> {
     let endpoint = services::endpoint_for(paths, Server::Audio, |name| std::env::var(name).ok());
     let url = format!("{}{}", endpoint.url.trim_end_matches('/'), stem.as_str());
     // Same shape as `server_leg::send_pinged`: config first, then the headers on the request itself,
     // and no overall timeout because this is an audio read (§1).
-    // Same shape as `server_leg::send_pinged`: the config is BUILT first, and the headers go on the
-    // request that comes out of it (`config()` hands back a builder that has no `.header()`).
-    // `http_status_as_error(false)` so a 404 arrives as a status we read and report, not as a lost body.
     let mut request = ureq::get(&url)
         .force_send_body()
         .config()
@@ -529,9 +465,6 @@ fn fetch_stem(tree: &Tree, paths: &Paths, stem: &ServerPath, out: &Path) -> Resu
     Ok(())
 }
 
-/// The timed row for one stem read (§09 §10: every request, appended the moment it ends, whatever its
-/// outcome). A GET sends no bytes, so only `received` is filled; the `job` column already names the
-/// stem the base row was built with.
 fn record_stem_row(
     tree: &Tree,
     base: &crate::requests::Request,
@@ -556,17 +489,6 @@ fn record_stem_row(
 
 /// Seconds of an audio file, by ffprobe — the tool §1 names for reading, from the same folder as the
 /// configured ffmpeg ([`services::ffprobe_for`]'s rule).
-///
-/// §8's duration-probing rule lives here: a recorder killed mid-write leaves a container whose header
-/// carries no length (it is written when the file is closed), so a header that answers nothing pays for
-/// one decode pass — ffprobe over the stream entries reads the whole stream and counts it. The answer
-/// is remembered per path + size + mtime (`probes::Cache`): a re-recorded or truncated file misses,
-/// and the same file never pays for the decode twice in one run.
-///
-/// `run` is the leg that starts ffprobe, supplied by the caller for the same reason `source_probe`
-/// takes its own: the rule (header, else decode, cached) must be testable without a real ffprobe.
-/// The leg that starts one ffprobe: (program, args) -> stdout. Named because the type is worth
-/// reading once (`source_probe::run_ffprobe` matches it), and so a test can hand in an answer.
 pub type RunTool = dyn Fn(&str, &[&str]) -> Result<String, String>;
 
 pub fn probe_duration(
@@ -579,7 +501,6 @@ pub fn probe_duration(
     // §8's subprocess rule); this rule adds no line of its own while the probe runs.
     let _ = log;
     let shown = path.display().to_string();
-    // The key needs real metadata; a file we cannot stat gets measured uncached rather than skipped.
     let stamp = std::fs::metadata(path).ok().map(|meta| {
         let mtime = meta
             .modified()
@@ -606,7 +527,6 @@ pub fn probe_duration(
     .ok()
     .and_then(|answer| answer.trim().parse::<f64>().ok())
     .filter(|secs| *secs > 0.0);
-    // Only a header that said nothing pays for the read of every frame.
     let decoded = match header {
         Some(_) => None,
         None => run(
@@ -635,8 +555,6 @@ pub fn probe_duration(
     if let Some(key) = stamp {
         durations().store(key, secs);
     }
-    // One line when a decode was paid for: "why did this take so long" has an answer in the log then,
-    // and nothing is printed when the header answered as it always does.
     if matches!(how, probes::Source::Decoded) {
         log(&format!(
             ">>> {shown} has no header duration; measured by decoding"
@@ -645,9 +563,6 @@ pub fn probe_duration(
     Ok(secs)
 }
 
-/// This run's measured durations (§8: "cached per path+size+mtime like every probe"). Process-wide
-/// because a split runs on whichever thread the queue put it on, and a second measurement of the same
-/// bytes would cost a second decode there.
 fn durations() -> std::sync::MutexGuard<'static, probes::Cache> {
     static CACHE: std::sync::OnceLock<std::sync::Mutex<probes::Cache>> = std::sync::OnceLock::new();
     match CACHE
@@ -659,9 +574,6 @@ fn durations() -> std::sync::MutexGuard<'static, probes::Cache> {
     }
 }
 
-/// ffmpeg's `volumedetect` mean of a file, as [`crate::separate`] wants it: the number as ffmpeg
-/// printed it, or the sentence that says it could not be measured (S6 treats an unmeasurable level as
-/// nothing to say, never as silence).
 fn loudness(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) -> String {
     let ffmpeg = if configured_ffmpeg.trim().is_empty() {
         run_stages::FFMPEG.to_string()

@@ -1,16 +1,5 @@
 //! The left-hand frame controls and the two readouts of the Prepare page
 //! (§04-prepare#1-screen).
-//!
-//! There is no Freq control any more: frames come out on the fixed `P.eng.frameGridSeconds` grid (F1.6), the
-//! text gate (F1.6 S6) decides where the screen's text changed, and describe (F1.7) sends each change's first
-//! frame and one every heartbeat between. The prototype's Freq set both what was extracted and what the model
-//! saw; a 1 s Freq sent a slide that stayed up three minutes about 180 times.
-//!
-//! There is no Style control and no frame-size control in this rewrite. What the
-//! prototype's Style dropdown chose is carried by `P.policy.markingPass` and
-//! `P.policy.cutMode` (`Project::policy`, defaulting to retakes/model) and derived from
-//! the User Context (F0.7); frames are stored at the video's own size and scaled to
-//! `P.machine.describeFrameWidth` only on their way to the model.
 
 use std::fs;
 use std::time::SystemTime;
@@ -23,7 +12,6 @@ use crate::{
 };
 
 /// The step the cut-stage asks and the upload's pictures name frames at: one a second, on the extraction grid.
-/// Fixed: Freq, which once set it, is gone (the text gate decides what describe sees).
 pub const MODEL_FRAME_STEP: f64 = 1.0;
 
 /// The extraction grid, `P.eng.frameGridSeconds`.
@@ -53,9 +41,6 @@ pub const NO_INPUTS_TIP: &str = "(no sources)";
 /// and one that ran and wrote nothing are different facts, and this is the first of them.
 pub const NO_OUTPUTS: &str = "nothing yet";
 
-/// How long ago a minute count is, in the fewest words that still date it (§04-prepare#6's
-/// `"newest <ago>"`). The ladder stops counting minutes at an hour and hours at a day
-/// because past those the question is which day, not how many.
 pub fn ago(minutes: u64) -> String {
     if minutes < 1 {
         return "just now".to_string();
@@ -72,13 +57,6 @@ pub fn ago(minutes: u64) -> String {
     format!("{} days ago", minutes / (24 * 60))
 }
 
-/// One of the three Outputs readings: how many files and how big, with when the newest was
-/// written on hover. The age is a tooltip because three of these sit side by side along the
-/// bottom of the page — three full sentences would be a paragraph across it (§04-prepare#6).
-///
-/// `newest_minutes` is what the caller's walk actually measured; `None` keeps the tooltip
-/// empty rather than inventing an age, since "newest just now" about a folder nobody timed
-/// is a fact the app does not have.
 pub fn outputs_readout(count: usize, bytes: u64, newest_minutes: Option<u64>) -> (String, String) {
     if count == 0 {
         return (NO_OUTPUTS.to_string(), String::new());
@@ -92,7 +70,6 @@ pub fn outputs_readout(count: usize, bytes: u64, newest_minutes: Option<u64>) ->
     (label, tooltip)
 }
 
-/// What Prepare has read so far, counted over the whole session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Counts {
     pub frames: usize,
@@ -107,9 +84,6 @@ impl Counts {
     }
 }
 
-/// How many vision requests `frames` frames take: [`roles::vision_batches`], four a
-/// call (`P.machine.describeFramesPerReq`). Named here so the readout says which
-/// parameter it is counting against.
 pub fn vision_calls(frames: usize) -> usize {
     roles::vision_batches(frames)
 }
@@ -132,10 +106,6 @@ pub fn inputs_readout(counts: &Counts) -> String {
     )
 }
 
-/// Count what is on disk for this session: frames out of each footage source (only
-/// footage has frames — a recording that is only listened to gets none), and the lines
-/// of each transcript. A missing file counts as nothing rather than as an error: this
-/// row is read before a run has happened, when nothing is there yet.
 pub fn count(tree: &Tree, project: &Project) -> Counts {
     let mut counts = Counts::default();
     for source in &project.sources {
@@ -148,9 +118,6 @@ pub fn count(tree: &Tree, project: &Project) -> Counts {
     counts
 }
 
-/// The per-file tooltip: one line per source, in the project's own order, each with its
-/// file name. A source with nothing counted still gets its line, so "the run has not
-/// started" is visible per file rather than only as a zero total.
 pub fn inputs_tip(tree: &Tree, project: &Project) -> String {
     project
         .sources
@@ -170,23 +137,10 @@ pub fn inputs_tip(tree: &Tree, project: &Project) -> String {
         .join("\n")
 }
 
-/// The Outputs count: what `prepare/` holds. §1 asks for one number beside the folder
-/// button, and counting the page's own folder is the one figure that cannot lie about a
-/// run that has not happened.
-///
-/// Kept as its own walk because §1's "Prepare:" + count row (and every test that reads it) counts
-/// files; [`outputs_size`] walks the same tree for bytes and stamps, and the two must agree.
 pub fn outputs_count(tree: &Tree) -> usize {
     count_files(&tree.prepare_dir())
 }
 
-/// The Outputs size pair §6 asks for: the bytes `prepare/` holds and how many minutes ago its newest
-/// file was written. Walks the same folder as [`outputs_count`] so the two figures cannot disagree — a
-/// readout that counted ten files and sized nine would be worse than no readout.
-///
-/// `None` for the age when nothing is there or its stamp could not be read: "newest just now" about a
-/// folder nobody timed is a fact the app does not have, and [`outputs_readout`] leaves the tooltip empty
-/// rather than inventing one.
 pub fn outputs_size(tree: &Tree) -> (u64, Option<u64>) {
     let (bytes, newest) = walk_size(&tree.prepare_dir());
     let minutes = newest.map(|stamp| {

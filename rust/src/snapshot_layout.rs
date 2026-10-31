@@ -1,35 +1,17 @@
-//! One rule for where a Cut-page snapshot puts its top/bottom divider, so `snapshot::run` asks it instead of
-//! holding the arithmetic, and §05-cut#1's picture can be compared with `spec/img/05-cut.png` at all.
-//!
-//! §03-shell.md §1 says "Above the minimum the layout grows with the window … splits keep their proportions",
-//! and §A's opening for the Cut page's vertical paned is `paned 660/380` — in the spec's own 772 px-tall
-//! window the upper pane is roughly half the page band. Headless nothing drags that handle, so a snapshot gets
-//! whatever GTK's allocation gives: after §1's growth change the preview pane took the whole band and the ruler,
-//! toolbar and tracks fell below the window's bottom edge, which is a shot of the wrong page. This puts the
-//! split back at the ratio the picture draws, and only for a shot: a live window is the user's to drag.
+//! Where a Cut-page snapshot puts its top/bottom divider, so `snapshot::run` holds no arithmetic and §05-cut#1 can be compared with `spec/img/05-cut.png`.
+//! Headless nothing drags the handle and GTK's allocation gives the preview the whole band, so this restores §A's `paned 660/380` for a shot only.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
-/// Rest BOTH of the Cut page's dividers the moment this window has a real size — the same door a person's
-/// drag fires, and the reason a headless shot can show §A's `paned 660/380` at all.
-///
-/// A `gtk::Paned` clamps every `set_position` into `[start minimum, total - end minimum]`, and headless the
-/// two are read before the window is allocated, so both asks land on their clamp (measured: a 5 px tall
-/// `cut-page-split` and a 65 px page scroller — every control below the divider built and unpainted). The
-/// shell's own divider solved this by re-asking `rest_split` at its first real allocation
-/// (`window_divider::install`); `install` also runs for these two, but a `notify::height` callback never
-/// fires for a widget that is allocated exactly once, which is what a headless window does. So the shot asks
-/// both rules from a drain that runs AFTER the window took §1's size. No sleep, no guessed wait: the drain
-/// only runs the loop that is already pending.
+/// Rest BOTH Cut-page dividers once the window has a real size, as a drag would.
+/// A `gtk::Paned` clamps `set_position` into its minimums and headless those are read before allocation; `notify::height` never fires for a widget allocated once, so the shot asks from a drain that runs AFTER the window took §1's size.
 pub fn rest_page_splits(window: &adw::ApplicationWindow) {
-    // The shell's page/band split first: it is what decides how much room the page has at all.
     if let Some(divider) = crate::ui::find_source_widget(window, "main-divider")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
     {
         crate::ui::window_divider::rest_split(&divider);
     }
-    // …then the Cut page's top/bottom divider, at §A's opening clamped into the room the page really has.
     let Some(vsplit) = crate::ui::find_source_widget(window, "cut-page-split")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
     else {
@@ -40,7 +22,6 @@ pub fn rest_page_splits(window: &adw::ApplicationWindow) {
             .height()
             .max(crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX),
     );
-    // …and the left/right divider, at §A's 660 px of preview, once its own pane has a width to be clamped by.
     if let Some(hsplit) = crate::ui::find_source_widget(window, "cut-top")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
     {
@@ -50,10 +31,7 @@ pub fn rest_page_splits(window: &adw::ApplicationWindow) {
     report_form_column(window);
 }
 
-/// Print what the Cut page's form column was ALLOCATED at the size the shot is taken at, one line: §1's
-/// first idle reading is 'Aspect ratio:' (badge **3**), and when a render opens on another reading instead,
-/// these are the numbers that say why (a viewport shorter than its body, a row whose y sits above the
-/// viewport's own top edge). Same shape as the badge-31 report in `snapshot::run`.
+/// Print what the Cut page form column was ALLOCATED at the shot size, to explain why a render opens on another reading than §1's 'Aspect ratio:' (badge **3**).
 pub fn report_form_column(window: &adw::ApplicationWindow) {
     let Some(scroller) = crate::ui::find_source_widget(window, "cut-form-scroller")
         .and_then(|w| w.downcast::<gtk::ScrolledWindow>().ok())
@@ -80,20 +58,7 @@ pub fn report_form_column(window: &adw::ApplicationWindow) {
     );
 }
 
-/// Ask §A's split of the Cut page's own divider, the same door a person's drag fires, and hand back the line
-/// `snapshot::run` prints about it (`None` when there is nothing to say: no page scroller to measure, or a pane
-/// already at or under the ratio so GTK's allocation stands).
-///
-/// The upper pane opened at §A's [`crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX`] and took the whole leftover,
-/// so the tape under it — ruler, toolbar, tracks, strip and camera rows, which is what §A's picture is about —
-/// fell past the window's bottom edge. `top_h` is the height the layout actually gave that pane.
-/// Put the Cut page's transport into the state §1's picture draws it in, through the page's own buttons.
-///
-/// §1's badges **5**-**9** (▶ recording, ▶✂ cut, ▶✂✂ review, frame steps, preview volume) are greyed until a
-/// preview is playing, so the reference shows them inked. A snapshot presses no keys, so this fires the same
-/// doors `03-runbar-busy` fires — seed a cut, stand the red line inside the first clip, press the page's own ▶
-/// — and then hands the transport back with the run bar's ⏹ door, so the shot is the page at rest with its
-/// transport live rather than a running preview whose frame would depend on wall-clock time.
+/// Put the Cut page transport in the state §1 draws it (badges **5**-**9** are greyed until a preview plays): seed a cut, stand the red line in the first clip, press ▶, then hand back with the run bar's ⏹ so the frame does not depend on wall-clock time.
 pub fn stage_cut_transport(window: &adw::ApplicationWindow) {
     use crate::{cut, cut_line, ui};
     ui::seed_review_cut(

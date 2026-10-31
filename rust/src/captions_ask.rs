@@ -1,23 +1,4 @@
 //! F3.9 S1–S6's live half: the captions ask itself.
-//!
-//! [`crate::cut_captions`] owns every rule that settles with no server — the batch ranges, the
-//! message layout, membership, the floor, the fades and the skip sentence. What it never did was
-//! *telephone*: `ask_captions` in the shell returned an empty list, so pressing ✐ Captions placed
-//! nothing and the pass reported its own emptiness as if that were the answer. This module is that
-//! leg. It builds the two messages §F3.9 spells, dials the LLM over HTTP through
-//! [`crate::llm_retry_leg`] (so each ask writes its timed `requests.tsv` row and rides §3's patience), reads the CAPTIONS
-//! reply back into [`cut_captions::Call`]s, and hands those to `cut_captions::place`, which lets
-//! §3.7's `add_caption` tool — not a copy of it — decide what may land.
-//!
-//! The seam a test drives this through is the settings address: point `LLM_SERVER` at a local fake
-//! and the very same endpoint resolution a typed address goes through reaches it. Nothing here takes
-//! a canned reply, and a server that is down answers `Err` naming it (§00-principles: failure is
-//! specific and local).
-//!
-//! Modelled on [`crate::join_ask`], deliberately: two jobs, one shape for "build the messages,
-//! honour the cache, dial, read the reply", so a fix to that shape lands in both. Where they differ
-//! is spelled out below rather than papered over — captions ask with tools offered, joins ask with
-//! none; a caption answer is a JSON document, a join answer is words.
 
 use crate::cut_captions::{self, Call};
 use crate::exchanges::{self, Message, Part};
@@ -58,10 +39,6 @@ fn current_paths() -> Option<Paths> {
 }
 
 /// One batch's live ask: build the two messages, honour the cache, dial, read the reply.
-///
-/// `attempt` selects the cache slot ([`ask_slot`]) so a retry cannot be served by the reply that
-/// was just refused — the same reason F1.10's retries needed a slot. Settings are read HERE, per
-/// call, so an address changed while a run is going is honoured by the next batch (§02-services#1).
 #[allow(clippy::too_many_arguments)]
 pub fn ask(
     tree: &Tree,
@@ -121,13 +98,6 @@ pub fn ask_at(
     // Only what this pass answers: `add_caption` for the work and `finish` as its own signal (§2 S3's end). The
     // SAME list goes into the request body and into the loop, so the model is never handed a tool whose result
     // this ask cannot place (speeds and decorations are their own passes).
-    //
-    // §3 does say every job names its read tools as well as its write tools, and `get_frames` is §3.7's read for
-    // this job. It stays out ON PURPOSE: this pass makes ONE request (§F3.9 counts a batch by the rows it writes
-    // in `requests.tsv`), so a model that called a read would spend a round this step has no budget for and the
-    // batch would be charged twice. The asks that CAN place a read are the speed and decoration passes, and those
-    // run the loop (`clip_rules_tools_leg::run_over_batch`) over the full `tools::offered(Job::ClipRules)` list,
-    // `get_frames` included.
     let offered: Vec<Tool> = crate::tools::offered(Job::ClipRules)
         .into_iter()
         .filter(|tool| matches!(tool, Tool::AddCaption | Tool::Finish))
@@ -225,8 +195,6 @@ pub fn ask_at(
         };
         // That retry was a request too, and §09 §10 wants every request on the record: this ask cannot route it
         // through `llm_retry_leg::chat` itself (the repair leg owns the dial), so the row is written here.
-        // One line for one request -- `llm_retry_leg::chat` files its own rows only for what it dials, so
-        // nothing is counted twice.
         crate::clip_rules_tools_leg::record_repair_row(tree, base_row(&model), went_out);
         // The retry answered by calling: its `add_caption` calls ARE the answer.
         let calls: Vec<Call> = second
@@ -249,10 +217,6 @@ pub fn ask_at(
             reason: String::new(),
         };
     }
-    // §2's loop from here: the clip batch is the state the tools write into, so a model that asks `get_frames`
-    // gets frames and a caption call lands in the same batch the prose document would have filled. The grown
-    // conversation rides on every later round (§2 S2), each with its own timed row -- rounds only happen because
-    // the model asked, so a plain answer still costs the one request above.
     let mut batch = crate::clip_rules_tools_leg::batch_of(clips);
     // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
     // grid, and a default 1 s spread would name pictures this session never extracted.
@@ -326,8 +290,6 @@ pub fn ask_at(
     // §7's live half for a tool flow: ONE section per request this ask made, each showing what the model was shown,
     // what it asked for, and what each tool answered. `call_of` could not do this — it reads a reply's calls blind
     // to their answers — so the loop files its own rounds, already answered by the one door that ran them.
-    // The FIRST round is skipped: that request was filed by `llm_retry_leg::chat` as it went out, and filing it a
-    // second time would print the same exchange twice.
     if !looped.rounds.is_empty() {
         for round in looped.rounds.iter().skip(1) {
             if round.turn.calls.is_empty() {
@@ -346,8 +308,6 @@ pub fn ask_at(
     }
     // The answer is the call list. Prose beside it is the model talking, not asking: a round with calls is not an
     // answer (§2), and an empty list after the rounds simply means the model asked for nothing.
-    // The caption a TOOL answer put in its `content` is not the answer either -- the calls are the only thing
-    // `read_back` reads back, and caching that envelope is what makes a re-run cost no socket (§6).
     if asks_for_anything(&reply) {
         llm_cache::store(tree, STEP, &parts, &chat_envelope(&reply).to_string());
     }
@@ -372,10 +332,6 @@ fn page_round(
 /// The batch's word lines as clip-relative offsets: each word whose session second falls inside kept
 /// run `k` becomes `(k, second - run_start, word)`, with `k` counted from 1 because that is how the
 /// message numbers its clips.
-///
-/// This is what keeps the model out of session seconds entirely (§00-principles: models propose, the
-/// machine places). A word outside every kept run is dropped rather than sent unlabelled — it is not
-/// in the video, so there is no clip to caption it under.
 pub fn offsets_in_clips(
     runs: &[(f64, f64)],
     words: &[String],
@@ -401,10 +357,6 @@ fn clip_holding(runs: &[(f64, f64)], t: f64) -> Option<(u32, f64)> {
         .map(|(index, (start, _))| (index as u32 + 1, *start))
 }
 
-/// SYSTEM for a captions call: the house rules cut to this job's section, the shipped captions
-/// wording, and the precedence rule only when there is a User Context to outrank anything
-/// (§09 §8 puts it last). Same assembly the joins ask uses, with `captions_only` off — that flag
-/// belongs to the narrate job, not this one.
 fn captions_system(context: &str) -> String {
     let paths = current_paths();
     crate::prompt_assembly::system_message(
@@ -557,19 +509,6 @@ fn chat_envelope(reply: &llm_request::Reply) -> serde_json::Value {
     crate::clip_rules_tools_leg::answering_envelope(reply)
 }
 
-/// Read the CAPTIONS document the prompt specifies into the calls this pass places:
-/// `{"clips":[{"i":<n>,"fx":[{"start":..,"end":..,"text":".."}]}]}` (`spec/prompts/system.md`'s
-/// `captions` row). Array order is kept, because a caption's order in its clip is information the
-/// cut reads later and re-sorting it here would lose which line came first.
-///
-/// `"clips":[]}` is an empty list and a whole answer, and so is a document naming no clip at all (§F3.9's
-/// prompt calls an empty answer complete). Anything whose `fx` entry is missing a number or the text is an
-/// error naming what was wrong: a reply we cannot read is not the same thing as a reply that asked for nothing.
-///
-/// NOT the live answer shape any more: §3's answer on this item says a reply that carries a JSON document
-/// instead of calling `add_caption` is unreadable, so the wire path no longer calls this. Two readers still
-/// need it — [`read_back`], because a slot written before that rule holds a document and must still cost
-/// nothing to re-run, and a server that refused the `tools` field, which has no other shape to answer in.
 pub fn parse_captions(answer: &str) -> Result<Vec<Call>, String> {
     let value: serde_json::Value = serde_json::from_str(answer.trim())
         .map_err(|_| "the captions answer is not JSON".to_string())?;

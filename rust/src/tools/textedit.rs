@@ -1,10 +1,4 @@
 //! Text edit — spec/02-services.md §3.5, one join at a time.
-//!
-//! Two takes that should have been one, with the words either side shown so the model can say how
-//! many to drop and from which side. That is all the tool needs from it, and it is the whole point of
-//! the rewrite: the prototype had the model return the joined text and derived the counts by matching
-//! backwards, so a respelled word anywhere in the seam lost the join entirely. Now the count is stated
-//! and the app re-derives the *stretch* only to check it is one stretch at the join.
 
 use crate::prepare_decisions;
 use serde_json::json;
@@ -18,20 +12,10 @@ pub const SEAM_MAX_WORDS: usize = 40;
 /// Most of the words shown that one join may remove. P.machine.seamCeil
 pub const SEAM_CEIL: f64 = 0.6;
 
-/// How far from the join a named stretch may sit and still count as at the join — measured: refusals
-/// went from four to two when this dropped to three. The counting itself is F1.10's round; the number
-/// is §10's and lives here with the rest of the seam family. P.machine.seamSnapWords
 pub const SEAM_SNAP_WORDS: usize = 3;
 
-/// A stretch this short somewhere else in the session is a respelling of the seam rather than a second
-/// copy, so it does not disqualify the join. Also F1.10's to apply; §10's number stated once.
-/// P.machine.seamNoiseWords
 pub const SEAM_NOISE_WORDS: usize = 2;
 
-/// How many kept words either side of a join are compared for a doubled saying. A doubled word or two
-/// is a join's own stumble; a whole sentence twice is a retake, and the retake matcher (F1.9), not
-/// this pass, owns that. §10 files it as `P.eng.joinReachWords` (3; prototype `joinReach`,
-/// go/textedit.go), and `params::prepare()` rows it from this constant.
 pub const JOIN_REACH_WORDS: usize = 3;
 
 /// Which side of the join a stretch is on.
@@ -55,9 +39,6 @@ pub struct Join {
 }
 
 impl Join {
-    /// A join between the end of one take and the start of the next. The two sides are shown capped
-    /// at [`SEAM_REACH_WORDS`] words each — what a model may count from is what it was given, so the
-    /// cap is stored rather than applied per call and the ceilings below read against it.
     pub fn new(before: &[&str], after: &[&str]) -> Join {
         Join {
             before: before.iter().map(|word| word.to_string()).collect(),
@@ -67,8 +48,6 @@ impl Join {
         }
     }
 
-    /// The words shown on this side, capped at [`SEAM_REACH_WORDS`] — nearest the join last for
-    /// `Before` and first for `After`.
     pub fn shown(&self, side: Side) -> &[String] {
         let words = self.all(side);
         let kept = SEAM_REACH_WORDS.min(words.len());
@@ -84,8 +63,6 @@ impl Join {
         self.shown(side).len()
     }
 
-    /// `drop_words(side, count)` — ok carrying the exact words that would go and the sentence left
-    /// reading across the join.
     pub fn drop_words(&mut self, side: Side, count: usize) -> String {
         // "The stretch does not touch the join" is what a count of zero says: no words at all are a
         // stretch away from the seam rather than at it. Refused, because a model that meant
@@ -148,10 +125,6 @@ impl Join {
     }
 
     /// `get_words(side, count)` — more words than the brief's [`SEAM_REACH_WORDS`] on either side.
-    ///
-    /// Not capped by it: the cap is what a model is *shown*, and asking for more is how it checks a
-    /// seam that looked longer than the extract. What comes back is bounded by what exists, so a
-    /// count past the end of the take returns the whole side rather than padding.
     pub fn get_words(&self, side: Side, count: usize) -> Vec<String> {
         let words = self.all(side);
         let kept = count.min(words.len());
@@ -179,8 +152,6 @@ impl Join {
         self.get_words(side, count)
     }
 
-    /// The sentence left reading across the join, which is what the model is really being asked to
-    /// approve.
     pub fn sentence(&self) -> String {
         let before_all = self.all(Side::Before);
         let after_all = self.all(Side::After);
@@ -212,12 +183,6 @@ impl Join {
 }
 
 /// Whether the words named for one side come to exactly one stretch at the join.
-///
-/// The app re-derives this (§3.5) because a count is not a location: two drops on opposite sides are
-/// two stretches and a join in the middle of them, which no amount of trimming fixes. `stretches`
-/// holds, per side, how many separate runs of words were named — more than one run on either side is
-/// not one stretch, and neither is a run that does not start at the seam (a gap before it means the
-/// model skipped words in the middle).
 pub fn one_stretch_at_join(before_runs: &[usize], after_runs: &[usize]) -> bool {
     // One stretch total: exactly one side gives one run, and the other gives none.
     let runs = before_runs.len() + after_runs.len();
@@ -232,12 +197,6 @@ pub fn one_stretch_at_join(before_runs: &[usize], after_runs: &[usize]) -> bool 
 }
 
 /// Whether a dropped stretch sits at the join, and what it says when it does not.
-///
-/// `gap` is how many shown words sit between the stretch and the join, counted from its near end, so an
-/// abutting stretch has none. Within [`SEAM_SNAP_WORDS`] it is still the join: a model that named one
-/// word too few left a word of the attempt behind, and that is a seam to snap over rather than a refusal
-/// (measured: refusals went from four to two once this bound existed). Past it the stretch is somebody
-/// else's sentence, and removing it takes words out of the middle of the video.
 pub fn seam_snap(side: Side, gap: usize) -> Result<(), String> {
     if gap <= SEAM_SNAP_WORDS {
         return Ok(());
@@ -250,38 +209,18 @@ pub fn seam_snap(side: Side, gap: usize) -> Result<(), String> {
     })
 }
 
-/// What the join pass ends with: how many joins were repaired, and how many of those answers came back
-/// from the cache rather than from the model again.
 pub fn joins_repaired_log(repaired: usize, cached: usize) -> String {
     format!(">>> text edit: {repaired} join(s) repaired, {cached} from the cache")
 }
 
-/// The note `dedupeJoins` leaves where the same words were said twice back to back. `seconds` is when the
-/// *later* copy begins — the moment a reader looks it up by — and it is the earlier one that goes, because
-/// what was said last is what the speaker meant to keep.
 pub fn dedupe_note(seconds: f64, text: &str) -> String {
     format!("{seconds}: {text:?} said again straight after the cut -- the earlier one goes")
 }
 
-/// A dedupe note as the JOIN pass speaks it: [`dedupe_note`]'s wording with the join pass's prefix in
-/// front of it, which is the whole line `run_seams` puts in its log (the note already carries its second
-/// and its text). The pass's own lines all begin with that prefix, so "did the joins run at all" is one
-/// grep, and a bare `12.0: "..."` row does not carry it.
 pub fn dedupe_log_head(note: &str) -> String {
     format!("{} {note}", crate::join_ask::JOIN_PREFIX)
 }
 
-/// Drop the kept words before a cut that the kept words after it begin with, up to
-/// [`JOIN_REACH_WORDS`] of them, and name each copy dropped. The LATER saying stays: the match that
-/// decided `kept` cannot see this duplication because the model kept both sides of the repeat, so it
-/// survives as two sayings until this pass notices.
-///
-/// `words`, `times` and `kept` are the same length, one entry per spoken word — the caller's contract,
-/// the same one `hand_edit::marks_from` works under. Mutates `kept`; returns one note per join fixed.
-///
-/// Only the first dropped word of each run starts a join: inside a run there is no kept word on the near
-/// side to have been repeated. A run with nothing kept after it ends the scan, as in the prototype —
-/// past it there is no far side for any further join either.
 pub fn dedupe_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -> Vec<String> {
     let mut notes = Vec::new();
     // From 1: index 0 has nothing before it, so it can never be the head of a doubled saying.

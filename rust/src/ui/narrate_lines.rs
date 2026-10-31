@@ -1,10 +1,4 @@
 //! F4.7's row edits: the time field, ＋ below, and 🗑.
-//!
-//! These three verbs live apart from the page because the page is already the shell of every other
-//! control; what they share is not a widget but the record — each one moves or removes a line and then
-//! has to say what that did to the clip underneath. They reach the page through `narrate_page`'s own
-//! helpers (`read_state`, `mutate`, `refresh`, `say`, `widget_in`) so there is still exactly one copy
-//! of the state, and every rule they apply lives in [`crate::narrate_edit`].
 
 use crate::narrate_details;
 use crate::narrate_edit;
@@ -14,12 +8,8 @@ use crate::ui::narrate_page;
 use adw::prelude::*;
 use gtk4 as gtk;
 
-/// §A.5-1's tooltip for the row's time entry, kept here because this module is the one that reads and
-/// writes that box: the person needs to know a second inside another clip MOVES the line there, while
-/// one outside the cut comes back as a refusal plus the old number written back into the same box.
 pub const TIME_FIELD_TIP: &str = "when this line's audio starts (mm:ss.s on the session clock) \u{2014} after the dash is when it stops speaking. A time inside another clip moves the line there; one outside the cut is refused and the box goes back to where the line really is";
 
-/// How long this line's take runs, when it has one.
 fn take_seconds(
     tree: &crate::layout::Tree,
     entries: &[crate::narration::Entry],
@@ -29,8 +19,7 @@ fn take_seconds(
     crate::voice_ref::wav_seconds(&wav)
 }
 
-/// **18** ＋ a line below this one. Inserts a NEW row under the clicked one — the clicked row's own
-/// second is not moved, which is what "below" means.
+/// **18** ＋ a line below this one.
 pub fn press_line_add_below(window: &adw::ApplicationWindow, index: usize) -> String {
     let s = narrate_page::read_state();
     let Some(entry) = s.entries.get(index) else {
@@ -97,8 +86,7 @@ pub fn press_line_remove(window: &adw::ApplicationWindow, index: usize) -> Strin
     narrate_page::say(window, &said)
 }
 
-/// **14** the row's time field, typed. The widget is read here and the seconds go to
-/// [`narrate_edit::move_line`]; everything about where the line lands is the rule module's.
+/// **14** the row's time field, typed.
 pub fn press_line_move(window: &adw::ApplicationWindow, index: usize, typed: &str) -> String {
     let s = narrate_page::read_state();
     let Some(entry) = s.entries.get(index).cloned() else {
@@ -152,13 +140,7 @@ fn restore_time_field(window: &adw::ApplicationWindow, index: usize, entry: &Ent
 }
 
 /// Write the emptied clip into `narration.json`'s `silent` list through the file's own pair
-/// ([`crate::narration::load`] / [`crate::narration::save`]) — no second format writer. A delete
-/// after a delete must not write the same clip twice, so the already-marked answer decides.
-///
-/// The marker question is asked of the FILE, and the file still held the row being removed until the
-/// flush ran, so this writes the page's rows out first ([`crate::ui::narrate_text::note_structure_change`],
-/// which also marks the write owed) and only then asks whether the clip is empty: asking before would
-/// answer "the clip still speaks" and no marker would ever be written.
+/// ([`crate::narration::load`] / [`crate::narration::save`]) — no second format writer.
 fn record_silence(window: &adw::ApplicationWindow, clip_s: f64, clip_e: f64) {
     let Some(tree) = crate::ui::window::narrate_session_tree() else {
         return;

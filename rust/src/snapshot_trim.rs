@@ -1,23 +1,4 @@
 //! F2.8's own picture — `spec/img/05-trim.png`, "Trimming the end of clip 2".
-//!
-//! The spec's image is one state: two kept clips, and clip 2's RIGHT border dragged inward so a gap opened
-//! where its tail was, with the status row carrying the sentence S1 says a trim prints
-//! ("clip N: a – b (X s)"). Before this module `just snapshot 05-trim` rendered the bare fixture — the name
-//! reached `screen_page` but no staging arm matched it, so it came out byte-identical to every other Cut-page
-//! shot that had no arm of its own.
-//!
-//! Nothing is poked here. The border moves through `cut_trim_press::press_border_move`, which is exactly what
-//! the strip's own left-button drag calls (`src/ui/window_trim_strip.rs`, `connect_drag_update` /
-//! `connect_drag_end`), in the same order the handler uses: `begin_move` at the press, the first write with
-//! `first: true` so the gesture spends its ONE Undo step, later ticks with `false`, then `end_move` +
-//! `end_release` at the release, which is where §7 lets the file be written again. So the picture shows what
-//! a hand dragging a border leaves behind: the clamped edge, the same cut.json, the same status sentence.
-//!
-//! Spec silence, decided here: the shot drags clip 2's END rather than its start, because that is the caption
-//! ("after dragging the end of clip 2 left"), and it stops well clear of both neighbours so the merge branch
-//! does NOT fire — a joined scene would show one wide bar, and the picture is about the gap a trim opens. The
-//! lane from the `05-cut` staging stays in the fixture because §F2.8's strip needs a recorder band AND a wave
-//! strip to have both rows the spec's image draws.
 
 use std::path::Path;
 
@@ -26,8 +7,6 @@ use crate::cut_trim::{self, Border};
 use crate::snapshot_face::seed_snapshot_frame;
 use crate::ui;
 
-/// The session the shot films: one take over the whole tape, which is what gives the trimmed tail somewhere to
-/// reopen into. Same requirement the `05-copy` and F2.7 arms note for their pictures.
 fn tape() -> Vec<crate::timeline::Recording> {
     vec![crate::timeline::Recording {
         base: "session-tape".to_string(),
@@ -36,11 +15,6 @@ fn tape() -> Vec<crate::timeline::Recording> {
     }]
 }
 
-/// The lane's file has to exist on disk for its plate to carry a channel layout — `cut_lanes::channels_of`
-/// asks ffprobe and answers `None` for an absent file, which would leave the recorder row a bare name where
-/// the spec's strip shows a labelled band. A silent mono wav is the smallest thing that really is mono, and it
-/// goes where `layout::resolve` points from the process cwd, which is where the plate looks (the `05-lanes`
-/// arm makes the same call for the same reason).
 fn write_lane_file(_dir: &Path) {
     let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let wav = crate::layout::resolve(
@@ -54,8 +28,6 @@ fn write_lane_file(_dir: &Path) {
     let _ = crate::snapshot::write_silence_wav(&wav, 8000, 8000 * 45);
 }
 
-/// The "before" figure: two clips with a real hole between them, plus the separate recording whose band and
-/// wave strip the spec's strip draws under the bars.
 fn seeded() -> cut::Cut {
     cut::Cut {
         segs: vec![
@@ -83,15 +55,10 @@ fn seeded() -> cut::Cut {
     }
 }
 
-/// Clip 2's end, dragged from 60 s to here. Chosen so the moved border is unmistakable at any zoom the strip
-/// settles on (20 s of travel) while staying 14 s clear of the next clip's start and above the ±1 s floor, so
-/// neither the clamp nor the 0.04 s merge touches the answer the shot is judged by.
 const TRIM_TO: f64 = 46.0;
 /// Which clip, zero-based: index 1 is the "clip 2" of `trim_status`'s 1-based wording.
 const CLIP: usize = 1;
 
-/// Stage the trim onto `window` and hand back the sentences the drag printed, newest last, for the caller's
-/// `snapshot:` line. Called from `snapshot::run` for `05-trim`.
 pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::set_session_recordings(&tape());
     ui::seed_review_cut(window, &seeded());

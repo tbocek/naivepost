@@ -6,8 +6,7 @@
 use crate::ui;
 use adw::prelude::*;
 
-/// Publish the shot's publish state onto `window`, for the project in `dir`. Returns true when this module
-/// owned `screen`.
+/// Publish the shot's publish state onto `window`, for the project in `dir`.
 pub(crate) fn paint(window: &adw::ApplicationWindow, screen: &str, dir: &std::path::Path) -> bool {
     if screen == "08-produce" {
         let mut state = ui::produce_page::read_state();
@@ -22,8 +21,7 @@ no words, no logos."
         state.title = "Ethereum, one lecture at a time".into();
         state.thumb_title = state.title.clone();
         // One marked box, so the shot shows the text-overlay editor's ✎ chip rather than an
-        // empty chip row (§A: "press its ✎ to reword or remove it"). In the lower part of the picture:
-        // the upper part is the title's own box, {0.5, 0.25, 1, 0.4}, and a mark there prints over it.
+        // empty chip row (§A: "press its ✎ to reword or remove it").
         state.texts = vec![crate::project::TextMark {
             cx: 0.5,
             cy: 0.8,
@@ -53,8 +51,6 @@ architecture behind them.
         state.game_volume = 0.22;
         state.crf = 24.0;
         state.blurred_edges = true;
-        // One language ticked, so the Translate row draws its ticks in line instead of sitting empty
-        // beside a bare label (the picture's line 3 shows Subtitles and Translate sharing a line).
         state.translate = vec!["German".into()];
         state.session_language = "English".into();
         ui::produce_page::set_state(state);
@@ -66,18 +62,13 @@ architecture behind them.
         {
             band.set_position(crate::shell::PAGE_BAND_PX);
         }
-        // Enter the Produce TAB the way a person does, and repaint AFTER the switch. `build_window` opens on
-        // the page the shell starts on, and an `AdwViewStack` lays out only its VISIBLE child: measured here,
-        // `produce-right` and `encoder-settings` answered 0 px until the Produce tab was actually clicked,
-        // which is why no staging of this page ever reached a picture. The refresh afterwards is what draws
-        // the shot's slots, boxes and rows into the now-visible columns.
         ui::tab_button(window, crate::shell::Page::Produce)
             .expect("the shell has a Produce tab")
             .emit_clicked();
         crate::snapshot_face::pump_context(16);
         ui::produce_page::refresh(window);
         // §1's **15** is the bottom bar's readout, read off the project the way Open reads it
-        // (`paint_readouts_for`). The shot's project has no narration lines, so it reads "no narration".
+        // (`paint_readouts_for`).
         if let Ok(project) = crate::project::load(dir) {
             ui::window::paint_readouts_for(window, &project, dir);
         }
@@ -88,8 +79,7 @@ architecture behind them.
     false
 }
 
-/// Write one encoder row's default into the page's state, by the row name §A gives it. The page keeps
-/// its settings as spelled strings, so this is the one place that maps a §A row to its field.
+/// Write one encoder row's default into the page's state, by the row name §A gives it.
 fn set_setting_row(state: &mut ui::produce_page::ProduceState, row: &str, value: &str) {
     match row {
         "Container" => state.container = value.to_string(),

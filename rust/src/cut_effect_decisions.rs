@@ -1,26 +1,10 @@
 //! Cut and effects — where each of the eleven behind-the-model behaviours of
 //! `spec/12-decisions.md` §"Cut and effects" (rows 11–21) lives now.
-//!
-//! Same shape as [`crate::prepare_decisions`] for Prepare: most of these behaviours are already made
-//! by machinery elsewhere in the crate, so this module holds only what nothing else had — the weighted
-//! edge contest of row 11, the dead-air bound of row 13, and the withdrawal notice of row 20 — and
-//! states every other row as a routing line pointing at the function that really makes the decision,
-//! so the table cannot claim a behaviour this build does not have.
-//!
-//! The rule the section turns on is §1's: **what the model is told**. Row 11 reports the snapped
-//! edges because the model may correct them; row 19 counts drops rather than naming them because the
-//! cut moved under effects after the answer was already given.
 
 use crate::roles;
 
-/// The default snap tolerance this module's contest is written against —
-/// [`crate::tools::cutpass::SNAP_TOLERANCE_SECONDS`], P.policy.snapToleranceSeconds, named here so a
-/// reader reaches the live constant rather than a copy of its value.
 pub use crate::tools::cutpass::SNAP_TOLERANCE_SECONDS;
 
-/// Re-exported so the routing rows below resolve to real items: the pass's own zoom height
-/// ([`crate::cut_effects_pass::ZOOM_HEIGHT`]) and the app defaults the tool reports
-/// ([`crate::cut_speed::DEFAULT_RATE`], [`crate::cut_speed::STOP_SECONDS`]).
 pub use crate::cut_effects_pass::ZOOM_HEIGHT;
 pub use crate::cut_speed::{DEFAULT_RATE, STOP_SECONDS};
 
@@ -30,18 +14,11 @@ pub use crate::tools::cutpass::NO_TARGET;
 
 // --- row 11: the weighted edge contest -----------------------------------------------------------------------------------
 
-/// One kind of place an edge may land, with the weight §05 [F2.14](../../spec/05-cut.md#f214-suggest-a-cut) S3
-/// gives it. The weights carry no `P.` id (§10 lists none for them), so they take the bare `cut.snap*`
-/// prefix of the rule that reads them, exactly as [`crate::prepare_decisions::TAIL_MATCH_MIN`] does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Candidate {
-    /// The midpoint of a silence — quiet, but the least trusted of the four. `cut.snapWeightSilence` 0.8
     SilenceMidpoint,
-    /// A word boundary from the aligner. `cut.snapWeightWordEdge` 0.9
     WordEdge,
-    /// A transcript line boundary. `cut.snapWeightLineEdge` 0.95
     LineEdge,
-    /// A shot change found by ffprobe where nobody talks. `cut.snapWeightVisualCut` 1.0
     VisualCut,
 }
 
@@ -58,35 +35,18 @@ impl Candidate {
 }
 
 /// Silence midpoints score lowest: quiet is everywhere, so it is the weakest reason to cut there.
-/// `cut.snapWeightSilence`
 pub const WEIGHT_SILENCE: f64 = 0.8;
 /// A word edge is nearly as good as a line edge — the splice lands where a syllable ends either way.
-/// `cut.snapWeightWordEdge`
 pub const WEIGHT_WORD_EDGE: f64 = 0.9;
 /// A line edge keeps the sentence whole, which is why it beats a bare word edge.
-/// `cut.snapWeightLineEdge`
 pub const WEIGHT_LINE_EDGE: f64 = 0.95;
 /// A visual cut with nobody talking is the best of the four: picture and sound both agree.
-/// `cut.snapWeightVisualCut` 1.0
 pub const WEIGHT_VISUAL_CUT: f64 = 1.0;
 
-/// How far the outward direction is worth. §05 says "outward preferred" without a number, so the bonus
-/// is set just under one full weight step: enough to break a tie against a nearer inward point of the
-/// same kind, never enough to beat a better *kind* of point further away. `cut.snapOutwardBonus`
 pub const OUTWARD_BONUS: f64 = 0.05;
 
-/// The distance penalty per second of travel. Linear in the tolerance-normalised distance, so a point
-/// at the very edge of [`cutpass::SNAP_TOLERANCE_SECONDS`] loses its whole weight and only a point
-/// close to the stamp can win. `cut.snapDistancePenalty`
 pub const DISTANCE_PENALTY_PER_SECOND: f64 = 0.18;
 
-/// Score one candidate landing at `point` for an edge stamped at `stamp`, allowed to move at most
-/// `tolerance` seconds. P.policy.snapToleranceSeconds
-///
-/// `weight − distance × penalty + outward bonus`. Outside the tolerance the score is `None`: a point
-/// further off than the tolerance is a different moment, not a snap target. `moves_outward` means the
-/// edge moves away from the middle of the kept stretch — earlier for a start edge, later for an end
-/// edge — which §05 prefers because it keeps more of what was filmed.
 pub fn edge_score(
     kind: Candidate,
     point: f64,
@@ -95,8 +55,6 @@ pub fn edge_score(
     moves_outward: bool,
 ) -> Option<f64> {
     let distance = (point - stamp).abs();
-    // Half-open reach: a point exactly `tolerance` away is already outside, so the tolerance means
-    // "moved *up to* this many seconds" without rounding letting five whole seconds through.
     if distance >= tolerance {
         return None;
     }
@@ -104,18 +62,6 @@ pub fn edge_score(
     Some(kind.weight() - distance * DISTANCE_PENALTY_PER_SECOND + bonus)
 }
 
-/// Run the contest §05 F2.14 S3 describes and the model never sees: pick the best candidate within
-/// `tolerance` of `stamp`, returning `(point, score, seconds_moved)`. P.policy.snapToleranceSeconds
-///
-/// Ties go to the nearer point, then to the earlier one, so the result is deterministic — a contest
-/// that resolves differently between two runs of the same project is worse than a slightly worse
-/// contest. `None` when no candidate is inside the tolerance, in which case the edge stays exactly
-/// where it was stamped.
-///
-/// Note on the live path: [`cutpass::Plan::snap`] currently takes the *nearest* snap point, which is
-/// this scorer with equal weights and no direction term. This function is the weighted form the spec
-/// asks for, written here so the contest is testable against hand-written candidates without an audio
-/// envelope or an ffprobe run.
 pub fn choose_edge(
     candidates: &[(f64, Candidate)],
     stamp: f64,
@@ -140,23 +86,12 @@ pub fn choose_edge(
 // --- row 13: dead air ----------------------------------------------------------------------------------------------------
 
 /// Whether a silence inside a kept clip is long enough to be cut out.
-///
-/// §12 row 13 calls the bound a policy number rather than a silent rule: `P.policy.deadAirMaxSeconds`
-/// (8.0), paired with `P.policy.deadAirKeepSeconds` (0.5) for how much of the beat survives. Both
-/// constants now live in [`crate::suggest`] (F2.14 S2a's walk-back reads them) and are catalogued in
-/// `params::cut()`; `params::silence()` answers a different pair
-/// (`degraded::SILENCE_THRESHOLD_DB` / `SILENCE_MIN_SECONDS`, the detection floor, not the length
-/// bound), which is why `max` still arrives from the caller and this helper holds only the comparison.
-///
-/// Strictly greater: a silence of exactly the maximum is a deliberate beat, and the brief tells the
-/// model the number so it can keep one by asking.
 pub fn dead_air_is_cut(silence_seconds: f64, max: f64) -> bool {
     silence_seconds > max
 }
 
 /// What survives of a silenced stretch once the dead air is taken out: [`dead_air_is_cut`] decides
 /// whether anything goes, and `keep` is the beat left behind so the cut is not a hard stop.
-/// `P.policy.deadAirKeepSeconds`
 pub fn dead_air_kept(silence_seconds: f64, max: f64, keep: f64) -> f64 {
     if dead_air_is_cut(silence_seconds, max) {
         keep.max(0.0)
@@ -168,14 +103,6 @@ pub fn dead_air_kept(silence_seconds: f64, max: f64, keep: f64) -> f64 {
 // --- row 20: telling the model what was taken away ------------------------------------------------------------------------
 
 /// The sentence a retry should carry when the app has taken tools or thinking away from the model.
-///
-/// Both withdrawals stay the app's decisions — [`roles::CutAttempt`] sets `web_tools: attempt == 1`
-/// and [`roles::cut_retry_thinking`] turns thinking off after an all-reasoning reply — but §12 row 20
-/// says a rewrite SHOULD tell the model rather than leave it looking for `web_search` in a schema that
-/// no longer offers it. `None` when nothing was withdrawn, so a first attempt prepends nothing.
-///
-/// The live path today logs the rejection around the attempt; this is the notice a caller prepends to
-/// the next request so the model knows what it is not being given.
 pub fn withdrawal_notice(web_withdrawn: bool, thinking_off: bool) -> Option<String> {
     match (web_withdrawn, thinking_off) {
         (false, false) => None,
@@ -198,9 +125,6 @@ pub fn web_tools_withdrawn(attempt: u32) -> bool {
 
 // --- the audit table -----------------------------------------------------------------------------------------------------
 
-/// One row of §12's "Cut and effects" table: the behaviour, whose decision it is, and the code that
-/// actually makes it. Kept as data rather than prose so a row naming a function that no longer exists
-/// fails a test instead of drifting quietly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ruled {
     /// The behaviour as §12 words it.
@@ -229,7 +153,6 @@ pub fn audit() -> [Ruled; 11] {
                       cut_problems for the running total at finish_cut",
         },
         Ruled {
-            // P.policy.deadAirMaxSeconds
             what: "silences over eight seconds are cut out of kept clips",
             home: "after finish — a policy number, not a silent rule",
             lives_in: "cut_effect_decisions::dead_air_is_cut (P.policy.deadAirMaxSeconds, stated in the \
@@ -250,7 +173,6 @@ pub fn audit() -> [Ruled; 11] {
                       captions list is non-empty",
         },
         Ruled {
-            // P.policy.captionMinSeconds
             what: "kinds outside zoom/stop/volume, volume gains of exactly 1, captions under 0.3 s and \
                   empty texts are each an error, not a silent drop",
             home: "tool result: each is that item's error sentence",
@@ -258,7 +180,6 @@ pub fn audit() -> [Ruled; 11] {
                       span); Clips::add_caption (empty text, CAPTION_MIN_SECONDS)",
         },
         Ruled {
-            // P.policy.effectDefaultSeconds, P.policy.effectDefaultFades
             what: "a speed with no rate becomes 0.5, a stop with no span 2 s, a caption with no span \
                   3 s; fades and ramps are invented — and the tool result states what was applied",
             home: "app defaults, reported back in the tool result",
@@ -285,7 +206,6 @@ pub fn audit() -> [Ruled; 11] {
                       cut_effect_decisions::withdrawal_notice for what the model is told",
         },
         Ruled {
-            // P.policy.targetLengthSeconds
             what: "the target length is a derived policy number said in the log, not a regex \
                   over free text with no fallback",
             home: "policy — F0.7's `set_policy`, seen by the model as wording it cannot mis-set",
@@ -297,8 +217,6 @@ pub fn audit() -> [Ruled; 11] {
 }
 
 /// The ids this round's rows turn on, so a test can assert the catalogue still answers for them.
-/// P.policy.snapToleranceSeconds · P.policy.targetLengthSeconds · P.policy.captionMinSeconds ·
-/// P.policy.effectDefaultSeconds · P.policy.effectDefaultFades
 pub const CITED_PARAMS: [&str; 5] = [
     "P.policy.snapToleranceSeconds",
     "P.policy.targetLengthSeconds",

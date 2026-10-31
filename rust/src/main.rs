@@ -1,8 +1,5 @@
-//! `--snapshot <screen> --project <fixture dir> --out <file.png>` renders one
-//! screen headlessly; otherwise the app runs normally.
-//!
-//! Both paths need a display: inside this container that means `xvfb-run` with
-//! `GSK_RENDERER=cairo`, which the justfile sets (see `just snapshot`).
+//! `--snapshot <screen> --project <fixture dir> --out <file.png>` renders one screen headlessly;
+//! otherwise the app runs normally.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -12,9 +9,9 @@ use adw::prelude::*;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
 
-    // GTK's own `--help` only prints after a display opens, and this program is routinely started in a
-    // container that has none, so the two modes are answered here instead: before any display is asked
-    // for, and on stdout with exit 0.
+    // GTK's own `--help` only prints after a display opens, and this program is routinely started
+    // in a container that has none, so the two modes are answered here instead: before any display
+    // is asked for, and on stdout with exit 0.
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
             "naivepost — a cut-and-narrate editor for sessions already recorded.\n\
@@ -57,8 +54,6 @@ fn main() -> ExitCode {
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
     app.connect_activate(|app| naivepost::ui::launch::open_at_start(app, &[]));
-    // Only the first file is opened — one window, one project — and the precedence behind that is
-    // startup::decide's (F0.6), not anything spelled out here.
     app.connect_open(|app, files, _hint| {
         let handed: Vec<PathBuf> = files.iter().filter_map(|file| file.path()).collect();
         naivepost::ui::launch::open_at_start(app, &handed);
@@ -67,8 +62,7 @@ fn main() -> ExitCode {
 }
 
 // The launch itself lives in [`naivepost::ui::launch`] (F0.6): which project to open, what to leave
-// remembered for the next start, and §7's desktop registration. `main` only builds the application
-// and hands gio the two doors above.
+// remembered for the next start, and §7's desktop registration.
 fn parse_snapshot(
     args: &[String],
 ) -> Result<(String, PathBuf, PathBuf, naivepost::snapshot_ready::ShotOn), String> {

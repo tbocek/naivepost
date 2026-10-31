@@ -1,19 +1,5 @@
 //! Describe — spec/04-prepare.md F1.7, the stage that turns a footage source's frames into an event
-//! log. One chunk of `P.machine.describeFramesPerReq` frames at a time.
-//!
-//! Three files hold this flow and each owns one part of it, so nothing is written twice:
-//!
-//! * [`crate::tools::describe`] — the §3.2 TOOL half: the batch, `record_event`, `set_state`,
-//!   `finish`, the speech block, and the lenient parse of a prose reply.
-//! * [`crate::frames`] — F1.6: what is on disk in `prepare/inputs/frames/<source>/`, the scene
-//!   changes, and the fact that stored frames are the video's own size.
-//! * this module — the FLOW: which frames go (S0), how they are scaled for sending (S1), how a
-//!   stopped run resumes (S2), what the request says (S3), how it is cached (S4), where the answers
-//!   are written (S6) and what gets logged (S7).
-//!
-//! As in those two modules, no process is spawned and no socket opened: the ffmpeg invocation for
-//! scaling is returned as arguments ([`scale_plan`]) and the model call is not made here at all —
-//! a step that decided inside a tool call could never be tested (spec/00-principles.md §5).
+//! log.
 
 use std::path::Path;
 
@@ -40,22 +26,10 @@ const fn describe_frame_width() -> u32 {
 // ---- S0: which frames go ------------------------------------------------------
 
 /// S0: the frames that go to the model, out of the 250 ms grid F1.6 extracted.
-///
-/// Per scene its first frame, then one every `freq` (`P.project.frameInterval`) until the next
-/// change. Two things follow that the prototype got wrong in opposite directions: a scene shorter
-/// than Freq sends its first frame ONLY (it does not pad up to a full interval), and the first
-/// picture of every new scene always reaches the model — a slide's opening second is exactly the
-/// frame a description of that slide has to start from.
-///
-/// `grid` is the extraction grid (`P.eng.frameGridSeconds`, 0.25) and stays finer than `freq`:
-/// a scene boundary lands on the grid but almost never on Freq, and rounding it to Freq would drop
-/// the one frame that must not be dropped. A step landing exactly on the next scene belongs to that
-/// scene instead of being written twice — the same dedupe [`crate::frames::frame_seconds`] does.
 pub fn pick_frames(changes: &[f64], duration: f64, grid: f64, freq: f64) -> Vec<f64> {
     if duration <= 0.0 || grid <= 0.0 || freq <= 0.0 {
         return Vec::new();
     }
-    // Scene starts: the file's beginning plus every change inside it.
     let mut starts: Vec<f64> = vec![0.0];
     starts.extend(
         changes
@@ -72,8 +46,6 @@ pub fn pick_frames(changes: &[f64], duration: f64, grid: f64, freq: f64) -> Vec<
         // than down, so a change at 3.12 s names the frame at 3.25 s and not one before the change.
         let first = snap_up(*start, grid, duration);
         push_frame(&mut out, first);
-        // Then one every Freq until the next change. Starting from the scene's own first frame is
-        // what makes a short scene send exactly one: its next step falls past `end` and stops.
         let mut step = 1u32;
         loop {
             let at = first + freq * step as f64;
@@ -87,7 +59,6 @@ pub fn pick_frames(changes: &[f64], duration: f64, grid: f64, freq: f64) -> Vec<
     out
 }
 
-/// Round a wanted second onto the extraction grid, upwards, clamped inside the take.
 fn snap_up(at: f64, grid: f64, duration: f64) -> f64 {
     let steps = (at / grid).ceil();
     let snapped = steps * grid;
@@ -101,8 +72,6 @@ fn snap_up(at: f64, grid: f64, duration: f64) -> f64 {
     }
 }
 
-/// Add a frame unless the list already ends with it — the "one frame, named once" rule where a Freq
-/// step lands exactly on the next scene's start.
 fn push_frame(out: &mut Vec<f64>, at: f64) {
     if out.last().is_some_and(|last| (*last - at).abs() < 1e-9) {
         return;
@@ -110,26 +79,12 @@ fn push_frame(out: &mut Vec<f64>, at: f64) {
     out.push(at);
 }
 
-/// S0: the refusal for a folder extracted frame-by-frame. Describe needs a known interval because
-/// its stamps, its resume and its chunk boundaries are all arithmetic on it.
+/// S0: the refusal for a folder extracted frame-by-frame.
 pub fn every_frame_refusal(base: &str) -> String {
     format!("{base} was extracted as every-frame; describe needs the 250 ms grid -- rerun Prepare")
 }
 
 /// S0: does this folder look like an every-frame extraction rather than F1.6's?
-///
-/// Decided from the frames themselves, not from a count against a guessed take length: the length is
-/// not knowable here without paying for a media probe, and inferring it from a count would call a
-/// short take every-frame and refuse work that is perfectly describable. What an every-frame set
-/// cannot hide is its SPACING — its pictures sit `grid` apart all the way through because nothing
-/// thinned them. A folder picked at any Freq coarser than the grid has gaps of about `freq`, so
-/// comparing each consecutive pair against the grid settles it.
-///
-/// The test is deliberately strict: EVERY step must be within half a grid step. A scene change
-/// restarts the grid, which makes one step shorter or longer legitimately, but F1.6 restarts it at
-/// the change itself, so the steps around a change stay on the grid too; only an unthinned folder
-/// has every step at exactly `grid`. A loose majority rule would refuse real extractions, and a
-/// refusal is the expensive mistake here — it stops work on a folder that describes fine.
 pub fn is_every_frame(frames: &[f64], grid: f64) -> bool {
     if frames.len() < 2 || grid <= 0.0 {
         return false;
@@ -139,8 +94,7 @@ pub fn is_every_frame(frames: &[f64], grid: f64) -> bool {
 
 // ---- S1: sorted, scaled, and heard alongside ---------------------------------
 
-/// S1: refuse when there are no frames to describe. An empty or missing folder is the case; a scene
-/// shorter than Freq is NOT — that one sends its single first frame and is a normal thing.
+/// S1: refuse when there are no frames to describe.
 pub fn refuse_missing(frames: &[f64]) -> Option<String> {
     if frames.is_empty() {
         return Some("no frames to describe -- the frames folder is empty".to_string());
@@ -148,8 +102,7 @@ pub fn refuse_missing(frames: &[f64]) -> Option<String> {
     None
 }
 
-/// S1: sort by stamp. The request's stamps and `events.tsv`'s rows both come off this order, so an
-/// unsorted list would number frames against the wrong seconds.
+/// S1: sort by stamp.
 pub fn sorted(frames: &[f64]) -> Vec<f64> {
     let mut out = frames.to_vec();
     out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -157,34 +110,18 @@ pub fn sorted(frames: &[f64]) -> Vec<f64> {
 }
 
 /// S1: the ffmpeg arguments that scale each frame ONCE into `.llmframes/`.
-///
-/// `-vf scale=<width>:-2` keeps the aspect ratio and lands on an even height, which JPEG and every
-/// codec downstream wants; `-vsync vfr` keeps one output per input. Nothing is spawned here, for
-/// the reason [`crate::frames::extract_plan`] gives: the caller runs it and can test what would run.
-///
-/// The stored frames stay at the video's own size — [`crate::frames::extract_plan`] is untouched by
-/// this function and by this stage. Measured on the ETH lecture a 1080p frame is 147 kB and its
-/// 896-wide copy 55 kB, so keeping the grid native and scaling only the copies is what keeps 71
-/// minutes at about 0.9 GB of sent pixels instead of 2.7 GB of stored ones.
-///
-/// The filter pair is what ffmpeg wants of an OUTPUT option: the caller places it AFTER its `-i` (a
-/// `-vf` read before the input belongs to that input and scales nothing) and names the copy through
-/// [`scaled_name`].
 pub fn scale_plan(width: u32) -> Vec<String> {
     vec!["-vf".to_string(), format!("scale={width}:-2")]
 }
 
 /// S1: the name the scaled copy is written under — the same clock name the stored frame has (`base` is the
 /// instant the stored folder's first picture names, [`crate::describe_scale::name_base`]; `at` counts from it), so a
-/// row in `events.tsv` and a file in `.llmframes/` point at the same instant. [`crate::clock`]
-/// owns that one spelling; this only adds the extension.
+/// row in `events.tsv` and a file in `.llmframes/` point at the same instant.
 pub fn scaled_name(base: f64, at: f64) -> String {
     format!("{}.jpg", frame_name(base + at))
 }
 
-/// S1: the alongside-recording note. A recording's words are placed against this video's clock by
-/// its offset, and the log says which offset was used so a description that lines up oddly can be
-/// checked against the number rather than guessed at.
+/// S1: the alongside-recording note.
 pub fn hearing_log(video: &str, audio: &str, offset_secs: f64) -> String {
     format!(
         ">>> [{video}] hearing {audio} alongside it, starting {} s in",
@@ -192,7 +129,6 @@ pub fn hearing_log(video: &str, audio: &str, offset_secs: f64) -> String {
     )
 }
 
-/// Seconds without a tail of zeroes: `1.5`, not `1.500000`.
 fn trim_seconds(secs: f64) -> String {
     if (secs - secs.round()).abs() < 1e-9 {
         return format!("{}", secs.round() as i64);
@@ -211,16 +147,7 @@ pub struct EventRow {
     pub text: String,
 }
 
-/// S2: read `events.tsv`. Tolerant by design — a half-written last line from a killed run must not
-/// stop a resume. A line with no parsable leading second is dropped; a line whose text was cut off
-/// mid-write still describes its frame, so it is kept rather than thrown away.
-///
-/// §6's row is `start\tend\ttext`, but resuming only ever asks WHEN a frame was answered (a chunk is
-/// done when its start has a row) and WHAT the last readings said — never how long one held, which is
-/// a read-side fold ([`crate::textfmt::read_events`]). So [`EventRow`] keeps the start in `at` and the
-/// text in `text`, and §6's middle field (the end) is parsed to tell the two shapes apart and then
-/// dropped. A row whose middle field is not a number is the older two-column spelling (`start\ttext`),
-/// which projects on disk hold: there the second field IS the text.
+/// S2: read `events.tsv`.
 pub fn parse_events(tsv: &str) -> Vec<EventRow> {
     let mut out = Vec::new();
     for line in tsv.lines() {
@@ -251,11 +178,6 @@ pub fn parse_events(tsv: &str) -> Vec<EventRow> {
 }
 
 /// S2: the chunks that are already done, as start indices into `frames`.
-///
-/// A chunk is skipped when its START second already has a row: the start is the one frame whose
-/// presence proves the whole chunk was answered, because the row is written after the answer arrives
-/// (§6). Matching on any frame of the chunk instead would skip a chunk that died halfway and leave
-/// its middle unanswered forever.
 pub fn starts_already_logged(rows: &[EventRow], frames: &[f64], per_req: usize) -> Vec<usize> {
     chunk_plan(frames, per_req)
         .into_iter()
@@ -270,8 +192,7 @@ pub fn starts_already_logged(rows: &[EventRow], frames: &[f64], per_req: usize) 
 }
 
 /// S2: the rolling window seeded from disk — the LAST [`describe::RECENT_EVENTS`] rows, oldest
-/// first. More than that would repeat the whole log in every request; fewer would leave the model
-/// unable to say "same" meaningfully.
+/// first.
 pub fn seed_history(rows: &[EventRow]) -> Vec<String> {
     let keep = describe::RECENT_EVENTS;
     rows.iter()
@@ -282,8 +203,7 @@ pub fn seed_history(rows: &[EventRow]) -> Vec<String> {
         .collect()
 }
 
-/// S2: the STATE the next chunk carries. With no `state.txt` the recording has just begun, which is
-/// a real answer and not an empty one: it tells the model there is nothing behind the first frame.
+/// S2: the STATE the next chunk carries.
 pub fn seed_state(state_txt: Option<&str>) -> String {
     match state_txt.map(str::trim) {
         Some(text) if !text.is_empty() => text.to_string(),
@@ -312,10 +232,7 @@ pub struct Stamp {
     pub new_scene: bool,
 }
 
-/// The speech the request carries, already split into the three sections. Kept as three lists
-/// because the caps differ per side (≤ [`describe::CTX_SEGS`] per source within
-/// [`describe::CTX_WINDOW_SECONDS`]) and the middle is uncapped — see
-/// [`Batch::speech_around`].
+/// The speech the request carries, already split into the three sections.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Speech {
     pub before: Vec<String>,
@@ -324,16 +241,6 @@ pub struct Speech {
 }
 
 /// S3: the whole user message, in the spec's exact order.
-///
-/// The `Just before this:` block is left out entirely when there is no history rather than printed
-/// with nothing after it: the spec shows it carrying the last events, and an empty heading invites
-/// the model to invent a lead-in. The three speech sections are NEVER omitted — §3.2 says all three
-/// are always present, with `(none)` where a side is empty, because a section the model cannot see
-/// is a section it wonders about.
-///
-/// Stamps are written from each frame's own second through [`stamp`], never derived as
-/// `first + i * interval`: the frames that go are scene-starts plus Freq steps, so their spacing is
-/// uneven by construction and a derived stamp would misdate every frame after a scene change.
 pub fn message(
     context: &str,
     state: &str,
@@ -378,8 +285,7 @@ pub fn message(
 }
 
 /// A frame's stamp: its own second to one decimal, no unit inside the brackets — `[+0.8s]`, the
-/// shape §F1.7's layout shows. [`crate::tools::tenths`] is not used because it appends a space
-/// before the `s` for status lines, which would print `[+0.8 s s]` here.
+/// shape §F1.7's layout shows.
 fn stamp_text(at: f64) -> String {
     format!("{at:.1}")
 }
@@ -387,15 +293,6 @@ fn stamp_text(at: f64) -> String {
 // ---- S4: cache on the whole content ----------------------------------------
 
 /// S4: the key naming this request's reply in `cache/llm/describe/`.
-///
-/// Hashed over the whole request content with the images inline — the scaled bytes, not their file
-/// names — because §6 keys on what was asked: two identical requests cost nothing the second time,
-/// and a re-encoded frame is a different question even under the same file name. Names alone would
-/// make a changed picture a cache hit, which is the worst kind of stale answer: invisible.
-///
-/// [`crate::llm_cache`] is the shared implementation of §6's digest for every job that caches;
-/// this stage asks it for the key over its own parts and stores through it, so one rule decides
-/// what may be kept everywhere.
 pub fn cache_key(system: &str, content: &str, images: &[Vec<u8>], model: &str) -> String {
     let request = crate::llm_cache::Request {
         system,
@@ -403,14 +300,12 @@ pub fn cache_key(system: &str, content: &str, images: &[Vec<u8>], model: &str) -
         state: "",
         speech: "",
         context: "",
-        // The bytes exactly as they go on the wire, one part each — §6 names image data URLs, and a
-        // re-encoded frame has to miss rather than replay the old picture.
         images: images
             .iter()
             .map(|bytes| crate::llm_request::data_url(bytes, "image/jpeg"))
             .collect(),
         run_index: None,
-        // §6's rewrite addition: whose answer this was. A model swap must ask again.
+        // §6's rewrite addition: whose answer this was.
         model,
         // §2's row says thinking OFF for this job, so the flag never changes here — but it stays a
         // part, spelled once in [`crate::llm_cache::parts`] rather than assumed away.
@@ -421,28 +316,20 @@ pub fn cache_key(system: &str, content: &str, images: &[Vec<u8>], model: &str) -
     crate::llm_cache::key(&crate::llm_cache::parts(&request)).expect("a describe ask always keys")
 }
 
-/// S4: the stored reply for this key, if any. Any unreadable file is a miss, so the step asks again
-/// rather than failing — [`crate::llm_cache::read_at`] is that rule's one spelling, shared with every
-/// other job that keys itself (describe folds its frames into the parts before asking and keeps the hex).
+/// S4: the stored reply for this key, if any.
 pub fn cached_reply(tree: &Tree, key: &str) -> Option<String> {
     crate::llm_cache::read_at(tree, STEP, key)
 }
 
-/// S4: store one reply under its key. A reply that will not write is reported, not swallowed: the
-/// answer is still real, only unpaid-for next time.
-/// S4: store one reply under its key. A reply that will not write is reported, not swallowed: the
-/// answer is still real, only unpaid-for next time. An EMPTY reply is never stored — §6's rule, which
-/// is why this goes through [`crate::llm_cache::store_at`] instead of writing the file itself.
+/// S4: store one reply under its key.
 pub fn store_reply(tree: &Tree, key: &str, reply: &str) -> Result<(), String> {
     match crate::llm_cache::store_at(tree, STEP, key, reply) {
         crate::llm_cache::Stored::Failed(reason) => Err(reason),
-        // Refused-empty and refused-no-key are quiet non-events: nothing written, nothing failed.
         _ => Ok(()),
     }
 }
 
-/// S4: how many were answered from the cache, phrased for S7. Empty when none were, so the caller
-/// picks [`complete_log`] instead.
+/// S4: how many were answered from the cache, phrased for S7.
 pub fn cached_note(cached: usize) -> String {
     format!(", {cached} answered from the cache")
 }
@@ -451,17 +338,7 @@ pub fn cached_note(cached: usize) -> String {
 
 /// §3.2's prose floor: a reply written as the shipped prompt shows it ("EVENT [+14.2s]: …" lines and a
 /// "STATE: …" line) read into the `record_event` / `set_state` calls it stands for, so it goes through the
-/// same tool surface as a reply made of calls. `stamps` are the batch's frames as the request printed them
-/// (`[+31.2s] FRAME 1 of 2`): each frame's own second in the recording, not an offset from the chunk's first
-/// frame; reading them as offsets dropped every line of a chunk that does not start at 0 (08-dex 18-53-15, the
-/// chunk at 31.2 s refused twice). Each stamped line goes to the nearest frame, and is dropped when no frame is
-/// within [`PROSE_SNAP_SECONDS`] of it; a reply with no stamps but an "EVENT:" label, or words in front of
-/// its STATE line, is the first frame's line. Nothing labelled is nothing recorded.
-///
-/// The first rewrite had no such reading: a prose reply was parsed as a list of calls, came out empty, and
-/// every frame was written "same" (08-dex: every event log was placeholders, the model's words only in the
-/// cache). And a prose reply that also called `finish` was read for its calls alone, refused for three
-/// frames without an event, and failed Prepare although every frame was described in its text.
+/// same tool surface as a reply made of calls.
 pub fn prose_calls(reply: &str, stamps: &[f64]) -> Vec<(String, serde_json::Value)> {
     let mut calls = Vec::new();
     let (rest, state) = match reply.find("STATE:") {
@@ -514,16 +391,11 @@ pub fn prose_calls(reply: &str, stamps: &[f64]) -> Vec<(String, serde_json::Valu
 /// stamps to a tenth of a second, so a model copying them lands well inside this.
 pub const PROSE_SNAP_SECONDS: f64 = 1.0;
 
-/// One line of whatever it is given, so a description that came back on two lines is one events row.
 fn flatten_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// S5: apply one tool call to the batch. The three names are §3.2's; their rules live in
-/// [`crate::tools::describe`] and are not restated here.
-///
-/// An unknown name comes back as an error rather than a panic: a model that calls something that is
-/// not offered has to be told in the channel it is listening on.
+/// S5: apply one tool call to the batch.
 pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> String {
     match name {
         "record_event" => {
@@ -537,9 +409,6 @@ pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> St
             batch.set_state(text)
         }
         "finish" => {
-            // `Missing` carries no Serialize impl (it is a test-facing type), so the answer is built
-            // here rather than by serialising it: what the model needs is which frames are still
-            // unanswered and why, in the same words `Batch::finish` decided.
             let missing = batch.finish();
             if missing.is_empty() {
                 crate::tools::ok(&serde_json::json!({"missing": 0}))
@@ -563,20 +432,6 @@ pub fn apply_tool(batch: &mut Batch, name: &str, args: &serde_json::Value) -> St
 
 /// S6: the rows to append for one chunk — one per frame, in frame order, each an §6 events row
 /// ([`crate::textfmt::event_row`], times with two decimals).
-///
-/// A row's END is the second until which that reading still held: the next frame of this batch, and
-/// for the batch's last frame `batch_end` — the second the request said its frames covered
-/// ([`message`]'s `to`). That is what makes §6's read-side fold land where it should: consecutive
-/// `same` rows extend the real event behind them to the last second it still described.
-///
-/// A frame the model left unanswering is written `same`, which is what the word means here: nothing
-/// changed since the row before. The exception is the batch's FIRST frame with no history: there is
-/// nothing behind it to be the same as, so writing `same` would assert a fact about a second nobody
-/// watched. §6 writes [`describe::Batch::SAME_WITHOUT_HISTORY`] there instead — a real reading of the
-/// opening second, which is also what makes it survive `textfmt::read_events` as the file's first
-/// event rather than folding away into nothing. The same line replaces a bare `same` that the model
-/// DID stamp on that frame, which is the case [`Batch::finish`] reports as
-/// [`describe::MissingReason::FirstFrameWithNoHistory`].
 pub fn events_rows(
     frames: &[f64],
     events: &[Event],
@@ -601,17 +456,12 @@ pub fn events_rows(
     rows
 }
 
-/// S6: the whole contents of `state.txt` after a chunk. The running state, or the empty string when
-/// the model cleared it — clearing has to reach the file, or the old state is read forward by the
-/// next chunk as though it still applied.
+/// S6: the whole contents of `state.txt` after a chunk.
 pub fn state_line(state: Option<&str>) -> String {
     state.unwrap_or("").to_string()
 }
 
-/// S6: append this chunk's rows and rewrite `state.txt`. Both happen after EVERY chunk, which is
-/// what makes the resume in S2 correct: the file pair describes exactly the frames answered so far.
-/// S6: append this chunk's rows and rewrite `state.txt`. Both happen after EVERY chunk, which is
-/// what makes the resume in S2 correct: the file pair describes exactly the frames answered so far.
+/// S6: append this chunk's rows and rewrite `state.txt`.
 pub fn write_chunk(
     tree: &Tree,
     lane: &str,
@@ -658,15 +508,13 @@ pub fn chunk_plan(frames: &[f64], per_req: usize) -> Vec<usize> {
     (0..frames.len()).step_by(per_req).collect()
 }
 
-/// How many requests these frames take. Delegated to [`crate::prepare::vision_calls`] so this and
-/// the `Inputs:` readout F1.1 logs cannot disagree about what a chunk costs.
+/// How many requests these frames take.
 pub fn requests_for(frames: usize) -> usize {
     crate::prepare::vision_calls(frames)
 }
 
 /// Whether a frame opens a scene: it is the first frame of the take, or a change falls between it
-/// and the frame before. Measured against the changes rather than against equal spacing, because
-/// that is the only truth about where a scene starts.
+/// and the frame before.
 pub fn is_new_scene(at: f64, previous: Option<f64>, changes: &[f64]) -> bool {
     match previous {
         None => true,
@@ -686,16 +534,6 @@ pub fn pick_log(base: &str, frames: &[f64]) -> String {
 }
 
 /// The stage's entry point: what ▶ prints for one footage source before any request is made.
-///
-/// One function so the UI callback stays a forwarder (spec/00-principles.md §5): it returns lines,
-/// it never decides in the caller. It PLANS and reports — nothing is spawned and no vision server is
-/// needed, because every rule here is arithmetic over files F1.6 already wrote and over the scene
-/// changes read from `scenes.tsv`. A source with no frames yet answers with no lines: ▶ says this
-/// before the frames stage runs, so its frames are still to come.
-///
-/// The order of the returned lines is the order the spec puts them in: S0's every-frame refusal
-/// first if that is what the folder holds; otherwise the S1 note for each recording heard alongside,
-/// then S0's pick summary naming how many frames go and therefore how many requests that costs.
 pub fn stage_log(
     base: &str,
     frames_on_disk: &[f64],
@@ -705,8 +543,7 @@ pub fn stage_log(
     alongside: &[(String, f64)],
 ) -> Vec<String> {
     let grid = GRID;
-    // S0: an every-frame extraction stops here. Describing it would stamp frames whose spacing we
-    // never chose, and the resume arithmetic would skip chunks that were never written that way.
+    // S0: an every-frame extraction stops here.
     if is_every_frame(frames_on_disk, grid) {
         return vec![every_frame_refusal(base)];
     }
@@ -728,8 +565,7 @@ pub fn stage_log(
 }
 
 /// The frames that go to the model for one footage source, read off disk: S0's pick over the frames F1.6
-/// extracted and the scene changes the text gate (else the pixel pass) logged, in stamp order. The one door
-/// both the stage and its count read, so the count is the number of chunks the stage will ask.
+/// extracted and the scene changes the text gate (else the pixel pass) logged, in stamp order.
 pub fn picked_for(tree: &Tree, lane: &str, frames_on_disk: &[f64]) -> Vec<f64> {
     let changes = read_changes(tree, lane);
     let duration = frames_on_disk.last().copied().unwrap_or(0.0) + GRID;
@@ -742,7 +578,7 @@ pub fn picked_for(tree: &Tree, lane: &str, frames_on_disk: &[f64]) -> Vec<f64> {
 }
 
 /// How many requests describing one footage source takes, read off disk: its chunks, four picked frames a
-/// request. None for a source with no frames, or an every-frame folder the stage refuses.
+/// request.
 pub fn planned_requests(tree: &Tree, lane: &str) -> usize {
     let frames = frames_on_disk(&tree.frames_dir(lane));
     if frames.is_empty() || is_every_frame(&frames, GRID) {
@@ -752,16 +588,10 @@ pub fn planned_requests(tree: &Tree, lane: &str) -> usize {
 }
 
 /// The stage's entry point for one footage source, read off disk: what ▶ prints before any request
-/// is made. [`stage_log`] holds the rules; this only gathers what they read — the frames F1.6
-/// extracted and the scene changes it logged.
-///
-/// The take's length comes from the frames themselves rather than from a probe of the media file: the
-/// grid stops at the last picture that exists, so describing against that is describing against what
-/// will actually be sent, and no ffprobe run is paid for at press time.
+/// is made.
 pub fn stage_log_for(tree: &Tree, lane: &str, alongside: &[(String, f64)]) -> Vec<String> {
     let frames = frames_on_disk(&tree.frames_dir(lane));
     let changes = read_changes(tree, lane);
-    // Length as the last frame plus one grid step: that is where the extraction stopped.
     let duration = frames.last().copied().unwrap_or(0.0) + GRID;
     stage_log(
         base_of_lane(lane),
@@ -773,7 +603,6 @@ pub fn stage_log_for(tree: &Tree, lane: &str, alongside: &[(String, f64)]) -> Ve
     )
 }
 
-/// The name a log line uses for a lane: the lane is the file's base name already, so this only says so.
 fn base_of_lane(lane: &str) -> &str {
     lane
 }
@@ -798,8 +627,7 @@ pub fn read_pixel_changes(tree: &Tree, lane: &str) -> Vec<f64> {
 /// The grid this stage assumes when none is given: the extraction grid, which is the finer of the two.
 pub const GRID: f64 = EXTRACTION_GRID;
 
-/// Read the frames this source has, as offsets into the take, from the names F1.6 wrote. Kept small
-/// and separate so the pure rules above never touch the filesystem.
+/// Read the frames this source has, as offsets into the take, from the names F1.6 wrote.
 pub fn frames_on_disk(dir: &Path) -> Vec<f64> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -820,8 +648,6 @@ pub fn frames_on_disk(dir: &Path) -> Vec<f64> {
     // request's `t=` line and the `[+N.Ns]` stamps count from.
     out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let Some(&first) = out.first() else {
-        // Nothing readable in the folder means nothing to rebase: report an empty list so the caller
-        // answers with the missing-frames refusal rather than inventing a frame at t=0.
         return Vec::new();
     };
     for at in out.iter_mut() {

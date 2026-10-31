@@ -1,16 +1,9 @@
-//! The diarization window ladder, walked (spec/02-services.md §2's diarization row: "speaker turns per
-//! window (90 → 45 → 25 s ladder)"; the reason a walk is needed at all is [`Scan::AnchorTooLong`]'s own
-//! note in [`crate::diarize`] — "so the ladder moves on or the step fails").
+//! The diarization window ladder, walked (spec/02-services.md §2's diarization row: "speaker turns per window (90 → 45 → 25 s ladder)"); a walk is needed because of [`Scan::AnchorTooLong`] in [`crate::diarize`].
 //!
-//! Nothing here does arithmetic on seconds: window spans, the anchor and the pass-2 spans are
-//! [`crate::diarize`]'s, and this module only picks rungs, asks about them, and says which one served.
-//! That split is what lets a test drive the whole walk with a fake that never dials a socket, the way
-//! [`crate::narrate_tts::speak_line`] takes its two network legs as closures.
+//! Nothing here does arithmetic on seconds: window spans, the anchor and pass-2 spans are [`crate::diarize`]'s; this module picks rungs, asks about them, and says which one served,
+//! so a test can drive the walk with a fake that dials no socket (as [`crate::narrate_tts::speak_line`]).
 //!
-//! The rung that plans is not the end of the scan: pass 2 asks about every span `plan` left to place,
-//! with the anchor in front of what it hears, and the slots of that answer are named against the anchor
-//! here rather than by the caller — so a rung is pass 1's windows *and* pass 2's, and a log that only
-//! counted the first would read as half a scan.
+//! A rung is pass 1's windows *and* pass 2's: pass 2 asks about every span `plan` left to place, with the anchor in front, and names the answer's slots against the anchor here.
 
 use crate::diarize::{self, Anchor, Scan};
 use crate::requests::Turn;
@@ -23,25 +16,17 @@ pub struct Rung {
     pub window: f64,
     /// Pass 1's windows at this size — the caller's cut list, returned so a log line can count them.
     pub scan: Vec<(f64, f64)>,
-    /// The turns the rung answered, flattened across its windows. Pass 2's answers arrive here too, each
-    /// slot renamed to the voice the anchor says it is, which is the whole point of the second pass.
+    /// The turns the rung answered, flattened across its windows; pass 2's slots are renamed to the voice the anchor says they are.
     pub turns: Vec<Turn>,
 }
 
 /// Walk [`diarize::ladder()`] biggest-first and return the first rung that answers.
 ///
-/// A rung whose plan is [`Scan::AnchorTooLong`] moves on to the next one down — that variant's own note says
-/// the ladder moves on or the step fails, and this is the moving-on. Every other answer serves the run as it
-/// stands, [`Scan::NoVoice`] included: an empty answer is an answer about the audio this rung was sent, and
-/// re-asking at a smaller window would only ask again for less.
+/// A rung whose plan is [`Scan::AnchorTooLong`] moves on to the next one down. Every other answer serves the run, [`Scan::NoVoice`] included: re-asking at a smaller window would only ask again for less.
 ///
-/// Every rung refusing means the diarization model is being asked for more reference than any window on the
-/// ladder can hold, and the `Err` names the model and both numbers of the last refusal (§Failure-is-specific:
-/// name the model and the reason where it failed).
+/// Every rung refusing means the model is asked for more reference than any window can hold; the `Err` names the model and both numbers of the last refusal (§Failure-is-specific).
 ///
-/// `log` receives §6's lines as they become true — pass 1's `finding voices i/n`, the anchor line, pass 2's
-/// `placing speakers i/n`, and `no voice long enough to anchor` when that is the answer. A rung that is
-/// refused costs no line of its own: it is a rung the run never used.
+/// `log` receives §6's lines as they become true: pass 1's `finding voices i/n`, the anchor line, pass 2's `placing speakers i/n`, and `no voice long enough to anchor`. A refused rung costs no line.
 pub fn run<F, G, L>(
     duration: f64,
     model: &str,
@@ -59,15 +44,12 @@ where
     for window in diarize::ladder() {
         let windows = diarize::scan_windows(duration, *window);
         if windows.is_empty() {
-            // Nothing to ask about at this size or any smaller one either: a recording under a second has
-            // no window on the ladder, and saying so beats returning an empty turn list that reads as
-            // "nobody spoke".
+            // Nothing to ask about at this size or smaller (a recording under a second has no window): saying so beats an empty turn list that reads as "nobody spoke".
             return Err(format!(
                 "{model}: {duration:.1} s of audio is too short for a diarization window"
             ));
         }
-        // Pass 1 asks about the rung's whole window list and says `finding voices i/n` once per window,
-        // so a run that stops mid-scan can be read as far into the recording as it got.
+        // Pass 1 says `finding voices i/n` once per window, so a stopped run can be read as far as it got.
         for (index, _) in windows.iter().enumerate() {
             log(&diarize::scan_log(base, index, windows.len()));
         }
@@ -84,9 +66,7 @@ where
                     *window,
                     diarize::anchor_per(*window),
                 ));
-                // The serving rung's own answers: pass 1's flattened, then pass 2's with every slot
-                // renamed against the anchor. Asking pass 1 again would be a second set of requests for
-                // one result.
+                // The serving rung's answers: pass 1's flattened, then pass 2's with every slot renamed against the anchor; asking pass 1 again would be a second set of requests.
                 let mut turns: Vec<Turn> = heard.into_iter().flatten().collect();
                 turns.extend(placed(&spans, &anchor, base, &mut place, &mut log)?);
                 return Ok(Rung {
@@ -97,8 +77,7 @@ where
             }
             Scan::NoVoice => {
                 log(&diarize::no_voice_log(base));
-                // An empty answer is an answer: §6 wants the line, and `turns.json` written from what was
-                // heard, which is `[]` — the file is the resume marker a later run reads as "nobody spoke".
+                // An empty answer is an answer: §6 wants the line, and `turns.json` written as `[]`, the resume marker a later run reads as "nobody spoke".
                 return Ok(Rung {
                     window: *window,
                     scan: windows,
@@ -119,14 +98,10 @@ where
     ))
 }
 
-/// Pass 2, one request per span `plan` left to place, each answered with its slots named after the anchor's
-/// voices. Every span is asked — a second placed twice would come back with two ids to reconcile for nothing,
-/// and a second never placed would silently belong to nobody.
+/// Pass 2, one request per span `plan` left to place, each answered with its slots named after the anchor's voices. Every span is asked: placed twice means ids to reconcile, never placed means a second that belongs to nobody.
 ///
-/// The turn edges come back in *answer* seconds: `within` says how far into the audio after the anchor a
-/// sample falls, and an anchor whose first cut starts away from the recording's zero would otherwise have
-/// its whole file counted twice over. The id is the answer's own slot number, so a slot the anchor reaches
-/// keeps that voice's slot and one it never heard earns `slot_base + slot`.
+/// Turn edges come back in *answer* seconds (`within` is how far into the audio after the anchor a sample falls). The id is the answer's slot number, so a slot the anchor reaches keeps that voice's
+/// slot and one it never heard earns `slot_base + slot`.
 fn placed<F, L>(
     spans: &[(f64, f64)],
     anchor: &Anchor,
@@ -138,8 +113,7 @@ where
     F: FnMut((f64, f64), &Anchor) -> Result<Vec<Turn>, String>,
     L: FnMut(&str),
 {
-    // Pass 1 heard the anchor's window, so its slot numbers are the anchor's own; a stranger in a later
-    // answer must not collide with them, which is why fresh ids start above the highest one.
+    // Pass 1 heard the anchor's window, so its slot numbers are the anchor's; fresh ids start above the highest to avoid collisions.
     let slot_base = anchor
         .slots
         .iter()
@@ -150,8 +124,7 @@ where
     for (index, span) in spans.iter().enumerate() {
         log(&diarize::placement_log(base, index, spans.len()));
         let heard = ask(*span, anchor)?;
-        // One claim per slot, in anchor seconds: every turn that slot owns, its whole reach measured from
-        // the start of the anchor file. `match_slots` then decides one-to-one, strongest claim first.
+        // One claim per slot, in anchor seconds, measured from the start of the anchor file; `match_slots` then decides one-to-one, strongest claim first.
         let claims = slot_claims(&heard, anchor);
         let named: Vec<(u32, u32)> = diarize::match_slots(&claims, anchor)
             .into_iter()
@@ -182,13 +155,8 @@ where
     Ok(turns)
 }
 
-/// What pass 2's answer is measured against: the anchor file's own seconds. The caller cut
-/// `window − anchor − slack` of new audio and put the anchor in front of it, so a turn's samples are read
-/// from the front of that file, and a claim may not reach past the reference it was matched on — which is
-/// exactly the bound `match_slots` compares at `MIN_ANCHOR_OVERLAP`.
-///
-/// A slot heard in several stretches is one voice, so its claim spans all of them: `match_slots` measures
-/// the whole overlap and takes the strongest claim first.
+/// What pass 2's answer is measured against: the anchor file's own seconds (the caller put the anchor in front of `window − anchor − slack` of new audio), so a claim may not reach past the reference it was matched on
+/// (the bound `match_slots` compares at `MIN_ANCHOR_OVERLAP`). A slot heard in several stretches is one voice, so its claim spans all of them.
 fn slot_claims(heard: &[Turn], anchor: &Anchor) -> Vec<(u32, f64, f64)> {
     let width = anchor.seconds();
     let mut claims: Vec<(u32, f64, f64)> = Vec::new();

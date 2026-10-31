@@ -1,18 +1,11 @@
 //! F3.4 S5 (`a press without travel toggles play/pause wherever it lands`) — the door the preview panel's one
 //! button-1 gesture calls, and nothing else.
 //!
-//! §06 §B states the rule for the whole preview ("an unmoved press toggles play/pause") and F3.4 S5 repeats it for
-//! the case this round draws a caption into: the box must not swallow a press meant for the picture under it
-//! ([`crate::fx_text::press_without_travel_toggles_play`]'s own reason). So a click that lands inside an overlay's
-//! box is answered here rather than falling through to the zoom flow's after-S5 answer, which would otherwise be the
-//! only thing listening (§F3.1's paragraph after S5 owns a press clear of every box, and keeps it: this module only
-//! claims presses that fall on a text or svg box, so `tests/suite/zoom_drag_widgets.rs` and
-//! `tests/suite/f3_1_press_on_the_preview.rs` see exactly what they saw before).
-//!
-//! No rule is composed here. Which seconds an overlay covers and whether it is drawn come from [`crate::fx_lane`],
-//! where its box is comes from [`crate::ui::cut_preview_caption`], and playing or pausing goes through the same door
-//! the picture's own ▶ uses ([`window::press_play_recording`] with the page's filmed runs), so a click on a caption
-//! and a click on the picture cannot end up in two different transports.
+//! A click inside an overlay's box is answered here rather than falling through to the zoom flow's after-S5
+//! answer (the box must not swallow a press meant for the picture, [`crate::fx_text::press_without_travel_toggles_play`]).
+//! Only presses on a text or svg box are claimed, so `tests/suite/zoom_drag_widgets.rs` and
+//! `tests/suite/f3_1_press_on_the_preview.rs` see what they saw before. No rule lives here: coverage comes
+//! from [`crate::fx_lane`], the box from [`crate::ui::cut_preview_caption`], playback from [`window::press_play_recording`].
 
 use crate::cut::{Cut, EffectKind};
 use crate::fx_text;
@@ -20,10 +13,8 @@ use crate::fx_zoom;
 use crate::timeline;
 use crate::ui::{cut_preview_caption, cut_svg, cut_text_hand, window};
 
-/// The overlay whose box covers `at_px`, as its index into `cut.fx`. Text and svg only: those are the kinds §06 gives
-/// a box ON the output frame, and only ones the frame actually paints at this second can be pressed on — the filter
-/// is the same `fx_lane::drawn_paused` the painter asks, so the box a press can hit and the box a refresh draws
-/// cannot drift apart.
+/// The overlay whose box covers `at_px`, as its index into `cut.fx`. Text and svg only (§06 gives those a box
+/// ON the output frame), filtered by the painter's own `fx_lane::drawn_paused` so a hit box is a drawn box.
 pub fn overlay_under_pointer(
     cut_: &Cut,
     at: f64,
@@ -48,9 +39,8 @@ pub fn overlay_under_pointer(
                 return false;
             }
             let (x, y, w, h) = box_of(effect, kind, fit);
-            // The box GROWN by `EDGE_GRIP_PX` on every side: §F3.4 S5 lets a press near an edge resize the box, so the
-            // record has to answer even when the finger is a few px outside what was drawn — otherwise a press just
-            // off the caption's edge finds nothing to grab and falls through to play/pause.
+            // The box GROWN by `EDGE_GRIP_PX` on every side: §F3.4 S5 lets a press near an edge resize, so a press a few px
+            // outside the drawn edge must still find it rather than fall through to play/pause.
             let grip = fx_text::EDGE_GRIP_PX;
             at_px.0 >= x - grip
                 && at_px.0 <= x + w + grip
@@ -60,10 +50,8 @@ pub fn overlay_under_pointer(
         .map(|(index, _)| index)
 }
 
-/// Which TEXT record a press at `from` has grabbed, as its index into `cut.fx` and its box in the fitted px.
-/// §F3.4 S5's own hit-test: only a caption counts (an svg box is F3.5's to move), and only one that draws at
-/// this second — the same `fx_lane::drawn_paused` filter [`overlay_under_pointer`] uses, so a box cannot be
-/// grabbed where it is not painted.
+/// Which TEXT record a press at `from` has grabbed, as its index into `cut.fx` and its box in the fitted px
+/// (§F3.4 S5; an svg box is F3.5's to move), filtered by `fx_lane::drawn_paused` like [`overlay_under_pointer`].
 fn text_box_under(
     cut_: &Cut,
     at: f64,
@@ -74,12 +62,11 @@ fn text_box_under(
     let effect = cut_.fx.get(index)?;
     (effect.kind == "text").then(|| (index, box_of(effect, EffectKind::Text, fit)))
 }
-/// §F3.4 S5 (`On the preview a box moves … and resizes`): the release that edits a PLACED caption. Returns `None`
-/// for every press that is not this one's — anything armed (the arm owns the press), a held effect (F3.8's grip owns
-/// it), or travel under `fx_zoom::DRAG_MIN_PX` on either axis (a release inside GTK's drag threshold is the click
-/// [`play_toggle_on_click`] answers). Otherwise the record whose box the press landed on is moved (interior) or resized (within
-/// `fx_text::EDGE_GRIP_PX` of an edge) through `ui::nudge_text_box` / `ui::drag_text_edge`, which write the history
-/// step, so one ↶ takes this gesture back.
+/// §F3.4 S5 (`On the preview a box moves … and resizes`): the release that edits a PLACED caption. `None` for
+/// every press that is not this one's: anything armed (the arm owns the press), a held effect (F3.8's grip),
+/// or travel under `fx_zoom::DRAG_MIN_PX` on either axis (the click [`play_toggle_on_click`] answers).
+/// Otherwise the box is moved (interior) or resized (within `fx_text::EDGE_GRIP_PX` of an edge) through
+/// `ui::nudge_text_box` / `ui::drag_text_edge`, which write the history step, so one ↶ takes it back.
 pub fn box_edit_on_release(
     win: &adw::ApplicationWindow,
     at: f64,
@@ -93,11 +80,9 @@ pub fn box_edit_on_release(
     if window::held_effect().is_some() {
         return None;
     }
-    // The travel floor is `fx_zoom::DRAG_MIN_PX` — §F3.1's "below this a press is a click, not a box" — asked on
-    // EACH axis, and deliberately the SAME door that flow uses: a caption edit travels on one axis only (drag an
-    // edge, or slide a caption straight up), so requiring both axes to move would refuse the very gesture §S5 asks
-    // for. A release under it on either axis moves nothing; one that also stayed inside GTK's drag threshold is a
-    // click, §S5's play/pause toggle (`play_toggle_on_click`, reached later in the same release).
+    // The travel floor `fx_zoom::DRAG_MIN_PX` (§F3.1) is asked on EACH axis, as that flow does: a caption edit
+    // travels on one axis only (an edge drag, or a straight slide), so requiring both would refuse §S5's gesture.
+    // Under it on either axis moves nothing; one also inside GTK's drag threshold is a click (`play_toggle_on_click`).
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
         return None;
@@ -106,8 +91,7 @@ pub fn box_edit_on_release(
     let (index, box_) = text_box_under(&cut_, at, fit, from)?;
     match fx_text::grab_edge(box_, from) {
         Some(edge) => Some(match edge {
-            // A vertical edge travels on x, a horizontal one on y: the axes are independent (§S5), so the other
-            // coordinate of the release is not this edge's business.
+            // A vertical edge travels on x, a horizontal one on y; the axes are independent (§S5).
             fx_text::Edge::Left | fx_text::Edge::Right => {
                 cut_text_hand::drag_text_edge(win, Some(index), edge, to.0)
             }
@@ -119,9 +103,8 @@ pub fn box_edit_on_release(
     }
 }
 
-/// Where the same gesture would land the box, without writing anything: what the drag-update shows while the hand
-/// moves, so the person sees the snapped result (and the snap lines, see [`crate::ui::cut_preview_frame::note_edit`])
-/// before releasing. Same three refusals as [`box_edit_on_release`]; answers the candidate box in the fitted px.
+/// Where the same gesture would land the box, without writing anything: what the drag-update shows (snapped,
+/// with snap lines, see [`crate::ui::cut_preview_frame::note_edit`]). Same three refusals as [`box_edit_on_release`].
 pub fn box_edit_preview(
     win: &adw::ApplicationWindow,
     at: f64,
@@ -136,14 +119,13 @@ pub fn box_edit_preview(
         return None;
     }
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
-    // Same floor as [`box_edit_on_release`], so the box shown while the hand moves is the box the release performs.
+    // Same floor as [`box_edit_on_release`], so the shown box is the box the release performs.
     if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
         return None;
     }
     let cut_ = window::review_cut_of(win);
     let (_, box_) = text_box_under(&cut_, at, fit, from)?;
-    // The candidate is measured against the FITTED picture, which is what every overlay on this panel is
-    // (`set_measure_overlay` in `cut_preview_panel`) — not the panel's own larger allocation.
+    // Measured against the FITTED picture, which every overlay on this panel is (`set_measure_overlay` in `cut_preview_panel`).
     let box_ = fx_text::Box_::from_px(box_.0, box_.1, box_.2, box_.3, fit.0, fit.1);
     let moved = match fx_text::grab_edge(box_.to_px(fit.0, fit.1), from) {
         Some(edge) => fx_text::resize_box(
@@ -161,17 +143,14 @@ pub fn box_edit_preview(
     Some(moved.to_px(fit.0, fit.1))
 }
 
-/// Test-only window onto the thread-local behind the §S5 snap lines. The PROGRAM never asks this question: the
-/// painter reads [`crate::ui::cut_preview_frame::edit_snap_on`] directly at paint time (`paint_paused`), and the
-/// drag's update leg writes it through `note_edit`. This door exists so a check can assert the switch follows
-/// `note_edit` without reaching into the thread-local itself — hence the name, so a reader of either side knows which
-/// path they are on.
+/// Test-only window onto the thread-local behind the §S5 snap lines: the painter reads
+/// [`crate::ui::cut_preview_frame::edit_snap_on`] directly and the drag's update writes it through `note_edit`.
 pub fn snap_lines_are_on_for_test() -> bool {
     crate::ui::cut_preview_frame::edit_snap_on()
 }
 
-/// An overlay's box in the fitted picture's px. A caption's box is `cut_preview_caption`'s, because that is the box
-/// its words were fitted into; a drawing's is the same four fractions read off the same output frame (§06#1).
+/// An overlay's box in the fitted picture's px: a caption's is `cut_preview_caption`'s (where its words were
+/// fitted); a drawing's is the same four fractions off the output frame (§06#1).
 fn box_of(effect: &crate::cut::Fx, kind: EffectKind, fit: (f64, f64)) -> (f64, f64, f64, f64) {
     if kind == EffectKind::Text {
         return cut_preview_caption::box_of(effect, fit);
@@ -187,16 +166,13 @@ fn box_of(effect: &crate::cut::Fx, kind: EffectKind, fit: (f64, f64)) -> (f64, f
     .to_px(fit.0, fit.1)
 }
 
-/// The click on the picture, performed (§05-cut F2.1 S2, §06 F3.1 after S5, F3.4 S5): a press and release that
-/// never passed GTK's drag threshold plays or pauses, WHATEVER is placed under it, a caption, a drawing or a zoom's
-/// box. The same door the picture's own button uses, so every click on the preview moves ONE transport. Returns the
-/// sentence for the status row, which reads differently when the click started play and when it paused, because
-/// "toggles" is the rule and a person needs to know which way it went.
+/// The click on the picture (§05-cut F2.1 S2, §06 F3.1 after S5, F3.4 S5): a press and release that never
+/// passed GTK's drag threshold plays or pauses WHATEVER is placed under it, through the picture's own button's
+/// door so every click moves ONE transport. Returns the status sentence, which differs for play and pause.
 ///
-/// `None` while anything is armed or held: the arm owns the press then, and so does F3.8's grip.
+/// `None` while anything is armed or held: the arm owns the press, as does F3.8's grip.
 ///
-/// The first rewrite answered here only for a click inside an overlay's box; every other click went on to the
-/// zoom-framing press, so one click on a placed zoom started play AND took the zoom (or opened a zoom form).
+/// Answering only inside an overlay's box once let a click on a placed zoom start play AND take the zoom.
 pub fn play_toggle_on_click(win: &adw::ApplicationWindow) -> Option<String> {
     if window::zoom_armed() || cut_text_hand::text_armed() || cut_svg::svg_armed() {
         return None;
@@ -204,15 +180,14 @@ pub fn play_toggle_on_click(win: &adw::ApplicationWindow) -> Option<String> {
     if window::held_effect().is_some() {
         return None;
     }
-    // The picture's own button's door, with the page's filmed runs: nothing here decides how playback starts.
+    // The picture's own button's door, with the page's filmed runs.
     let runs = timeline::filmed_runs(&crate::ui::page_recordings())
         .iter()
         .map(|(start, end)| (*start, *end))
         .collect::<Vec<_>>();
     let _said = window::press_play_recording(win, &runs);
     crate::ui::cut_picture::refresh(win);
-    // Which way it went comes from the transport AFTER the press, not from a guess before it. The face is the
-    // playhead's own reading (§D), which is what every other status on this page quotes.
+    // Which way it went comes from the transport AFTER the press, the playhead's own reading (§D).
     let playing = window::preview_player(win).transport.playing;
     let shown = crate::preview::clock(window::preview_player(win).playhead);
     Some(if playing {

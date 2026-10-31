@@ -1,14 +1,5 @@
 //! F5.4 Subtitles — `spec/08-produce.md` §F5.4, steps S1–S3. What cues a clip contributes (S1), how they
 //! land on the produced clock (S2), and how a track is translated one batch of numbered lines at a time (S3).
-//!
-//! The clip's own speech comes from Prepare's aligned words respelled by the fixed transcript — never from a
-//! second transcription, and never from reading the finished video back. That is why this module takes words
-//! as input rather than producing them: `transcribe`/`align` own the words, F5.2 S4 owns putting the clips on
-//! the produced clock, and what is decided here is where a cue starts and ends, what is on it, and what a
-//! translation may do to it.
-//!
-//! **Nothing is executed or written here.** The LLM call §3.10 describes belongs to the caller; this holds
-//! the message, the tool contract and the merge, so the round-trip's rules are testable without a server.
 
 use std::collections::BTreeMap;
 
@@ -39,9 +30,6 @@ pub const MIN_SECONDS: f64 = 0.8;
 
 // ---- S1: the cues one clip contributes -------------------------------------------
 
-/// One word with its seconds **on its own clip's clock** — recording seconds, before the rate and before the
-/// clip's place in the video. `text` empty is a word whose spelling was folded into the one in front of it:
-/// it holds its seconds and says nothing of its own.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Word {
     pub text: String,
@@ -64,9 +52,6 @@ pub struct Cue {
 pub enum Source {
     /// Footage: its own speech is worth reading.
     Footage,
-    /// An inserted sound or picture, a freeze, or a clip with no video: what it says is not in the words of
-    /// the session, so there is nothing to caption. Narration lines still win over all three (S1's first
-    /// branch asks about lines before it asks what the clip is).
     Insert,
     Freeze,
     NoVideo,
@@ -88,8 +73,6 @@ impl Source {
 }
 
 /// S1: the cues a clip contributes — its narration lines if it has any, else (footage only) its own speech.
-/// `rate` is the clip's playback rate, needed because a cue's seconds on screen are the produced ones: at 2×
-/// six seconds of words are up for three.
 pub fn cues(source: Source, lines: &[Entry], words: &[Word], rate: f64) -> Vec<Cue> {
     let spoken: Vec<Cue> = lines
         .iter()
@@ -104,7 +87,6 @@ pub fn cues(source: Source, lines: &[Entry], words: &[Word], rate: f64) -> Vec<C
     if !spoken.is_empty() {
         return spoken;
     }
-    // No lines: the clip's own speech, but only where its speech is in the video at all.
     if source == Source::Footage {
         word_cues(words, rate)
     } else {
@@ -112,16 +94,8 @@ pub fn cues(source: Source, lines: &[Entry], words: &[Word], rate: f64) -> Vec<C
     }
 }
 
-/// S1: the words of one footage clip, grouped into cues. A cue closes when the gap before the next word is a
-/// breath ([`SUBBREAK_SECONDS`]), when adding that word would pass two rows' worth of characters, or when the
-/// cue has been up for [`MAX_SECONDS`] **of produced time** — hence `rate`, which is why the prototype divided
-/// by `speed` here.
 pub fn word_cues(words: &[Word], rate: f64) -> Vec<Cue> {
     let produced_rate = if rate.abs() < f64::EPSILON { 1.0 } else { rate };
-    // The three bounds are all measured on the PRODUCED clock, so they are applied to a copy scaled onto it
-    // and the cues that come back are scaled back to the clip's own seconds — which is what `on_clock` and
-    // every later step of §F5.2 work in. Scaling only the ceiling instead left a cue up for twice its limit
-    // at 2×, because the words were still being counted in recording seconds.
     let scaled: Vec<Word> = words
         .iter()
         .map(|word| Word {
@@ -138,9 +112,6 @@ pub fn word_cues(words: &[Word], rate: f64) -> Vec<Cue> {
     out
 }
 
-/// The grouping itself, on a clock where one second is one second: a cue closes at a breath of
-/// [`SUBBREAK_SECONDS`], rather than pass two rows of [`ROW_CHARS`], or once it has been up for
-/// [`MAX_SECONDS`].
 fn group(words: &[Word]) -> Vec<Cue> {
     let mut out: Vec<Cue> = Vec::new();
     let mut current: Vec<&Word> = Vec::new();
@@ -166,8 +137,6 @@ fn group(words: &[Word]) -> Vec<Cue> {
     out
 }
 
-/// The words gathered so far become one cue: joined by spaces, empty ones holding their seconds and saying
-/// nothing (the folded-word case), from the first word's start to the last word's end.
 fn flush(out: &mut Vec<Cue>, current: &mut Vec<&Word>, chars: &mut usize) {
     if current.is_empty() {
         return;
@@ -188,10 +157,6 @@ fn flush(out: &mut Vec<Cue>, current: &mut Vec<&Word>, chars: &mut usize) {
     *chars = 0;
 }
 
-/// S1 (`an empty cue extends the previous`): a line deleted on purpose, or a word folded into the one in
-/// front, holds seconds and says nothing — so it lengthens the caption already up rather than becoming a cue
-/// nobody can read. Capped at [`MAX_SECONDS`] like every other cue: an endless silence must not buy an
-/// endless caption. A leading empty cue has nothing to extend and is dropped.
 pub fn extend_previous(cues: &mut Vec<Cue>) {
     let mut kept: Vec<Cue> = Vec::with_capacity(cues.len());
     for cue in cues.drain(..) {
@@ -209,10 +174,6 @@ pub fn extend_previous(cues: &mut Vec<Cue>) {
 
 // ---- S2: the produced clock -------------------------------------------------------
 
-/// S2: the clip's cues on the video's own timeline — `produced_start` is where the clip begins in the
-/// finished file and every second inside the clip shrinks by its rate. [`crate::produce_render::produced_clocks`]
-/// already answers where each clip starts, so a caller building a whole track walks that list and calls this
-/// once per clip rather than re-deriving the offsets here.
 pub fn on_clock(cues: &[Cue], produced_start: f64, rate: f64) -> Vec<Cue> {
     cues.iter()
         .map(|cue| Cue {
@@ -224,9 +185,6 @@ pub fn on_clock(cues: &[Cue], produced_start: f64, rate: f64) -> Vec<Cue> {
         .collect()
 }
 
-/// S2 in the order the spec gives it: no two cues on screen at once, a breath held rather than blank, and a
-/// cue too short to read folded into the one after. A cue whose end fell before its start is clamped first —
-/// everything below compares against a span that has to be sane.
 pub fn tidy(cues: &[Cue]) -> Vec<Cue> {
     let mut out: Vec<Cue> = Vec::with_capacity(cues.len());
     for mut cue in cues.iter().cloned() {
@@ -235,11 +193,9 @@ pub fn tidy(cues: &[Cue]) -> Vec<Cue> {
         }
         if let Some(previous) = out.last_mut() {
             if cue.s < previous.e {
-                // No two on screen at once, whatever the clocks said.
                 previous.e = cue.s;
             }
             if cue.s - previous.e < HOLD_SECONDS {
-                // The breath between two lines is not a blank screen.
                 previous.e = cue.s;
             }
             if previous.e - previous.s < MIN_SECONDS {
@@ -260,12 +216,6 @@ pub fn tidy(cues: &[Cue]) -> Vec<Cue> {
     out
 }
 
-/// S2: wrap into at most two rows of [`ROW_CHARS`] where that is possible, breaking between words. Text that
-/// already holds a newline is left exactly as it is — a cue the model wrapped is already wrapped, and
-/// re-breaking it contradicts what §3.10 asks the model to do. When every word fits on one row but two rows
-/// of 42 cannot hold them all, the words are balanced over two rows instead: dropping text off the screen is
-/// worse than a long row, and cutting mid-word is worse than both — so no break is ever taken inside a word,
-/// and a single word longer than a row simply gets its own row.
 pub fn wrap(text: &str) -> String {
     if text.contains('\n') {
         return text.to_string();
@@ -274,7 +224,6 @@ pub fn wrap(text: &str) -> String {
     if words.is_empty() {
         return String::new();
     }
-    // Greedy first: fill a row to the width, start the next.
     let mut rows: Vec<String> = Vec::new();
     let mut current = String::new();
     for word in &words {
@@ -306,9 +255,6 @@ pub fn wrap(text: &str) -> String {
     rows.join("\n")
 }
 
-/// S2: the placement tag a cue carries. The accepted spellings are [`crate::narrate_pass`]'s, so a line whose
-/// `pos` came from a model's answer and one a person chose agree here. `None` is the bottom, which needs no
-/// tag because that is where a player puts a caption anyway.
 pub fn placement(pos: &str) -> Option<&'static str> {
     match pos.trim().to_ascii_lowercase().as_str() {
         "top" => Some(r"{\an8}"),
@@ -362,9 +308,6 @@ fn vtt_timecode(secs: f64) -> String {
 
 // ---- S3: translation, one batch of numbered lines at a time -----------------------
 
-/// P.machine.translateBatch (§10: 150): lines per request. New — the prototype sent a whole track in one
-/// message and then repaired whatever it dropped, which costs a second call for every line that fell off the
-/// end of a long answer. A batch is small enough that the model numbers all of it.
 pub const BATCH: usize = 150;
 
 /// §3.10's thinking-off flag: a translation is arithmetic in somebody else's language, and a model that
@@ -394,22 +337,12 @@ pub fn message(n: usize, language: &str) -> String {
     format!("TRANSLATE THESE {n} LINES INTO {language}. Answer with {n} lines, numbered as they are here:")
 }
 
-/// The repair heading's own phrase, spelled once: [`Batch::ask_again_text`] writes it and nothing else
-/// in this module does. §6's first irregularity says translate "never caches its gap-filling second
-/// call", and the leg that files the answer sees only a message and its numbers — so the repair has to
-/// be recognisable from its own wording rather than from a flag bolted onto the `Ask` closure.
 pub const REPAIR_MARK: &str = "their numbers do not start at";
 
-/// Whether this request is the batch's gap-filling re-ask rather than its first call (§6's "never
-/// caches its gap-filling second call"). The phrase is the repair heading's own and appears nowhere
-/// else in what this module sends, so one marker decides it and the spec's two wordings stay verbatim.
 pub fn is_repair_request(message: &str) -> bool {
     message.contains(REPAIR_MARK)
 }
 
-/// The numbered list under that sentence: `n\ttext`, one entry per line. A cue's row break becomes ` / ` so
-/// one cue is one numbered entry — a raw newline would end the line and the reader of the answer could not
-/// tell a wrapped cue from a missing number.
 pub fn numbered(original: &[(usize, String)]) -> String {
     original
         .iter()
@@ -419,9 +352,6 @@ pub fn numbered(original: &[(usize, String)]) -> String {
 }
 
 /// What goes into the message for one cue: its text with the row breaks folded, and **no placement tag**.
-/// The prototype sent `{\an8}` into the translation as a word and never checked it came back, so a model that
-/// dropped it silently lost that caption's placement (§3.10's first must-fix). The tag is not the model's
-/// business: the app knows where it put the cue and puts it back on return ([`keep_placement`]).
 pub fn sent_text(cue: &Cue) -> String {
     sent_line(&cue.text)
 }
@@ -432,16 +362,10 @@ fn sent_line(text: &str) -> String {
     strip_tag(text).replace('\n', " / ").replace('\t', " ")
 }
 
-/// The same fold for a number paired with its text, which is how a batch's finished answers are filed
-/// in the cache ([`crate::llm_cache::translate_store_value`]): §6 stores translate as the reconstructed
-/// numbered text, and one translated row-break would otherwise split a numbered entry in two.
 pub fn numbered_one(number: usize, text: &str) -> String {
     format!("{number}\t{}", sent_line(text))
 }
 
-/// A batch's answer book. `first`/`last` are half-open indices into the whole track, so a number arriving on
-/// `translate_line` is checked against the range this request was about — and the re-ask can name the numbers
-/// the model was originally given rather than renumbering them (S3: "re-asked once with original numbers").
 #[derive(Debug, Clone)]
 pub struct Batch {
     pub first: usize,
@@ -484,10 +408,6 @@ impl Batch {
         self.missing().is_empty()
     }
 
-    /// The one re-ask, naming ONLY the lines still missing **with the numbers they were given the first
-    /// time**. Renumbering them 1..n is what made the prototype's repair calls land on the wrong lines: a
-    /// model told "answer with 2 lines" and given numbers 40 and 97 answers 40 and 97, and so must be asked
-    /// in those terms.
     pub fn ask_again_text(&self, original: &[(usize, String)]) -> String {
         let want = self.missing();
         let wanted: Vec<(usize, String)> = original
@@ -517,9 +437,6 @@ pub struct Merge {
     pub warning: Option<String>,
 }
 
-/// S3 (`still missing → the original text, with a warning`): a track is never dropped for one bad line. The
-/// numbers that stayed in the source language ship as they came, and the log names them so nobody reads a
-/// German track and wonders why line 7 is English.
 pub fn merge(language: &str, original: &[(usize, String)], got: &BTreeMap<usize, String>) -> Merge {
     let mut lines = Vec::with_capacity(original.len());
     let mut still_missing = Vec::new();
@@ -541,9 +458,6 @@ pub fn merge(language: &str, original: &[(usize, String)], got: &BTreeMap<usize,
     }
 }
 
-/// §08 §6's own wording for the numbers that never came back, spelled once so the run's log and the spec say
-/// the same sentence: `!!! subtitles: <lang>: N line(s) left in the original (line 7, 92) -- the rest of the
-/// track is good`. The tail matters — the track shipped, and saying only what went wrong would read as a failure.
 pub fn left_in_the_original(language: &str, numbers: &[usize]) -> String {
     format!(
         "!!! subtitles: {language}: {} line(s) left in the original ({}) -- the rest of the track is good",
@@ -585,10 +499,6 @@ pub fn cached(complete: bool) -> bool {
     complete
 }
 
-/// S3 (`the session's own language = track 0, never translated`): dropping it from the ticked list whatever a
-/// tick says. Translating a language into itself costs a minute and answers with what it was given; its track
-/// is written anyway, beside the video and unnamed by a code. Order is preserved so the tracks arrive in the
-/// order the menu listed them.
 pub fn track_languages(session: &str, ticked: &[String]) -> Vec<String> {
     let own = crate::roles::language_code(session);
     let mut out: Vec<String> = Vec::new();
@@ -616,14 +526,6 @@ fn strip_tag(text: &str) -> String {
     text.to_string()
 }
 
-/// §3.10's first must-fix, the other half: the ORIGINAL cue decides where its caption sits, whatever came
-/// back. Returns the text with the placement put back and `true` when the model returned a tag as a word —
-/// which is stripped rather than trusted, because a model told to translate is not a model told to lay out.
-/// §3.10's first must-fix, other half: the ORIGINAL cue decides where its caption sits, whatever came back.
-/// A tag can arrive flush against the text, after a space or a tab, or not at all, and `strip_tag` only
-/// recognises the flush case — so every leading tag is peeled off here before this cue's own goes back on.
-/// Returns the text with the placement put back and `true` when the model returned a tag as a word —
-/// which is stripped rather than trusted, because a model told to translate is not a model told to lay out.
 pub fn keep_placement(original: &Cue, translated: &str) -> (String, bool) {
     let carried = translated.trim_start() != strip_tag(translated).trim_start();
     // Peel until nothing more comes off: one pass left ` {\an8}` standing inside the caption, because the
@@ -647,11 +549,6 @@ pub fn keep_placement(original: &Cue, translated: &str) -> (String, bool) {
     (text, carried)
 }
 
-/// §3.10's second must-fix: the model's own line breaks are kept. The prompt asks for them (§F5.4 sends a cue
-/// as one numbered line and the wrapping is what the cue needs), and the prototype re-wrapped every answer at
-/// P.policy.subtitleRowChars on return, contradicting its own prompt and moving a break the model chose —
-/// usually into the middle of a phrase it had deliberately split. Used on the return path so the choice is
-/// visible in the code rather than implied by a missing call.
 pub fn keep_breaks(text: &str) -> &str {
     text
 }

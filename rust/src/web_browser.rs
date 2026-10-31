@@ -1,25 +1,4 @@
 //! F6.1 §2's web tools over a REAL browser: the leg `web_tools` leaves open.
-//!
-//! [`crate::web_tools`] holds every rule about what the model sees — the ladder, the dedupe and the 8-hit cap,
-//! the page caps, the bot-wall refusals, the log lines — and takes the fetching itself as a closure. This module
-//! is that closure: it finds Firefox, launches ONE headless instance per call, reads the page, and hands back
-//! hits or text. Nothing here decides policy; it only moves bytes between a browser and `web_tools`.
-//!
-//! # How the page is taken
-//!
-//! Over WebDriver BiDi ([`crate::bidi`]), as §2 says and the prototype does (`go/websearch.go`): one headless
-//! Firefox per call on a throwaway profile, on a debugging port it chooses itself, the page navigated to and
-//! read by script, the browser killed on the way out. The first port launched `firefox --headless --dump-dom
-//! <url>` instead and called it measured; `--dump-dom` is Chrome's flag, Firefox ignores it and never exits,
-//! so every search and read timed out and the steps never had a web tool. Its tests passed because they
-//! drove a shell script that printed a page, not a browser.
-//!
-//! # The budget
-//!
-//! §2 gives one 45 s per call, shared by the whole ladder and including browser boot and render wait. That is
-//! [`tools::web_ladder_budget`]'s `(45, 3)`: three rungs split one budget, so each dump gets a third and the
-//! ladder can never hold a step open for minutes. A dump that outlives its slice is KILLED — an orphaned
-//! headless browser would sit on the port and the memory until the app exits.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -33,8 +12,6 @@ pub const BOOT_SECONDS: u64 = 15;
 /// Seconds the page is given to render after navigation. §2's other 15 s.
 pub const RENDER_SECONDS: u64 = 15;
 
-/// Where a named-but-missing binary is looked for besides PATH: the usual install locations, tried in order.
-/// Flatpak's own firefox is deliberately absent — inside the sandbox the flatpak instance cannot be driven.
 pub const INSTALL_PATHS: [&str; 4] = [
     "/usr/bin/firefox",
     "/usr/lib/firefox-esr/firefox-esr",
@@ -42,9 +19,6 @@ pub const INSTALL_PATHS: [&str; 4] = [
     "/opt/firefox/firefox",
 ];
 
-/// The names tried on `PATH` when the settings box named nothing. The prototype accepts all three, and Alpine
-/// ships `firefox-esr` where Debian ships `firefox` — a rule that found only one would call a working machine
-/// "no firefox found".
 pub const PATH_NAMES: [&str; 3] = ["firefox", "firefox-esr", "firefox-bin"];
 
 fn is_executable(path: &std::path::Path) -> bool {
@@ -54,14 +28,6 @@ fn is_executable(path: &std::path::Path) -> bool {
     })
 }
 
-/// Find the browser to drive: the settings value if it names something runnable, else the first of
-/// [`PATH_NAMES`] on `PATH`, else the first of [`INSTALL_PATHS`].
-///
-/// The error is the filesystem's own reason ("No such file or directory", "Permission denied"), because
-/// [`crate::web_tools::unavailable_log`] prints it verbatim as `firefox: <stat error>` and a person has to be
-/// able to act on it. An empty setting is not an error but the "name one in the settings" case, which
-/// `unavailable_log` handles from the empty string itself — so this returns the stat reason only for a name
-/// that WAS given and could not be run.
 pub fn firefox_path(setting: &str) -> Result<PathBuf, String> {
     let setting = setting.trim();
     if !setting.is_empty() && !setting.eq_ignore_ascii_case("off") {
@@ -93,8 +59,6 @@ pub fn firefox_path(setting: &str) -> Result<PathBuf, String> {
     Err("no firefox on PATH or in its usual install paths".to_string())
 }
 
-/// The first executable called `name` on `PATH`. Written out rather than shelling out to `which`, which is not
-/// guaranteed to exist and would be a second process per lookup.
 fn on_path(name: &str) -> Option<PathBuf> {
     if name.contains('/') {
         let direct = PathBuf::from(name);
@@ -110,16 +74,10 @@ fn on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// How long a navigation may wait for the page's load event before what has arrived is read anyway:
-/// the prototype's 10 s, inside the call's own budget.
 const NAVIGATE_SECONDS: u64 = 10;
 
-/// What is left of the budget for reading after navigation: the navigation stops this much before the
-/// deadline, so a page still loading at the end is read as it stands rather than lost to the clock.
 const READ_RESERVE: Duration = Duration::from_secs(2);
 
-/// One browser, one page, within `budget` (boot, navigation and reading together, §2's "including browser
-/// boot and render wait"). Launched on a port of its own choosing and killed on return.
 fn on_page<T>(
     browser: &std::path::Path,
     url: &str,
@@ -160,18 +118,12 @@ pub fn dump(setting: &str, url: &str, budget: Duration) -> Result<String, String
     dump_with(&browser, url, budget)
 }
 
-/// DuckDuckGo's result anchors, read off the rendered page (the prototype's `ddgExtract`, plus the older
-/// `result__a`/`result__snippet` markup, because the engine changes this without asking). The page repeats an
-/// anchor in its carousels; [`crate::web_tools::dedupe`] drops the repeats.
 pub const RESULTS_SCRIPT: &str = r#"JSON.stringify(Array.from(document.querySelectorAll('a[data-testid="result-title-a"], a.result__a')).map(a => {
   const root = a.closest('article') || a.closest('[data-testid="result"]') || a.closest('.result') || a.closest('.result__body') || a.parentElement;
   const snip = root && (root.querySelector('[data-result="snippet"]') || root.querySelector('span[data-testid="result-snippet"]') || root.querySelector('.result__snippet'));
   return {title: (a.innerText || "").trim(), url: a.href, snippet: snip ? (snip.innerText || "").trim() : ""};
 }).filter(r => r.url.startsWith('http')))"#;
 
-/// The result anchors on the page at `url`: the page is asked every half second until it shows some or the
-/// budget runs out (the results are drawn by script after the load, §2's render wait). A page that never
-/// shows any answers with none, which the ladder reads as "this query found nothing".
 pub fn search_with(
     browser: &std::path::Path,
     url: &str,
@@ -196,15 +148,6 @@ pub fn search_with(
     })
 }
 
-// ---- HTML to what the rules want ---------------------------------------------------------
-
-// ---- HTML to what the rules want ---------------------------------------------------------
-
-/// Drop `<script>`/`<style>`/`<head>` blocks and every tag, then collapse whitespace: page text, which is what
-/// [`crate::web_tools::page_issue`] and [`crate::web_tools::clip_page`] are written to judge.
-///
-/// The element scan runs on a lower-cased COPY while the slices index the original, so HTML outside ASCII (a
-/// title in Cyrillic, say) cannot shift an offset and cut a tag in half — `make_ascii_lowercase` widens bytes.
 pub fn page_text(html: &str) -> String {
     let mut out = String::with_capacity(html.len() / 4 + 16);
     // `<script>` and `<style>` hold RAW TEXT in HTML: their contents are not markup, so a tag scanner must skip
@@ -285,8 +228,6 @@ pub fn page_text(html: &str) -> String {
         .join("\n")
 }
 
-/// Tags whose end means a line break for the reader. A page flattened to one long line makes the 200-character
-/// floor meaningless, so paragraph structure has to survive the strip.
 const BLOCK_TAGS: [&str; 12] = [
     "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "br", "article", "section", "table",
 ];
@@ -294,8 +235,6 @@ const BLOCK_TAGS: [&str; 12] = [
 /// Elements whose contents are raw text rather than markup.
 const RAW_ELEMENTS: [&str; 2] = ["script", "style"];
 
-/// The handful of entities a rendered page actually contains. Anything else stays as written: guessing at an
-/// unknown `&xyz;` would silently change somebody's text.
 fn unescape(text: &str) -> String {
     text.replace("&amp;", "&")
         .replace("&lt;", "<")
@@ -306,11 +245,6 @@ fn unescape(text: &str) -> String {
         .replace("&nbsp;", " ")
 }
 
-// ---- the closures the rules take ---------------------------------------------------------
-
-/// One search rung: navigate, extract, hand back the hits. `budget` is the WHOLE call's slice for this rung —
-/// the caller splits [`tools::web_ladder_budget`]'s 45 s across the three queries, so a slow first rung cannot
-/// spend a later one's share.
 pub fn query_for(setting: &str, budget: Duration) -> impl Fn(&str) -> Result<Vec<Hit>, String> {
     let browser = firefox_path(setting);
     move |query: &str| {
@@ -334,11 +268,6 @@ pub fn read_page_for(setting: &str, budget: Duration) -> impl Fn(&str) -> Result
 }
 
 /// Whether a step's web tools can be offered, and why not when they cannot.
-///
-/// §2 logs the reason ONCE per step, with the filesystem's own words for a named-but-missing binary — which is
-/// the only reason [`crate::web_tools::unavailable_log`] takes `found`/`stat_error` at all. The lookup is
-/// [`crate::web_browser::firefox_path`], so the box that says "no firefox found" is said by the same code that
-/// would have launched it.
 pub fn availability(firefox: &str) -> (bool, String) {
     if firefox.trim().is_empty() || firefox.trim().eq_ignore_ascii_case("off") {
         return (false, String::new());
@@ -349,9 +278,6 @@ pub fn availability(firefox: &str) -> (bool, String) {
     }
 }
 
-/// One web tool call as §2 S6 wants it: a problem is TEXT the model can act on, never a failed job. Returns the
-/// answer plus the line §2 asks for ("searched a / b / c -- N result(s) for <used>", "read <url> (N
-/// characters)"); `None` means the call was not a web tool, leaving the caller's own dispatch the authority.
 pub fn run_tool(
     step: &str,
     firefox: &str,
@@ -392,8 +318,6 @@ pub fn run_tool(
     None
 }
 
-/// File one finished web call's `requests.tsv` row: a refusal names its reason as the outcome, anything
-/// else was content ([`crate::web_request_log`] holds the row's shape and why its model column is empty).
 fn record_call(step: &str, kind: &str, asked: &str, answer: &str, started: i64) {
     let outcome = match crate::web_request_log::refusal_reason(answer) {
         Some(reason) => crate::requests::Outcome::Error(reason),
@@ -410,8 +334,6 @@ fn record_call(step: &str, kind: &str, asked: &str, answer: &str, started: i64) 
     );
 }
 
-/// Run one web tool for a step and log what it did on the sink every headless flow writes to (a tool closure
-/// cannot reach the run's own `log` closure, which borrows the loop's state).
 pub fn dispatch(step: &str, firefox: &str, asked: &crate::exchanges::ToolCall) -> Option<String> {
     let (answer, line) = run_tool(step, firefox, asked)?;
     if let Some(line) = line {
@@ -420,8 +342,6 @@ pub fn dispatch(step: &str, firefox: &str, asked: &crate::exchanges::ToolCall) -
     Some(answer)
 }
 
-/// DuckDuckGo's result page for one query. `kl=noah` is the plain desktop layout; the engine serves the same
-/// markup regardless of locale, and a redirect-free URL keeps the budget for the page itself.
 pub fn duckduckgo(query: &str) -> String {
     // `NAIVEPOST_SEARCH_URL` names another engine page, for a test that serves the result page itself (the
     // same kind of seam as `NAIVEPOST_PLAYER`): the browser, the protocol and the reading stay the real ones.
@@ -432,8 +352,6 @@ pub fn duckduckgo(query: &str) -> String {
     format!("{base}?q={}", percent_encode(query))
 }
 
-/// Percent-encode a query for a URL. Hand-rolled to avoid a dependency for one call site: everything outside
-/// the unreserved set of RFC 3986 becomes `%XX`, which is what a query string needs.
 fn percent_encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.as_bytes() {

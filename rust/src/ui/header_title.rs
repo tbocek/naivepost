@@ -1,28 +1,15 @@
 //! §03-shell.md §1 badge **4** — the header's project name/path, and how it narrows.
-//!
-//! §1: "project name/path (as the window narrows: path + tab words → file name + tab words → file name +
-//! icons only)". Three readings of the same fact, chosen by how much room the header leaves: the full
-//! path while there is room, then the folder's own name, then the name alone with the tab words gone
-//! (the icons are the header's own buttons and always stay).
-//!
-//! The rule is a pure function of (folder, tab, fit) so a test can pin the ladder without a window; the
-//! widget half only picks the stage and draws it.
-//!
-//! Split out of `window.rs`, which is past its size budget.
 
 use std::path::Path;
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
-/// §1's ladder, one rung per amount of header room. Named for what they hold, per §1.
+/// §1's ladder, one rung per amount of header room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fit {
-    /// Path + tab words.
     Roomy,
-    /// File name + tab words.
     Tight,
-    /// File name only.
     Tightest,
 }
 
@@ -33,9 +20,6 @@ pub const WIDGET_NAME: &str = "project-title";
 const JOIN: &str = " · ";
 
 /// The label's text for one folder, one tab and one width stage.
-///
-/// An empty half is left out rather than joined: a window that knows no folder yet shows the tab word
-/// alone, and a tab word that is missing shows the path alone. Never a stray separator.
 pub fn label_for(dir: &Path, tab: &str, fit: Fit) -> String {
     let name = dir
         .file_name()
@@ -59,17 +43,10 @@ pub fn label_for(dir: &Path, tab: &str, fit: Fit) -> String {
 /// which is what makes it the thing that pins the window's minimum width.
 pub const TITLE_MIN_CHARS: i32 = 1;
 
-/// The label's natural ask, in characters — see the note on [`build_label`]'s `max-width-chars`. It is a
-/// CAP on what the path may claim, not on what it shows (the ellipsis trims only this ask): long enough to
-/// read a real project path, short enough that the start group leaves the header's two sides balanced for
-/// the tab row to sit in its centre at §1's 1240 px. Measured: 40 chars slid the tab row off centre once
-/// the tab words stopped ellipsizing (centre 658 against a window centre of 615); 14 puts them back.
+/// The label's natural ask, in characters — see the note on [`build_label`]'s `max-width-chars`.
 pub const TITLE_NATURAL_CHARS: i32 = 14;
 
-/// Build §1's badge **4** and pack it into the header after Save. §1: "project name/path packed after
-/// Save", with the tab row taking the centre slot — so this goes on the bar's start side, where it sits
-/// right behind New/Open/Save and gives way from its own end as the window narrows. Installed here rather
-/// than by the caller so the name, the dimming and the ellipsis cannot be half-done.
+/// Build §1's badge **4** and pack it into the header after Save.
 pub fn install(header: &adw::HeaderBar) -> gtk::Label {
     let label = build_label();
     // §1 packs badge **4** after Save, so it belongs on the bar's start side rather than in the centre.
@@ -88,8 +65,7 @@ fn build_label() -> gtk::Label {
     // EXPANDS, but never asks for more than it must: with the header's title widget held dead centre
     // (`CenteringPolicy::Strict` in `window.rs`) the START group's natural width is what decides where the
     // centre lands — measured, an uncapped path pulled the tab row's centre from 615 to 736 px in a 1240 px
-    // window. `max-width-chars` caps the NATURAL ask only; the minimum stays one character (`width_chars(1)`),
-    // so a narrow window still ellipsizes this label instead of being held wide.
+    // window.
     label.set_max_width_chars(TITLE_NATURAL_CHARS);
     label.set_width_chars(1);
     label.set_single_line_mode(true);
@@ -100,10 +76,7 @@ fn build_label() -> gtk::Label {
     label
 }
 
-/// Which stage fits: the widest ladder rung whose natural text still fits `width`. Measured against the
-/// text's own natural width rather than a fixed character count — §10's prototype numbers (`headSlack`
-/// 90, name 28 chars) are what this replaces with something that follows the actual header. A width of
-/// 0 (never allocated yet) keeps the widest rung, which is what §1's minimum-size 1240×900 window shows.
+/// Which stage fits: the widest ladder rung whose natural text still fits `width`.
 pub fn stage_for(text: &str, width: i32) -> Fit {
     if width <= 0 {
         return Fit::Roomy;
@@ -118,9 +91,7 @@ pub fn stage_for(text: &str, width: i32) -> Fit {
     }
 }
 
-/// Rough width of one label character, the value the ladder measures against. Chosen so the rung that
-/// survives is the one §1's screenshot shows at 1240 px (path + tab words), and so a path roughly twice
-/// that width drops to the name — the prototype's own slack, expressed per character.
+/// Rough width of one label character, the value the ladder measures against.
 pub const APPROX_CHAR_PX: i32 = 8;
 
 /// Draw the header label for this folder and tab, at whatever stage its current width allows.
@@ -131,9 +102,7 @@ pub fn paint(label: &gtk::Label, dir: &Path, tab: &str) {
     label.set_text(&label_for(dir, tab, stage));
 }
 
-/// The room the label has to draw in. `gtk::Label` reports 0 until it has been allocated, and its own
-/// natural width afterwards; before any allocation there is nothing to compare against, so `stage_for`
-/// gets a width big enough to keep the widest rung.
+/// The room the label has to draw in.
 fn natural_room(label: &gtk::Label) -> i32 {
     match label.width() {
         0 => i32::MAX / 4,

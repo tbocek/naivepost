@@ -1,9 +1,6 @@
-//! §05-cut#1-screen — the effects lane's rows and the preview panel redrawn from them. Split out of
-//! `window.rs`, which is past its size budget; its doors are re-exported through `window`.
-//!
-//! Every number on these surfaces comes from `fx_lane`'s view-model (`lane_layout`, `paused_scene`,
-//! `playing_scene`, `plate_for`); nothing here composes a colour, an alpha, a row or a threshold, so the
-//! rules cannot drift from the tests that pin them. The UI only pushes state into named widgets.
+//! §05-cut#1-screen — the effects lane's rows and the preview panel redrawn from them. Every number comes
+//! from `fx_lane`'s view-model (`lane_layout`, `paused_scene`, `playing_scene`, `plate_for`); the UI only
+//! pushes state into named widgets.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -16,19 +13,14 @@ use crate::fx_lane;
 use crate::ui::window as ui;
 
 thread_local! {
-    /// Set while [`refresh_effects_lane`] is pushing state into the widgets, so a property write made by
-    // the refresh cannot be mistaken for a user action and re-enter itself — the same guard shape as
-    // `CAMERA_REFRESH` (F2.10).
+    /// Set while [`refresh_effects_lane`] pushes state into the widgets, so its own property writes cannot re-enter it.
     static LANE_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
-    /// Whether the lane's CSS classes have been loaded once. The crate installs no display-wide provider
-    /// except the scoped ones each surface needs; the lane's six kind colours are one of them, loaded a
-    /// single time because loading per refresh would stack providers.
+    /// Whether the lane's CSS classes have been loaded once (loading per refresh would stack providers).
     static LANE_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// The lane's CSS, built from `fx_lane::bar_colour` rather than hand-written hex, so the palette in the
-/// file and the palette on screen cannot disagree. One class per kind plus the staying zoom's own, and the
+/// The lane's CSS, built from `fx_lane::bar_colour`: one class per kind plus the staying zoom's own and the
 /// two outline classes the held overlay and a box under the hand wear.
 fn install_lane_css_once() {
     if LANE_CSS_LOADED.with(|cell| cell.get()) {
@@ -45,9 +37,8 @@ fn install_lane_css_once() {
         ("fx-kind-label", cut::EffectKind::Label, false),
     ] {
         let (r, g, b) = fx_lane::bar_colour(kind, staying);
-        // The SAME alpha the painted surface lays its wash on (`fx_lane::bar_wash_alpha`), not a second number
-        // of our own: §A.2 spells a bar as `fill RGBA(0.92,0.42,0.6,0.4)` — a wash over the pictures under the
-        // lane, not a block hiding them — and if CSS and cairo disagreed about it, one of the two would be lying.
+        // The SAME alpha the painted surface uses (`fx_lane::bar_wash_alpha`): §A.2 spells a bar as a wash over the
+        // pictures, and CSS and cairo must not disagree.
         let a = fx_lane::bar_wash_alpha(kind);
         css.push_str(&format!(
             ".{class} {{ background-color: rgba({}, {}, {}, {a}); }}\n",
@@ -64,8 +55,7 @@ fn install_lane_css_once() {
         (violet[2] * 255.0).round() as i32
     ));
     css.push_str(".drawing-box { border: 1px dashed #ffffff; }\n");
-    // F3.8 S3: the kill target is invisible — the cross a person sees is `cut_lane_paint`'s ink and this button is
-    // only the place that press lands on. Without this rule adwaita would draw a real button box over the glyph.
+    // F3.8 S3: the kill target is invisible (the cross is `cut_lane_paint`'s ink); without this rule adwaita draws a button box over it.
     css.push_str(".fx-kill-target { background: none; border: none; box-shadow: none; outline: none; padding: 0; min-width: 0; min-height: 0; }\n");
     css.push_str(&super::cut_debt_tail::css());
     css.push_str(&super::cut_preview_frame::css());
@@ -80,11 +70,9 @@ fn install_lane_css_once() {
     LANE_CSS_LOADED.with(|cell| cell.set(true));
 }
 
-/// This window's effects-lane holder, resolved through its own content so a closed window's surviving
-/// tree cannot answer for a live one — the same scoping `camera_rows_box` and `fold_badges_box` use: GTK
-/// does not destroy a window on `close()`, so searching from the window object can walk into that other
-/// tree and append into it (the `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`
-/// this guards against).
+/// This window's effects-lane holder, resolved through its own content: GTK does not destroy a window on
+/// `close()`, so searching from the window object can walk into a closed window's tree and append into it
+/// (`gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed`).
 pub fn effects_lane_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     let content = window.content()?;
     ui::find_widget_by_name(&content, "effects-lane")?
@@ -92,24 +80,20 @@ pub fn effects_lane_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
         .ok()
 }
 
-/// One of this window's preview widgets, scoped to its own content for the reason stated on
-/// [`effects_lane_box`]. Every preview lookup goes through here rather than the window object.
+/// One of this window's preview widgets, scoped like [`effects_lane_box`].
 pub(crate) fn preview_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     let content = window.content()?;
     ui::find_widget_by_name(&content, name)
 }
 
-/// Redraw the effects lane and the preview panel from this window's cut, its held effect and the red line.
+/// Redraw the effects lane and the preview panel from this window's cut, held effect and red line.
 ///
-/// Build-once-then-update-properties (F2.10's rule): children are appended only when the count they stand
-/// for changed, and always removed FROM THEIR HOLDER rather than by a tree-wide name search. Invisible
-/// overlays stay in the tree and are hidden by opacity — adding and removing widgets mid-refresh is what
-/// trips `gtk_box_append`'s parent assertion.
+/// Build-once-then-update-properties (F2.10): children are appended only when their count changed and
+/// removed FROM THEIR HOLDER. Invisible overlays are hidden by opacity; adding and removing widgets
+/// mid-refresh trips `gtk_box_append`'s parent assertion.
 pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
-    // §1's band costs a row per camera AND a row per cut lane, and an effect adds a row to the effects lane
-    // inside it, so the band's surfaces are sized to the cut before anything is redrawn. `install` could only
-    // size them for the empty page it was called on, and a `DrawingArea` clips its draw callback to its
-    // allocation — an added row painted below the old height simply never appeared.
+    // The band costs a row per camera AND per cut lane, and an effect adds a row to the lane, so the surfaces
+    // are sized to the cut first: a `DrawingArea` clips its draw callback to its allocation.
     crate::ui::cut_tracks::fit_band_height_for_window(
         window,
         &crate::ui::cut_view::band_scene_for(window),
@@ -124,18 +108,16 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     let bars = fx_lane::lane_layout(&cut_.fx);
     let rows = fx_lane::row_count(&cut_.fx);
     let t = ui::paste_line(window);
-    // The held effect is identified by its index in the cut's list, so the view can name the widget after
-    // the record it stands for. A held effect not on this cut holds no overlay.
+    // The held effect is identified by its index in the cut's list; one not on this cut holds no overlay.
     let mut held_index = ui::held_effect().and_then(|held| {
         cut_.fx
             .iter()
             .position(|effect| effect.kind == held.kind && effect.t == held.t)
     });
     let mut scene = fx_lane::paused_scene(&cut_.fx, t, held_index, false);
-    // F3.8 S2 (`Hold drops when the line walks > 1/24 s off the band`): the refresh path is where the page
-    // learns the line has moved, so it is also where a hold that has walked away is given up. 1/24 s is one
-    // frame at 24 fps, and the slack exists because the clock keeps running while something is in hand: a
-    // band whose edge crosses the line by a single frame must not vanish from under the pointer mid-drag.
+    // F3.8 S2 (`Hold drops when the line walks > 1/24 s off the band`): refresh is where the page learns the
+    // line moved. 1/24 s is one frame at 24 fps; the slack is because the clock keeps running while something
+    // is in hand, so a band whose edge crosses the line by a frame must not vanish mid-drag.
     if let Some(index) = held_index {
         if let Some(effect) = cut_.fx.get(index) {
             if fx_band::hold_drops(effect.t, effect.dur, t) {
@@ -144,10 +126,8 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             }
         }
     }
-    // `paused_scene` deliberately leaves the record in hand OUT of `overlays` (it is being judged, not
-    // watched), so the view adds it back here as the full-alpha outlined one. Its index comes from
-    // `held_index`, which was resolved against this cut's own list above — a held effect that is not on
-    // this cut draws no overlay either way.
+    // `paused_scene` leaves the record in hand OUT of `overlays`, so it is added back here as the full-alpha
+    // outlined one (index from `held_index`).
     if let Some(index) = held_index {
         if let Some(effect) = cut_.fx.get(index) {
             if effect.effect_kind().is_some_and(fx_lane::drawn_paused) {
@@ -165,31 +145,23 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 continue;
             };
             let bar_widget = ensure_bar(&row_box, &format!("fx-bar-{}", bar.index), |slot| {
-                // F3.8 S3: the bar is an OVERLAY, not a box, so its ✕ sits OVER the middle of the wash instead of
-                // after it — §A.9 puts the kill "in the middle", and a box laid the ink and then the button out
-                // side by side pushed the cross past the bar's right edge into its neighbour.
+                // F3.8 S3: the bar is an OVERLAY so its ✕ sits OVER the middle of the wash (§A.9); a box put the cross past the bar's edge.
                 let overlay = gtk::Overlay::new();
                 overlay.set_size_request(48, slot);
-                // F3.8 S1/S2/S3: the bar's OWN drag gesture, attached once per bar widget for the same reason
-                // the ✕ is connected once — a refresh that added a second controller would answer one press
-                // twice. The rules it forwards to live in `fx_band`; this is only the wire.
+                // F3.8 S1/S2/S3: the bar's OWN drag gesture, attached once per bar widget (a second controller would
+                // answer one press twice). The rules live in `fx_band`.
                 crate::ui::cut_band_press::wire_bar(window, bar.index, overlay.as_ref());
                 overlay
             });
-            // F3.8 S1/S3: the bar's DRAWN width comes from the record's own length, with 48 px only as a
-            // FLOOR. The grip threshold (`fx_band::GRIP_MIN_PX` 30) and the ✕ threshold
-            // (`fx_band::KILL_MIN_PX` 32) are stated against the width of the bar on screen, so a fixed width
-            // makes the affordances the user sees disagree with the rule the press applies: a long record would
-            // look grabbable in its middle while `grab_at` called it an edge, and a short one could show a ✕
-            // the rules forbid. Re-set on EVERY refresh because `ensure_named_child` reuses the widget and a
-            // nudge or a resize changes `dur` under it; `slot` stays the height (never read back — it is 0
-            // before allocation). 48 px remains the floor so a record under 12 s is still big enough to click.
+            // F3.8 S1/S3: the drawn width comes from the record's length, 48 px only as a FLOOR. The grip
+            // (`fx_band::GRIP_MIN_PX` 30) and ✕ (`fx_band::KILL_MIN_PX` 32) thresholds are against the on-screen width,
+            // so a fixed width would show affordances the press rules refuse. Re-set on EVERY refresh because
+            // `ensure_named_child` reuses the widget; `slot` stays the height (0 before allocation).
             let width = cut_bar_width_px(cut_.fx[bar.index].dur);
             let drawn = width.max(48.0).round();
             bar_widget.set_size_request(drawn as i32, bar_widget.height().max(1));
-            // §2 / inventory §A: the bar's INK — the wash at `fx_lane::bar_wash_alpha`, the kind's mark and its
-            // short line (§A.8). Built once per record and re-armed each refresh with the numbers just computed
-            // for the box, so what is painted and what the grip/✕ rules read cannot disagree.
+            // §2 / inventory §A: the bar's INK (wash at `fx_lane::bar_wash_alpha`, the kind's mark, short line §A.8),
+            // re-armed each refresh with the numbers just computed so paint and grip/✕ rules cannot disagree.
             let slot_h = fx_lane::lane_height_px(rows.max(1)) / rows.max(1) as f64;
             crate::ui::cut_lane_paint::attach(
                 bar_widget.as_ref(),
@@ -211,24 +183,17 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                     true,
                 );
             }
-            // F3.8 S3: the ✕ lives INSIDE the bar it kills, named after the record rather than the row, so a
-            // test can find "the kill button of effect #i" and click it. It exists only while the bar is wide
-            // enough to carry one clear target away from its own grips (§A.9: `≥ 32 px`), and being added AND
-            // removed off that width keeps a narrow bar from ever offering a ✕ that overlaps an edge grip.
-            // The button is created ONCE per record index and its handler travels with it: `ensure_named_button`
-            // returns the same widget on every refresh, so the click below is connected exactly once and cannot
-            // stack a second removal on one press.
-            // `width` is the SAME number the bar was just sized with above, so the drawn ✕ and the press rule
-            // can never disagree about whether this bar has room for one.
+            // F3.8 S3: the ✕ lives INSIDE the bar it kills, named after the record so a test can click it. It exists
+            // only while the bar is wide enough for one clear target away from its grips (§A.9: `≥ 32 px`). It is
+            // created ONCE per record index with its handler (`ensure_named_button` reuses the widget), so the click
+            // is connected once. `width` is the number the bar was just sized with.
             let kill_name = format!("fx-remove-{}", bar.index);
             if fx_band::kill_open(width) {
                 let win_kill = window.clone();
                 let index = bar.index;
                 let kill = ensure_kill_target(&bar_widget, &kill_name, move |slot| {
-                    // The cross a person SEES is `cut_lane_paint`'s ink; this button is the hit target centred
-                    // over that glyph and draws nothing of its own (empty label, no frame, transparent CSS class),
-                    // so the page and the cairo snapshot can never show two different crosses. Both are gated by
-                    // the same `fx_band::kill_open(width)` above, so neither can offer a kill the other refuses.
+                    // The cross a person SEES is `cut_lane_paint`'s ink; this button is the invisible hit target over it,
+                    // gated by the same `fx_band::kill_open(width)`, so neither can offer a kill the other refuses.
                     let mark = gtk::Button::with_label("");
                     mark.add_css_class("fx-kill-target");
                     mark.set_halign(gtk::Align::Center);
@@ -237,9 +202,7 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                     mark.set_can_target(true);
                     mark.set_size_request(fx_band::KILL_MIN_PX as i32, slot);
                     mark.connect_clicked(move |_| {
-                        // F2.7 ✕ badges: the effect's cross is the `effect` badge, so it fires through the one
-                        // badge door; the door forwards to `remove_effect_at`, whose sentence the fold rounds
-                        // already pin, and prints it.
+                        // F2.7 ✕ badges: the effect's cross is the `effect` badge, fired through the one badge door.
                         let said = crate::ui::cut_verb_press::press_badge(
                             &win_kill,
                             crate::cut_verbs::Badge::Effect,
@@ -258,9 +221,8 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 .first_child()
                 .and_then(|node| walk_named(node, &kill_name))
             {
-                // Drop the ✕ from the bar that carries it (never a tree-wide search) when the bar has shrunk
-                // under the threshold; a stale ✕ would be a kill button nobody asked for. Its parent is the bar's
-                // Overlay, so this unparents rather than reaching for a Box that is not there.
+                // Drop the ✕ from the bar that carries it when the bar shrank under the threshold. Its parent is the
+                // bar's Overlay, so this unparents.
                 existing.unparent();
             }
         }
@@ -283,9 +245,8 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     }
 
     if let Some(rect) = preview_widget(window, "preview-camera-rect") {
-        // F3.1 S1: while a zoom is armed the camera layer goes DOWN so the whole source shows — a box cannot
-        // be drawn against a frame that is already cropped. The opacity is added AND removed off `armed`, so a
-        // disarmed page always gets its stroke back.
+        // F3.1 S1: while a zoom is armed the camera layer goes DOWN so the whole source shows; opacity is added
+        // AND removed off `armed`.
         let armed = ui::zoom_armed();
         rect.set_opacity(if armed || scene.rect_stroke_px <= 0.0 {
             0.0
@@ -300,18 +261,14 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         crate::ui::cut_preview_panel::sync_overlay_stack(&stack, &scene, held_index);
     }
     if let Some(panel) = preview_widget(window, "preview-panel") {
-        // F3.1 S1: the arm's own mark on the panel. The same rule `set_camera_layer_down` applies on an
-        // arm/disarm without rebuilding anything: a full refresh has to paint the arm too, and both paths must
-        // agree or a refresh could undo the arm's look.
+        // F3.1 S1: the arm's own mark on the panel, as `set_camera_layer_down` applies; a refresh must paint it too.
         set_class(&panel, "zoom-camera-down", ui::zoom_armed());
-        // The room is the panel's own width once laid out. Before layout GTK reports 0 for it, which is
-        // "not measured yet" rather than "no room", so the natural size it asks its parent for stands in:
-        // reading an unrealized 0 as no room would hide the plate from every headless check while a real
-        // window shows it (`fx_lane::room_px`).
+        // The room is the panel's own width once laid out. Before layout GTK reports 0 ("not measured yet"), so
+        // the natural size stands in; reading 0 as no room would hide the plate from headless checks (`fx_lane::room_px`).
         let (minimum, natural) = panel.preferred_size();
         let asked = natural.width().max(minimum.width());
         let room = fx_lane::room_px(panel.width() as f64, asked.max(0) as f64);
-        // What the plate says is the debt of the record under the red line, not a placeholder.
+        // The plate says the debt of the record under the red line.
         let said = fx_lane::plate_for(fx_lane::plate_debt_at(&cut_.fx, t), room);
         if let Some(plate) =
             preview_widget(window, "preview-plate").and_then(|w| w.downcast::<gtk::Label>().ok())
@@ -329,7 +286,6 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     LANE_REFRESH.with(|cell| cell.set(false));
 }
 
-/// `EffectKind` back to its lower-case spelling for the CSS class name.
 fn spell_kind(kind: cut::EffectKind) -> &'static str {
     match kind {
         cut::EffectKind::Zoom => "zoom",
@@ -341,17 +297,14 @@ fn spell_kind(kind: cut::EffectKind) -> &'static str {
     }
 }
 
-/// F3.8 S1/S2 (`ends are grips when the band is ≥ 30 px` / `an end, band ≥ 30 px`): how wide a bar on this
-/// page's lane is, in pixels, for one record of `dur` seconds. The lane is drawn at the same zoom as the
-/// tracks above it, so a bar's width is its length times the page's pixels-per-second — and every threshold
-/// that decides what a press on it means ([`fx_band::grab_at`], [`fx_band::kill_open`]) is in pixels for the
-/// same reason §A.9 gives: a grip is a reach for the hand, not a length of film.
+/// F3.8 S1/S2: how wide a bar on this lane is, in pixels, for a record of `dur` seconds: its length times
+/// the page's pixels-per-second. The thresholds ([`fx_band::grab_at`], [`fx_band::kill_open`]) are in pixels
+/// (§A.9): a grip is a reach for the hand, not a length of film.
 pub fn cut_bar_width_px(dur: f64) -> f64 {
     dur * ui::SELECT_SURFACE_PPS
 }
 
-/// F3.8 S3: the same build-once rule as [`ensure_bar`], for the bar itself, which is an Overlay (so its ✕
-/// can sit over the middle of its ink rather than beside it).
+/// F3.8 S3: the same build-once rule as [`ensure_bar`], for the bar itself, which is an Overlay.
 fn ensure_bar<F: FnOnce(i32) -> gtk::Overlay>(
     holder: &gtk::Box,
     name: &str,
@@ -370,8 +323,7 @@ fn ensure_bar<F: FnOnce(i32) -> gtk::Overlay>(
     made
 }
 
-/// F3.8 S3: the same build-once rule for the kill target, whose parent is a bar's Overlay — `add_overlay`, not
-/// `append`, or GTK would treat it as a second main child.
+/// F3.8 S3: the same build-once rule for the kill target; `add_overlay`, not `append`, or GTK treats it as a second main child.
 fn ensure_kill_target<F: FnOnce(i32) -> gtk::Button>(
     bar: &gtk::Overlay,
     name: &str,
@@ -390,8 +342,7 @@ fn ensure_kill_target<F: FnOnce(i32) -> gtk::Button>(
     made
 }
 
-/// Find `name` anywhere under `node` (the ✕ sits inside the bar, so the flat sibling scan of
-/// [`find_in_holder`] cannot reach it).
+/// Find `name` anywhere under `node` (the ✕ sits inside the bar, beyond [`find_in_holder`]'s sibling scan).
 fn walk_named(node: gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if node.widget_name() == name {
         return Some(node);
@@ -406,7 +357,7 @@ fn walk_named(node: gtk::Widget, name: &str) -> Option<gtk::Widget> {
     None
 }
 
-/// Add or remove a CSS class by state — added AND removed, so an outlined widget is always today's answer.
+/// Add or remove a CSS class by state, so an outlined widget is always today's answer.
 pub(crate) fn set_class<W: AsRef<gtk::Widget>>(widget: &W, class: &str, on: bool) {
     let widget = widget.as_ref();
     if on {
@@ -420,8 +371,7 @@ fn lane_row_box(lane: &gtk::Box, row: usize) -> Option<gtk::Box> {
     find_in_holder(lane.as_ref(), &format!("fx-lane-row-{row}"))
 }
 
-/// Find a direct child of `holder` by name. Direct only: a tree-wide search from a holder can land on a
-/// different window's copy, since a closed GTK window is not destroyed.
+/// Find a direct child of `holder` by name. Direct only: a tree-wide search can land on a closed window's copy.
 pub(crate) fn find_in_holder(holder: &gtk::Widget, name: &str) -> Option<gtk::Box> {
     let mut child = holder.first_child();
     while let Some(node) = child {
@@ -433,8 +383,8 @@ pub(crate) fn find_in_holder(holder: &gtk::Widget, name: &str) -> Option<gtk::Bo
     None
 }
 
-/// Make the lane hold exactly `rows` row boxes, adding the missing ones and dropping the extra FROM THE
-/// HOLDER. Height is `layout.effectRowPx` per row, so an empty lane is still one row deep.
+/// Make the lane hold exactly `rows` row boxes, dropping extras FROM THE HOLDER. Height is
+/// `layout.effectRowPx` per row, so an empty lane is still one row deep.
 fn sync_lane_rows(lane: &gtk::Box, rows: usize) {
     let height = fx_lane::lane_height_px(rows) / rows.max(1) as f64;
     lane.set_size_request(-1, (height * rows as f64).ceil() as i32);
@@ -458,27 +408,22 @@ fn sync_lane_rows(lane: &gtk::Box, rows: usize) {
     }
 }
 
-/// The form column as the page sits idle (§1's "Form column", §A's "Idle rows"). A Grid named
-/// `cut-form`: one row per reading, label in the left column and its value in the right, each value
-/// named off `cut_screen::readout_widget` so a test reads the same seven rows the spec lists.
+/// The form column as the page sits idle (§1's "Form column", §A's "Idle rows"). A Grid named `cut-form`,
+/// one row per reading, each value named off `cut_screen::readout_widget` so a test reads the same seven rows.
 ///
-/// One row carries a control rather than a plain value: Aspect ratio has the F3.2 dropdown (`aspect-choice`,
-/// listed from `fx_aspect::ASPECTS`), which writes through `press_aspect` below and repaints the row it changed,
-/// so the readout is never a copy that drifted from the control. The thumbnail size is no reading here: it is
-/// the grip at the bottom of the picture rows (§1 badge 2, `cut_band_trim`).
+/// Aspect ratio carries the F3.2 dropdown (`aspect-choice`, from `fx_aspect::ASPECTS`), which writes through
+/// `press_aspect` and repaints its row, so the readout never drifts from the control. The thumbnail size is the
+/// grip at the bottom of the picture rows (§1 badge 2, `cut_band_trim`).
 pub(crate) fn cut_form_column() -> gtk::Grid {
     let form = gtk::Grid::new();
     form.set_widget_name("cut-form");
     form.set_row_spacing(2);
-    // §1's readings are "label left and value right", so the grid fills its pane: with it pinned to `Start`
-    // at its natural size there was no right edge anywhere for a value to sit against, and every number
-    // printed flush against its own label.
+    // The grid fills its pane: pinned to `Start` there was no right edge for a value to sit against.
     form.set_halign(gtk::Align::Fill);
     form.set_hexpand(true);
     form.set_column_homogeneous(false);
     form.set_column_spacing(8);
-    // What the readings show for a page with no cut yet: zeros. The real values arrive with the rounds that
-    // own them; this fills the rows so none is blank.
+    // A page with no cut yet shows zeros so no row is blank.
     let cut_ = crate::cut::Cut::default();
     let rows = cut_screen::idle_readouts(cut_screen::ASPECT_DEFAULT, 0.0, None, &cut_, 0.0);
     for (index, row) in rows.iter().enumerate() {
@@ -487,9 +432,8 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
         key.set_xalign(0.0);
         key.add_css_class("dim-label");
         key.set_widget_name(&format!("{name}-key"));
-        // The value reads at the RIGHT end (§1). GTK 4's GtkGrid has no per-column expand flag (that was
-        // GtkTable): a column grows when the widgets in it ask to expand, so the value cells carry it and the
-        // key cells do not.
+        // The value reads at the RIGHT end (§1). GtkGrid has no per-column expand flag: a column grows when its
+        // widgets expand, so the value cells carry it.
         let value = gtk::Label::new(Some(&row.value));
         value.set_xalign(1.0);
         value.set_hexpand(true);
@@ -497,19 +441,12 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
         form.attach(&key, 0, index as i32, 1, 1);
         form.attach(&value, 1, index as i32, 1, 1);
     }
-    // F3.2: the Aspect ratio row's dropdown, listing `fx_aspect::ASPECTS` — the five shapes §B gives, in
-    // its order (source first, then tallest to widest). Not a local list: the spec's set is spelled once in
-    // that module, and this control has no business inventing 4:3 or 21:9. Its tooltip is §B's whole
-    // sentence (`DROPDOWN_HELP`), which is where "9:16 is a vertical short" and what the preview outline
-    // means both get said. The starting selection reads the LIVE cut rather than always index 0, so the
-    // control never shows a shape the cut does not have; an unset aspect is source, which is index 0.
+    // F3.2: the Aspect ratio dropdown lists `fx_aspect::ASPECTS` (§B's five shapes, source first), not a local
+    // list. Its tooltip is §B's `DROPDOWN_HELP`. The selection reads the LIVE cut; an unset aspect is source (index 0).
     //
-    // It goes BESIDE the readout it drives, in a third column: `refresh_aspect_readout`
-    // (`cut_text_hand.rs`) repaints that label from the live cut on every Undo/Revert/Clear, and
-    // `tests/suite/aspect_choice_widgets.rs` reads the label as the page's own answer -- replacing the
-    // label with the control strands both. The value column still ends at the pane's right edge (§1's
-    // value-right rule) because every plain value expands into it; this row's cell is the
-    // pair readout + dropdown together, which is what §A calls "a dropdown" for this one reading.
+    // It goes BESIDE the readout in a third column: `refresh_aspect_readout` (`cut_text_hand.rs`) repaints that
+    // label on every Undo/Revert/Clear and `tests/suite/aspect_choice_widgets.rs` reads it, so the control
+    // must not replace the label. Every plain value expands to the pane's right edge (§1); this cell is readout + dropdown.
     if let Some(aspect_row) = cut_screen::IDLE_FORM_ROWS
         .iter()
         .position(|l| *l == "Aspect ratio")
@@ -523,8 +460,7 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
             .position(|s| *s == cut_.aspect)
             .unwrap_or(0);
         choice.set_selected(start as u32);
-        // The readout and its control become ONE value cell: the label keeps its name (so the repaint and
-        // the widget tests still find it) and the box ends where every other row's value ends.
+        // The readout and its control become ONE value cell; the label keeps its name so the repaint and tests find it.
         let aspect_name = cut_screen::readout_widget("Aspect ratio");
         let held = form
             .observe_children()

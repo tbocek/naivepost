@@ -1,19 +1,4 @@
 //! F2.7 (Add, Split, Remove, ⌦) — `spec/05-cut.md` F2.7.
-//!
-//! The three buttons that act on the band F2.6 drew, and the key that acts on whatever is in hand. All
-//! four share one shape: they read the cut, answer with a new segment list and the ONE sentence the status
-//! line shows, and never touch anything outside the span they were aimed at. Nothing here imports UI —
-//! [`crate::ui::window`] draws the buttons, forwards the press to these functions and prints what comes
-//! back; it decides none of it.
-//!
-//! Two rules from §J hold this module together:
-//! * rule 13 — Remove takes exactly the selection, floored at [`cut_rules::floor`]` (Floor::Remove)`
-//!   (`P.eng.minPieceSeconds`); the 1 s floor ([`cut_rules::floor`]` (Floor::Keep)`,
-//!   `P.policy.minSceneSeconds`) is only for proposing and copying, which is why ＋ Add refuses below it
-//!   and － Remove does not ask. The two floors are named by verb in [`crate::cut_rules`] so the pairing —
-//!   which verb may leave what remainder — is stated once rather than being inferred from two constants.
-//! * rule 14 — a Split border survives coalesce until merged by a drag. That is literally
-//!   [`cut::Seg::split`]: the right half of a split carries it, so no automatic pass may join it back.
 
 use crate::cut::{Fx, Seg};
 use crate::cut_rules::{self, Floor};
@@ -54,10 +39,6 @@ pub fn add_tip_now(sel: Option<&Selection>) -> Option<String> {
 /// Reached through its owner rather than restated here.
 pub use crate::tools::cutpass::SNAP_TOLERANCE_SECONDS;
 
-/// What one verb did. `Applied` carries the cut as it is now, the sentence to print, and two things the
-/// page must do after printing: whether the band stays up (Split leaves it deliberately, so the person
-/// can see the borders they asked for) and whether something landed in the hand (a no-selection Split
-/// hands over the right half).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
     Applied {
@@ -97,20 +78,8 @@ fn kept_scene(row: usize, start: f64, end: f64) -> Seg {
     }
 }
 
-// --- S1: ＋ Add -------------------------------------------------------------------------------------
-
 /// F2.7 ＋ Add (`keep the selection as scenes`). One kept scene per filmed run inside the band, both
 /// ends snapped, and the span taken off every other row.
-///
-/// `snap_points` are the places an end may land on instead of where it was drawn — word edges, silences,
-/// line edges and visual cuts — and an end moves only to the nearest one within
-/// [`SNAP_TOLERANCE_SECONDS`] (`// P.policy.snapToleranceSeconds`, the "within 5 s" of the spec).
-/// Points further than that are not candidates: an end dragged 30 s to a word edge would keep footage
-/// nobody selected.
-///
-/// Which of the three sentences the status is depends on rows, not on how much was added: one row touched
-/// says plain "added", more than one row but nothing lost elsewhere names the camera, and losing coverage
-/// on another row says so too — the failure this guards is a silent theft of another camera's scene.
 pub fn add(sel: Option<&Selection>, segs: &[Seg], snap_points: &[f64]) -> Outcome {
     let Some(band) = sel else {
         return Outcome::Refused("drag a region on a track first".to_string());
@@ -205,9 +174,6 @@ pub fn add(sel: Option<&Selection>, segs: &[Seg], snap_points: &[f64]) -> Outcom
 }
 
 /// F2.7 ＋ Add (`both ends snap ... within 5 s`): the nearest candidate within reach, else the drawn second.
-///
-/// Kept separate so a test can pin the reach without building a whole cut: a point at 4.9 s away moves,
-/// one at 5.1 s does not. P.policy.snapToleranceSeconds
 pub fn snap_end(at: f64, points: &[f64]) -> f64 {
     let mut best: Option<(f64, f64)> = None;
     for &point in points {
@@ -222,20 +188,7 @@ pub fn snap_end(at: f64, points: &[f64]) -> f64 {
     best.map(|(_, point)| point).unwrap_or(at)
 }
 
-// --- S2: | Split ------------------------------------------------------------------------------------
-
 /// F2.7 | Split (`a border at each end of the selection, nothing removed`).
-///
-/// With a footage band both ends become borders and the RIGHT half of every scene cut there carries
-/// [`Seg::split`], so coalescing cannot undo the split (§J rule 14). The band deliberately stays up —
-/// `keeps_selection: true` — because the person is looking at the borders they just asked for.
-///
-/// With no band the border goes at the red line and the right half is taken in hand (`into_hand: true`),
-/// which is what makes "split, then move the second half" one gesture rather than three.
-///
-/// A border that lands on an edge the cut already has is NOT drawn, and the sentence names only the
-/// borders actually made: saying "split at 10 and 20" when 20 was already a scene edge would report work
-/// that did not happen.
 pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
     if let Some(Selection {
         scope: Scope::Sound { recording },
@@ -352,9 +305,6 @@ pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
     }
 }
 
-/// F2.7 | Split (`halves ≥ 0.04 s`): cut every scene that straddles `edge` in two, marking the RIGHT
-/// half so no automatic pass joins it back. A scene merely touching the edge is already bordered and is
-/// left alone. P.eng.minPieceSeconds
 fn draw_borders(segs: &[Seg], edges: &[f64]) -> Vec<Seg> {
     let mut out: Vec<Seg> = Vec::with_capacity(segs.len() + edges.len());
     for seg in segs {
@@ -386,8 +336,6 @@ fn a_border_was_drawn_at(segs: &[Seg], edge: f64) -> bool {
     segs.iter()
         .any(|seg| edge > seg.s + MIN_SECONDS && edge < seg.e - MIN_SECONDS)
 }
-
-// --- S3: － Remove ----------------------------------------------------------------------------------
 
 /// F2.7 － Remove (`drop exactly the selection`). Remainders of at least [`MIN_SECONDS`] survive
 /// (`P.eng.minPieceSeconds`); shorter slivers are dropped with the selection rather than left as a
@@ -466,8 +414,6 @@ fn scene_split_in_two(segs: &[Seg], start: f64, end: f64) -> bool {
     straddlers.len() == 1
 }
 
-// --- S4: ⌦ / Delete / BackSpace ----------------------------------------------------------------------
-
 /// The same scene: its span and what it shows. A held clip is a copy taken when the hand picked it up, so it is
 /// found again in the cut by what it is rather than by an index an edit since may have moved.
 fn same_seg(a: &Seg, b: &Seg) -> bool {
@@ -475,16 +421,6 @@ fn same_seg(a: &Seg, b: &Seg) -> bool {
 }
 
 /// F2.7 ⌦ (`in order: a held effect; a held clip; a selection; the scene under the line`).
-///
-/// The order is the whole rule and is tested as such: a person who holds an effect AND has a band wants
-/// the effect gone, because the effect is what they last touched. Taking the band instead would delete
-/// footage to answer a press aimed at a decoration.
-///
-/// A held clip is `the only way to remove a spliced card` (§J rule 8): an insert is a file, never
-/// trimmed or dropped by a re-suggest, so ⌦ on the card in hand is the only door it has.
-///
-/// A sound selection still refuses through [`crate::cut_delete::refuses`] — that refusal is §8's wording
-/// and its tests, and dropping footage cannot be pointed at a lane's seconds.
 pub fn delete_verb(
     held_effect: Option<&Fx>,
     held_clip: Option<&Seg>,
@@ -565,15 +501,6 @@ pub fn delete_verb(
     )
 }
 
-// --- S5: the ✕ badges -------------------------------------------------------------------------------
-
-/// F2.7 ✕ badges (`on a green bar, on the selection, on a cut lane, on an empty row, on an effect`):
-/// the five places a ✕ appears on the Cut page, each meaning "put this down / take this away".
-///
-/// Only [`Badge::Selection`] has its widget today — that is F2.6 S2's `clear-selection`. The other four
-/// draw with their own surface rounds (the green bar and the empty row with F2.8/F2.11, the cut lane with
-/// F2.10, the effect with the effects-lane rounds), so this enumeration exists so the five meanings are
-/// stated once and a test can pin them before the pixels arrive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Badge {
     /// On a green bar: drop that scene.
@@ -608,8 +535,6 @@ pub fn badge_action(badge: Badge) -> &'static str {
     }
 }
 
-// --- shared helpers ---------------------------------------------------------------------------------
-
 /// Is this segment filmed footage rather than an inserted card? An insert carries a path in `ins`; footage
 /// carries none. (Wider than [`Seg::is_insert`], which also counts a spliced copy: for these verbs a
 /// pasted stretch is not footage to add, split or remove.)
@@ -631,7 +556,6 @@ fn duration_of(seg: &Seg) -> f64 {
 
 /// The pieces of `seg` with `span_start..span_end` punched out. A remainder shorter than
 /// [`MIN_SECONDS`] is dropped rather than kept: a sliver under a frame plays as a flicker.
-/// P.eng.minPieceSeconds
 fn subtract_span(seg: &Seg, span_start: f64, span_end: f64) -> Vec<Seg> {
     let mut out = Vec::with_capacity(2);
     if seg.s < span_start {

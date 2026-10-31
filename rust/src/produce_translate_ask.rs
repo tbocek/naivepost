@@ -1,23 +1,14 @@
 //! F5.4 S3's live half: the translation ask itself.
 //!
-//! [`crate::produce_translate`] owns every rule that settles with no server — the batch ranges, the
-//! message wording, what a missing number costs, whether an answer earned a cache slot. What it never
-//! did was *telephone*: the page handed the render a scripted reply or a hardcoded refusal, so a ticked
-//! language could never reach a model however the settings were filled in. This module is that leg. It
-//! builds the two messages §3.10 spells, dials the LLM over HTTP through [`crate::server_leg`] (so each
-//! batch writes its timed `requests.tsv` row), reads the answer back into the numbered map
-//! `produce_translate::Ask` expects, and returns `Err` naming the model when the wire fails — which the
-//! walk already turns into "ship the original with a warning".
+//! [`crate::produce_translate`] owns every rule that settles with no server; this is the leg that
+//! *telephones*. It builds the two messages §3.10 spells, dials the LLM through [`crate::server_leg`] (each
+//! batch writes its timed `requests.tsv` row), reads the answer into the numbered map `produce_translate::Ask`
+//! expects, and returns `Err` naming the model when the wire fails (the walk ships the original with a warning).
 //!
-//! The seam a test drives this through is the settings address: point `LLM_SERVER` at a local fake and
-//! the same endpoint resolution a typed address goes through reaches it. Nothing here takes a canned
-//! reply.
-//!
-//! Modelled on [`crate::captions_ask`] deliberately: two jobs, one shape for "build the messages, honour
-//! the cache, dial, read the reply". Where they differ is spelled out below rather than papered over —
-//! a translate call asks with thinking OFF (`Mode::Execute`, §02-services' table: an execute call is
-//! temperature 0.6, 8192 tokens, `enable_thinking` false) and offers only `translate_line` and `finish`;
-//! a captions answer is one JSON document, a translate answer is numbered lines or tool calls.
+//! A test drives it by pointing `LLM_SERVER` at a local fake; nothing takes a canned reply. Modelled on
+//! [`crate::captions_ask`], but a translate call asks with thinking OFF (`Mode::Execute`: temperature 0.6, 8192
+//! tokens, `enable_thinking` false), offers only `translate_line` and `finish`, and its answer is numbered
+//! lines or tool calls rather than one JSON document.
 
 use std::collections::BTreeMap;
 
@@ -32,18 +23,18 @@ use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::Tool;
 
-/// The step name this job's cache entries and timed rows carry. `cache/llm/translate/<key>` — keyed on
-/// the exact request, so an unchanged batch costs nothing and an edited cue misses (§00-principles).
+/// The step name this job's cache entries and timed rows carry: `cache/llm/translate/<key>`, keyed on the
+/// exact request (§00-principles).
 pub const STEP: &str = "translate";
 
-/// The settings folder, read from this process's environment for EVERY batch so an address changed
-/// while a render is going is honoured by its next request (§02-services#1).
+/// The settings folder, read from the environment for EVERY batch so an address changed mid-render is
+/// honoured by the next request (§02-services#1).
 fn current_paths() -> Option<Paths> {
     settings::from_environment()
 }
 
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With
-/// no settings folder at all, the shipped `spec/prompts/translate.md` is what goes out.
+/// The wording to ask with, through the settings read path so an edit wins (§04-prepare#6); with no
+/// settings folder, the shipped `spec/prompts/translate.md`.
 fn wording(paths: Option<&Paths>, key: &str) -> String {
     let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
     match paths {
@@ -52,9 +43,8 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
     }
 }
 
-/// The SYSTEM for one translate call: the house rules cut to this job's section plus the shipped
-/// translate prompt. No User Context: §3.10's request is a batch of numbered lines and nothing else,
-/// and the cue text is already the whole of what is to be translated.
+/// The SYSTEM for one translate call: the house rules cut to this job's section plus the shipped translate
+/// prompt. No User Context: §3.10's request is numbered lines and nothing else.
 pub fn system(paths: Option<&Paths>) -> String {
     crate::prompt_assembly::system_message(
         &wording(paths, "system"),
@@ -66,9 +56,8 @@ pub fn system(paths: Option<&Paths>) -> String {
     )
 }
 
-/// The body of one batch's request: the system message, §3.10's numbered-lines message verbatim,
-/// thinking off, and ONLY the two tools §3.10 lists. `llm_request::body` is the one place the
-/// thinking switch and the token cap are written, so this cannot drift from §02-services' table.
+/// The body of one batch's request: the system message, §3.10's numbered-lines message verbatim, thinking
+/// off, and ONLY the two tools §3.10 lists. `llm_request::body` writes the thinking switch and token cap.
 pub fn body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let offered = crate::tools::offered(crate::roles::Job::Subtitles);
     let tools: Vec<Tool> = offered
@@ -85,10 +74,8 @@ pub fn body(model: &str, system: &str, user: &str) -> Result<String, String> {
             parts: vec![Part::Text(user.to_string())],
         },
     ];
-    // §4: every chat call is streamed; the answer is read by response content type, so a plain-JSON fake
-    // still works (`llm_request::reply_from`).
-    // §4 gives the translation thinking OFF; the switch is read from the prompt table
-    // ([`crate::prompts::mode_of`]) so this cannot drift from the catalogue.
+    // §4: every chat call is streamed; the answer is read by response content type, so a plain-JSON fake still works.
+    // Thinking is read from the prompt table ([`crate::prompts::mode_of`]) so it cannot drift from the catalogue.
     let body = llm_request::body(
         STEP,
         model,
@@ -100,9 +87,8 @@ pub fn body(model: &str, system: &str, user: &str) -> Result<String, String> {
     Ok(body.to_string())
 }
 
-/// The deciding parts for one batch's cache slot: model, both messages, and the numbers asked for.
-/// The numbers ride in the key because the re-ask sends the same wording over a different set, and
-/// replaying the first answer to it would answer a question that was not asked.
+/// The deciding parts for one batch's cache slot: model, both messages, and the numbers asked for. The
+/// numbers ride in the key because the re-ask sends the same wording over a different set.
 fn cache_parts(system: &str, user: &str, model: &str, numbers: &[usize]) -> Vec<serde_json::Value> {
     let asked = numbers
         .iter()
@@ -137,19 +123,18 @@ fn base_row(model: &str) -> Request {
     }
 }
 
-/// One batch's answer, read two ways — both are real server behaviour and neither is invented here:
+/// One batch's answer, read two ways, both real server behaviour:
 ///
 /// 1. `translate_line` TOOL CALLS, §3.10's contract: `{"n": <number>, "text": "..."}` per call.
-/// 2. The numbered-line answer `spec/prompts/translate.md` actually asks for — `n<TAB>text`, one line
-///    each — which is what a server that ignores the tool offer replies with.
+/// 2. The numbered-line answer `spec/prompts/translate.md` asks for, `n<TAB>text` per line, which a server
+///    that ignores the tool offer replies with.
 ///
-/// Per §3.10 a number outside this batch, or an empty text, is REFUSED: the line simply stays missing,
-/// which is what triggers `produce_translate`'s one re-ask rather than poisoning the track with it.
+/// Per §3.10 a number outside this batch, or an empty text, is REFUSED: the line stays missing, which
+/// triggers `produce_translate`'s one re-ask.
 pub fn parse_answer(content_type: &str, reply: &str, numbers: &[usize]) -> BTreeMap<usize, String> {
     let model_reply = match llm_request::reply_from(content_type, reply) {
         Ok(reply) => reply,
-        // Not a chat envelope at all: treat the whole body as the numbered answer, which is what a
-        // plain-text server hands back. An event stream that framed nothing falls here too.
+        // Not a chat envelope: treat the whole body as the numbered answer (a plain-text server; an event stream that framed nothing).
         Err(_) => return parse_numbered(reply, numbers),
     };
     let mut got: BTreeMap<usize, String> = BTreeMap::new();
@@ -187,8 +172,7 @@ pub fn parse_answer(content_type: &str, reply: &str, numbers: &[usize]) -> BTree
     got
 }
 
-/// `n<TAB>text`, one per line. A line whose number was not asked for, whose text is empty, or that
-/// carries no number at all is dropped rather than guessed at.
+/// `n<TAB>text`, one per line. A line whose number was not asked for, whose text is empty, or that has no number is dropped.
 pub fn parse_numbered(answer: &str, numbers: &[usize]) -> BTreeMap<usize, String> {
     let mut got: BTreeMap<usize, String> = BTreeMap::new();
     for line in answer.lines() {
@@ -212,18 +196,16 @@ pub fn parse_numbered(answer: &str, numbers: &[usize]) -> BTreeMap<usize, String
     got
 }
 
-/// The model leg for the render: settings are read per batch (so an address edit lands on the next
-/// call), the cache is honoured per batch, and every dial writes its timed row. `Err` names the model
-/// and the reason — the walk ships that language's track as the original with the merge's warning
-/// rather than failing the render over one server (§F5.4 S3, §00-principles).
+/// The model leg for the render: settings are read per batch, the cache is honoured per batch, and every
+/// dial writes its timed row. `Err` names the model and the reason; the walk ships that language's track
+/// as the original with the merge's warning (§F5.4 S3, §00-principles).
 pub fn ask(tree: &Tree, cancelled: &std::rc::Rc<dyn Fn() -> bool>) -> Box<Ask> {
     let tree = tree.clone();
     let cancelled = std::rc::Rc::clone(cancelled);
     Box::new(move |message: &str, numbers: &[usize]| {
         let conf = match current_paths().as_ref().map(settings::read) {
             Some(Ok(conf)) => conf,
-            // An unreadable settings file is reported the way a down server is: the track keeps the
-            // original and says why, rather than dialling a guessed address.
+            // An unreadable settings file is reported like a down server: the track keeps the original and says why.
             Some(Err(reason)) => return Err(format!("settings could not be read: {reason}")),
             None => Conf::default(),
         };
@@ -243,12 +225,11 @@ pub fn ask_at(
     let system = system(current_paths().as_ref());
     let parts = cache_parts(&system, message, &model, numbers);
     if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
-        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire. Only a
-        // COMPLETE answer is ever stored, so a cache hit here is a whole answer by construction.
+        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire. Only a COMPLETE answer is stored.
         crate::request_timing::record_cached(tree, base_row(&model));
         return Ok(parse_answer("application/json", &cached, numbers));
     }
-    // No model configured is §02-services' own refusal, named, not a silent empty track.
+    // No model configured is §02-services' own refusal, named.
     let body = body(&model, &system, message)?;
     let endpoint = services::llm_endpoint(conf);
     let reply = crate::llm_retry_leg::chat(
@@ -264,16 +245,12 @@ pub fn ask_at(
         Ok(sent) => {
             let text = sent.body.clone();
             let got = parse_answer(&sent.content_type, &text, numbers);
-            // S3: `cached only when complete`. A partial answer stored is a partial answer forever, so
-            // the re-ask's chance is thrown away on every later run.
+            // S3: `cached only when complete`; a stored partial answer is partial forever and throws away the re-ask's chance.
             if subs::cached(got.len() == numbers.len() && !numbers.is_empty()) {
-                // §6's first irregularity, both halves: what goes in the file is the RECONSTRUCTED
-                // numbered text rather than this reply (so a replay answers `merge` directly and never
-                // re-parses prose), and the gap-filling second call is never filed at all. The leg sees
-                // only a message and its numbers, so the repair is recognised from its own heading —
-                // see [`subs::is_repair_request`] for why that marker is enough to tell them apart.
-                // `gap_fill_caches` takes the SECOND-CALL flag, so the repair answer is what it says "no"
-                // about: a first call (not a repair) earns its slot, the gap-filling one never does.
+                // §6's first irregularity: the file holds the RECONSTRUCTED numbered text (a replay answers `merge`
+                // directly), and the gap-filling second call is never filed. The leg sees only a message and its numbers,
+                // so the repair is recognised from its heading ([`subs::is_repair_request`]); `gap_fill_caches` takes the
+                // SECOND-CALL flag, so a first call earns its slot and the repair never does.
                 let second_call = subs::is_repair_request(message);
                 if llm_cache::gap_fill_caches(second_call) {
                     let reconstructed: Vec<String> = numbers

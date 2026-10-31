@@ -10,21 +10,11 @@ use gtk4 as gtk;
 use crate::narrate_screen::{self, VoiceOption};
 
 thread_local! {
-    /// A dropdown row the PAGE selected itself is not a hand picking a voice. `refresh` seeds the picker
-    /// from the published state, and that selection would otherwise reach the pick seam — which writes
-    /// `narrate/voice.txt` and drops the built voice reference — on every repaint.
     static PICKER_SEEDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The last voice this thread's page was told about, and whether saying it was missing has already
-    /// been done. [`follow`] runs on EVERY repaint (a seek, a tick, a row select), so without this the
-    /// refusal for a voice nobody can fix by waiting would print itself again each time and drown out
-    /// whatever else just happened on the status line.
     static LAST_SPOKEN_VOICE: std::cell::RefCell<Option<(String, bool)>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// The option list behind the picker's rows, in the order they are drawn: resolved through
-/// [`narrate_screen::voice_options`] so the wire and the paint can never disagree about which row is
-/// which voice.
 fn options(narrators: usize, files: &[String]) -> Vec<VoiceOption> {
     narrate_screen::voice_options(
         narrators,
@@ -32,8 +22,6 @@ fn options(narrators: usize, files: &[String]) -> Vec<VoiceOption> {
     )
 }
 
-/// Show `row` in the voice picker as the page's own choice, not the person's: the flag keeps the
-/// `selected-notify` wire from reading this seed as a pick.
 pub(crate) fn seed(picker: &gtk::DropDown, row: u32) {
     PICKER_SEEDING.with(|seeding| seeding.set(true));
     picker.set_selected(row);
@@ -74,8 +62,6 @@ fn row_factory(ellipsize: gtk::pango::EllipsizeMode) -> gtk::SignalListItemFacto
     factory
 }
 
-/// The picker at rest: no rows yet — `follow` fills them from the published voice on the first refresh,
-/// so an untouched dropdown shows nothing rather than a speaker nobody chose.
 pub(crate) fn build() -> gtk::DropDown {
     let picker = gtk::DropDown::from_strings(&[]);
     picker.set_widget_name("voice-picker");
@@ -98,9 +84,6 @@ pub(crate) fn build() -> gtk::DropDown {
     picker
 }
 
-/// Follow the published voice: rebuild the rows when the folder or the narrator count changed, then put
-/// the chosen voice's row on show. Rebuilt whole because "Add file…" adds a row and a fixed two-row list
-/// would never show it — the same reason the lines grid is rebuilt rather than patched.
 pub(crate) fn follow(
     window: &adw::ApplicationWindow,
     narrators: usize,
@@ -113,11 +96,6 @@ pub(crate) fn follow(
         return;
     };
     let options = options(narrators, files);
-    // The row to show comes from [`crate::narrate_rules::picker_row`], the same door the logic tests
-    // read: it is what makes a project that stores the legacy `own` land on the Narrator 1 row instead of
-    // showing nothing for a voice that IS on offer. A voice that is NOT on the list counts as "nothing
-    // chosen" — row 0 of the list IS captions-only, so a page whose state carries no voice at all must
-    // leave the dropdown empty rather than show "captions only" and speak a different one.
     let chosen = crate::narrate_rules::picker_row(&options, voice);
     // §5's other half at the widget: a voice that is not on offer leaves the picker EMPTY. GTK clamps any
     // position to the model's rows, so a dropdown with rows cannot hold "nothing chosen" — the only thing
@@ -148,8 +126,6 @@ pub(crate) fn follow(
         // Swapping the model moves the dropdown's row by itself, and that emission lands after this
         // call returns — too late for a flag set around it. So the flag stays up while the model is
         // replaced and is lowered only once the shown row has been re-seeded to the published voice.
-        // Replacing the model re-selects row 0 by itself (§F4.6 S1 already had to re-seed over that), so an
-        // unmet voice gets no rows at all and its button reads the placeholder.
         PICKER_SEEDING.with(|seeding| seeding.set(true));
         picker.set_model(Some(&strings));
         if let Some(row) = chosen {
@@ -162,16 +138,6 @@ pub(crate) fn follow(
     say_why_missing(window, voice, chosen);
 }
 
-/// §F4.6 S1: when the voice this project speaks in is not on offer, the picker stays empty AND the status
-/// line says which of the two ways it happened, because they are fixed in different places — a narrator
-/// slot is tagged on Prepare, a file lives in the voices folder. The sentence is the rules module's,
-/// word for word ([`crate::narrate_rules::missing_voice`]); the wire adds nothing.
-///
-/// Once per voice, not once per repaint: `refresh` runs on every seek and tick, and a refusal nobody can
-/// clear by waiting would otherwise push every other status line off the row. A voice that IS on offer
-/// clears the memory, so coming back to a missing one later tells its reason again — which is also what
-/// keeps a page whose state carries no voice at all quiet: "" names no slot and matches no file, so it is
-/// said once and never repeated while nothing has been picked.
 fn say_why_missing(window: &adw::ApplicationWindow, voice: &str, chosen: Option<usize>) {
     if voice.is_empty() {
         return;
@@ -191,8 +157,6 @@ fn say_why_missing(window: &adw::ApplicationWindow, voice: &str, chosen: Option<
     );
 }
 
-/// Attach the pick. The picker answers by row, not by id: the row is resolved through the same option
-/// list the page drew, so a wire cannot pick an id that was never offered.
 pub(crate) fn wire(window: &adw::ApplicationWindow) {
     let Some(picker) = crate::ui::narrate_page::widget_in(window, "voice-picker")
         .and_then(|w| w.downcast::<gtk::DropDown>().ok())
@@ -203,8 +167,6 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     picker.connect_selected_notify(move |picker| {
         // A selection the page made while painting itself is not a hand on the dropdown: pressing the
         // voice seam for it would write the voice file and drop the reference F4.6 already built.
-        // `set_model` also lands here AFTER this handler returns, so the flag is still up when GTK
-        // settles the row: re-seed from the published state and let this emission go.
         if seeding() {
             seed(picker, picker.selected());
             return;

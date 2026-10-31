@@ -76,7 +76,7 @@ pub struct Cues {
     /// The language the bare-stem track is already in. An older build's `naivepost.json` can still tick it; `plan` drops it from [`Self::languages`].
     pub session_language: String,
     /// S1 (§F5.4): the cues per clip, each on THAT clip's own seconds with §S1's `an empty cue extends the previous` applied.
-    /// Burned-in subtitles are lettered per clip ([`crate::produce_subtitles_run::burn_file_for`]) and `subs::tidy` folds nearby
+    /// Burned-in subtitles are lettered per clip (`crate::produce_subtitles_run::burn_file_for`) and `subs::tidy` folds nearby
     /// cues, which must not cross a clip boundary. `produced_clocks` gives the offset into [`Self::all`].
     pub per_clip: Vec<Vec<subs::Cue>>,
     pub counts: crate::produce_subtitles_run::CueCounts,
@@ -233,7 +233,7 @@ fn cue_on_clock(cue: &subs::Cue, produced_start: f64, rate: f64) -> subs::Cue {
     }
 }
 
-/// S2: what still has to be spoken. Which lines a run may speak comes through [`crate::narrate_off::lines_to_speak`]
+/// S2: what still has to be spoken. Which lines a run may speak comes through `crate::narrate_off::lines_to_speak`
 /// (F4.8's one seam); [`render::speak_job`] then decides which still need a take, and each is turned into its file.
 pub fn speech_plan(run: &Run, tree: &Tree, mats: &Materials, speaking: bool) -> Vec<ToSpeak> {
     if !speaking {

@@ -17,22 +17,9 @@ use crate::produce_render;
 use crate::project;
 use crate::voice_ref;
 
-/// Every number the Narrate page draws or waits with, in §1's order: the take band first (its floor, its label
-/// bound, its geometry), then the pitch slider, then the two clocks and the two debounces.
-///
-/// The ids are of two kinds, and each says so. `P.eng.*` rows are §10's own; the bare `narrate.*` ones are the
-/// numbers §10 lists only inside its prose line (`Narrate take band: ruler 12, lane 56, max 200 px/s, click slop 3
-/// px`, and §07's `Engineering: tick 100 ms · seek debounce 120 ms · autosave 400 ms`), which have no `P.` row to
-/// inherit — the same bare-prefix rule §06-effects#6 took for `machine.` and `preview.` values. They are spelled as
-/// §10 spells them so a reader comparing this list against that line is comparing the same words.
-///
-/// Every §4 item now has a row. Two of them are catalogued under an id other than the one §10's table prints,
-/// and say so rather than being quietly moved: `P.eng.speechCharsPerSecond` (§10:194, "15 (8..28)") lives under
-/// the id §07-narrate#1-screen chose, `narrate.speechCharsPerSecond`, with its band spelled in the same row;
-/// and F4.3's packing, growing and speeding (`P.eng.narrationLeadSeconds`, `P.eng.narrationGapSeconds`,
-/// `P.eng.narrationMaxTempo`) are catalogued here because §07's §4 names them, while the rule that reads them is
-/// the render's ([`produce_render::fit`]) — the same one-home-per-number rule [`effects`] gives for values whose
-/// section differs from their owner's.
+/// Every number the Narrate page draws or waits with, in §1's order: the take band first (its
+/// floor, its label bound, its geometry), then the pitch slider, then the two clocks and the two
+/// debounces.
 pub fn rows() -> Vec<Param> {
     vec![
         // --- the take band (§1's number 10) ---------------------------------------------------------
@@ -46,7 +33,8 @@ pub fn rows() -> Vec<Param> {
             num(narrate_screen::TAKE_LABEL_MIN_PX),
             "narrate_screen::TAKE_LABEL_MIN_PX",
         ),
-        // §10:133 lists the band's geometry by area rather than as rows, so these four carry no `P.` id.
+        // §10:133 lists the band's geometry by area rather than as rows, so these four carry no
+        // `P.` id.
         param(
             "narrate.bandRulerPx",
             num(narrate_screen::BAND_RULER_PX),
@@ -102,15 +90,17 @@ pub fn rows() -> Vec<Param> {
             num(narrate_screen::SPEECH_TAIL_SECONDS),
             "narrate_screen::SPEECH_TAIL_SECONDS",
         ),
-        // §C.2's fallback rate and §F4.3's clamp band, in the one row §10 gives them: the estimate is what both
-        // the row's warning and the transport ＋'s refusal are built on until a take exists to measure, and once
-        // it does, `narrate_page::speech_for` measures the rate off the wav and pushes it through 8..28.
+        // §C.2's fallback rate and §F4.3's clamp band, in the one row §10 gives them: the estimate
+        // is what both the row's warning and the transport ＋'s refusal are built on until a take
+        // exists to measure, and once it does, `narrate_page::speech_for` measures the rate off the
+        // wav and pushes it through 8..28.
         param(
             "narrate.speechCharsPerSecond",
             speech_rate_spelled(),
             "narrate_screen::SPEECH_CHARS_PER_SECOND + CHAR_RATE_MIN + CHAR_RATE_MAX",
         ),
-        // F4.7's "within 1 s of a line": the window in which ＋ jumps to a line instead of adding one.
+        // F4.7's "within 1 s of a line": the window in which ＋ jumps to a line instead of adding
+        // one.
         param(
             "narrate.addNearSeconds",
             num(narrate_screen::ADD_NEAR_SECONDS),
@@ -177,8 +167,8 @@ pub fn rows() -> Vec<Param> {
             },
             "project::Policy::default — narration_rewrite",
         ),
-        // §10's row for the rate the voice reference is written at: one constant answers both this row
-        // and the write, so the catalogue cannot drift from what the server will accept.
+        // §10's row for the rate the voice reference is written at: one constant answers both this
+        // row and the write, so the catalogue cannot drift from what the server will accept.
         param(
             "P.eng.refSampleRate",
             narrate_data::REF_SAMPLE_RATE.to_string(),
@@ -238,9 +228,8 @@ pub fn rows() -> Vec<Param> {
     ]
 }
 
-/// §10 spells this row as `15 (8..28)`: the default a line is estimated at, and the band a MEASURED rate is
-/// clamped into (`narrate_screen::char_rate_clamped`). Spelling all three from the constants keeps the row from
-/// drifting from either half of the rule.
+/// §10 spells this row as `15 (8..28)`: the default a line is estimated at, and the band a MEASURED
+/// rate is clamped into (`narrate_screen::char_rate_clamped`).
 fn speech_rate_spelled() -> String {
     format!(
         "{} ({}..{})",

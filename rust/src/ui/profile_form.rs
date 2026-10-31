@@ -30,9 +30,6 @@ struct Form {
     scroller: gtk::ScrolledWindow,
     editor: gtk::TextView,
     form: gtk::Box,
-    /// The form's own viewport: what the scroller holds while a profile is chosen. Made here and kept, because a
-    /// `ScrolledWindow` handed a plain box wraps it in a viewport of ITS own, so `child()` never answers the box
-    /// and a swap back put the box into a second parent while the first still held it (GTK crashed).
     form_view: gtk::Viewport,
     /// The names behind the dropdown's rows after "(none)".
     names: RefCell<Vec<String>>,
@@ -63,8 +60,6 @@ fn template_of(name: &str) -> Result<Template, String> {
     })
 }
 
-/// Hang the profile controls on one bench: the row goes into `heading` after `after`, the form takes the
-/// scroller's place of `editor` while a profile is chosen. Called once per bench by `window_bench::bench_box`.
 pub fn attach(
     heading: &gtk::Box,
     after: &impl IsA<gtk::Widget>,
@@ -140,8 +135,6 @@ filled in. (none) is the free-text context.",
         if name == current {
             return;
         }
-        // After the signal, not inside it: `choose` repaints, and replacing a dropdown's model inside that
-        // dropdown's own `selected` emission left GTK reading the old model when the handler returned (a crash).
         let later = Rc::downgrade(&form);
         glib::idle_add_local_once(move || {
             if let Some(form) = later.upgrade() {
@@ -185,8 +178,6 @@ pub fn refresh_all() {
     }
 }
 
-/// S4: a profile chosen (or "(none)"): the project names it, keeps the values of fields both share, and its
-/// context is the template filled in. "(none)" keeps the last filled-in text as the free-text context.
 fn choose(form: &Rc<Form>, name: Option<&str>) {
     // Kept and shown after the project's borrow ends: the Produce page's refresh reads the project too.
     let mut to_keep: Option<(crate::project::Produce, String, Vec<(String, String)>)> = None;
@@ -239,12 +230,6 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
     paint(form);
 }
 
-/// S9 kept true after the profile is chosen: when the profile's `## produce` rows have CHANGED since this
-/// project took them (edited in Profiles while the project was open or closed), they are taken again, kept and
-/// shown like a choice. Rows that read as they did when the project took them say nothing new, so whatever the
-/// person set on the Produce page since stands: the page's rows are the project's own and always editable.
-/// Asked after a profile is saved and when a window opens. The first rewrite applied them only at the choice,
-/// then on every opening, which would have thrown the person's own page edits away.
 pub fn follow_profile_produce() {
     let Some(session) = crate::ui::window::SESSION.with(|slots| slots.borrow().last().cloned())
     else {
@@ -573,8 +558,6 @@ fn set_value(form: &Rc<Form>, field: &Field, value: String) {
     derive_policy();
 }
 
-/// S6: Prepare's ▶ with a required field empty refuses with the field's label. `None` with no profile, a
-/// profile this machine lacks (S7 runs with the context as it is), or nothing missing.
 pub fn refusal(project: &Project) -> Option<String> {
     let used = project.profile.as_ref()?;
     let template = template_of(&used.name).ok()?;
@@ -586,8 +569,6 @@ pub fn refusal(project: &Project) -> Option<String> {
     ))
 }
 
-/// The profile that sets `row` of the encoder settings for the window's project (its `## produce` section names
-/// the row), if any: a page greys that control and names the profile (§03-shell F0.14 S9).
 pub(crate) fn sets_row(row: &str) -> Option<String> {
     let used = crate::ui::window::SESSION
         .with(|slots| slots.borrow().last().cloned())

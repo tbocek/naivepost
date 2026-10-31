@@ -1,25 +1,6 @@
 //! F5.3 What "up to date" means — `spec/08-produce.md` §F5.3. One hash of everything the render reads,
 //! kept in `produce/final.stamp` beside the video, so a ▶ over an unchanged project costs nothing: the
 //! encode is skipped and the file is left exactly as it was.
-//!
-//! The seven groups the flowchart lists are hashed **separately** ([`parts`]) before they are hashed
-//! together ([`stamp`]), because "it changed" is worth more than one opaque blob nobody can argue with:
-//! [`changed_parts`] names which group moved — the encoder settings or one narration wav — from the two
-//! part lists alone, with no store behind them.
-//!
-//! What is deliberately **not** in it:
-//! - the output path — §A fixes the file as `produce/final.<container>` ([`crate::layout::Tree::final_video`]), so
-//!   the container is already one of the settings and a renamed or moved output can never look like a new
-//!   render. Renaming the video must not force a re-encode; that is the whole point of the stamp.
-//! - the upload text — no title, no description, no thumbnail, no upload record. Those are written once per
-//!   project and gated by their own file, `produce/publish/publish.json` ([`crate::publish::is_written]);
-//!   deleting `produce/publish/` ([`crate::publish::start_over]) starts the text over without touching the
-//!   video, and re-drawing a thumbnail must never make an encode look stale.
-//!
-//! This module only *stores* the answer to "the same hash?". **When** a run may write it is F5.2's rule and
-//! stays in [`crate::produce_render::stamp_written`]: a run that skipped the encode, or failed, writes none.
-//! Nothing here spawns a process, and no GTK: like `produce_render`, this is arithmetic over what the render
-//! would read, so it can be tested with no recording and no encoder.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,19 +16,10 @@ use crate::project::{self, Produce};
 /// the scratch folder with the clips (which are cleared at the start of every run).
 pub const STAMP_FILE: &str = "final.stamp";
 
-/// §F5.2 S10 (`the run writes the stamp once the render returns without error`): F5.3 stores what ▶ has to
-/// compare, and this says whether a comparison was even made — kept as one rule in `produce_render` so the
-/// two files cannot disagree about a run that encoded nothing.
 pub use crate::produce_render::stamp_written;
 
 // ---- the input -------------------------------------------------------------------
 
-/// The wav a line was spoken into, or `None` when it never was. A take is named by what was spoken — the
-/// same key its TTS request was cached under ([`crate::narration::tts_key`] →
-/// [`crate::narrate_tts::take_path`]) — so re-rolling a line or switching voice keeps its words and changes
-/// its sound, and the stamp follows. `voice` is the page's selected voice (`None` = the session's own), and
-/// `roll` comes from `narrate/takes.json`, which this module does not read: the caller knows both, and a
-/// stamp built from anything else would call a re-drawn take up to date. A line with no words has no wav.
 pub fn wav_of(tree: &Tree, line: &Entry, voice: Option<&str>, roll: i32) -> Option<PathBuf> {
     if line.text.trim().is_empty() {
         return None;
@@ -60,9 +32,6 @@ pub fn wav_of(tree: &Tree, line: &Entry, voice: Option<&str>, roll: i32) -> Opti
     ))
 }
 
-/// Everything the render reads, borrowed rather than owned: the stamp is a summary of state the caller
-/// already holds (the project, the cut's segments, the narration's lines) plus what the file system says
-/// about the files those refer to.
 #[derive(Debug)]
 pub struct Input<'a> {
     /// §A's encoder settings. Hashed in full; the output path is not a setting (§ module doc).
@@ -77,9 +46,6 @@ pub struct Input<'a> {
     pub aspect: &'a str,
     /// The selected voice: switching voices keeps every line and every setting and changes only the sound.
     pub voice: &'a str,
-    /// The cut's effects — every zoom, text, svg, volume, speed and stop. The render is handed this very
-    /// list (`Materials::fx_for`, answered from `cut.fx`) and builds its filter graph from each record, so a
-    /// stamp that counted only the segments could call a video up to date when an effect was added beside it.
     pub fx: &'a [crate::cut::Fx],
     /// The bed lanes the render mixes into its clips (§F5.2 S3), files included: a replaced bed file changes
     /// what is heard without touching a single segment.
@@ -90,17 +56,10 @@ pub struct Input<'a> {
 }
 
 impl<'a> Input<'a> {
-    /// The stamp as it stands on disk: the real pair of lookups, [`wav_of`] for where a line's synthesis is
-    /// and [`disk_facts`] for what the file system says about it. `voice`/`roll` are the two things a take
-    /// depends on that the line itself does not carry (see [`wav_of`]).
     pub fn stamp_with(&self, tree: &Tree, voice: Option<&str>, roll: i32) -> String {
         self.stamp_of(|line| wav_of(tree, line, voice, roll), disk_facts)
     }
 
-    /// The stamp with the file system handed in: `wav` says which file a line's synthesis lives in and
-    /// `file_facts` reads `(size, mtime seconds)` out of it. Both rules are pure arithmetic given these two,
-    /// which is what lets a test move a wav's size without owning a recording. The real pair is
-    /// [`wav_of`] + [`disk_facts`].
     pub fn stamp_of(
         &self,
         wav: impl Fn(&Entry) -> Option<PathBuf>,
@@ -179,27 +138,17 @@ pub fn stamp(
 
 // ---- what goes into each group ---------------------------------------------------
 
-/// §A's settings, one named line each so a change in one row moves the hash and only that row's line is
-/// rewritten. Written as `name=value` text rather than by hashing the struct: serde field order is a
-/// compile-time accident of declaration, and this list is the deliberate answer to "which settings make a
-/// render stale" — dropping a field from it is then visible in the diff.
-///
-/// In: container, codec, preset, resolution, frame rate with its two ticks, audio bitrate, subtitle choice,
-/// the translation ticks, `game_volume` (P.policy.gameVolume), CRF and the frame-edges tick. Not in it: the
-/// output path, which is not a setting but a consequence of the container (§ module doc).
 fn settings_text(settings: &Produce) -> String {
     let mut text = String::new();
     text.push_str(&format!("container={:?}\n", settings.container));
     text.push_str(&format!("codec={:?}\n", settings.codec));
     text.push_str(&format!("preset={:?}\n", settings.preset));
     text.push_str(&format!("resolution={:?}\n", settings.resolution));
-    // The number and what it means: 30 as a target and 30 as a ceiling are different files.
     text.push_str(&format!("frame_rate={:?}\n", settings.frame_rate));
     text.push_str(&format!("vfr={}\n", settings.vfr));
     text.push_str(&format!("mono={}\n", settings.mono));
     text.push_str(&format!("audio_kbps={}\n", settings.audio_kbps));
     text.push_str(&format!("subtitles={:?}\n", settings.subtitles));
-    // Sorted so a re-order of the same ticks is not a change; the languages themselves are.
     let mut languages = settings.translate.clone();
     languages.sort();
     text.push_str(&format!("translate={}\n", languages.join(",")));
@@ -211,11 +160,6 @@ fn settings_text(settings: &Produce) -> String {
     text
 }
 
-/// The segments the render reads: bounds, what is inserted over them (`ins` — empty for plain footage, an
-/// asset path, or a `copy:` stretch of the session), how long that runs, its rate, whether it is silent, and
-/// which lane's sound an insert replaces. Nothing else: `cam` (which picture row shows the segment) and
-/// `quiet` (which lanes a *preview* hushes) change nothing about the encoded file, so moving a segment
-/// between rows must not force the whole video to re-encode.
 fn segments_text(segs: &[Seg]) -> String {
     let mut text = String::new();
     for seg in segs {
@@ -227,7 +171,6 @@ fn segments_text(segs: &[Seg]) -> String {
     text
 }
 
-/// The lines: bounds, the words, and the synthesis's `(size, mtime)`. `no wav` is a value of its own — a
 //  line that has never been spoken is not a line whose wav is zero bytes, and conflating them would let a
 /// failed synthesis look up to date.
 fn lines_text(
@@ -249,9 +192,6 @@ fn lines_text(
     text
 }
 
-/// Every field of every effect, one effect per line. The filter graph is built from the whole record — a
-/// re-timed, re-boxed, re-eased, re-worded or re-gained effect is a different file — so nothing here is left
-/// out, not even the fields only one kind reads: `Fx` is one record for six kinds and guessing which fields
 //  "matter" for which kind is how an effect change would slip past the hash.
 fn effects_text(fx: &[crate::cut::Fx]) -> String {
     let mut text = String::new();
@@ -280,10 +220,6 @@ fn beds_text(lanes: &[crate::cut::Lane], file_facts: &impl Fn(&Path) -> (u64, u6
     text
 }
 
-/// The footage sources: the path as §1 spells it, plus `(size, mtime)`. A re-recorded or replaced recording
-/// moves the hash even when every segment still points at the same second of it. Non-footage sources are
-/// left out — a narration reference is read by the Narrate page's voice sample, not by the encoder, and the
-/// voice that clones it is hashed under `voice`.
 fn sources_text(sources: &[project::Source], file_facts: &impl Fn(&Path) -> (u64, u64)) -> String {
     let mut text = String::new();
     for source in sources.iter().filter(|source| source.footage) {
@@ -293,12 +229,6 @@ fn sources_text(sources: &[project::Source], file_facts: &impl Fn(&Path) -> (u64
     text
 }
 
-/// A short hash of our own rather than a crate — the same reasoning as
-/// [`crate::fix_transcripts::block_key`]: the value only has to be stable and unique enough to answer "the
-/// same render?", it is read by nothing but this module, and `Hasher`'s output is documented as an API
-/// surface that may change between compilers. FNV-1a over the canonical text; 16 hex characters.
-/// `pub` because the thumbnail's own stamp ([`crate::produce_upload::thumbnail_stamp`]) hashes the same
-/// way: two FNV copies that must agree byte-for-byte is one bug waiting to be written.
 pub fn hash_text(text: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in text.as_bytes() {
@@ -307,13 +237,6 @@ pub fn hash_text(text: &str) -> String {
     format!("{hash:016x}")
 }
 
-/// Size and mtime of a file, as the two numbers the stamp spells. A missing file is `(0, 0)`, which is how
-/// "not spoken yet" differs from "spoken as an empty file": the size says nothing on its own, and `Err` has
-/// to read as *nothing there* rather than as a change every run.
-///
-/// Not [`crate::shell`]'s helper of the same kind: that one packs size and mtime into a single number for
-/// Prepare's transcripts, where only equality matters. Here both fields go on the line separately so a log
-/// or a reader can tell a re-record from a touch.
 pub fn disk_facts(path: &Path) -> (u64, u64) {
     let Ok(meta) = fs::metadata(path) else {
         return (0, 0);
@@ -328,20 +251,10 @@ pub fn disk_facts(path: &Path) -> (u64, u64) {
 
 // ---- where it lives and how it is read -------------------------------------------
 
-/// `<stem>.stamp` beside the video: `produce/final.stamp`, next to `produce/final.<container>` (§A fixes
-/// both names, so one stamp file per project serves every container — switching mp4→webm is a settings
-/// change inside the hash, not a second stamp nobody would ever clear).
 pub fn stamp_path(tree: &Tree) -> PathBuf {
     tree.final_stamp()
 }
 
-/// The stamp the ▶ gate compares against: the same groups [`Input`] hashes, with the two things a
-/// take depends on read from the project rather than passed in. It takes the WHOLE cut, not its segments:
-/// the render is handed the cut's effects and beds too, and hashing less than it reads lets an added zoom
-/// look up to date. The lines come from `narrate/narration.json`
-/// and each line's own `roll` salts its wav lookup, so an edited line, a re-rolled take or a redrawn wav
-/// all move this hash — which is what §F5.3 requires of the comparison a press makes. A caller that already
-/// holds the lines (the render half) builds an [`Input`] itself; this is the door that only has the tree.
 pub fn gate_stamp(
     tree: &Tree,
     settings: &Produce,
@@ -362,14 +275,9 @@ pub fn gate_stamp(
         lanes: &cut.lanes,
         shape,
     };
-    // Each line's take salt is its own `Entry.roll`: one rule for both halves of the render, so the stamp
-    // the gate asks about and the stamp the run writes are built the same way over the same lines.
     input.stamp_of(|line| wav_of(tree, line, voice, line.roll), disk_facts)
 }
 
-/// The stored hash. Anything unreadable — no file, a hand-deleted one, a half-written line from a crash —
-/// reads as `None`, and `None` means encode: the stamp may only ever let a run skip work it can prove was
-/// done, never hide that it cannot tell.
 pub fn read_stamp(tree: &Tree) -> Option<String> {
     let text = fs::read_to_string(stamp_path(tree)).ok()?;
     let hash = text.trim().to_string();
@@ -386,15 +294,11 @@ pub fn write_stamp(tree: &Tree, hash: &str) -> Result<(), String> {
     fs::write(&path, format!("{hash}\n")).map_err(|why| format!("{}: {why}", path.display()))
 }
 
-/// The ▶ test of the flowchart: the same hash means the encode is skipped, anything else means encode and
 //  then write the new stamp. `None` on the left is a project that has never been produced.
 pub fn skip_encode(stored: Option<&str>, current: &str) -> bool {
     stored == Some(current)
 }
 
-/// Which groups differ between two runs, in the flowchart's order. A run that has to encode can say why —
-/// "the lines moved" is a different sentence from "the encoder settings did" — and the answer falls out of
-/// hashing the groups separately rather than being guessed from one number.
 pub fn changed_parts<'a>(
     stored: &[(&'a str, String)],
     current: &[(&'a str, String)],
@@ -409,9 +313,6 @@ pub fn changed_parts<'a>(
 
 // ---- what the log says -----------------------------------------------------------
 
-/// F5.2 S10's last word: the stamp written after a render that returned without error, with the hash that
-/// will make the next ▶ cheap. The hash goes in because these lines are compared between runs, and a stale
-/// stamp somebody wants to delete has to be findable by eye.
 pub fn wrote_stamp_log(hash: &str) -> String {
     format!(">>> {STAMP_FILE}: {hash}")
 }

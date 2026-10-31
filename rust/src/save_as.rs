@@ -1,9 +1,4 @@
 //! Saving the project under a name of its own (spec/03-shell.md F0.10).
-//!
-//! One flow, two very different writes: the same name only rewrites `naivepost.json`, while a new
-//! name moves the whole folder — the transcripts, frames and renders live beside the file and are
-//! named by it, so a Save As that left them behind would point tonight's work at yesterday's
-//! seconds. The decision is here and the chooser only picks a name (spec/00-principles.md §5).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,10 +25,6 @@ pub fn press(running: bool) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Files under `dir`, however deep. Recursive because a project that has run keeps its frames in
-/// `frames/<source>/…`: counting one level would call it empty and skip the move, which is the one
-/// mistake this flow cannot make. An unreadable subtree counts as nothing rather than an error —
-/// the rename below is what decides, and it does not care what could not be listed.
 fn count_files(dir: &Path) -> usize {
     let Ok(entries) = fs::read_dir(dir) else {
         return 0;
@@ -57,16 +48,6 @@ pub struct Saved {
 }
 
 /// S3 + S4: write it, moving the folder first when the name changed.
-///
-/// A rename rather than a copy because it is instant on one filesystem and cannot half-happen —
-/// nobody presses Save expecting gigabytes of frames to be duplicated. It is also the whole check:
-/// renaming onto a folder that already has work in it fails, onto an empty one succeeds, which is
-/// exactly the answer wanted in both cases. When it will not go through — across filesystems, or
-/// into a name in use — nothing is written and the files stay where they are with the log saying
-/// where, because a save that silently moved work would be worse than one that did not happen. The
-/// spec draws that as a refusal: no "project saved" over a folder still sitting somewhere else.
-/// The line a failed move puts in the log. `save_as` builds it inline; naming it here
-/// lets §8's wording be asserted without a filesystem that refuses a rename (§8).
 pub fn move_failure(from: &Path, to: &Path, files: usize, err: &str) -> String {
     format!(
         "!!! could not move the output folder to {}: {err} -- the {files} file(s) are still in {}",

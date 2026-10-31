@@ -1,12 +1,4 @@
-//! §08 items 1, 3, 6 and 10: the four Produce presses that ask the person for a file. ＋ Add image… and a slot's
-//! Change… open an image chooser over the session's own frames; ⤓ export and ⤓ Save video open a save dialog on
-//! the page's default name, `<project>-thumbnail.jpg` and `<project>.<container>`. Each answer goes through one
-//! door ([`answer_image`], [`answer_export`], [`answer_save_video`]) that a test calls the way the dialog's
-//! response does; the dialogs themselves are counted ([`asks_for_test`]) by the real openers, so a test proves the
-//! button raised one without anyone answering it.
-//!
-//! The first rewrite had no chooser and no dialog: Add image took the newest frame (or made up
-//! `produce/publish/frame-N.jpg`), Change… a stand-in, and both ⤓ wrote straight to the default name.
+//! §08 items 1, 3, 6 and 10: the four Produce presses that ask the person for a file.
 
 use std::path::{Path, PathBuf};
 
@@ -17,7 +9,6 @@ use crate::ui::produce_page;
 use crate::ui::produce_press_wiring;
 
 thread_local! {
-    /// How many times each dialog was raised, by name: "image", "export", "save-video".
     static ASKS: std::cell::RefCell<std::collections::HashMap<&'static str, usize>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
@@ -78,8 +69,7 @@ pub fn open_image_chooser(window: &adw::ApplicationWindow, slot: Option<usize>) 
 }
 
 /// The image chooser's answer: the picked file as the row's entry ([`entry_for`]), added at the end
-/// (`slot` None) or put in slot `slot`'s place, through the same doors the page always used. Answers the
-/// status the press says.
+/// (`slot` None) or put in slot `slot`'s place, through the same doors the page always used.
 pub fn answer_image(window: &adw::ApplicationWindow, slot: Option<usize>, picked: &Path) -> String {
     let entry = entry_for(picked);
     match slot {
@@ -109,7 +99,6 @@ pub fn entry_for(picked: &Path) -> String {
     crate::layout::write_path(tree.dir(), tree.dir(), picked)
 }
 
-/// A save dialog opened on `default` (its folder and its name), the accepted path handed to `answer`.
 #[allow(deprecated)] // the same GtkFileChooser API every other chooser in the app keeps
 fn open_save_dialog(
     window: &adw::ApplicationWindow,
@@ -150,8 +139,7 @@ pub fn open_export_dialog(window: &adw::ApplicationWindow) {
     });
 }
 
-/// The export dialog's answer: the ladder writes there, `.jpg` forced, on a worker. The path is this press's alone
-/// (taken before the worker starts, then let go), so the next dialog opens on the page's own default again.
+/// The export dialog's answer: the ladder writes there, `.jpg` forced, on a worker.
 pub fn answer_export(window: &adw::ApplicationWindow, path: &str) {
     produce_press_wiring::answer_path(Some(path));
     produce_press_wiring::export_from_button(window);

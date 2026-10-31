@@ -1,26 +1,16 @@
 //! §07-narrate#6-details-confirmed (`Inputs tooltip`): the Narrate row's per-file breakdown.
-//!
-//! The shell counts what every page's Inputs row says; the Narrate row's TOOLTIP has to say more than the
-//! row — which cut file the counts came from, why the narration is stale and what fixes it, how many
-//! transcript lines the call will read and with what context window, the session context verbatim, and who
-//! speaks. [`crate::narrate_details::inputs_tooltip`] holds that wording; this module supplies its numbers,
-//! reading them off the same files the run itself reads (`cut/cut.json`, `prepare/transcript/session.tsv`,
-//! `naivepost.json`) so a tooltip can never disagree with the call it describes.
 
 use crate::narrate_details;
 use crate::narrate_rewrite;
 use crate::narrate_run;
 use crate::ui::narrate_page::NarrateState;
 
-/// The tooltip for the Narrate Inputs row. `tree` is the open project folder, if any: with none there are
-/// no files to break down, and §6 wants the row left unexplained rather than invented — so an empty string,
-/// which both callers read as "no tooltip".
 pub fn tooltip(tree: Option<&crate::layout::Tree>, s: &NarrateState) -> String {
     let Some(tree) = tree else {
         return String::new();
     };
-    // The cut off disk, not the state's mirror: the tooltip names `cut/cut.json`, so it must count what
-    // that file holds right now (the page's `segs` only mirror what a flow last published).
+    // The cut off disk, not the state's mirror: the tooltip names `cut/cut.json`, so it must count
+    // what that file holds right now (the page's `segs` only mirror what a flow last published).
     let cut = crate::cut::load(tree).unwrap_or_default();
     let clips: Vec<(f64, f64)> = cut.segs.iter().map(|seg| (seg.s, seg.e)).collect();
     let seconds = crate::cut_screen::cut_seconds(&cut);
@@ -37,12 +27,11 @@ pub fn tooltip(tree: Option<&crate::layout::Tree>, s: &NarrateState) -> String {
     let transcript_lines = crate::textfmt::read_session(&tree.session_tsv())
         .unwrap_or_default()
         .len();
-    // The session context verbatim, i.e. the same string the narration call sends (Describe's copy).
     let context = crate::project::load(tree.dir())
         .map(|opened| opened.context)
         .unwrap_or_default();
-    // The voice row appears only for a voice that actually speaks: captions-only has no reference to clone
-    // and an unset picker has nothing to name (§6: "Spoken by <voice> at ±X.X semitones").
+    // The voice row appears only for a voice that actually speaks: captions-only has no reference
+    // to clone and an unset picker has nothing to name (§6: "Spoken by <voice> at ±X.X semitones").
     let voice = if s.voice.is_empty() || narrate_run::voice_is_captions_only(&s.voice) {
         None
     } else {

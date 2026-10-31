@@ -1,28 +1,6 @@
-//! The `05-insert` snapshot: F2.12's own screen, staged the way `05-copy` stages §F2.9 — every mark on the
-//! strip is there because a real door wrote it (`insert_chosen_with_length` past the chooser, a radio clicked,
-//! `press_insert_apply`), never because state was poked. Split out of `snapshot.rs`, which is past the size a
-//! fourth staging block fits in.
-//!
-//! Four of the flow's faces in one shot, because each one changes what the form and the band look like and the
-//! LAST of them is what the pixels record:
-//!
-//! 1. a card spliced BETWEEN the footage (S5 "the video gets longer by the card");
-//! 2. a card laid OVER a drawn selection, which costs the footage those seconds (S5 "replaces those seconds");
-//! 3. a video put on a LANE of its own, which adds the band's lane row and cuts nothing (S5 "a row of its own");
-//! 4. the SAME card asked with no length at all, so its Seconds entry comes from the file's own last moving
-//!    moment (§5) rather than from a number the caller handed it;
-//! 5. the S1 refusal, with no line and no selection — the flow's last word when nothing was aimed at.
-//!
-//! One form is drawn per press and Apply hides it again, so a single PNG cannot hold all four answers: what
-//! this shot records is the page AFTER the three inserts — five segments, the over card sitting on the footage
-//! it took, the lane's violet span on its own row — with S1's refusal as the last word on the status row. The
-//! form column itself (§G's radios, Seconds entry and sound tick) is `insert-form`, pinned widget by widget by
-//! `tests/suite/insert_form_widgets.rs`; leaving a fourth one open here would hide the readout column §1 puts beside
-//! it and show none of the strip. Every mark is still placed through the real doors — the chooser seam
-//! (`insert_chosen_with_length`, the call the chooser's callback makes), §G's mode radio clicked, and Apply's
-//! own press — so each returned sentence names the file, the mode and the cut's new length as a real press
-//! earned it. The strip is then re-seeded to the staged three through `seed_review_cut`, the door every editing
-//! press ends with, so one PNG carries all three inserts without one open form hiding another's work.
+//! The `05-insert` snapshot: F2.12's screen, staged like `05-copy` (§F2.9): every mark is written by a real door (`insert_chosen_with_length`, a radio click, `press_insert_apply`), never by poking state. Split out of `snapshot.rs`.
+//! Faces of the flow: 1. a card spliced BETWEEN the footage (S5); 2. a card OVER a drawn selection (S5); 3. a video on a LANE of its own (S5); 4. the same card asked with no length, so its Seconds entry comes from the file (§5); 5. the S1 refusal with no line and no selection.
+//! One PNG records the page after the three inserts, with the S1 refusal last on the status row. The form column is `insert-form`, pinned by `tests/suite/insert_form_widgets.rs`; a fourth open form would hide the readout column. The strip is re-seeded to the staged three through `seed_review_cut`.
 
 use std::path::Path;
 
@@ -37,8 +15,7 @@ use crate::cut_screen;
 use crate::timeline::Recording;
 use crate::ui;
 
-/// The tape the flow is staged on: 0–120 s, one take, so every second below is filmed material and a card
-/// dropped between two clips still has its hole to fall in.
+/// The tape: 0–120 s, one take, so a card dropped between clips has its hole.
 fn tape() -> Vec<Recording> {
     vec![Recording {
         base: "session-tape".into(),
@@ -47,8 +24,7 @@ fn tape() -> Vec<Recording> {
     }]
 }
 
-/// The cut the flow starts from: two clips with a hole at 30–40, so a spliced card and an over card land in
-/// different-looking places and the lane row has footage to overlap.
+/// The starting cut: two clips with a hole at 30–40, so spliced and over cards land differently and the lane has footage to overlap.
 fn seeded() -> cut::Cut {
     cut::Cut {
         segs: vec![
@@ -69,15 +45,11 @@ fn seeded() -> cut::Cut {
     }
 }
 
-/// Write the cards the flow inserts. The real press seeds `assets/` with the built-in badges (`press_insert`
-/// calls `cut_insert::seed_cards` before the chooser opens), so the folder the chooser would have started in is
-/// seeded the same way; the two inserts this flow aims at are built-in cards, which is what a first-open
-/// chooser would actually have offered.
+/// Write the cards the flow inserts: the assets folder is seeded as `press_insert` does (`cut_insert::seed_cards`), and the two inserts are built-in cards.
 fn seeded_cards(dir: &Path) {
     let assets = dir.join("assets");
     let _ = std::fs::create_dir_all(&assets);
     cut_insert::seed_cards(&assets, &cut_cards::seeds());
-    // `cut_cards::seeds()` names its badges after `TIER_ROWS` -- `s.svg` ... `f.svg` plus the blank `tier.svg`.
     for name in ["s.svg", "a.svg"] {
         assert!(
             assets.join(name).is_file(),
@@ -87,13 +59,11 @@ fn seeded_cards(dir: &Path) {
     }
 }
 
-/// A seeded card's path, by name.
 fn card_path(dir: &Path, name: &str) -> std::path::PathBuf {
     dir.join("assets").join(name)
 }
 
-/// Click a radio the form drew, found under this window's own `insert-form` holder — the same walk
-/// `tests/suite/insert_form_widgets.rs` does, because a tree-wide name lookup can land on another window's form.
+/// Click a radio under this window's own `insert-form` holder, as `tests/suite/insert_form_widgets.rs` does; a tree-wide name lookup can hit another window's form.
 fn pick_mode(window: &adw::ApplicationWindow, name: &str) {
     fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
         if root.widget_name() == name {
@@ -119,9 +89,7 @@ fn pick_mode(window: &adw::ApplicationWindow, name: &str) {
     radio.set_active(true);
 }
 
-/// The card a LANE insert needs: LANE is offered only to a VIDEO-shaped file (`cut_insert::lane_offered`), and
-/// the built-in badges are SVGs, so a lane is staged with a video file written next to them. Its seconds come
-/// from the `file_seconds` the chooser seam is handed -- the probe is ffmpeg, and a snapshot must not need it.
+/// The card a LANE insert needs: LANE is offered only to a VIDEO-shaped file (`cut_insert::lane_offered`), so a video is written next to the SVG badges; its seconds come from the `file_seconds` the seam is handed (a snapshot must not need ffprobe).
 fn video_card(dir: &Path) -> std::path::PathBuf {
     let assets = dir.join("assets");
     let _ = std::fs::create_dir_all(&assets);
@@ -136,16 +104,11 @@ fn video_card(dir: &Path) -> std::path::PathBuf {
     path
 }
 
-/// A card that brings a sound of its own: a VIDEO file with an audio stream, written into the shot's own session
-/// folder. §S4's tick is drawn only "when there is a sound to answer for", and `cut_insert::sound_open` refuses
-/// it outright for a bare audio file (`Kind::Audio`) or a LANE — so the file must be video-shaped AND decodable,
-/// which is what ffmpeg can build here from a silent WAV. The door asks the FILE with ffprobe
-/// (`window_insert::file_has_sound`), so a stub of bytes answers "no sound" and no tick appears.
+/// A card with a sound of its own: a video with an audio stream (§S4's tick is drawn only when there is sound; `cut_insert::sound_open` refuses bare audio or a LANE). `window_insert::file_has_sound` asks ffprobe, so a stub of bytes answers "no sound".
 fn sound_card(dir: &Path) -> std::path::PathBuf {
     let assets = dir.join("assets");
     let _ = std::fs::create_dir_all(&assets);
     let wav = assets.join("sting-src.wav");
-    // Rewritten every run so an older, shorter copy cannot survive into the shot.
     if crate::snapshot::write_silence_wav(&wav, 8000, 8000 * 3).is_err() {
         std::fs::write(&wav, b"staged silent sting").expect("a staged wav");
     }
@@ -172,23 +135,17 @@ fn sound_card(dir: &Path) -> std::path::PathBuf {
     if path.is_file() {
         path
     } else {
-        // No ffmpeg on this machine: fall back to the bare WAV. The form still opens on it; only the tick is
-        // then absent, because §S4 answers nothing for a file that is all sound.
+        // No ffmpeg here: fall back to the bare WAV; only the tick is absent (§S4).
         wav
     }
 }
 
-/// A card with a moving moment of its own, written next to the seeded badges. §5's "card length = last moving
-/// moment, offered as the insert's length" is what this stage shows: `insert_chosen_with_length` asked with no
-/// length answers it from the FILE, because ffprobe reads an SVG as one frame and cannot. The animation ends at
-/// 1.6 s, so the Seconds entry opens there rather than at `cut_insert::DEFAULT_SECONDS`. Its holes are declared
-/// (§G's `<!-- Input: ... -->`) so the form draws the field row §A puts above the radios.
+/// A card with a moving moment of its own. §5's "card length = last moving moment" is shown: with no length `insert_chosen_with_length` asks the FILE (ffprobe reads an SVG as one frame). The animation ends at 1.6 s, not `cut_insert::DEFAULT_SECONDS`; its holes are declared (§G's `<!-- Input: ... -->`) so the field row appears.
 fn timed_card(dir: &Path) -> std::path::PathBuf {
     let assets = dir.join("assets");
     let _ = std::fs::create_dir_all(&assets);
     let path = assets.join("timed.svg");
-    // Rewritten every run: the shot depends on what is IN this file (its animation, its declared hole), so a
-    // copy left over from an earlier build of the snapshot must not survive.
+    // Rewritten every run so a stale copy cannot survive into the shot.
     std::fs::write(
         &path,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\">\
@@ -201,9 +158,7 @@ fn timed_card(dir: &Path) -> std::path::PathBuf {
     path
 }
 
-/// The cut the strip shows for the shot: the three staged inserts, asked of [`cut_insert::place`] directly --
-/// the same call Apply makes -- rather than through the open form, because these segments only have to EXIST
-/// for the band to draw them.
+/// The cut the strip shows: the three staged inserts from [`cut_insert::place`] directly (the call Apply makes); they only have to EXIST for the band to draw them.
 fn seeded_after_stage(dir: &Path) -> cut::Cut {
     seeded_cards(dir);
     let mut held = seeded();
@@ -234,29 +189,22 @@ fn seeded_after_stage(dir: &Path) -> cut::Cut {
     held
 }
 
-/// Stage the flow and hand back the sentences it printed, in order, for the caller's `snapshot:` line.
 pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
-    // S7's card render writes beside the project it was asked to render, not beside a temp folder.
     ui::cut_card_preview::set_card_snapshot_dir(dir);
     ui::set_session_recordings(&tape());
     ui::seed_review_cut(window, &seeded());
-    // Deepen the zoom so a 5 s card is a real bar: at the opening 4 px/s it is 20 px and the violet is a
-    // hairline nobody can read off a screenshot.
+    // Deepen the zoom so a 5 s card is a real bar (at 4 px/s it is a hairline).
     for _ in 0..4 {
         ui::press_zoom(window, true);
     }
     let mut said: Vec<String> = Vec::new();
     seeded_cards(dir);
-    // The scroll stays at the head, where a page opens: the whole staged span has to be inside the strip's
-    // window or the shot records empty tape instead of the three inserts.
+    // Scroll stays at the head so the whole staged span is inside the window.
     let staged = seeded_after_stage(dir);
-    // Drawn FROM the cut before any press runs: `cut_insert::place` is the same call Apply makes, so the marks
-    // are the ones the rules wrote, and the three real presses below reproduce exactly this state (the stage is
-    // re-seeded to it after each), so nothing is placed twice and no lane gets a second row.
+    // Drawn FROM the cut before any press: `cut_insert::place` is Apply's call, so the three real presses below reproduce this state (re-seeded after each).
     ui::seed_review_cut(window, &staged);
 
-    // 1. BETWEEN, through the real buttons: chooser seam, radio, Apply. Its words come FIRST in the log line,
-    // because everything after them re-places what the strip already shows.
+    // 1. BETWEEN via the real buttons. Its words come FIRST in the log line.
     ui::note_place(true);
     ui::set_line_position(window, LinePos { t: 10.0 });
     ui::clear_selection(window);
@@ -269,8 +217,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     pick_mode(window, "insert-mode-between");
     said.push(ui::press_insert_apply(window));
 
-    // 2. OVER: a drawn selection supplies both the length and the overwrite, so the footage under 20-28 is
-    // gone and the band shows the dropped stretch the card now covers.
+    // 2. OVER: a drawn selection supplies length and overwrite.
     ui::seed_review_cut(window, &staged);
     ui::draw_selection(
         window,
@@ -288,8 +235,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     pick_mode(window, "insert-mode-over");
     said.push(ui::press_insert_apply(window));
 
-    // 3. LANE: a video onto a row of its own. The lane radio only appears for a video-shaped file, and LANE
-    // cuts nothing -- the row shows in the band and in the camera list's per-lane badges.
+    // 3. LANE: a video onto a row of its own; the lane radio appears only for a video-shaped file and cuts nothing.
     ui::seed_review_cut(window, &staged);
     ui::clear_selection(window);
     ui::set_line_position(window, LinePos { t: 34.0 });
@@ -301,8 +247,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ));
     pick_mode(window, "insert-mode-lane");
     said.push(ui::press_insert_apply(window));
-    // The cancel, before the strip goes back: Cancel closes the form and writes nothing, which is §G's other
-    // button and the answer no still can show either.
+    // Cancel closes the form and writes nothing (§G's other button).
     ui::note_place(true);
     ui::set_line_position(window, LinePos { t: 12.0 });
     said.push(ui::insert_chosen_with_length(
@@ -314,11 +259,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     said.push(ui::close_insert_form(window));
     ui::seed_review_cut(window, &staged);
 
-    // 4. §5's own length AND §S4's sound tick: the SAME card as stage 1 asked with no length (nothing but the
-    // file can say how long it runs -- its Seconds entry reads 1.6, the animation's last moving moment, where
-    // every stage above was handed an explicit number), then re-opened on a card that BRINGS A SOUND so the tick
-    // row is drawn with §S4's spliced sentence. The form this last press leaves open is what `05-insert-form`
-    // paints, so nothing after it closes it.
+    // 4. §5's own length and §S4's sound tick: the same card as stage 1 with no length (Seconds reads 1.6), then re-opened on a card that brings a sound. The form left open is what `05-insert-form` paints.
     ui::seed_review_cut(window, &staged);
     ui::note_place(true);
     ui::clear_selection(window);
@@ -330,36 +271,27 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
         shown,
         cut_insert::DEFAULT_SECONDS
     ));
-    // The tick-bearing form: same line, same BETWEEN mode, a file with an audio stream of its own. Found the
-    // way every other widget in this shot is found — under THIS window's own drawing holder, because one
-    // unscoped name exists once per tab and a tree-wide walk can land on another tab's empty box.
+    // The tick-bearing form, found under THIS window's drawing holder (one unscoped name exists per tab).
     ui::set_line_position(window, LinePos { t: 15.0 });
     let stung = ui::insert_chosen_with_length(window, &sound_card(dir), 15.0, Some(3.0));
     let tick_drawn =
         crate::ui::window::find_widget_by_name(window.upcast_ref(), "insert-sound-tick").is_some();
-    // The shot's own proof: the tick is on screen or it is not, and a missing one says so in the log rather
-    // than leaving a screenshot to be read for it.
+    // The proof: the tick is on screen or the log says so.
     assert!(
         tick_drawn,
         "\u{a7}S4's sound tick was not drawn for a card that brings a sound of its own"
     );
     said.push(format!("{stung}; sound tick drawn"));
 
-    // The form this stage drew is what `05-insert-form` paints (§G's whole form column: the declared field, the
-    // three radios, the Seconds entry at the card's own second, Cancel + Insert it), so it stays open here and
-    // nothing after it closes it. The refusal below needs no form of its own -- it IS the absence of one.
-    //
-    // 5. The last word on the status row: S1's refusal, no line claimed and nothing marked -- what the flow
-    // answers when nothing was aimed at. AFTER everything else on purpose: an open form hides the readout
-    // column §1 puts beside it.
+    // The form drawn here is what `05-insert-form` paints, so it stays open.
+    // 5. The last word on the status row: S1's refusal, AFTER everything else because an open form hides the readout column (§1).
     ui::note_place(false);
     ui::clear_selection(window);
     said.push(ui::press_insert(window));
     said
 }
 
-/// An entry the form drew, found under this window's own `insert-form` holder — the same walk [`pick_mode`] does,
-/// on the widget names §G lists.
+/// An entry the form drew, found as [`pick_mode`] does, on the widget names §G lists.
 fn find_form_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
     let form = ui::window::find_widget_by_name(window.upcast_ref(), "insert-form")
         .expect("the form holder exists");
@@ -370,8 +302,7 @@ fn find_form_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
         .expect("the seconds entry is an entry")
 }
 
-/// The band's own arithmetic behind the shot, so the log line can say what the strip should be showing:
-/// how many lanes the cut has after the LANE insert, and how long the video got.
+/// The band's arithmetic behind the shot, for the log line: lanes after the LANE insert and the video's new length.
 pub fn describe(window: &adw::ApplicationWindow) -> String {
     let held = cut::Cut {
         segs: ui::review_cut_segs(window),

@@ -1,27 +1,4 @@
 //! F4.4 Speak a line (TTS) — `spec/07-narrate.md` F4.4, steps S1–S6.
-//!
-//! One line of narration in, one wav out. The order is the flowchart's: the reference has to be on disk
-//! (S1, built by [F4.6](crate::layout::Tree::voice_ref_wav)), the audio server has to be healthy and serving
-//! a model that can clone (S2), the reference goes up again for this line (S3 — `bodies`'
-//! [`crate::bodies::VOICE_REF_REUPLOADED_EVERY_LINE`: a remembered server path dies with a server restart),
-//! then one `POST /v1/audio/speech` whose `options` carry the emotion either as eight floats or as words for
-//! the judge (S4, S6), and the reply is a take only if it is a 200 of at least [`MIN_WAV_BYTES`] bytes (S5).
-//!
-//! Everything here is a plain function over data the caller already has: no socket, no widget, no thread. The
-//! HTTP call belongs to [`crate::requests`] with the address and key from [`crate::services`]; this module
-//! says what goes on the wire and what came back means.
-//!
-//! What this module does **not** own:
-//! - the reference itself — [F4.6](crate::narrate_screen) chooses the voice and builds `narrate/voice_ref.wav`;
-//!   [`reference_problem`] only asks whether that file exists yet;
-//! - the request's address, key and timeout ([`crate::services`], [`crate::requests`]) and the body's five
-//!   keys, which are [`crate::bodies::speech_request`]'s envelope;
-//! - the take's name and seed — [`crate::narration::tts_key`] and [`crate::narration::tts_seed`] decide both,
-//!   and this module only turns a key into the file it names ([`take_path`]);
-//! - playing or auditioning the result (F4.5), which reads these wavs and never writes them;
-//! - what the *model* is told about emotions ([`crate::narrate_pass::emotion_known`] and
-//!   [`crate::narrate_pass::list_emotions`]). Those answer "is this word in the vocabulary"; this module is
-//!   the one that turns a tag into wire bytes, and it never refuses one — an unknown name goes to the judge.
 
 use std::path::PathBuf;
 
@@ -34,45 +11,24 @@ use crate::narrate_pass::EMOTION_KIN;
 use crate::narration;
 use crate::services::AudioModel;
 
-/// S4: how hard the engine leans on a spoken-emotion judge's guess. A stronger blend is a different
-/// performance of the same words, and this multiplier is also what a take's cache key is salted with
-/// ([`crate::narration`]'s prefix), so changing it retunes every line in the project at once.
 pub const EMOTION_ALPHA: &str = "0.85";
 
-/// S4: the alpha that rides with an exact vector. Alpha is a multiplier over the weights, not a separate
-/// dial — at 0.85 a written `angry=1` would arrive as 0.85 anger plus 0.15 of whatever the sample sounds
-/// like, which is the one thing an exact weight is written to prevent. So the vector path sends 1.
 pub const VECTOR_ALPHA: &str = "1";
 
-/// S5: the smallest reply that can be a wav. A server that ran out of VRAM answers 200 with a JSON error,
-/// and a few hundred bytes of prose written to `narrate/tts/` would be replayed forever as a silent take.
 pub const MIN_WAV_BYTES: usize = 1000;
 
-/// S4's P.policy.ttsLanguage fallback: the prototype hard-codes `"en"` here, which is the thing this replaces
-/// — a model told to speak English reads Polish spelling as English spelling. It survives as what an empty
-/// project language falls back to, never as what a project with one is overridden by.
 pub const LANGUAGE_FALLBACK: &str = "en";
 
-/// §10's `from` for [`LANGUAGE_FALLBACK`], spelled by the module that owns it so the catalogue cannot name a
-/// constant that no longer exists. A row's `from` is a `&'static str` like every other, and this is `'static`.
 pub const LANGUAGE_SOURCE: &str = "narrate_tts::LANGUAGE_FALLBACK";
 
-/// How many characters of a server's own error are quoted back (S5): the diagnosis, without a stack trace
-/// taking the log line over.
 const PROBLEM_CHARS: usize = 300;
 
-/// A named blend: a mix over the eight bases that no single base reaches — "excited" is happy plus surprise,
-/// not a kin of happy. Recipes, not synonyms, and every one peaks at 1 so a weight means the same as on a
-/// base. Nothing outside the eight axes can be invented (smug, sarcastic and whispered stay with the judge).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Blend {
     pub names: &'static [&'static str],
-    /// The eight weights, in [`crate::narrate_screen::EMOTIONS`]' order: happy, angry, sad, afraid,
-    /// disgusted, melancholic, surprised, calm.
     pub weights: [f64; 8],
 }
 
-/// The 21 blends, in the order the prototype lists them (go/narrate_tts.go's `emoBlends`).
 pub const BLENDS: [Blend; 21] = [
     Blend {
         names: &[
@@ -166,8 +122,6 @@ pub const BLENDS: [Blend; 21] = [
     },
 ];
 
-/// A recipe with these axes lit and every other one silent. `const fn` so [`BLENDS`] is data, not work done
-/// at startup: the table is the spec's, and a number typed wrong here is a number a test can see.
 const fn mix(lit: &[(usize, f64)]) -> [f64; 8] {
     let mut v = [0.0; 8];
     let mut i = 0;
@@ -187,8 +141,6 @@ pub fn blend(name: &str) -> Option<&'static [f64; 8]> {
         .map(|blend| &blend.weights)
 }
 
-/// S6: which of the eight axes a base or kin word names, `None` for anything else. The vocabulary is
-/// [`EMOTION_KIN`]'s — one table for what the writer may ask for and what this module can deliver as floats.
 pub fn base(name: &str) -> Option<usize> {
     let lower = name.trim().to_lowercase();
     EMOTION_KIN
@@ -208,14 +160,6 @@ fn split_weight(part: &str) -> Option<(String, f64)> {
     Some((name.to_lowercase(), weight.clamp(0.0, 1.0)))
 }
 
-/// S4's `emotion_vector` and S6's vocabulary together: the eight floats a weighted tag asks for, or `None`
-/// when the tag is not one this client can resolve.
-///
-/// A vector is exact and repeatable, so it is what a *weighted* tag is worth: a bare `"[angry]"` goes through
-/// the judge like any other word. Weights are the opt-in. Every reason to fall back is a `None`, never an
-/// error — S6 says unknown names go to the judge as words, and a name this client does not know may still be
-/// a word that server's judge scores. An empty tag, a weight that is not a number, an unknown name and a tag
-/// that asks for nothing (`"angry=0"`, which leaves the engine to read the line itself) all answer `None`.
 pub fn emotion_vector(tag: &str) -> Option<[f64; 8]> {
     let tag = tag.trim();
     if tag.is_empty() {
@@ -256,17 +200,10 @@ pub fn emotion_vector(tag: &str) -> Option<[f64; 8]> {
     (sum > 0.0).then_some(v)
 }
 
-/// The eight floats as §3.8's `write_line` answer must spell them: the same string [`options`] puts in
-/// `emotion_vector`, so what the writer is TOLD and what the engine is SENT cannot disagree (§12 #25's whole
-/// complaint was two performances made from one intent, neither number told). `None` for a tag with no
-/// weights, which is what [`emotion_text`] words are for.
 pub fn weights_of(tag: &str) -> Option<String> {
     emotion_vector(tag).map(|vector| vector_string(&vector))
 }
 
-/// One blend as §3.8's `list_emotions` publishes it: its names, then its recipe spelled with the BASE NAMES
-/// the weights point at, so a writer reads "excited = happy 1 + surprised 0.55" rather than a row of floats
-/// whose axis order it would have to be told. Names come first because that is what the writer searches for.
 pub fn blend_recites(blend: &Blend) -> String {
     let recipe: Vec<String> = blend
         .weights
@@ -282,9 +219,6 @@ pub fn blend_recites(blend: &Blend) -> String {
     format!("{} = {}", blend.names.join(" / "), recipe.join(" + "))
 }
 
-/// S4's `emotion_text`: the same tag with the weights taken off, so a tag that names an axis this client does
-/// not know (`"wistful=1, smug=0.3"`) still arrives as words the judge can score. An unweighted tag is those
-/// words already and passes through untouched.
 pub fn emotion_text(tag: &str) -> String {
     let parts: Vec<String> = tag
         .split(',')
@@ -298,14 +232,6 @@ pub fn emotion_text(tag: &str) -> String {
     parts.join(", ")
 }
 
-/// S4's `options` block. The emotion belongs *here*: the speech endpoint drops unknown top-level fields, and
-/// a top-level `"emotion"` was silently ignored for a long time before anyone noticed a line had no feeling
-/// in it.
-///
-/// Exactly one branch is ever sent, because the engine tests `use_emotion_text` first: a known weighted tag
-/// gets `emotion_vector` with [`VECTOR_ALPHA`], anything else gets `use_emotion_text` + `emotion_text` riding
-/// on [`EMOTION_ALPHA`], and a line with no emotion at all gets neither — just the alpha and the seed that
-/// makes the take re-speakable.
 pub fn options(tag: &str, seed: u32) -> Value {
     let mut out = serde_json::Map::new();
     out.insert("emotion_alpha".into(), json!(EMOTION_ALPHA));
@@ -326,10 +252,6 @@ pub fn options(tag: &str, seed: u32) -> Value {
     Value::Object(out)
 }
 
-/// The eight floats as the engine reads them: comma-joined, three decimals at most, shortest form. A blend
-/// scaled by a weight lands on numbers like 0.16499999999999998, and this string is both what the server
-/// parses and part of how the take would have been named — neither wants the tail. Same rule as
-/// [`narration`]'s own key formatting, which is why a vector and a key never disagree.
 fn vector_string(vector: &[f64; 8]) -> String {
     vector
         .iter()
@@ -345,9 +267,6 @@ fn vector_string(vector: &[f64; 8]) -> String {
         .join(",")
 }
 
-/// S4's `language` (P.policy.ttsLanguage): the project's language, the same one ASR and alignment send. A
-/// project with none says nothing about how its words are pronounced, and `"en"` is then the honest guess —
-/// the prototype's whole answer, kept as a fallback rather than as a rule.
 pub fn language(project: &str) -> String {
     let trimmed = project.trim();
     if trimmed.is_empty() {
@@ -356,9 +275,6 @@ pub fn language(project: &str) -> String {
     trimmed.to_string()
 }
 
-/// S1: is there a reference to clone from? The file is F4.6's to build — the pitch-shifted
-/// `narrate/voice_ref.wav` the model actually speaks from — so this asks only whether it exists, and says
-/// where to go when it does not.
 pub fn reference_problem(tree: &Tree) -> Option<String> {
     if tree.voice_ref_wav().exists() {
         return None;
@@ -370,11 +286,6 @@ pub fn reference_problem(tree: &Tree) -> Option<String> {
     )
 }
 
-/// S2: can this server narrate at all? Two questions in the order they have to be asked — is anything
-/// answering `/health`, and does what it serve include a model that can clone a voice. The second is not
-/// "is there a model on that port": a server serving only step-1 models answers every request and still
-/// cannot narrate, which is the same test the Settings row runs ([`checks::tts_endpoint_verdict`]), so the
-/// two cannot disagree about whether a box will speak.
 pub fn server_problem(healthy: bool, models: &[AudioModel]) -> Option<String> {
     if !healthy {
         return Some(format!(
@@ -385,9 +296,6 @@ pub fn server_problem(healthy: bool, models: &[AudioModel]) -> Option<String> {
     checks::tts_endpoint_verdict(models).err()
 }
 
-/// S5: is this reply a wav? A 200 of at least [`MIN_WAV_BYTES`] bytes is; everything else is named with the
-/// status and the server's own words, because "the model is not served" and "there was no room" want
-/// opposite fixes and both arrive as a short body.
 pub fn reply_problem(status: u16, body: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(body);
     let some = text.chars().take(PROBLEM_CHARS).collect::<String>();
@@ -403,22 +311,15 @@ pub fn reply_problem(status: u16, body: &[u8]) -> Option<String> {
     None
 }
 
-/// S5: where this take lives — `narrate/tts/‹hash›.wav`, the hash being the first sixteen digits of the
-/// take's key ([`crate::narration::tts_file`]). One filename per (text, voice, emotion, roll), which is why
-/// re-speaking a line nobody changed costs nothing.
 pub fn take_path(tree: &Tree, key: &str) -> PathBuf {
     tree.tts_wav(&narration::tts_file(key))
 }
 
 /// How long this take's wav actually runs, or `None` when it is not on disk or its header cannot be read.
-/// §F4.3's measured rate needs a real length and nothing may stand in for it, so a missing file answers `None`
-/// rather than an estimate — the caller keeps its 15-chars/s default in that case.
 pub fn take_seconds(tree: &Tree, key: &str) -> Option<f64> {
     crate::voice_ref::wav_seconds(&take_path(tree, key))
 }
 
-/// S5's write: refuse what [`reply_problem`] refuses — so a server's JSON error can never be filed as a take
-/// and replayed forever as silence — then put the bytes where [`take_path`] says they belong.
 pub fn write_take(tree: &Tree, key: &str, data: &[u8]) -> Result<PathBuf, String> {
     if let Some(problem) = reply_problem(200, data) {
         return Err(problem);
@@ -430,12 +331,6 @@ pub fn write_take(tree: &Tree, key: &str, data: &[u8]) -> Result<PathBuf, String
     Ok(file)
 }
 
-/// The request this line is spoken with: [`crate::bodies::speech_request`]'s five keys and this module's
-/// `options`. Split out so a caller can log or cache-key what it is about to send, and so the wire shape is
-/// one function's answer rather than two.
-///
-/// `voice_ref` is the path the upload returned *for this line* — see
-/// [`crate::bodies::VOICE_REF_REUPLOADED_EVERY_LINE`].
 pub fn request(
     model: &str,
     text: &str,
@@ -447,9 +342,6 @@ pub fn request(
     crate::bodies::speech_request(model, text, voice_ref, language, options(emotion, seed))
 }
 
-/// Where a speak ended. `Refused` carries the sentence the step answered with — the diagnosis is the step's
-/// own words, never a generic one, per spec/00-principles.md ("name the model and the reason where it
-/// failed"). `Take` is the file that was written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Refused(String),
@@ -474,25 +366,6 @@ impl Outcome {
     }
 }
 
-/// S1→S5 in the flowchart's order, for one line. Every network step arrives as a closure the caller owns:
-/// this function opens no socket, draws no widget and starts no thread (the module header's rule), so the
-/// whole sequence — including which step refused and which steps therefore never ran — is testable without
-/// a server, and the page can drive it with a real one.
-///
-/// * `upload_reference` — S3, `POST /v1/ui/upload`, answering the server path this line will name. It is
-///   called on **every** speak and its answer is never remembered across calls:
-///   [`crate::bodies::VOICE_REF_REUPLOADED_EVERY_LINE`] — a path the server forgot at a restart names
-///   nothing, and a cached one would fail every later line while looking like a working setup.
-/// * `post_speech` — S4/S5, `POST /v1/audio/speech`, answering `(status, body)`.
-/// * `healthy` / `models` — S2's answers, which the caller already holds from `/health` and `/v1/models`;
-///   re-asking here would put a second probe of the same server inside one line.
-/// * `model` — the TTS id to ask for ([`crate::services::tts_model`], default [`crate::services::TTS_MODEL`]).
-/// * `key` — the take's cache key ([`crate::narration::tts_key`]); the filename comes from
-///   [`crate::narration::tts_file`] through [`take_path`].
-///
-/// A refusal returns immediately and touches nothing later: no upload after a missing reference, no
-/// speech call after a refused upload, no file after a bad reply. That ordering is what makes "the
-/// server was never asked" a checkable fact rather than a hope.
 #[allow(clippy::too_many_arguments)] // eleven: the line, its key and S2's two answers are all data, not behaviour
 pub fn speak_line<FUpload, FPost>(
     tree: &Tree,
@@ -547,8 +420,6 @@ where
     }
 }
 
-/// What the row says about an outcome: the refusal verbatim (it already names the step and the reason), or
-/// the spoken take named by the file it landed in, so the user can see the line was really written and where.
 pub fn outcome_said(outcome: &Outcome) -> String {
     match outcome {
         Outcome::Refused(why) => why.clone(),

@@ -1,15 +1,9 @@
 //! F5.1 S3 — the run's snapshot, gathered ONCE on the GUI thread.
 //!
-//! §S3 lists what the press owns at the moment it starts: "the cut, lines, settings, sources, publish
-//! state, aspect". Everything in [`Snapshot`] is one of those, read once here, before either half runs.
-//! The reason is not tidiness: a render walks subprocesses for minutes, and a leg that re-read the page
-//! inside the run would describe whatever the person had moved by then — a cut edited mid-encode, a
-//! narration line deleted while its take was being spoken. The render closure gets `&Snapshot` and asks
-//! the live page nothing.
-//!
-//! The one file read that stays on the disk side is `publish.json` when the page holds no publish state at
-//! all: §S4's wording needs the difference between "nothing was ever written" and "an earlier run wrote
-//! this", and the page only knows the second one from the file. See [`publish_of`].
+//! §S3 lists what the press owns when it starts: "the cut, lines, settings, sources, publish state,
+//! aspect". A render walks subprocesses for minutes, so a leg that re-read the page would describe whatever
+//! the person had moved by then. The one file read that stays is `publish.json` when the page holds no
+//! publish state (§S4 needs "nothing was ever written" versus "an earlier run wrote this"; see [`publish_of`]).
 
 use crate::cut::Cut;
 use crate::layout::Tree;
@@ -18,50 +12,43 @@ use crate::project::{Project, Publish};
 use crate::ui::produce_page::ProduceState;
 use crate::word_list::Word;
 
-/// What the run was told when it started. Public fields: nothing here decides anything, the rules read it.
+/// What the run was told when it started. Public fields: the rules read it.
 pub struct Snapshot {
-    /// The project folder the takes, the stamp and the video live in.
     pub tree: Tree,
-    /// S3's cut: the Cut page's own if it holds one, else `cut/cut.json` — `produce_flow::what_is_the_cut`
-    /// answers that, and its `fx` is the effect list every filter graph is built from.
+    /// S3's cut: the Cut page's own if it holds one, else `cut/cut.json` (`produce_flow::what_is_the_cut`).
     pub cut: Cut,
-    /// S3's lines: `narrate/narration.json`, in playing order. Empty only because the session has nothing
-    /// to say, never because a leg could not be bothered to read it.
+    /// S3's lines: `narrate/narration.json`, in playing order.
     pub lines: Vec<Entry>,
-    /// S3's settings (the encoder row as the page drew it).
     pub settings: crate::project::Produce,
-    /// S3's sources, as the project held them at the press.
     pub sources: Vec<crate::project::Source>,
-    /// The session's aligned words (F1.13's list), which is what §F5.4 S1 reads for a clip's own speech.
+    /// The session's aligned words (F1.13's list), which §F5.4 S1 reads for a clip's own speech.
     pub session_words: Vec<Word>,
-    /// The narrator's own recordings — the ones §F5.4 excludes from a clip's speech, because their words
-    /// are what the narration replaced.
+    /// The narrator's own recordings, excluded from a clip's speech by §F5.4 (the narration replaced their words).
     pub narrator_sources: Vec<String>,
     /// The first footage recording's frame, which §9 makes the whole video's frame.
     pub src_shape: (i32, i32),
-    /// §8 bullet 4: whether this session has tape at all.
     pub on_recording: bool,
-    /// The filmed spans, which is how a clip's `footage_left` is answered without walking the page again.
+    /// The filmed spans, so a clip's `footage_left` is answered without the page.
     pub filmed_runs: Vec<(f64, f64)>,
-    /// The recordings on the session clock, by name: which file a footage clip is cut from, and where in it.
+    /// The recordings on the session clock, by name: which file a footage clip is cut from, and where.
     pub recordings: Vec<crate::timeline::Recording>,
     /// S3's publish state, and S4's distinction: `None` = nothing was ever written.
     pub publish: Option<Publish>,
     /// The page's own thumbnail rows, merged into the held publish state by [`publish_of`].
     pub publish_written: bool,
-    /// The session's language as the press found it (§1's "own language never translated"): read here, on the
-    /// window thread, because the render walks on a worker that holds no window session (§03-shell §1).
+    /// The session's language as the press found it (§1's "own language never translated"), read on the window
+    /// thread because the render's worker holds no window session (§03-shell §1).
     pub session_language: String,
 }
 
 impl Snapshot {
-    /// The cut's aspect, which is the frame shape §S3's "aspect" means.
+    /// The cut's aspect, the frame shape §S3's "aspect" means.
     pub fn aspect(&self) -> String {
         self.cut.aspect.clone()
     }
 
-    /// Seconds of footage still there past the end of `seg` — F4.3's "grow the clip, ≤ 4 s, NEVER PAST    /// THE FOOTAGE" bound. A clip in no filmed run, or a session with no tape, answers through
-    /// [`crate::produce_render::unknown_footage`]: unknown is not the same as zero.
+    /// Seconds of footage still there past the end of `seg` (F4.3: "grow the clip, ≤ 4 s, NEVER PAST THE
+    /// FOOTAGE"). A clip in no filmed run, or a session with no tape, answers through
     pub fn footage_left(&self, seg: &crate::cut::Seg) -> f64 {
         let covering = self
             .filmed_runs
@@ -77,10 +64,8 @@ impl Snapshot {
     }
 }
 
-/// Read everything the run will need, once. `recordings` are the page's session recordings (the caller
-/// holds them), `publish` is the project's held publish state, which may be absent.
-/// what the page holds: the image row, the title, the edit instruction, the printed words, the
-/// description, and whether a thumbnail was chosen rather than drawn. This is §S3's "publish state".
+/// Read everything the run will need, once. `recordings` are the page's session recordings, `publish` is
+/// the project's held publish state, which may be absent.
 pub fn gather(
     tree: &Tree,
     cut: &Cut,
@@ -95,14 +80,13 @@ pub fn gather(
     Snapshot {
         tree: tree.clone(),
         cut: cut.clone(),
-        // S3's lines: `narrate/narration.json`, in playing order. A session that has never been narrated
-        // has no file, which `narration::load` already says is the same state as a narration with no lines.
+        // S3's lines. A session never narrated has no file, which `narration::load` treats as no lines.
         lines: crate::narration::load(tree)
             .map(|n| n.entries)
             .unwrap_or_default(),
         settings: settings.clone(),
         sources: project.sources.clone(),
-        // S3's publish state: the PAGE's rows, merged over what a previous step wrote. See [`publish_of`].
+        // S3's publish state: the PAGE's rows, merged over what a previous step wrote ([`publish_of`]).
         session_words: crate::word_list::load(tree)
             .ok()
             .flatten()
@@ -118,22 +102,18 @@ pub fn gather(
         filmed_runs: crate::timeline::filmed_runs(recordings),
         recordings: recordings.to_vec(),
         publish: Some(page_publish),
-        // S4's three shapes turn on whether anything was ever written for this video; the page's rows answer
-        // that directly (an image row, a title or an edit instruction means something has been described).
+        // S4's three shapes turn on whether anything was ever written; the page's rows answer that directly.
         publish_written: written,
         session_language: project.policy.language.value.clone(),
     }
 }
 
-/// S3's publish state, built from what the page holds: the image row, the edit instruction, the title, the
-/// words printed over the picture and the description. §S3 says the snapshot takes the "publish state", and
-/// the page is what holds it — reading `publish.json` instead would describe what an earlier run left rather
-/// than what the person has on screen now (which, on a fresh session, is an empty image row and no title).
+/// S3's publish state, built from what the page holds (image row, edit instruction, title, printed words,
+/// description). Reading `publish.json` instead would describe what an earlier run left, not what is on screen.
 ///
 /// `crop` has no page row and keeps its default: the merge below takes it from the record.
 ///
-/// This is the row→record mapping the snapshot needs. It lives here rather than beside the rows in
-/// [`crate::ui::produce_page`] because this file owns what a run carries and that one is at its size budget.
+/// Lives here, not beside the rows in [`crate::ui::produce_page`], which is at its size budget.
 pub fn publish_of_state(s: &ProduceState) -> Publish {
     Publish {
         frames: s.frames.clone(),
@@ -150,27 +130,19 @@ pub fn publish_of_state(s: &ProduceState) -> Publish {
     }
 }
 
-/// The publish state the words half works from: what the page holds, merged over what `publish.json`
-/// already records. §S4 turns on exactly this question — "when `publish.json` exists" — so a press that read
-/// the file over the page's state would print "left as they are" about a thumbnail it is about to redraw,
-/// and one that read the page over the file would describe a fresh session's empty image row and no title
-/// as if it were what an earlier run had written.
+/// The publish state the words half works from: what the page holds, merged over what `publish.json` already
+/// records. §S4 turns on "when `publish.json` exists", so neither side alone is right: the rows are what
+/// §S3 means, but a fresh session's file has none of that; the file carries what no page row spells (the
+/// crop, the title box, `frames` from an earlier `＋ Add frame…` or redraw), which rows alone would drop.
 ///
-/// Both halves matter. The rows are what §S3's "publish state" means — the image row, the edit
-/// instruction, the title, the printed words and the description as the person sees them now — and on a
-/// fresh session `publish.json` has none of that, so taking the file over the rows would ask the model to
-/// draw a thumbnail from an empty instruction and no title. But the file also carries what no page row
-/// spells: the crop, the title box, and `frames` left by an earlier `＋ Add frame…` or a redraw. Taking the
-/// rows alone would drop those on the floor and reprint a picture the person had chosen.
-///
-/// A run built without any publish state at all (no page: a bare `Run`) falls back to the file.
+/// A run built without any publish state (a bare `Run`) falls back to the file.
 pub fn publish_of(snap: &Snapshot) -> Publish {
     let on_disk = crate::publish::load(&snap.tree).unwrap_or_default();
     merge_publish(snap.publish.clone(), &on_disk)
 }
 
-/// The two-record half of [`publish_of`], split out so the question "which side wins" is answerable without
-/// a folder or a window: `held` is what the page describes, `on_disk` what an earlier step wrote.
+/// The two-record half of [`publish_of`], so "which side wins" is answerable without a folder or a window:
+/// `held` is what the page describes, `on_disk` what an earlier step wrote.
 pub fn merge_publish(held: Option<Publish>, on_disk: &Publish) -> Publish {
     match held {
         Some(mut held) => {
@@ -190,10 +162,8 @@ pub fn merge_publish(held: Option<Publish>, on_disk: &Publish) -> Publish {
 }
 
 /// The file a footage clip at session second `at` is cut from, and the second inside it to seek to: the
-/// recording whose span holds `at`, under its own path resolved against the project, `at` counted from that
-/// recording's start (plus the cut's hand shift for it). The first rewrite handed every footage clip the FIRST
-/// footage row of the project list, unresolved (`project:sources/…`), and seeked it to the SESSION second: a
-/// session of several recordings came out cut from one file at the wrong places, and ffmpeg could not open it.
+/// recording whose span holds `at`, resolved against the project, `at` counted from that recording's start
+/// (plus the cut's hand shift for it). Several recordings must not all come from the first footage row.
 fn footage_file(snap: &Snapshot, at: f64) -> Option<(String, f64)> {
     let resolve = |stored: &str| {
         crate::layout::resolve(snap.tree.dir(), snap.tree.dir(), stored)
@@ -223,13 +193,9 @@ fn footage_file(snap: &Snapshot, at: f64) -> Option<(String, f64)> {
         .map(|src| (resolve(&src.path), at.max(0.0)))
 }
 
-/// F5.2's half of the run, driven from the snapshot: plan the whole encode, walk the subprocesses and report
-/// what was made. Every lookup `produce_exec` asks is answered from `snap` and nothing else — no
-/// `session_tree()`, no `live_project()`, no word-list or recording re-read — because §S3 says the press owns
-/// its inputs at the moment it starts, and a leg that asked the live page minutes later would describe
-/// whatever had been moved since. Each field below names the snapshot entry it came from.
-///
-/// Split out of `produce_page` (which is at its size budget) and called from the run's render closure.
+/// F5.2's half of the run, driven from the snapshot: plan the encode, walk the subprocesses, report what was
+/// made. Every lookup is answered from `snap` alone (no `session_tree()`, `live_project()` or re-read),
+/// because §S3 says the press owns its inputs when it starts. Called from the run's render closure.
 pub fn render_half(
     run: &crate::produce_flow::Run,
     snap: &Snapshot,
@@ -248,32 +214,26 @@ pub fn render_half(
                 .insert_asset(&root, snap.tree.dir())
                 .is_some_and(|path| path.exists())
             },
-            // S3's effects: the cut's own list. `plan_clips` filters it per scene through
-            // `effect_overlap::drawn_on_scene`, so handing it the whole list drops nothing and invents
-            // nothing — an empty one here would render a cut with no zoom, no volume, no text, and nobody
-            // would notice until the file came out flat.
+            // S3's effects: the cut's own list. `plan_clips` filters per scene (`effect_overlap::drawn_on_scene`), so
+            // the whole list drops nothing; an empty one would render a cut with no zoom, volume or text.
             fx_for: &|_| snap.cut.fx.clone(),
             lanes: &snap.cut.lanes,
-            // §9: the first footage clip's frame is the whole video's frame; §10's resolution can only
-            // shrink it, and `frame_box` falls back to this when the cut names no aspect.
+            // §9: the first footage clip's frame is the whole video's; §10's resolution can only shrink it.
+            // `frame_box` falls back to this when the cut names no aspect.
             src_shape: snap.src_shape,
             wav_of: &|entry| {
                 crate::produce_stamp::wav_of(&snap.tree, entry, Some(&run.voice), entry.roll)
             },
-            // The press hands over only the LANGUAGES: the cues themselves are cut by the render from the
-            // clips it planned (`produce_exec::plan`), because a cue needs the clip's rate, its placed
-            // lines and its own words — none of which exist before the plan. An `all` handed in here would
-            // be a second, worse opinion about the same track.
+            // Only the LANGUAGES are handed over: the render cuts the cues from the clips it planned
+            // (`produce_exec::plan`), since a cue needs the clip's rate, placed lines and words.
             cues: crate::produce_exec::Cues {
                 languages: run.settings.translate.clone(),
-                // §1's "own language never translated" needs the name to be knowable here: the page has hidden
-                // its tick, so only the render can catch a setting that still carries it.
+                // §1's "own language never translated": the page has hidden its tick, so only the render can catch a setting that still carries it.
                 session_language: snap.session_language.clone(),
                 ..Default::default()
             },
-            // S1 (§F5.4): the clip's own speech, off the session word list gathered at the press; the
-            // narrator's own recordings are excluded there because their words are what the narration
-            // replaced.
+            // S1 (§F5.4): the clip's own speech off the session word list; the narrator's recordings are excluded
+            // because the narration replaced their words.
             words: &|clip| {
                 crate::produce_clip_cues::words_for(
                     clip,
@@ -282,14 +242,12 @@ pub fn render_half(
                 )
             },
             translate: &crate::ui::produce_page_rows::translate_leg(),
-            // §F5.2 S5's size question, over the real wire: ffprobe beside the configured ffmpeg, read
-            // back off each encoded clip's file. A session with no ffprobe gets `None` everywhere and the
-            // run says nothing about sizes.
+            // §F5.2 S5's size question over the real wire: ffprobe beside the configured ffmpeg. No ffprobe gives
+            // `None` everywhere and the run says nothing about sizes.
             probe: &crate::produce_probe::probe,
             sources: &|| snap.sources.clone(),
             // §8 bullet 4: does this session have tape at all.
             on_recording: snap.on_recording,
-            // F4.3 step 1's bound, answered off the snapshot's filmed runs.
             footage_left: &|seg: &crate::cut::Seg| snap.footage_left(seg),
             // F4.3: speech length is the wav's duration.
             wav_seconds: &|entry| {
@@ -297,8 +255,7 @@ pub fn render_half(
                     .as_ref()
                     .and_then(|wav| crate::voice_ref::wav_seconds(std::path::Path::new(wav)))
             },
-            // S5's picture input: an insert reads its own asset, footage and a `copy:` stretch read the
-            // first footage recording of the snapshot's source list.
+            // S5's picture input: an insert reads its own asset; footage and a `copy:` stretch read the first footage recording.
             source_file: &|clip| {
                 if clip.source.is_empty() || clip.source.starts_with("copy:") {
                     let from = clip
@@ -320,13 +277,11 @@ pub fn render_half(
                 )
                 .map(|path| (path, clip.ss))
             },
-            // §6 bullet 1's doors: the filmed spans this snapshot already gathered (the same list
-            // `footage_left` reads), and the name a clip's base goes by — the footage row's for footage and a
-            // `copy:` stretch, the asset's own for an insert, since §6's "<base>" is a name a person reads.
+            // §6 bullet 1's doors: the filmed spans already gathered, and the name a clip's base goes by (the footage
+            // row's for footage and `copy:`, the asset's own for an insert).
             filmed_runs: &snap.filmed_runs,
             base_of: &|seg: &crate::cut::Seg| {
-                // Footage is named by the recording the clip starts in, the file its encode opens (the first
-                // rewrite named every clip after the first footage row).
+                // Footage is named by the recording the clip starts in, the file its encode opens.
                 let path = if seg.ins.is_empty() || seg.ins.starts_with("copy:") {
                     footage_file(snap, seg.s)
                         .map(|(path, _)| path)
@@ -345,27 +300,21 @@ pub fn render_half(
         crate::ui::produce_page_rows::render_checkpoint,
         crate::ui::produce_languages::spawn,
     );
-    // A render that stopped or failed says so in the log with the spec's own line, on top of the ending's
-    // word on the status line: `run_with` turns the report into "production stopped" or "production failed
-    // — see log", and the reason belongs where a person can read it.
+    // A stopped or failed render says so in the log with the spec's own line, besides the ending's status word.
     if let Some(why) = crate::ui::produce_page_rows::render_failure_note(&render) {
         crate::ui::window::log_line(&crate::produce_flow::failed_log(&why));
     }
     render
 }
 
-/// The first footage recording's shape, measured the way the Cut page measures its plate: through the
-/// frames Prepare already extracted for that recording (`cut_picture::first_footage_shape` is the same
-/// rule on the page's side, and `produce_render::plan_clips` agrees through `frame_box`). Read here rather
-/// than there because that helper is private to `cut_picture` and takes a window; the two lines that do the
-/// work are the file read and the decode, so copying them cannot make the answer disagree.
+/// The first footage recording's shape, measured as the Cut page measures its plate: through the frames
+/// Prepare extracted (`cut_picture::first_footage_shape` is the same rule on the page's side). Read here
+/// because that helper is private and takes a window.
 ///
-/// With no tape or no frames there is nothing to measure, and the fallback is the encoder's own default
-/// 1080p frame — what `frame_box` needs to be given when a session has not told it anything, not a guess
-/// about this session's cameras.
+/// With no tape or no frames the fallback is the encoder's default 1080p frame, not a guess about the cameras.
 ///
-/// `pub` because §F5.3's stamp weighs this very number (the `"frame"` group): the gate asks it BEFORE the
-/// snapshot below is gathered, and both halves must hash one answer or every press would look stale.
+/// `pub` because §F5.3's stamp weighs this number (the `"frame"` group): the gate asks BEFORE the snapshot
+/// is gathered, and both must hash one answer or every press would look stale.
 pub fn first_footage_shape(tree: &Tree, recordings: &[crate::timeline::Recording]) -> (i32, i32) {
     const NO_TAPE: (i32, i32) = (1920, 1080);
     let Some(first) = recordings.first() else {
@@ -375,13 +324,11 @@ pub fn first_footage_shape(tree: &Tree, recordings: &[crate::timeline::Recording
         .first()
         .cloned();
     let Some(path) = path else { return NO_TAPE };
-    // The header alone: the shape is all this asks, and the press asks it on the window thread, which never
-    // decodes a whole frame to learn two numbers (§03-shell §1).
+    // The header alone: the window thread never decodes a whole frame to learn two numbers (§03-shell §1).
     let Some((_, w, h)) = gtk4::gdk_pixbuf::Pixbuf::file_info(&path) else {
         return NO_TAPE;
     };
-    // A zero edge is not a frame: a stub or truncated jpg decodes to something with no size, and handing
-    // the encoder a 0x0 shape would fail in the filter graph rather than here.
+    // A zero edge is not a frame: a stub or truncated jpg would fail in the filter graph, not here.
     if w > 0 && h > 0 {
         (w, h)
     } else {

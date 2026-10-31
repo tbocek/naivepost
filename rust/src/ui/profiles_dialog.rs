@@ -12,7 +12,6 @@ use gtk4 as gtk;
 use crate::profile;
 
 thread_local! {
-    /// The Profiles window while it is open: one at a time, and a test reaches it here.
     static OPEN: RefCell<Option<gtk::Window>> = const { RefCell::new(None) };
 }
 
@@ -30,7 +29,6 @@ fn named<W: IsA<gtk::Widget>>(widget: &W, name: &str) -> W {
     widget.clone()
 }
 
-/// A window of its own over the main one, replacing a Profiles window already open.
 fn window(parent: Option<&gtk::Window>, title: &str) -> gtk::Window {
     if let Some(old) = open_window() {
         old.close();
@@ -70,7 +68,6 @@ pub const NEW: &str = "New";
 /// template (its fields, User Context and `## step` sections) was squeezed out of sight.
 pub const TEMPLATE_MIN_PX: i32 = 240;
 
-/// The edit window's state: which profile the box holds (`None` = New) and the widgets that follow it.
 struct Editor {
     current: RefCell<Option<String>>,
     picker: gtk::DropDown,
@@ -78,11 +75,8 @@ struct Editor {
     summary: gtk::Label,
     save: gtk::Button,
     trash: gtk::Button,
-    /// The Produce form: the Produce page's own rows, holding the profile's `## produce` section.
     produce: gtk::Box,
-    /// The Narrate form: the Narrate page's game audio level, kept in the same section.
     narrate: gtk::Box,
-    /// Up while the window sets the dropdown itself.
     painting: std::cell::Cell<bool>,
 }
 
@@ -90,7 +84,6 @@ thread_local! {
     static EDITOR: RefCell<Option<Rc<Editor>>> = const { RefCell::new(None) };
 }
 
-/// The whole template as it is saved: the box's text, and the Produce form as its `## produce` section.
 fn composed(state: &Editor) -> String {
     let mut rows = crate::ui::produce_page_layout::rows_from(state.narrate.upcast_ref());
     rows.extend(crate::ui::produce_page_layout::rows_from(
@@ -99,8 +92,6 @@ fn composed(state: &Editor) -> String {
     profile::join_produce(&text_of(&state.editor), &rows)
 }
 
-/// Put a template in the window: its text in the box, its `## produce` rows in the form (a row it leaves out
-/// shows the default).
 fn show_template(state: &Editor, source: &str) {
     let (text, rows) = profile::split_produce(source);
     state.editor.buffer().set_text(&text);
@@ -111,7 +102,6 @@ fn show_template(state: &Editor, source: &str) {
     }
     let produce = crate::ui::produce_page::apply_rows(&crate::project::Produce::default(), &rows);
     let seeded = crate::ui::produce_page::encoder_state(&produce);
-    // The Produce page's rows, and the Narrate page's game audio: each where its page has it.
     crate::ui::produce_page_layout::build_settings_flow(
         &state.produce,
         &seeded,
@@ -126,7 +116,6 @@ fn text_of(editor: &gtk::TextView) -> String {
     buffer.text(&start, &end, false).to_string()
 }
 
-/// The summary line: what the template declares, or its first error in red.
 fn say_summary(summary: &gtk::Label, text: &str) {
     match profile::parse(text) {
         Ok(template) => {
@@ -140,7 +129,6 @@ fn say_summary(summary: &gtk::Label, text: &str) {
     }
 }
 
-/// Put `name` (or New) in the box: the dropdown, the text, and Save and 🗑 live only on a saved profile.
 fn select(state: &Editor, name: Option<&str>) {
     *state.current.borrow_mut() = name.map(str::to_string);
     let names = paths().as_ref().map(profile::list).unwrap_or_default();
@@ -170,7 +158,6 @@ fn paint_buttons(state: &Editor) {
     state.trash.set_sensitive(saved);
 }
 
-/// S2's Save: the sentence the window shows, and every Prepare form re-read on success.
 fn save_named(name: &str, text: &str) -> String {
     let Some(paths) = paths() else {
         return "nowhere to keep profiles on this machine".to_string();
@@ -185,7 +172,6 @@ fn save_named(name: &str, text: &str) -> String {
     }
 }
 
-/// Is `path` a profile file, in this machine's profiles folder? Its name, when it is.
 fn profile_named(path: &std::path::Path) -> Option<String> {
     let folder = profile::dir(&paths()?);
     let in_folder = path.parent().is_some_and(|parent| {
@@ -245,7 +231,6 @@ pub fn load_from(path: &std::path::Path) -> String {
     said
 }
 
-/// A file chooser over the profiles folder, answering `then` with the path picked.
 #[allow(deprecated)]
 fn choose_file(
     parent: &gtk::Window,
@@ -285,7 +270,6 @@ fn choose_file(
     crate::ui::chooser_hold::show(&chooser);
 }
 
-/// A chooser's answer: a picked path goes to what the press asked for; no pick (Cancel, ×) changes nothing.
 fn answer(then: &Rc<dyn Fn(&std::path::Path)>, picked: Option<&std::path::Path>) {
     if let Some(path) = picked {
         then(path);
@@ -293,14 +277,12 @@ fn answer(then: &Rc<dyn Fn(&std::path::Path)>, picked: Option<&std::path::Path>)
 }
 
 thread_local! {
-    /// The last chooser this window raised, its title and its answer, for [`answer_chooser_for_test`].
     static LAST_CHOOSER: RefCell<Option<(String, Rc<dyn Fn(&std::path::Path)>)>> = const { RefCell::new(None) };
-    /// How many choosers a press raised.
     static CHOOSERS_RAISED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Answer the last chooser raised as a person would (a pick, or `None` for Cancel), through the same door its
-/// response runs; returns the chooser's title. How many were raised, see [`choosers_raised_for_test`].
+/// response runs; returns the chooser's title.
 pub fn answer_chooser_for_test(picked: Option<&std::path::Path>) -> Option<String> {
     let (title, then) = LAST_CHOOSER.with(|last| last.borrow().clone())?;
     answer(&then, picked);
@@ -375,12 +357,10 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_child(Some(&editor));
     scroller.set_vexpand(true);
-    // The template keeps room to be read however small the window: below this the window's content scrolls.
     scroller.set_min_content_height(TEMPLATE_MIN_PX);
     let summary = named(&gtk::Label::new(None), "profile-summary");
     summary.set_xalign(0.0);
     summary.set_wrap(true);
-    // The Produce form: the same controls as the Produce page (F0.14 S9), not the section as text.
     let produce_heading = gtk::Label::new(Some("Produce settings for projects using this profile"));
     produce_heading.add_css_class("heading");
     produce_heading.set_xalign(0.0);
@@ -398,7 +378,6 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
     column.append(&narrate);
     column.append(&produce_heading);
     column.append(&produce);
-    // Shorter than the template's floor plus the form, the window scrolls rather than squeezing the template.
     let page = gtk::ScrolledWindow::new();
     page.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     page.set_child(Some(&column));
@@ -423,8 +402,6 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
             say_summary(&summary, &buffer.text(&start, &end, false));
         });
     }
-    // Asked for no profile (the header's button), the window opens on the one the open project uses: that is the
-    // profile a person most likely came to change. New only when the project uses none this machine has.
     let used = crate::ui::window::SESSION
         .with(|slots| slots.borrow().last().cloned())
         .and_then(|session| {
@@ -460,7 +437,6 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
                 .flatten()
                 .and_then(|item| item.downcast::<gtk::StringObject>().ok())
                 .map(|item| item.string().to_string());
-            // After the signal: `select` replaces this dropdown's model (see `profile_form`).
             glib::idle_add_local_once(move || select(&state, name.as_deref()));
         });
     }
@@ -531,7 +507,6 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
     window
 }
 
-/// 🗑 answered Delete: the file goes, the box goes back to New, and Prepare's forms re-read the list.
 fn delete_current(state: &Editor) {
     let Some(name) = state.current.borrow().clone() else {
         return;

@@ -1,10 +1,4 @@
 //! §06-effects#2-the-lane-and-the-preview — where the effects lane's ROWS sit in the band, spelled once.
-//!
-//! §2's Rows sentence places the lane and orders its rows: the lane "sits between the selection band above and
-//! the picture rows below", and its rows are "stacked top to bottom inside the lane", an effect going on "the
-//! topmost row where it fits". `cut_tracks::rows_of` already did that arithmetic inline; these three doors are
-//! the same sums with names, so a test can ask where a row is without rebuilding the band's layout, and the
-//! painter and the reader cannot drift apart.
 
 use crate::fx_lane;
 

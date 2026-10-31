@@ -1,19 +1,16 @@
 //! When a snapshot takes its picture: at an event, not after a guessed wait.
 //!
-//! The event is `--shot-on`: `ready` (the default) is the first painted frame where no shown widget
-//! still owes a setup step (`ui::settle`); `open:<name>` also wants the widget named `<name>` shown.
-//! The picture is taken one painted frame later, and only if no widget moved in between: a setup step
-//! that never registered would otherwise be caught half done, the way a 300 ms timer caught the Cut
-//! page's form column still scrolled in one run and at its top in the next. A screen that does not
-//! settle fails loudly, naming what it still owes or what moved, instead of writing a wrong picture.
+//! The event is `--shot-on`: `ready` (default) is the first painted frame where no shown widget owes a setup
+//! step (`ui::settle`); `open:<name>` also wants the widget named `<name>` shown. The picture is taken one
+//! painted frame later, and only if no widget moved (a 300 ms timer once caught the Cut form column scrolled
+//! in one run and at its top in the next). A screen that does not settle fails loudly, naming what it owes.
 
 use gtk4 as gtk;
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// The frame count at which a screen that never becomes ready is given up on: a bound on a hang, not
-/// a wait for readiness, which comes as an event.
+/// The frame count at which a screen that never becomes ready is given up on: a bound on a hang, not a wait.
 const FRAME_LIMIT: u32 = 600;
 
 /// What `--shot-on` names.
@@ -44,7 +41,6 @@ impl ShotOn {
     }
 }
 
-/// Every shown widget's name and box in `root`'s coordinates, in tree order.
 fn layout(root: &gtk::Widget) -> Vec<(String, [i32; 4])> {
     fn walk(root: &gtk::Widget, widget: &gtk::Widget, out: &mut Vec<(String, [i32; 4])>) {
         if !widget.is_mapped() {
@@ -81,11 +77,10 @@ fn shown_by_name(root: &gtk::Widget, name: &str) -> bool {
     false
 }
 
-/// What is called with the picture's outcome: what triggered it, or why there is none.
 type Finish = Box<dyn FnOnce(Result<String, String>)>;
 
-/// Calls `shoot` when `painted`, and the other top levels in `also` (a menu staged in a window of its
-/// own), are settled as `on` says, then `finish` with what triggered the picture, or with why there is none.
+/// Calls `shoot` when `painted` and the other top levels in `also` (a menu in a window of its own) are
+/// settled as `on` says, then `finish` with what triggered the picture, or why there is none.
 pub fn shoot_when_ready(
     painted: &gtk::Widget,
     also: Vec<gtk::Widget>,
@@ -126,8 +121,7 @@ pub fn shoot_when_ready(
         move || roots.iter().flat_map(layout).collect::<Vec<_>>()
     };
     let id = clock.connect_after_paint(move |_| {
-        // Decided under the borrow, acted on after it: taking the picture drives the main loop, which
-        // can paint a frame and land here again.
+        // Decided under the borrow, acted on after it: taking the picture drives the main loop, which can land here again.
         let next = {
             let mut st = state.borrow_mut();
             if st.finish.is_none() || st.shooting {

@@ -1,13 +1,4 @@
 //! F2.14 §S2a — the WORDS cut: `P.policy.cutMode = words`, no model asked.
-//!
-//! [`crate::suggest::words_cut`] already does the arithmetic and already answers the page's two
-//! sentences; what was missing is the reading side — nobody handed it the runs, the marks or the
-//! silences, so the words path could only be called from a test. This module is that reading side
-//! and the landing, split out of `ui::window` because `window.rs` is past its size budget.
-//!
-//! Landings go through [`crate::ui::cut_suggest_land::land_spans`], which keeps hand-placed inserts
-//! exactly as the model path's `suggested_cut` does: a words cut proposes scenes, it is not anybody's
-//! claim on a card a person placed.
 
 use crate::cut::Cut;
 use crate::layout::Tree;
@@ -42,16 +33,6 @@ fn word_spans(tree: &Tree, source: &str) -> Vec<(f64, f64)> {
 
 /// §S2a's runs: every filmed run of the cut on screen, each carrying the seconds of the words its own
 /// recording holds, MOVED ONTO THE SESSION CLOCK (§04 F1.9 keeps a tape's seconds in its own file).
-/// A run whose recording has no words keeps its own span — nothing was said in it, so there is nothing
-/// to trim to contributes NO run at all — §S2a builds the cut from what was said, so silent footage is
-/// simply not part of it.
-///
-/// The spans are the page's TAPE, every filmed recording under its own name and on the session clock
-/// (`cut_folds::page_recordings`), because §S2a builds the cut from "every filmed run". The first rewrite took
-/// them from the cut on screen instead, named `cam<N>`: a project with no cut yet had no runs, and a recording's
-/// words, filed under its own name, were never found under `cam<N>`, so every words cut came out "0 segments"
-/// (07-news, 2026-10-26). The cut's own spans stand in only where no tape is published (a page not built yet).
-/// A suggestion is refused while hand edits stand (§F2.14 S1), so a run dropped by hand cannot come back here.
 pub fn runs_of(tree: &Tree, cut: &Cut) -> Vec<SpokenRun> {
     let tape = crate::ui::page_recordings();
     let recordings = if tape.is_empty() {
@@ -164,10 +145,6 @@ pub fn marks_of(tree: &Tree) -> Vec<(f64, f64)> {
 }
 
 /// §S2a's silences: the dead air to take out of a kept clip, from each footage row's cached wave.
-///
-/// NO ENVELOPE IS NOT AN EMPTY SESSION: a row whose `cache/waves` file is absent, stale or unreadable
-/// contributes nothing, so `remove_dead_air` simply finds nothing long enough in it. Guessing a
-/// silence would cut the middle of a sentence, which is the one thing §S2a's dead-air step may not do.
 pub fn silences_of(tree: &Tree, project: &crate::project::Project) -> Vec<(f64, f64)> {
     crate::cut_wave_edges::read_lanes(tree, &project.sources)
         .iter()
@@ -211,10 +188,6 @@ pub fn press_words(window: &adw::ApplicationWindow) -> String {
 
 /// §S2a: build the cut from the words and land it. No server is asked, so no cache is written and no
 /// exchange page is opened — this is the whole job.
-///
-/// Takes the tree and the project it reads, rather than resolving them itself: the refusal door already
-/// answered "is there a session" and pointed at one, and asking twice would let the refusal and the
-/// work land on different projects.
 pub fn run_words(
     window: &adw::ApplicationWindow,
     tree: &Tree,
@@ -223,11 +196,6 @@ pub fn run_words(
     let cut = crate::ui::window::newest_review_cut();
     let read = inputs(tree, project, &cut);
     let made = crate::suggest::words_cut(&read.runs, &read.marks, &read.silences);
-    // §12 §4's fourth bullet: the walk-back runs after EVERY reply, "model- or hand-made", not only after
-    // a model's. `words_cut` trims to words, takes marks and dead air out and coalesces — it does NOT close
-    // holes or snap edges, because on this path there is no stamped answer to walk back. So the spans it
-    // settled on go through the same walk here that `suggest::apply` runs for the model arm, which is the
-    // only way hole closing and edge snapping ever happen on a words-mode press.
     let walked = crate::suggest::walk_back_spans(
         &made.segs,
         &crate::ui::cut_suggest_model_run::walk_of(&read),

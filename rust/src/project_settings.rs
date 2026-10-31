@@ -1,28 +1,10 @@
 //! §10-parameters#3-project-settings-tab-controls — the project's own tab controls.
-//!
-//! `spec/10-parameters.md` §3 lists what one project says about itself, edited on the
-//! project's tabs rather than in `llm.conf`: copy sources, the User Context; the encoder
-//! settings; the publish state; the aspect.
-//!
-//! §10's intro files values in three homes (`P.policy` §2, `P.machine` §1, `P.eng` §5).
-//! §3 is the fourth, and spells no id with a `P.` prefix (its one, `P.project.frameInterval`,
-//! went with Freq). AGENT.md's tuning-number rule gives its rows a bare `project.` prefix.
-//!
-//! This module holds no numbers and no defaults of its own. Every answer here is read from
-//! the owner that already holds it — [`crate::project::Project::default`] and [`crate::project::Produce::default`] for the
-//! stored values, [`crate::produce_screen`] for the encoder rows' option lists,
-//! [`crate::fx_aspect`] for the shape words, [`crate::publish`] for whether the upload
-//! text exists — so this is a catalogue over them, not a second copy that can drift.
 
 use crate::{fx_aspect, produce_screen, project::Project};
 
 /// The tab controls in §3's own order: the two project controls, then the thirteen
 /// encoder rows (§A's list, taken whole from [`produce_screen::SETTINGS_ROWS`] rather
 /// than retyped here), then the publish state, then the aspect.
-///
-/// The game-volume row is a project setting wherever its slider is drawn (the Narrate page now), so the
-/// catalogue keeps it among the stored rows. There is no Narration row: the project has no narration switch
-/// (§07 §1; first rewrite: a "Narration" tick stored as `no_narration`).
 pub fn rows() -> Vec<&'static str> {
     let mut rows = vec!["Copy into project", "User Context"];
     rows.extend(produce_screen::SETTINGS_ROWS.iter().copied());
@@ -33,9 +15,6 @@ pub fn rows() -> Vec<&'static str> {
 
 /// What the control shows before this project has an opinion. Read from the stored
 /// default each time, never from a literal typed here.
-///
-/// One of these reads inverted, because the file does: "copy sources" *on* is
-/// `reference_sources == false` (§01: the flag stores the negation on purpose).
 pub fn default_for(row: &str) -> Option<String> {
     let empty = Project::default();
     match row {
@@ -90,10 +69,6 @@ pub fn stored_in(row: &str) -> &'static str {
 }
 
 /// The §10 §3 catalogue: one row per tab control, in [`rows`]' order.
-///
-/// Every row takes the bare `project.` prefix AGENT.md prescribes for a value §10 gives no
-/// `P.` id, and therefore reports [`params::Family::Other`] — the same treatment `machine.jpegQuality`
-/// and `preview.playTickMs` get elsewhere in the catalogue.
 pub fn listed() -> Vec<crate::params::Param> {
     let empty = Project::default();
     let encode_defaults = produce_screen::defaults();
@@ -162,12 +137,6 @@ fn context_spelling(context: &str) -> String {
     }
 }
 
-/// The row label as the bare id's tail. Three rows are named for the field they write
-/// rather than for their label, so a reader can line the id up with `Produce`:
-/// "Quality (CRF)" → `crf`, "Frame timing" → `vfr`, "Frame edges" → `blurredEdges`.
-/// The rest take their label's own words (`Container` → `container`, "Game audio" →
-/// `gameAudio`) — the label is what the tab shows, and the field it writes is spelled by
-/// [`stored_in`].
 fn id_tail(row: &str) -> String {
     match row {
         "Quality (CRF)" => "crf".to_string(),

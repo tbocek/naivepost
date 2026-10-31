@@ -2,9 +2,6 @@
 //! the policy switch each one reads before it is asked. Split out of `window.rs`, which is past its size budget;
 //! its doors are re-exported through `window`. None of them has a control: F3.9-F3.11 are jobs of the run after
 //! the cut (`cut_suggest_land` → `cut_suggest_passes::run_after_cut`), not buttons on the run bar.
-//!
-//! Deliberately rule-free: every decision lives in `cut_captions`, `speeds_ask` and `effects_ask`; what is
-//! here gathers this window's inputs, runs the pass, and says what came back.
 
 use crate::cut_play;
 use crate::hand_edit;
@@ -15,9 +12,7 @@ use adw::prelude::*;
 use crate::ui::window as ui;
 use crate::ui::window::refresh_effects_lane;
 
-/// F3.9 S4's second door: what the model answered for one batch. `place` is a pure function of the reply, so
-/// the page can either collect calls from a live tool round or be handed them by a test that never dials a model
-/// — the same split `text_drag_ended_with_source` makes for F3.4.
+/// F3.9 S4's second door: what the model answered for one batch.
 pub struct CaptionBatch {
     /// `(clip number, length)` for the clips this batch was about, in clip order.
     pub clips: Vec<(u32, f64)>,
@@ -25,8 +20,7 @@ pub struct CaptionBatch {
     pub calls: Vec<crate::cut_captions::Call>,
 }
 
-/// F3.10's wording — the name the job is called by in the log. No control carries it: F3.10 runs as a job of
-/// the run after the cut, so nothing outside this module reads it.
+/// F3.10's wording — the name the job is called by in the log.
 #[allow(dead_code)]
 pub const SPEEDS_PASS_LABEL: &str = "\u{23e9} Speeds";
 
@@ -72,13 +66,6 @@ pub fn land_pass(window: &adw::ApplicationWindow, out: &PassOut) {
 }
 
 /// F3.9 S1–S6: run the captions pass over this window's newest cut and say what happened.
-///
-/// Deliberately rule-free: every decision lives in [`crate::cut_captions`] (`batches`, `place`, `retries`,
-/// `skipped`). This seam only reads the page, feeds the rules, and writes what they answer. Accepted captions go
-/// through `ui::record_edit` and NEVER `seed_review_cut`, so one ↶ takes the whole pass back exactly as every other
-/// Apply path does; a batch whose reply was rejected twice logs `cut_captions::skipped` and the run carries on,
-/// because captions are worth having and not worth failing a run over. Read, walk and land in one go: the
-/// suggest run walks it on a worker instead ([`walk_captions`]).
 pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
     let inputs = pass_inputs(window);
     let out = walk_captions(&inputs, &ui::newest_review_cut());
@@ -118,7 +105,6 @@ pub fn walk_captions(inputs: &PassInputs, cut_: &crate::cut::Cut) -> PassOut {
             .enumerate()
             .map(|(i, (_, length))| (first + i as u32, length))
             .collect();
-        // One attempt, then the retry `retries` allows, then give up on THIS batch only.
         let mut accepted: Option<Vec<crate::cut::Fx>> = None;
         for runs_so_far in 1..=2u32 {
             let reply = ask_captions(inputs, &clips, &runs, runs_so_far);
@@ -161,12 +147,7 @@ pub fn walk_captions(inputs: &PassInputs, cut_: &crate::cut::Cut) -> PassOut {
 }
 
 /// F3.9 S2/S3: ask one batch of clips of the model, over HTTP at the address the settings hold
-/// (re-read per call). `captions_ask::ask` returns the captions it asked for as clip-relative calls,
-/// which `cut_captions::place` then lets §3.7's `add_caption` tool judge. The word lines are read off
-/// disk (`hand_edit::session_words`) and turned into offsets inside each kept clip by
-/// `captions_ask::offsets_in_clips`, so the model never sees a session second. A wire or parse failure
-/// is logged where it happened (§00-principles: name the reason) and answers with no calls, leaving this
-/// batch to its own retry/skip rule.
+/// (re-read per call).
 fn ask_captions(
     inputs: &PassInputs,
     clips: &[(u32, f64)],
@@ -192,9 +173,7 @@ fn ask_captions(
     }
     asked.calls
 }
-/// F3.9 S4/S5/S6 with a scripted reply: the same route the pass takes, minus the telephone. Feeding a batch
-/// through here exercises the whole rule set (membership, floor, fades, the two-retry limit) against real page
-/// state, which is what lets the widget test fire a click and read the lane back.
+/// F3.9 S4/S5/S6 with a scripted reply: the same route the pass takes, minus the telephone.
 pub fn run_captions_pass_with_reply(
     window: &adw::ApplicationWindow,
     batches: &[CaptionBatch],
@@ -250,12 +229,7 @@ pub fn run_captions_pass_with_reply(
     }
     said
 }
-/// F3.9: set this session's captions gate directly, the same way `set_marking_pass` sets its switch. A test
-/// needs to move the gate AFTER the window exists (a build-time value can be replaced before the handler sees
-/// it), and the refusal must follow the very field the pass reads rather than a second copy of the decision.
-/// F3.9: move this session's captions gate directly. `_for_test` because nothing in the program calls it —
-/// the switches are written by `policy::apply` (F0.7) and read by `policy::pass_runs`; a test that wants the
-/// gate off has to move the field itself, and saying so in the name keeps it from being mistaken for a door.
+/// F3.9: set this session's captions gate directly, the same way `set_marking_pass` sets its switch.
 pub fn set_captions_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
     let _ = window;
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {

@@ -1,22 +1,6 @@
-//! §07-narrate#3-data — the other files in `narrate/`.
-//!
-//! §3 lists files rather than prose, so each item below is one file's rule: the previous
-//! generation of the record ([`keep_previous`]), the two one-line settings ([`read_voice`] /
-//! [`write_voice`], [`read_pitch`] / [`write_pitch`]), the take set ([`load_takes`] /
-//! [`save_takes`] / [`clean_takes`]), the two reference wavs and their invalidation
-//! ([`served_reference`], [`base_reference`], [`drop_reference`]), and the sample cache's names
-//! ([`sample_path`]).
-//!
-//! It does NOT own: `narration.json`'s record — its format, sorting and TTS key/file/seed are
-//! [`crate::narration`]'s; a take's seconds rules (the floor is [`crate::narrate_screen`]'s, and
-//! this module only applies it); building the reference (F4.6); speaking a line (F4.4); or which
-//! voice a take was made with (F4.6/F4.7).
-//!
-//! Where §3 is silent the rule follows the Go prototype in `go/` — AGENT.md names it the
-//! read-only source of observed behaviour — and each item cites the function it mirrors
-//! (`keepPrevNarration`, `voiceKey`/`ownVoice`, `pitchST`/`setPitchST`, `cleanTakes`,
-//! `setTakesFor`, `shiftRef`, `sampleWav`). Plain logic only: no widget, page or thread, and
-//! every path comes from [`crate::layout::Tree`] rather than being spelled out here.
+//! §07-narrate#3-data: the other files in `narrate/`, one rule per item: the previous record generation ([`keep_previous`]), the one-line settings ([`read_voice`]/[`write_voice`], [`read_pitch`]/[`write_pitch`]), the take set ([`load_takes`]/[`save_takes`]/[`clean_takes`]), the reference wavs and their invalidation ([`served_reference`], [`base_reference`], [`drop_reference`]), and the sample cache names ([`sample_path`]).
+//! Not here: `narration.json`'s record ([`crate::narration`]), a take's seconds floor ([`crate::narrate_screen`]), building the reference (F4.6), speaking (F4.4), which voice made a take (F4.6/F4.7).
+//! Where §3 is silent the rule follows the Go prototype in `go/`; items cite the function they mirror. Paths come from [`crate::layout::Tree`].
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,9 +13,7 @@ use crate::layout::Tree;
 use crate::narrate_screen::{clamp_pitch, TAKE_MIN_SECONDS};
 use crate::narration::Narration;
 
-/// §07-narrate#3-data's own list of what lives in `narrate/`, in the spec's order. Held as
-/// data so a test can pin every accessor in `crate::layout` against the spec's words: a rename
-/// there fails this round rather than turning up as a missing file months later.
+/// §07-narrate#3-data's list of what lives in `narrate/`, as data so a test can pin every `crate::layout` accessor to the spec.
 pub const DATA_FILES: [&str; 9] = [
     "narration.json",
     "narration.prev.json",
@@ -46,12 +28,7 @@ pub const DATA_FILES: [&str; 9] = [
 
 // --- narration.prev.json ------------------------------------------------------
 
-/// §07-narrate#3-data: `narration.prev.json`, one generation back — the copy a run makes
-/// before it overwrites the record, for "I did not mean that" (prototype `keepPrevNarration`).
-///
-/// `Ok(false)` when there is no record yet: nothing to keep, and not a problem. `Ok(true)` once
-/// a copy exists. One generation deep — the file is overwritten, never appended to. This reads
-/// `narration.json` and never modifies it; writing the record stays [`crate::narration::save`].
+/// `narration.prev.json`, one generation back, copied before a run overwrites the record (prototype `keepPrevNarration`). `Ok(false)` when there is no record yet. Never modifies `narration.json`.
 pub fn keep_previous(tree: &Tree) -> Result<bool, String> {
     let from = tree.narration_json();
     let bytes = match fs::read(&from) {
@@ -64,22 +41,13 @@ pub fn keep_previous(tree: &Tree) -> Result<bool, String> {
     Ok(true)
 }
 
-/// What [`keep_previous`] left behind, if anything. `None` when the file is absent or
-/// unparsable: a half-written previous generation must never fail the run that is about to
-/// overwrite the current one.
+/// What [`keep_previous`] left behind; `None` when absent or unparsable, which must not fail the run.
 pub fn previous(tree: &Tree) -> Option<Narration> {
     let text = fs::read_to_string(tree.narration_prev_json()).ok()?;
     serde_json::from_str(&text).ok()
 }
 
-/// Where the run reads its starting record from: `narrate/narration.json` when it can be read, [`previous`]
-/// when it cannot. A corrupt current file would otherwise answer "no lines at all", and the save a moment
-/// later would overwrite the only readable copy of what was there — one generation back is worth more than
-/// starting from nothing (§07-narrate#3-data lists `narration.prev.json` as exactly that generation). The
-/// MISSING file is not this case: [`crate::narration::load`] already answers an empty record for it, which
-/// is a fresh session rather than damage.
-///
-/// Returns the record and whether the fallback was taken, so the caller can say which file it read.
+/// Where the run reads its starting record: `narrate/narration.json` if readable, else [`previous`], since a corrupt current file would answer "no lines" and the next save would overwrite the only readable copy. A MISSING file is a fresh session ([`crate::narration::load`]). Returns the record and whether the fallback was taken.
 pub fn load_or_previous(tree: &Tree) -> Result<(Narration, bool), String> {
     if let Ok(record) = crate::narration::load(tree) {
         return Ok((record, false));
@@ -95,15 +63,10 @@ pub fn load_or_previous(tree: &Tree) -> Result<(Narration, bool), String> {
 
 // --- voice.txt ----------------------------------------------------------------
 
-/// §07-narrate#3-data: the id `narrate/voice.txt` holds when the file is not there — the
-/// session's own narrator (prototype `ownVoice`, go/narrate_voice.go:32).
+/// The id `narrate/voice.txt` holds when absent: the session's own narrator (prototype `ownVoice`).
 pub const OWN_VOICE: &str = "own";
 
-/// §07-narrate#3-data: read `narrate/voice.txt`. The id is what
-/// [`crate::narrate_screen::VoiceOption`] carries, written bare and read trimmed; a missing or
-/// blank file reads [`OWN_VOICE`]. It lives in the project because it is part of every step's
-/// input — the narrator's name reaches the describe and transcript workers too — so it has to
-/// survive the app closing (prototype `voiceKey`'s read).
+/// Read `narrate/voice.txt`: the bare id ([`crate::narrate_screen::VoiceOption`]), trimmed; missing or blank reads [`OWN_VOICE`]. It lives in the project because the describe and transcript workers read it too.
 pub fn read_voice(tree: &Tree) -> String {
     match fs::read_to_string(tree.voice_txt()) {
         Ok(text) => {
@@ -118,18 +81,13 @@ pub fn read_voice(tree: &Tree) -> String {
     }
 }
 
-/// The other half of [`read_voice`]: the id as it stands, no newline. Written through
-/// `Tree::write_file` so §1's 0644 applies to a file created here too.
+/// The id as it stands, no newline, via `Tree::write_file` (§1's 0644).
 pub fn write_voice(tree: &Tree, id: &str) -> Result<(), String> {
     let rel = relative(tree, &tree.voice_txt());
     tree.write_file(&rel, id.as_bytes())
 }
 
-/// `narrate/voice.txt`'s other half of the deal with `narrate/samples/`: an id is pasted into
-/// those file names and read back out of this file, so a slash in it would write somewhere else
-/// entirely. Letters, digits, `-`, `_` and `.` survive; everything else becomes `-`; both ends
-/// lose the separators they gained; nothing left over means `"voice"` (prototype
-/// `sanitizeVoiceID`).
+/// An id is pasted into `narrate/samples/` file names, so keep letters, digits, `-`, `_`, `.`; everything else becomes `-`; trim separators; empty means `"voice"` (prototype `sanitizeVoiceID`).
 pub fn sanitize_voice_id(raw: &str) -> String {
     let mapped: String = raw
         .chars()
@@ -147,12 +105,7 @@ pub fn sanitize_voice_id(raw: &str) -> String {
 
 // --- pitch.txt ----------------------------------------------------------------
 
-/// §07-narrate#3-data: `narrate/pitch.txt`, the semitones the reference is shifted by. Read
-/// clamped rather than refused, because a stored value outside the range (an edited file, or a
-/// project carried from a build with different ends) should still mean "shift it that way" —
-/// P.eng.pitchRangeSemitones, whose row `crate::params::narrate()` builds from
-/// [`crate::narrate_screen`]'s slider ends. Missing or unparsable reads 0.0 (prototype
-/// `pitchST`).
+/// `narrate/pitch.txt`: the semitones the reference is shifted by. Read clamped, not refused (P.eng.pitchRangeSemitones, built by `crate::params::narrate()` from [`crate::narrate_screen`]'s slider ends). Missing or unparsable reads 0.0.
 pub fn read_pitch(tree: &Tree) -> f64 {
     match fs::read_to_string(tree.pitch_txt()) {
         Ok(text) => match text.trim().parse::<f64>() {
@@ -163,8 +116,7 @@ pub fn read_pitch(tree: &Tree) -> f64 {
     }
 }
 
-/// The other half: one decimal, which is the slider's own step and all the resolution a
-/// rubberband pitch shift answers to (prototype `setPitchST`'s `FormatFloat(.., 'f', 1, 64)`).
+/// One decimal: the slider's step and a rubberband shift's resolution.
 pub fn write_pitch(tree: &Tree, semitones: f64) -> Result<(), String> {
     let rel = relative(tree, &tree.pitch_txt());
     tree.write_file(&rel, format!("{semitones:.1}").as_bytes())
@@ -172,17 +124,14 @@ pub fn write_pitch(tree: &Tree, semitones: f64) -> Result<(), String> {
 
 // --- takes.json ---------------------------------------------------------------
 
-/// One stretch of a recording, in that file's own seconds. Lowercase field names because that
-/// is how `takes.json` spells them (prototype `voiceTake`).
+/// One stretch of a recording in that file's own seconds; lowercase fields as `takes.json` spells them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Take {
     pub s: f64,
     pub e: f64,
 }
 
-/// §07-narrate#3-data: read `narrate/takes.json` — hand-picked stretches keyed by RECORDING,
-/// not by narrator slot. A missing file is an empty map: nobody has picked anything yet
-/// (prototype `takesRead1`).
+/// Read `narrate/takes.json`: stretches keyed by RECORDING, not narrator slot. Missing is an empty map.
 pub fn load_takes(tree: &Tree) -> Result<BTreeMap<String, Vec<Take>>, String> {
     let file = tree.takes_json();
     match fs::read_to_string(&file) {
@@ -192,9 +141,7 @@ pub fn load_takes(tree: &Tree) -> Result<BTreeMap<String, Vec<Take>>, String> {
     }
 }
 
-/// The other half: [`clean_takes`] first, then store under [`take_base`] of the recording, and
-/// delete the key when nothing survives — an empty list is no takes, not a take of no seconds
-/// (prototype `setTakesFor`). Two-space indent, as the prototype's `MarshalIndent` wrote it.
+/// [`clean_takes`] first, then store under [`take_base`], deleting the key when nothing survives. Two-space indent.
 pub fn save_takes(tree: &Tree, recording: &str, takes: &[Take]) -> Result<(), String> {
     let mut all = load_takes(tree)?;
     let cleaned = clean_takes(takes);
@@ -208,23 +155,14 @@ pub fn save_takes(tree: &Tree, recording: &str, takes: &[Take]) -> Result<(), St
     tree.write_file(&rel, text.as_bytes())
 }
 
-/// The key a recording's takes live under: its file stem. Takes belong to the recording rather
-/// than to the narrator slot pointing at it, so re-tagging a slot never hands one person's
-/// takes to another (§07's takes row; prototype `takesFor`).
+/// The key a recording's takes live under: its file stem, so re-tagging a slot never hands one person's takes to another (§07).
 pub fn take_base(path: &Path) -> String {
     path.file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default()
 }
 
-/// The shape everything else may assume: sorted, long enough, and with nothing overlapping or
-/// touching. Below [`TAKE_MIN_SECONDS`] (P.eng.takeMinSeconds — the same floor
-/// `crate::narrate_screen` applies when a press is made, not a second copy of it) a take is a
-/// breath rather than a voice, and a take starting before 0 names seconds that do not exist.
-///
-/// Overlaps are merged rather than rejected because they are how a set is edited — widening a
-/// take by dragging across its neighbour is one gesture, not an error — and a reference cut from
-/// overlapping takes would say the same syllable twice (prototype `cleanTakes`).
+/// Sorted, long enough, nothing overlapping or touching. Below [`TAKE_MIN_SECONDS`] (P.eng.takeMinSeconds, the floor `crate::narrate_screen` applies) a take is a breath, and a start before 0 is invalid. Overlaps are merged, not rejected: widening a take across its neighbour is one gesture.
 pub fn clean_takes(takes: &[Take]) -> Vec<Take> {
     let mut kept: Vec<Take> = takes
         .iter()
@@ -244,60 +182,37 @@ pub fn clean_takes(takes: &[Take]) -> Vec<Take> {
 
 // --- voice_ref_base.wav, voice_ref.wav ---------------------------------------
 
-/// The rate a voice reference is written at. `loudnorm` resamples to 192 kHz, and above 48 kHz
-/// ffmpeg writes `WAVE_FORMAT_EXTENSIBLE` (format tag 0xFFFE) instead of a plain PCM header —
-/// which the audio server refuses as "unsupported WAV encoding". 48 kHz keeps the header plain
-/// and is at or above the rate of anything the reference is cut from, so no sample of the take
-/// is thrown away to get there. (Prototype `refRate`, go/narrate_voice.go:214.)
+/// The rate a voice reference is written at: `loudnorm` resamples to 192 kHz and above 48 kHz ffmpeg writes `WAVE_FORMAT_EXTENSIBLE`, which the audio server refuses as "unsupported WAV encoding".
 pub const REF_SAMPLE_RATE: &str = "48000";
 
-/// The level the voice reference is written at, so the model hears the narrator at a sane
-/// loudness: a clone is only as loud as its source, and a quietly spoken take level-matched
-/// against loudnorm'd game audio comes back as somebody murmuring. Single-pass (dynamic)
-/// `loudnorm`, because the takes come from different minutes of the session, and a tight LRA
-/// because it is one person talking. §10 files this as `P.eng.refLoudness`
-/// ("I -16, TP -1.5, LRA 7"), and `params::narrate()` rows it from this constant.
-/// (Prototype `refLoud`, go/narrate_voice.go:208.)
+/// The level the voice reference is written at (§10 `P.eng.refLoudness`, "I -16, TP -1.5, LRA 7"; `params::narrate()` rows it from this constant). Single-pass `loudnorm` since takes come from different minutes, tight LRA for one speaker.
 pub const REF_LOUDNESS: &str = "loudnorm=I=-16:TP=-1.5:LRA=7";
 
-/// §07-narrate#3-data: the file the audio server is handed. One fixed path for every request,
-/// which is why the unshifted base is never given to it and why a pitch shift writes a copy
-/// here instead — at 0 semitones the copy is byte-identical to the base (prototype `shiftRef`).
+/// The file the audio server is handed: one fixed path, so a pitch shift writes a copy here (byte-identical to the base at 0 semitones; prototype `shiftRef`).
 pub fn served_reference(tree: &Tree) -> PathBuf {
     tree.voice_ref_wav()
 }
 
-/// §07-narrate#3-data: one stitched piece of the voice reference, levelled on its way to the base.
-/// Lives under `narrate/reference/` and is read by nothing after the concat.
+/// One stitched, levelled piece of the voice reference under `narrate/reference/`.
 pub fn reference_part(tree: &Tree, index: usize) -> PathBuf {
     tree.reference_dir().join(format!("ref_part_{index}.wav"))
 }
 
-/// The concat list naming those parts in playing order (§F4.6 S3's stitching pass).
 pub fn reference_list(tree: &Tree) -> PathBuf {
     tree.reference_dir().join("ref_parts.txt")
 }
 
-/// §07-narrate#3-data: the unshifted reference, rebuilt from the recording or the picked voice.
-/// Kept separate from [`served_reference`] so changing the pitch costs a re-shift and not a
-/// re-cut (prototype `refBase`).
+/// The unshifted reference, kept apart from [`served_reference`] so a pitch change costs a re-shift, not a re-cut.
 pub fn base_reference(tree: &Tree) -> PathBuf {
     tree.voice_ref_base_wav()
 }
 
-/// Is there a base with no shifted copy in front of it? That is the state a shift rebuilds
-/// from, and the one [`drop_reference`] leaves the pitch slider in.
+/// Is there a base with no shifted copy? The state a shift rebuilds from.
 pub fn reference_needs_shift(base: &Path, served: &Path) -> bool {
     base.exists() && !served.exists()
 }
 
-/// The invalidation the three settings share: the built reference is an answer to a question,
-/// and each of them changes the question — the voice, the pitch, or the takes it was cut from.
-/// So they remove it and let the next thing spoken rebuild it (prototype `setVoice`,
-/// `setPitchST`, `setTakesFor`). The served copy always goes; the base goes only when
-/// `keep_base` is false — the pitch slider keeps its base and re-shifts it, while a take set or
-/// a slot/captions voice makes the base itself wrong. A file that was never there is not a
-/// failure: an error here would fail a setting change over nothing. Returns how many went.
+/// Invalidation shared by voice, pitch and takes: remove the built reference so the next speech rebuilds it. The served copy always goes; the base only when `keep_base` is false (the pitch slider keeps its base). A missing file is not a failure. Returns how many went.
 pub fn drop_reference(tree: &Tree, keep_base: bool) -> usize {
     REFERENCE_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut dropped = 0;
@@ -312,7 +227,6 @@ pub fn drop_reference(tree: &Tree, keep_base: bool) -> usize {
 
 static REFERENCE_TURN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Moves whenever the reference is dropped, so a build can tell the file it wrote is already out of date.
 pub fn reference_turn() -> u64 {
     REFERENCE_TURN.load(std::sync::atomic::Ordering::SeqCst)
 }
@@ -320,19 +234,14 @@ pub fn reference_turn() -> u64 {
 fn remove_if_there(path: &Path) -> bool {
     match fs::remove_file(path) {
         Ok(()) => true,
-        // Nothing to drop is the state the caller wanted anyway; anything else (a directory, a
-        // permission refusal) is a file still sitting there, which the count must not claim.
+        // Nothing to drop is fine; anything else (a directory, a permission refusal) is still sitting there and must not be counted.
         Err(_) => false,
     }
 }
 
 // --- samples/*.wav ------------------------------------------------------------
 
-/// §07-narrate#3-data: the hash half of a sample cache file's name — the first 6 bytes of the
-/// key's SHA-1 as lowercase hex, twelve digits. `crate::narration::tts_file` is the same digest
-/// cut to eight bytes for `tts/`; the sample cache wants six, so this is its own copy of the
-/// loop rather than a parameter added to a file that has no reason to know about samples
-/// (prototype `sampleWav`).
+/// The hash half of a sample cache file name: the first 6 bytes of the key's SHA-1 as lowercase hex. `crate::narration::tts_file` uses 8 bytes for `tts/`, so this is its own copy.
 pub fn sample_hex(key: &str) -> String {
     let digest = Sha1::digest(key.as_bytes());
     let mut hex = String::with_capacity(12);
@@ -342,15 +251,12 @@ pub fn sample_hex(key: &str) -> String {
     hex
 }
 
-/// `narrate/samples/<voice>_<hash>.wav`: hearing a voice again is instant and comparing two is
-/// a click each, so the file is named by who speaks and what they read. The name itself is
-/// `Tree::sample_wav`'s; this only turns a key into its hash (prototype `sampleWav`).
+/// `narrate/samples/<voice>_<hash>.wav`; the name is `Tree::sample_wav`'s, this turns a key into its hash.
 pub fn sample_path(tree: &Tree, voice: &str, key: &str) -> PathBuf {
     tree.sample_wav(voice, &sample_hex(key))
 }
 
-/// Paths are handed to `Tree::write_file` relative to the project, which is what makes them
-/// 0644 and creates their folder; every path this module reads came out of the same `Tree`.
+/// Paths go to `Tree::write_file` relative to the project (0644, creates the folder).
 fn relative(tree: &Tree, path: &Path) -> PathBuf {
     path.strip_prefix(tree.dir())
         .map(PathBuf::from)

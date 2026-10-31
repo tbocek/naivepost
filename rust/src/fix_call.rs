@@ -1,20 +1,6 @@
-//! Fix's request leg: the clean-transcript job that respells what ASR got wrong, over HTTP.
-//! §02-services.md §2 names the row: LLM, thinking OFF, "the same lines respelled; times and
-//! speakers unchanged, **enforced**".
-//!
-//! [`crate::fix_transcripts`] holds every rule of F1.8 and makes no call of its own: `fix_block` takes an
-//! `ask` closure, and this is the leg that answers it. One block is ONE chat call, as the prototype asked it
-//! (`fixRows`): the system wording, then the User Context (the session note, a script included: the
-//! spellings of names it holds are the point) over the grounding and the block's rows, and no tools. The
-//! answer is the same rows with only the text changed, handed back as [`Reply::Row`]s for `fix_block` to hold
-//! against its block: a count, a time or a speaker that moved refuses it, which is the enforcement §2 asks
-//! for. The first rewrite offered tools instead (`fix_line`, `flag_line`, reads with nothing behind them) and
-//! sent no User Context: the model read a context that was empty and answered nothing, and the blocks kept
-//! the ASR's lower case ("my name is thomas bocek") in the subtitles.
-//!
-//! The seam a test drives this through is the Settings address, as every other live job uses: point
-//! `LLM_SERVER` at a local fake and the same endpoint resolution a typed address goes through reaches
-//! it. Nothing here takes a canned reply.
+//! Fix's request leg: the clean-transcript job that respells what ASR got wrong, over HTTP. §02-services.md §2: LLM, thinking OFF, "the same lines respelled; times and speakers unchanged, **enforced**".
+//! [`crate::fix_transcripts`] holds the F1.8 rules; this answers its `ask` closure. One block is ONE chat call: system wording, then the User Context (script included, for name spellings) over the grounding and the block's rows, no tools. The same rows come back as [`Reply::Row`]s and `fix_block` refuses a moved count, time or speaker, which is the enforcement.
+//! Test seam: point `LLM_SERVER` at a local fake.
 
 use crate::exchanges::{Message, Part};
 use crate::fix_transcripts::{self, Reply};
@@ -24,17 +10,10 @@ use crate::services::{self, Server};
 use crate::settings::{self, Paths};
 use crate::textfmt::{FrameEvent, Line};
 
-/// The step name this job's cache entries and timed rows carry — the same word `FIX_STEP` uses, so a
-/// `requests.tsv` row and `cache/llm/fix` name the stage in §04 S6's order.
+/// The step name for cache entries and timed rows, same as `FIX_STEP`.
 pub const STEP: &str = fix_transcripts::FIX_STEP;
 
-/// The fix stage of the Prepare walk: one row per recording, since every transcript gets respelled
-/// whether or not its source had pictures.
-///
-/// A dial (`program: TEXT_TASK`), not a spawn — the work is a chat request. It comes after describe in
-/// [`crate::run_stages::plan`] because §04 S6 puts understanding in that order, and a source with no
-/// transcript yet simply answers nothing (its `load_transcript` fails the row naming what is missing,
-/// which is the honest report: ingest owes that file).
+/// The fix stage of the Prepare walk: one row per recording. A dial (`program: TEXT_TASK`), after describe in [`crate::run_stages::plan`] (§04 S6); a source with no transcript fails its row naming what is missing.
 pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
     let tasks: Vec<crate::run_stages::Task> = project
         .sources
@@ -42,8 +21,7 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
         .map(|source| crate::run_stages::Task {
             label: format!("fixing {}", crate::audio_task::source_lane(&source.path)),
             program: crate::run_stages::TEXT_TASK.to_string(),
-            // What the door cannot read off the session: which kind of recording this is (a video also
-            // owes `subtitles.srt`) and whether its words are the narration rather than content.
+            // What the door cannot read off the session: the recording kind (a video also owes `subtitles.srt`) and whether its words are narration.
             args: vec![
                 source.path.clone(),
                 if source.footage {
@@ -51,8 +29,7 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
                 } else {
                     "audio".to_string()
                 },
-                // "1" only for the narrator MICROPHONE of voice 1: a video with a voice number is film, its
-                // words are content (`sources::is_narrator_mic`).
+                // "1" only for the narrator MICROPHONE of voice 1; a video with a voice number is film (`sources::is_narrator_mic`).
                 if crate::sources::is_narrator_mic(source) && source.narrator == 1 {
                     "1".to_string()
                 } else {
@@ -69,13 +46,8 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
         phase: 2,
         of: 2,
         kind: "chunk",
-        // §F1.8's session halves bracket the per-source rows: S1's `offsets.tsv` before any block goes
-        // out, S5-S7's merged timeline after the last one.
-        //
-        // §F1.13's word list sits between the fix rows and the merge row: it re-dresses its words from the
-        // `transcript.fixed.tsv` the fix rows just wrote, and the merge row is what runs the marking pass,
-        // which shows the model THIS spelling (`joins::session_words_with_list` loads the saved list
-        // first), so building it after that row would be too late for the pass it belongs to.
+        // §F1.8's session halves bracket the per-source rows: S1's `offsets.tsv` first, S5-S7's merged timeline last.
+        // §F1.13's word list goes between the fix rows and the merge row: the marking pass in the merge row must see this spelling.
         tasks: crate::fix_session::placement_rows(project)
             .into_iter()
             .chain(tasks)
@@ -85,11 +57,7 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
     }
 }
 
-/// The row [`crate::run_stages::drive_walk`] hands here: fix one source's transcript end to end.
-///
-/// Everything the walk's rows do not carry is resolved here from the environment; [`stage_chunk`] is
-/// the same door with those two handed in, which is how a test drives the real path without owning the
-/// process's working folder.
+/// The row [`crate::run_stages::drive_walk`] hands here: fix one source's transcript end to end. [`stage_chunk`] is the same door with the environment-resolved parts handed in, for tests.
 pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
@@ -103,21 +71,19 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
         .ok_or("the fix row names no source")?;
     let lane = crate::audio_task::source_lane(&source);
     let is_video = task.args.get(1).map(String::as_str) == Some("video");
-    // A narrator's words are the narration, so they go to `commentary.fixed.tsv` (§F1.8 S4).
+    // Narrator words go to `commentary.fixed.tsv` (§F1.8 S4).
     let is_commentary = task.args.get(2).map(String::as_str) == Some("1");
     let conf = settings::read(&paths).unwrap_or_default();
     stage_chunk(&tree, &paths, &conf, &lane, is_video, is_commentary, log)?;
     Ok(())
 }
 
-/// The session folder the walk works in — the working folder's own, resolved the way every other dial
-/// resolves it (§1's re-read-per-request seams all start here).
+/// The session folder the walk works in, resolved like every other dial.
 fn session_dir() -> std::path::PathBuf {
     crate::startup::open_dir()
 }
 
-/// One source's transcript through the fixer: block by block, ask once per block, write the fixed
-/// files. Returns how many blocks were walked.
+/// One source's transcript through the fixer, one ask per block; returns blocks walked.
 #[allow(clippy::too_many_arguments)]
 pub fn stage_chunk(
     tree: &Tree,
@@ -135,10 +101,7 @@ pub fn stage_chunk(
         ));
         return Ok(0);
     }
-    // §F1.8 S2's grounding is ±5 s from EVERY other recording plus this source's own events. This door
-    // fixes ONE source per row, so the list carries this lane's own rows tagged with its name; the
-    // cross-source half of the window is `crate::fix_session::session_fix`, which runs
-    // `fix_transcripts::run` over a whole session and sees every lane at once.
+    // §F1.8 S2's grounding is ±5 s from EVERY other recording plus this source's events. This door fixes ONE source, so the list carries this lane's rows; the cross-source half is `crate::fix_session::session_fix`.
     let every_line: Vec<(String, Line)> = lines
         .iter()
         .cloned()
@@ -162,8 +125,7 @@ pub fn stage_chunk(
             block.last().map(|line| line.end).unwrap_or(0.0),
         );
         let context = fix_transcripts::context_text(from, to, lane, &[], &every_line, &every_event);
-        // §F1.8 S3: a VALID block is stored under its own rows, whichever try it took, so the same rows on
-        // the next run cost nothing; a block that failed every try is re-asked rather than replaying its failure.
+        // §F1.8 S3: a VALID block is stored under its own rows so a re-run costs nothing; a block that failed every try is re-asked.
         let cached = fix_transcripts::cached_block(tree, &prompt, &block);
         let hit = cached.is_some();
         WIRE_FAILED.with(|failed| failed.set(false));
@@ -180,13 +142,9 @@ pub fn stage_chunk(
         if !outcome.valid {
             log(&fix_transcripts::give_up_log(lane, index, total));
         }
-        // The outcome is filed under the block's input whatever it was, a block that kept its ASR text after its
-        // tries included: the same input asks nothing again. An answer just read back is not written again, and a
-        // block no answer reached (a ⏹, a server gone) says nothing about its input: filed, its raw text was replayed
-        // as the block's answer on every later run.
+        // Filed under the block's input whatever the outcome (including ASR text kept after all tries). An answer just read back is not rewritten; a block no answer reached (⏹, server gone) is not filed, or its raw text would replay as the answer.
         if !hit && !WIRE_FAILED.with(std::cell::Cell::get) {
             if let Err(err) = fix_transcripts::store_block(tree, &prompt, &block, &outcome.lines) {
-                // A cache that will not write is not a reason to lose the fix.
                 log(&format!("!!! could not keep the fix: {err}"));
             }
         }
@@ -202,11 +160,9 @@ pub fn stage_chunk(
 }
 
 thread_local! {
-    /// Whether a call for the block in hand ended without reaching the model.
     static WIRE_FAILED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// The `ask` closure the Prepare walk hands `fix_transcripts::fix_block`: one block, one chat call.
 pub fn ask_for<'a>(
     tree: &'a Tree,
     paths: &'a Paths,
@@ -215,7 +171,6 @@ pub fn ask_for<'a>(
     move |message: &str| ask_once(tree, paths, conf, message)
 }
 
-/// One block's ask for the SESSION walk: the same single call.
 pub fn ask_block(
     tree: &Tree,
     paths: &Paths,
@@ -225,11 +180,7 @@ pub fn ask_block(
     ask_once(tree, paths, conf, message)
 }
 
-/// One block's ask: the system wording, then the User Context over the block's message, in ONE chat call with
-/// no tools (the prototype's `fixRows`). The answer comes back as the rows the model wrote ([`Reply::Row`]), or
-/// as [`Reply::Unreadable`] when it holds none, for `fix_block` to judge against the block. Every dial writes
-/// its own timed `requests.tsv` row (§09 §10); the block's VALID answer is filed by `fix_transcripts::store_block`,
-/// which is the cache a re-run reads.
+/// One block's ask: system wording, then the User Context over the block's message, ONE chat call with no tools. Returns the model's rows ([`Reply::Row`]) or [`Reply::Unreadable`]. Every dial writes a timed `requests.tsv` row (§09 §10); a VALID answer is filed by `fix_transcripts::store_block`.
 fn ask_once(
     tree: &Tree,
     paths: &Paths,
@@ -257,7 +208,7 @@ fn ask_once(
     ];
     let endpoint = services::llm_endpoint(conf);
     let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "fix");
-    // §2's row says thinking OFF: `mode_of` reads it from the prompt table so this cannot drift (§10 §4).
+    // §2's row says thinking OFF: `mode_of` reads it from the prompt table so this cannot drift.
     let body = llm_request::body(
         STEP,
         &conf.model,
@@ -267,8 +218,7 @@ fn ask_once(
         true,
     )?
     .to_string();
-    // A server that does not answer costs this block its fix, not the run: the block keeps the ASR's lines
-    // after its one retry and is not filed, so the next run asks it again.
+    // A server that does not answer costs this block its fix, not the run; it is not filed, so the next run asks again.
     let sent = match crate::llm_retry_leg::chat(
         STEP,
         tree,
@@ -301,12 +251,7 @@ fn ask_once(
     Ok(rows.into_iter().map(Reply::Row).collect())
 }
 
-/// SYSTEM for a fix call: the house rules cut to this job's section, the shipped fix wording, and no
-/// User Context block of its own (§F1.8's grounding is the surrounding speech, not the session note).
-/// Same assembly the captions ask uses, read through the settings path so an edit wins (§04#6).
-/// What a block is asked under besides its own rows, as its cache key holds it: the system wording (the
-/// profile's `## fix` section, or the shipped one) and the project's User Context. A change to either asks every
-/// block again; the same wording and context replay what they were answered with.
+/// What a block is asked under besides its rows, as its cache key holds it: the fix system wording and the project's User Context. A change to either asks every block again.
 pub fn cache_prompt(paths: &Paths, context: &str) -> String {
     format!(
         "{}\n\n{}",
@@ -315,7 +260,6 @@ pub fn cache_prompt(paths: &Paths, context: &str) -> String {
     )
 }
 
-/// The project's User Context, as [`ask_once`] puts it in front of every block.
 fn user_context(tree: &Tree) -> String {
     crate::project::load(tree.dir())
         .map(|project| project.context)
@@ -333,8 +277,7 @@ fn fix_system(paths: &Paths) -> String {
     )
 }
 
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With
-/// no edited copy on disk, the shipped wording is what goes out.
+/// The wording to ask with, through the settings read path so an edit wins (§04-prepare#6); the shipped wording when none is on disk.
 fn wording(paths: &Paths, key: &str) -> String {
     let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
     settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)

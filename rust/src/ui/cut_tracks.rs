@@ -77,7 +77,7 @@ pub fn tick_step_seconds(pps: f64) -> f64 {
         .unwrap_or(*LADDER.last().expect("the ladder is not empty"))
 }
 
-/// Everything the painter needs, resolved: built by [`Scene::of`] or by a test, so no rule hides in a draw callback.
+/// Everything the painter needs, resolved: built by `Scene::of` or by a test, so no rule hides in a draw callback.
 #[derive(Debug, Clone)]
 pub struct Scene {
     pub pps: f64,

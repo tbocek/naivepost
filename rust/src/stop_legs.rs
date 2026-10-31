@@ -1,18 +1,4 @@
 //! F0.3 ⏹ — the legs that make a press *do* something outside the rule table.
-//!
-//! [`crate::run::RunBar::press_stop`] holds the precedence (S1 → S2 → S3) and answers with what
-//! should happen: stop playback, set the flag, cancel the context, kill these pids. That half is
-//! pure state and is tested in `tests/suite/press_stop.rs`. What it cannot do from inside a data struct is
-//! reach the operating system, so the three effects that leave the process live here:
-//!
-//! - **signal** the children S3 names (§S3 "kill registered subprocesses"),
-//! - **stop** the page's preview player on disk-and-state, not only in the status line (§S1),
-//! - **say which stage is running**, because §S5 arms "describe from the start" on a stop that
-//!   reached Describe, and the shell's visible page alone cannot tell that apart from merely
-//!   sitting on the Prepare page while some other stage runs.
-//!
-//! Kept out of `run.rs` so the rule module stays free of OS calls and testable without them, and out
-//! of `ui/window.rs`, which is past its size budget.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -20,21 +6,6 @@ use std::time::Duration;
 use crate::run::{self, Subprocesses};
 
 /// Terminate each pid with SIGTERM and report the ones that were really signalled.
-///
-/// A pid already gone (`ESRCH`) is NOT reported and NOT an error: the child exited between the run
-/// registering it and the stop reaching it, and §S4 says a subprocess stopped by this stop is not a
-/// failure. Anything else (a pid we have no right to signal) is likewise left out of the returned
-/// list rather than turned into a failed stop — ⏹ must never fail because one child was stubborn.
-///
-/// SIGTERM first, then SIGKILL for what ignored it: `sleep` in this container accepts SIGTERM
-/// (`kill(2)` returns 0) and carries on running, so TERM alone would leave every ffmpeg and ffprobe
-/// alive behind a "stopping…" line. The escalation waits one polling beat, which is also why §S4's
-/// "takes effect between subprocesses" is honoured rather than raced: nothing here interrupts a stage
-/// mid-write, it only ends children the run registered as killable.
-///
-/// The beat is waited on a thread of its own: ⏹ is pressed on the window thread, which never waits
-/// (§03-shell §1; the first rewrite slept the half second there, children or not). What comes back is
-/// every pid the SIGTERM reached; the SIGKILL follows for any of them still alive after the beat.
 pub fn signal(pids: &[u32]) -> Vec<u32> {
     let termed: Vec<u32> = pids
         .iter()
@@ -75,10 +46,6 @@ pub fn alive(pid: u32) -> bool {
 }
 
 /// Drain the registry and terminate everything in it: the one call ⏹ makes for §S3's kill.
-///
-/// The drain happens first and is not optional — a stopped pid left listed gets killed again by the
-/// next ⏹, and by then the number may name somebody else's process (`run.rs`'s note on
-/// [`Subprocesses::kill_all`]). Returns the pids actually terminated so the caller can log them.
 pub fn stop_registered(procs: &mut Subprocesses) -> Vec<u32> {
     let drained = procs.kill_all();
     signal(&drained)
@@ -106,12 +73,6 @@ pub fn describe_stage() -> bool {
 }
 
 /// A stop that landed inside Describe, still waiting to be taken up by the next Prepare run.
-///
-/// Sticky rather than read off [`describe_stage`] at the moment of decision: the stop happens
-/// *during* Describe and closes it, while the restart is decided at the NEXT `begin`, long after
-/// the stage flag went back to false. Consumed on read ([`take_describe_restart`]), so one stop
-/// affects exactly one run — the same contract `RunBar::describe_restarts` holds. Process-wide: ⏹ arms
-/// it on the window thread, and the next run's `begin` takes it on that run's worker.
 static RESTART_ARMED: AtomicBool = AtomicBool::new(false);
 
 /// Record that a stop reached Describe, arming the next Prepare run to start over.
@@ -125,12 +86,6 @@ pub fn take_describe_restart() -> bool {
 }
 
 /// The transport this page's preview must be left in after a ⏹ press, if the press stops one.
-///
-/// `Some(stopped)` when the page owns a preview ([`run::transport_for`]) that was playing or is parked part way
-/// (started); `None` when the page has no preview (Prepare, Produce) or none was started, so the caller changes
-/// nothing. The stopped preview is ENDED, `started` down: §11 §2 gives the bar's ▶ to the preview "until ⏹", so
-/// the next ▶ is the page's step again (Narrate's ⏹ does the same, F4.5 S6). The first rewrite carried
-/// `started` through and only stopped a playing preview, so after one preview ▶ never reached Suggest again.
 pub fn stop_page_preview(
     page: crate::shell::Page,
     transport: run::Transport,

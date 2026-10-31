@@ -1,9 +1,4 @@
 //! Adding sources from Prepare (spec/03-shell.md F0.12).
-//!
-//! A session arrives as files on a card, so this is where the project first touches the filesystem:
-//! either the files come inside `sources/` and the folder becomes the one thing to move, or they stay
-//! where they are and the session only holds a reference. Both answers are recorded here rather than
-//! in a chooser callback (spec/00-principles.md §5).
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
@@ -12,8 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::layout::{self, Tree};
 use crate::project::{Project, Source};
 
-/// S0's refusal. A copy is a run of its own, so it waits for the run that is on — the ⏹ is named
-/// because at this point in the flow that is the only way out.
+/// S0's refusal.
 pub const RUN_REFUSAL: &str = "a run is already active \u{2014} stop it first (\u{23f9})";
 /// S0's abandonment when `sources/` cannot be made: nothing is added, and the log has the reason.
 pub const NO_SOURCES_DIR: &str = "could not make the project's sources folder \u{2014} see log";
@@ -40,7 +34,6 @@ pub fn press(running: bool) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// One file's extension, lowercased — the prototype compares `strings.ToLower(filepath.Ext(..))`.
 fn extension(path: &Path) -> String {
     path.extension()
         .map(|ext| format!(".{}", ext.to_string_lossy().to_lowercase()))
@@ -59,7 +52,7 @@ pub fn is_video(path: &Path) -> bool {
 
 /// S2's progress in bytes, over all the files of one copy: `total` is the sum of their sizes taken
 /// up front, so the bar means "how much of this import is on disk", which is what a slow card is
-/// waiting on. Kept as a value rather than drawn here — F0.5 owns the bar.
+/// waiting on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Progress {
     pub done: u64,
@@ -67,7 +60,7 @@ pub struct Progress {
 }
 
 impl Progress {
-    /// The bar's fraction. Nothing to copy is a full bar, not a divide by zero.
+    /// The bar's fraction.
     pub fn fraction(&self) -> f64 {
         if self.total == 0 {
             return 0.0;
@@ -89,8 +82,7 @@ pub struct Added {
     pub status: String,
 }
 
-/// S2 → S5. `dir` is the project folder (its `sources/` is where a copy lands) and `root` the
-/// application root the paths are stored against; `copy` is the "copy into project" tick.
+/// S2 → S5.
 pub fn add(
     project: &mut Project,
     root: &Path,
@@ -103,8 +95,7 @@ pub fn add(
     let total: u64 = sizes.iter().sum();
 
     // S0's second half, and only for a copy: referencing in place needs no folder, so it is never
-    // refused for the want of one. `sources/` goes under the project folder whether or not that
-    // folder is named `.naivepost` — a New project (F0.8) has one before it is ever opened as such.
+    // refused for the want of one.
     let tree = Tree::new(dir).ok();
     let sources = dir.join("sources");
     if copy {
@@ -114,7 +105,6 @@ pub fn add(
     let mut progress = Vec::new();
     let mut done = 0u64;
     for (file, size) in files.iter().zip(sizes) {
-        // A copy is the slow half, so it is what the bar counts.
         if copy {
             copy_in(file, &tree, dir, &sources)?;
         }
@@ -122,8 +112,6 @@ pub fn add(
         progress.push(Progress { done, total });
     }
 
-    // S3: the rows. The copy is done, so from here nothing can fail and leave a file on disk with
-    // no row naming it.
     let mut paths = Vec::new();
     let mut already = 0usize;
     for file in files {
@@ -131,8 +119,6 @@ pub fn add(
             already += 1;
             continue;
         }
-        // A file that was copied is added as the copy, not as the original: the project folder has
-        // to hold everything it names.
         let stored = if copy && !inside(file, dir) {
             sources.join(file.file_name().unwrap_or_default())
         } else {
@@ -143,22 +129,14 @@ pub fn add(
             already += 1;
             continue;
         }
-        // `sepvoice` off: voice separation is a per-source choice the user makes on the row (F1.2),
-        // and a new file has not been heard yet.
         project.sources.push(Source {
             path: written.clone(),
             footage: is_video(file),
-            // Every recording starts as voice 1: a session is usually one person, and a row on 0 among 1s
-            // said nothing true about it.
             narrator: 1,
             ..Default::default()
         });
         paths.push(written);
 
-        // S4: the chooser opens where this kind came from last time, so a card of recordings and a
-        // folder of screen captures do not fight over one remembered folder. The **original's**
-        // parent, even for a copy: what is remembered is where to look next, and that has not moved
-        // into the project.
         let parent = layout::write_path(
             root,
             dir,
@@ -184,9 +162,7 @@ pub fn add(
     })
 }
 
-/// S5's status. `already` is what was asked for and found already in the session — a duplicate or a
-/// file that cannot be a source at all. N counts what went in, so an import where nothing new
-/// arrived says so rather than "added 0 source(s)".
+/// S5's status.
 pub fn status(added: usize, already: usize) -> String {
     let asked = added + already;
     match (added, already) {
@@ -196,16 +172,12 @@ pub fn status(added: usize, already: usize) -> String {
     }
 }
 
-/// Is this file already inside the project folder? One of its own files is added as it stands —
-/// copying a file onto itself would be a rename onto its own name at best.
 fn inside(file: &Path, dir: &Path) -> bool {
     file.strip_prefix(dir).is_ok()
 }
 
 /// S2's copy of one file, per file rather than for the whole pick: F0.12's bar reports the bytes as
 /// they land, so the seam in `ui` needs to drive one file at a time and still use this rule alone.
-/// Same contract as [`add`]'s internal loop — `.part` then rename, same name + same size skipped, a
-/// file already inside the project left where it is, non-media ignored.
 pub fn copy_one(file: &Path, dir: &Path) -> Result<(), String> {
     let tree = Tree::new(dir).ok();
     let sources = dir.join("sources");
@@ -213,8 +185,7 @@ pub fn copy_one(file: &Path, dir: &Path) -> Result<(), String> {
 }
 
 /// `.part` then rename, so a copy interrupted by a pulled drive or a full disk never looks like a
-/// finished file. Skipped when the name is already there at the same size — that is the same file,
-/// re-picked — and when the file is the project's own.
+/// finished file.
 fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Result<(), String> {
     if !is_media(file) || inside(file, dir) {
         return Ok(());
@@ -229,8 +200,6 @@ fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Resu
 
     let mut in_ =
         BufReader::new(File::open(file).map_err(|err| format!("{}: {err}", file.display()))?);
-    // The `.part` goes beside its destination, from layout when the folder is a project: a copy that
-    // dies leaves only that, and the next scan can see it is not a source yet.
     let part = match tree {
         Some(tree) => tree.copy_part(&name.to_string_lossy()),
         None => part_beside(&to),
@@ -252,8 +221,6 @@ fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Resu
     Ok(())
 }
 
-/// `<name>.part` beside `to`, for a project folder the layout does not name. `Tree::copy_part` is
-/// the same spelling where there is a `Tree`.
 fn part_beside(to: &Path) -> PathBuf {
     let mut part = to.as_os_str().to_os_string();
     part.push(".part");

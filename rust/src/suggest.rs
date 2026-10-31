@@ -1,23 +1,6 @@
-//! F2.14 Suggest a cut — `spec/05-cut.md` F2.14.
-//!
-//! The whole flow as plain data: guards in, segments and sentences out. Nothing here opens a window,
-//! writes a file or contacts a server, so every step is testable with handed-in values — the requests
-//! themselves arrive with the runner rounds, the same way [`crate::describe`] and [`crate::retakes`]
-//! settle their first steps off disk.
-//!
-//! What this module owns and what it only reads:
-//! - [`crate::tools::cutpass`] answers the target arithmetic and the whole-cut checks; this module
-//!   never re-decides a bound.
-//! - [`crate::cut_effect_decisions`] holds the dead-air comparison and the weighted edge score; this
-//!   module supplies the candidates and picks the winner per direction.
-//! - [`crate::roles`] / [`crate::policy`] answer which job runs at all, so a context that rules a pass
-//!   out means the pass is never called rather than called and told to return nothing.
-//! - [`crate::cut_clamp`] clamps effects against the cut **as applied**, which is why the clamp happens
-//!   here, after the walk-back moved every second an effect was chosen for.
-//!
-//! Persisting the result and making it the new base are the CALLER's job — one `ui::record_edit`, one
-//! Undo (F2.13). This module writes nothing, twice over for the reason above and once more because a
-//! flow that saves cannot be run twice in a test.
+//! F2.14 Suggest a cut (`spec/05-cut.md` F2.14): the whole flow as plain data, guards in, segments and sentences out; no window, file or server.
+//! Reads rather than owns: [`crate::tools::cutpass`] (target arithmetic, whole-cut checks), [`crate::cut_effect_decisions`] (dead-air comparison, edge score; this supplies candidates and picks per direction), [`crate::roles`] / [`crate::policy`] (which job runs at all), [`crate::cut_clamp`] (clamps effects against the cut **as applied**, hence after the walk-back).
+//! Persisting is the CALLER's job: one `ui::record_edit`, one Undo (F2.13).
 
 use crate::cut::{Cut, Fx, Seg};
 use crate::cut_clamp;
@@ -29,27 +12,17 @@ use crate::roles::{self, Job};
 use crate::timeline;
 use crate::tools::{self, cutpass};
 
-// --- S1: the guards -------------------------------------------------------------------------------------
-//
-// Three questions in a fixed order, answered before anything is asked of a model. Each refusal is a
-// sentence the page prints verbatim; none of them is recomputed here from another module's state —
-// `busy` arrives from `run::RunBar::running.is_some()` and `hand_edits` from `hand_edit`'s mtime
-// answer, both read by the caller. Duplicating either question here would let the guard and the thing it
-// guards drift apart.
+// S1: three questions in a fixed order before anything is asked of a model; each refusal is a sentence printed verbatim. `busy` comes from `run::RunBar::running.is_some()` and `hand_edits` from `hand_edit`'s mtime answer, read by the caller and not recomputed here.
 
-/// DECISION (the spec gives this branch only the word "refused"): a busy bar gets its own sentence,
-/// because "refused" alone does not tell the person what to do about it.
+/// DECISION (the spec says only "refused"): a busy bar gets its own sentence saying what to do.
 pub const BUSY: &str = "a run is already going \u{2014} stop it before asking for a new cut";
-/// S1, quoted from the flowchart.
 pub const HAND_EDITS: &str =
     "you have hand edits \u{2014} press Revert first for a fresh suggestion";
-/// S1, quoted from the flowchart.
 pub const NO_TIMELINE: &str =
     "run Describe first \u{2014} the suggestion reads the session timeline, and there is none";
 /// S2b, after the last correction round. `P.eng.llmAttempts`
 pub const NO_VALID_CUT: &str = "no valid cut after 3 attempts";
 
-/// Why ▶ did not ask for a cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refuse {
     Busy,
@@ -58,7 +31,6 @@ pub enum Refuse {
 }
 
 impl Refuse {
-    /// The sentence this refusal says.
     pub fn said(&self) -> &'static str {
         match self {
             Refuse::Busy => BUSY,
@@ -68,11 +40,7 @@ impl Refuse {
     }
 }
 
-/// S1: the first "no" wins, in the flowchart's order busy → hand edits → timeline.
-///
-/// Order matters as a fact about the machine, not about politeness: a run under way may be about to write
-/// the very timeline whose absence is being reported, so answering the timeline question then would tell
-/// the person to go and run Describe while their own ▶ is still filling it.
+/// S1: the first "no" wins in the flowchart's order busy → hand edits → timeline. A run under way may be about to write the timeline whose absence would be reported.
 pub fn refuse(busy: bool, hand_edits: bool, has_timeline: bool) -> Option<Refuse> {
     if busy {
         return Some(Refuse::Busy);
@@ -86,39 +54,26 @@ pub fn refuse(busy: bool, hand_edits: bool, has_timeline: bool) -> Option<Refuse
     None
 }
 
-// --- S2a: the words path (no model) ----------------------------------------------------------------------
-
 /// A silence longer than this inside a kept clip is cut out. `P.policy.deadAirMaxSeconds`
 pub const DEAD_AIR_MAX_SECONDS: f64 = 8.0;
 /// The beat left where dead air was taken out. `P.policy.deadAirKeepSeconds`
 pub const DEAD_AIR_KEEP_SECONDS: f64 = 0.5;
-/// How far past the first and last spoken word of a run the trimmed span may reach, placed by the sound.
-/// `suggest.trimReachSeconds` — S2a's "placed by the sound within 0.4 s". §6 gives this no `P.` id, so
-/// it takes a bare prefix like `machine.jpegQuality` did.
+/// How far past the first and last spoken word the trimmed span may reach, placed by the sound (S2a "within 0.4 s"). §6 gives no `P.` id: `suggest.trimReachSeconds`, a bare prefix like `machine.jpegQuality`.
 pub const TRIM_REACH_SECONDS: f64 = 0.4;
 
-/// One filmed run with the two seconds that bookend its speech. The span is what was recorded; the
-/// spoken pair is what the transcript says was said inside it: where the first word starts and where the
-/// last word ENDS.
+/// One filmed run with the seconds that bookend its speech: the recorded span, and where the first word starts and the last ENDS.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SpokenRun {
     pub span: (f64, f64),
     pub first_spoken: f64,
     pub last_spoken: f64,
-    /// The two edges as the sound placed them within [`TRIM_REACH_SECONDS`] of those words (F1.11's
-    /// `start_before` / `end_after`). `None` when the recording has no envelope: the word pad stands in.
+    /// The two edges as the sound placed them within [`TRIM_REACH_SECONDS`] (F1.11 `start_before` / `end_after`); `None` without an envelope, then the word pad stands in.
     pub placed: Option<(f64, f64)>,
-    /// Every word of the run, start and end on the session clock: what [`drop_wordless`] reads.
+    /// Every word of the run on the session clock, read by [`drop_wordless`].
     pub words: Vec<(f64, f64)>,
 }
 
-/// S2a: every filmed run trimmed to its words — just before the first to just after the last, placed by the
-/// sound, and never outside the run. The first rewrite took a blind 0.4 s either side of each word's START: every
-/// recording opened up to 0.4 s before its first word, and a last word longer than 0.4 s lost its end.
-///
-/// Never outside the run: the clamp is the whole of that rule. A reach that crossed the run's own end
-/// would spend the next recording's seconds on this one's last syllable, and the next run starts where
-/// this one stops, so the overlap would be silent footage counted twice.
+/// S2a: every filmed run trimmed to its words, placed by the sound, never outside the run (a reach across the run's end would count the next recording's seconds twice).
 pub fn trim_run_to_words(run: &SpokenRun) -> (f64, f64) {
     let (start, end) = run.placed.unwrap_or((
         run.first_spoken - crate::edges::WORD_PAD,
@@ -128,12 +83,7 @@ pub fn trim_run_to_words(run: &SpokenRun) -> (f64, f64) {
     (start, end.min(run.span.1).max(start))
 }
 
-/// S2a: a kept piece with no spoken word in it is not kept. Marks are taken out of a run trimmed past its words,
-/// so a mark that takes a recording's last words leaves the tail behind them as a piece of its own: a green scrap
-/// of nothing at every such join (08-dex: 11 of 15 segments under a second held no word). A word counts by the
-/// middle of what its run shows of it, so a mark ending a hair inside a word does not make that word's last
-/// milliseconds a piece, and a word running past the run's end still counts. Runs that know no words leave
-/// everything standing.
+/// S2a: a kept piece with no spoken word is not kept. A mark taking a recording's last words leaves a scrap behind them (08-dex: 11 of 15 segments under a second held no word). A word counts by the middle of what its run shows; runs that know no words keep everything.
 pub fn drop_wordless(segs: &[(f64, f64)], runs: &[SpokenRun]) -> Vec<(f64, f64)> {
     let middles: Vec<f64> = runs
         .iter()
@@ -152,9 +102,7 @@ pub fn drop_wordless(segs: &[(f64, f64)], runs: &[SpokenRun]) -> Vec<(f64, f64)>
         .collect()
 }
 
-/// Subtract every mark from the kept spans. Returns the pieces left and how many marks actually took
-/// seconds out — a mark sitting over footage that is already gone is not counted, because saying it went
-/// would report a cut that did not happen.
+/// Subtract every mark from the kept spans; returns the pieces and how many marks took seconds out (a mark over footage already gone is not counted).
 pub fn remove_marks(segs: &[(f64, f64)], marks: &[(f64, f64)]) -> (Vec<(f64, f64)>, usize) {
     let mut out: Vec<(f64, f64)> = Vec::new();
     let mut taken = 0usize;
@@ -169,7 +117,6 @@ pub fn remove_marks(segs: &[(f64, f64)], marks: &[(f64, f64)]) -> (Vec<(f64, f64
                     continue;
                 }
                 ate = true;
-                // The mark splits this piece into whatever lies before it and whatever lies after.
                 if m_from > p_from {
                     next.push((p_from, m_from));
                 }
@@ -187,12 +134,7 @@ pub fn remove_marks(segs: &[(f64, f64)], marks: &[(f64, f64)]) -> (Vec<(f64, f64
     (out, taken)
 }
 
-/// Take the dead air out of the kept spans: only a silence strictly longer than `max` goes (exactly the
-/// maximum is a deliberate beat, and the brief tells the model the number so it can keep one by asking),
-/// and `keep` of the beat survives at the front of where the silence sat.
-///
-/// Returns the kept spans and the total seconds removed. A silence partly outside the kept footage costs
-/// only the part inside it — you cannot cut what is not there.
+/// Take the dead air out of the kept spans: only a silence strictly longer than `max` goes (exactly `max` is a deliberate beat the brief lets the model keep), and `keep` of the beat survives at the front. Returns the spans and the seconds removed; a silence partly outside costs only the part inside.
 pub fn remove_dead_air(
     segs: &[(f64, f64)],
     silences: &[(f64, f64)],
@@ -214,7 +156,6 @@ pub fn remove_dead_air(
                     next.push((p_from, p_to));
                     continue;
                 }
-                // Keep `survives` of the beat at the head of the silence; the rest is gone.
                 let cut_from = (lo + survives).min(hi);
                 removed += hi - cut_from;
                 next.push((p_from, cut_from.min(p_to)));
@@ -229,14 +170,12 @@ pub fn remove_dead_air(
     (out, removed)
 }
 
-/// Merge touching and overlapping spans into one list, sorted.
 pub fn coalesce(segs: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let mut sorted = segs.to_vec();
     sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let mut out: Vec<(f64, f64)> = Vec::new();
     for (from, to) in sorted {
         match out.last_mut() {
-            // Touching counts: two pieces meeting at the same second are one stretch of video.
             Some(last) if from <= last.1 => last.1 = last.1.max(to),
             _ => out.push((from, to)),
         }
@@ -244,7 +183,6 @@ pub fn coalesce(segs: &[(f64, f64)]) -> Vec<(f64, f64)> {
     out
 }
 
-/// What the words path produced.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WordsCut {
     pub segs: Vec<(f64, f64)>,
@@ -254,8 +192,7 @@ pub struct WordsCut {
     pub log: String,
 }
 
-/// S2a: the whole words path — trim every run to its words, take the marked stretches out, take the
-/// dead air out, coalesce. No model is asked, so this answers with no server and no cache.
+/// S2a: the whole words path: trim every run to its words, take the marks out, take the dead air out, coalesce. No model, server or cache.
 pub fn words_cut(runs: &[SpokenRun], marks: &[(f64, f64)], silences: &[(f64, f64)]) -> WordsCut {
     let trimmed: Vec<(f64, f64)> = runs.iter().map(trim_run_to_words).collect();
     let (unmarked, marks_out) = remove_marks(&trimmed, marks);
@@ -282,21 +219,16 @@ pub fn words_cut(runs: &[SpokenRun], marks: &[(f64, f64)], silences: &[(f64, f64
     }
 }
 
-// --- S2b: the model path ---------------------------------------------------------------------------------
-
-/// Whether this cut aims at a length at all. `P.policy.targetLengthSeconds` — 0 means none, and a
-/// length of zero is not a very short video.
+/// Whether this cut aims at a length at all. `P.policy.targetLengthSeconds`; 0 means none.
 pub fn has_target(target: f64) -> bool {
     target > cutpass::NO_TARGET
 }
 
-/// The footage the finished cut accepts, from the target. Delegates the whole arithmetic.
 pub fn target_window(target: f64) -> (f64, f64) {
     cutpass::footage_window(target)
 }
 
-/// The target block of the cut message: the two forms §S2b spells, one for a cut that aims at a length
-/// and one for a cut that does not. A model told "no target" must not infer a ceiling from nothing.
+/// The target block of the cut message in §S2b's two forms (length or none); "no target" must not imply a ceiling.
 pub fn target_block(target: f64) -> String {
     if !has_target(target) {
         return "NO TARGET LENGTH: keep what is worth keeping.".to_string();
@@ -310,14 +242,7 @@ pub fn target_block(target: f64) -> String {
     )
 }
 
-/// The dead-air line of the cut message: §12's entry 13 says the number has to be STATED, because the
-/// app cuts long silences out of kept clips after the model has answered and the prompt otherwise asks
-/// for a cut that silently eats a deliberate pause. Naming it is what lets the model keep such a beat by
-/// saying so in its WHY — the rule itself stays in [`remove_dead_air`], which this only reports.
-///
-/// `max` is `P.policy.deadAirMaxSeconds`. There is no policy FIELD for it (§10 catalogues the value, and
-/// `params.rs` names `suggest::DEAD_AIR_MAX_SECONDS` as its home), so the const is the single home and
-/// the caller passes it rather than writing a second number.
+/// The dead-air line of the cut message: §12 entry 13 says the number must be STATED, so the model can keep a deliberate pause by saying so in its WHY. The rule stays in [`remove_dead_air`]. `max` is `P.policy.deadAirMaxSeconds`; no policy field exists (§10; home `suggest::DEAD_AIR_MAX_SECONDS`), so the caller passes the const.
 pub fn dead_air_block(max: f64) -> String {
     format!(
         "SILENCES longer than {} seconds inside a kept clip are cut out afterwards, leaving a short \
@@ -326,28 +251,12 @@ pub fn dead_air_block(max: f64) -> String {
     )
 }
 
-/// The cut request's own MATERIAL: how long the session is, what the finished length must be, how long a
-/// silence may survive inside a kept clip, then the timeline it has to read. §8 puts the User Context block
-/// and the speech rule in front of this, and that part belongs to [`crate::prompt_assembly::user_message`],
-/// not here — so this function no longer takes a context, because anything it put first would be a second
-/// copy of the block the assembly door writes.
-///
-/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): with one camera and one
-/// recording this is the whole message, which is why the four-argument form stays the plain answer. A cut that
-/// has more to tell passes its rows and lanes through [`suggest::message_over`].
+/// The cut request's own MATERIAL: session length, finished length, surviving silence, then the timeline. §8's User Context block and speech rule come first via [`crate::prompt_assembly::user_message`], so this takes no context. §9: with one camera and one recording this is the whole message; richer cuts use `suggest::message_over`.
 pub fn message(session_len: f64, target: f64, dead_air_max: f64, session_txt: &str) -> String {
     message_over(session_len, target, dead_air_max, session_txt, &[], &[])
 }
 
-/// §9's last paragraph, at the cut pass's own door: the material with the session's camera rows and heard
-/// lanes named above the length, target and dead-air lines. The naming rule is
-/// [`crate::effect_overlap::brief_lines`]'s — one row and one lane adds a line and nothing else can say — so a
-/// single-camera session gets the byte-identical message it always got, and a two-camera one is told which
-/// cameras filmed it and which recordings are heard before it proposes scenes from them.
-///
-/// `rows` are spelled the way every passing brief spells them: the page's **1-based** camera number, so two
-/// rows read `camera 1, camera 2`. [`crate::cut_cam::row_count`] counts them the same way from the rows the
-/// cut and its lanes fill.
+/// §9's last paragraph at the cut pass's door: the material with camera rows and heard lanes named above the length, target and dead-air lines ([`crate::effect_overlap::brief_lines`]). A single-camera session gets the byte-identical message. `rows` are the page's **1-based** camera numbers (`camera 1, camera 2`), counted by `crate::cut_cam::row_count`.
 pub fn message_over(
     session_len: f64,
     target: f64,
@@ -373,16 +282,12 @@ pub fn message_over(
     )
 }
 
-/// Whether the model cut is asked for at all. Under `CutMode::Words` this answers false and no call is
-/// made — the timeline comes from the marked text instead.
+/// Whether the model cut is asked for at all; under `CutMode::Words` no call is made.
 pub fn model_cut_offered(policy_: &Policy, marking_pass: MarkingPass) -> bool {
     roles::job_applies(Job::ModelCut, marking_pass, policy::cut_mode_of(policy_))
 }
 
-/// Which of the three after-the-cut passes run. An empty answer is the whole point: a context that says
-/// "no captions, no speed changes, no effects" means those jobs are NEVER CALLED, not called and told
-/// to return nothing — a call that returns nothing still costs a model, still shows on the bar, and
-/// still could hand back something the policy ruled out.
+/// Which of the three after-the-cut passes run. Empty means those jobs are NEVER CALLED: a call returning nothing still costs a model and could return something the policy ruled out.
 pub fn passes_switched_on(policy_: &Policy) -> Vec<Pass> {
     [Pass::Captions, Pass::Speeds, Pass::Decorations]
         .into_iter()
@@ -395,8 +300,7 @@ pub fn attempts_exhausted(attempt: u32) -> bool {
     roles::cut_attempts_exhausted(attempt)
 }
 
-/// The whole-cut checks as a problem list, worst first — the ordering is [`cutpass::cut_problems`]'s own
-/// and is not touched here, because the tool that rejected the answer is what phrases the complaint.
+/// The whole-cut checks as a problem list, worst first ([`cutpass::cut_problems`]'s order; the tool phrases the complaint).
 pub fn whole_cut_problems(segs: &[(f64, f64)], target: f64) -> Vec<String> {
     let footage: f64 = segs.iter().map(|(a, b)| b - a).sum();
     let short_scenes: Vec<(f64, f64)> = segs
@@ -417,7 +321,6 @@ pub fn whole_cut_problems(segs: &[(f64, f64)], target: f64) -> Vec<String> {
     cutpass::cut_problems(&status)
 }
 
-/// What the check answers: `ok`, or every fault at once joined the way the tool joins them.
 pub fn answer(problems: &[String]) -> String {
     if problems.is_empty() {
         return "ok".to_string();
@@ -425,15 +328,10 @@ pub fn answer(problems: &[String]) -> String {
     problems.join("; ")
 }
 
-// --- S3: apply, the walk-back ------------------------------------------------------------------------------
-
-/// A hole the model left closes when it is no wider than this AND somebody talked in it.
-/// `P.eng.seamMaxSeconds`
+/// A hole the model left closes when no wider than this AND somebody talked in it. `P.eng.seamMaxSeconds`
 pub const SEAM_MAX_SECONDS: f64 = 1.5;
 
-/// Everything the walk-back asks about, handed in rather than measured: whether someone talked in a span,
-/// where the silences are, where an edge may snap to, and what the marks take out. Wave data and the
-/// aligner stay out of this module so the walk can be run with a hand-written table.
+/// Everything the walk-back asks, handed in: whether someone talked in a span, silences, snap candidates, and what the marks take out, so tests use a hand-written table.
 #[derive(Debug, Default, Clone)]
 pub struct Walk {
     pub talked: Vec<(f64, f64)>,
@@ -442,18 +340,10 @@ pub struct Walk {
     pub marks: Vec<(f64, f64)>,
 }
 
-/// `P.eng.talkPadSeconds` — "how close to a word still counts as inside it" (spec/10-parameters.md's row).
-/// The prototype's `talking()` (`go/cut.go`) widens every speech span by exactly this on both sides before it
-/// asks whether a second falls inside it: a cut a fifth of a second from a word is a cut in that word as far as
-/// the ear is concerned. This tree asks that question in [`hole_has_speech`], the door the walk-back uses to
-/// decide whether a hole the model dropped was silence (keep it dropped) or speech (close it), so the pad
-/// belongs here rather than in the aligner's own, larger [`crate::align::PAD`], which answers how much sound to
-/// keep around an alignment piece and is a different rule with a different number.
+/// `P.eng.talkPadSeconds` (spec/10-parameters.md): the prototype's `talking()` (`go/cut.go`) widens every speech span by this on both sides, as a cut a fifth of a second from a word is in the word. Used by [`hole_has_speech`]; not [`crate::align::PAD`], which is a different rule and number.
 pub const TALK_PAD_SECONDS: f64 = 0.2;
 
-/// S3: does anybody talk inside this gap? Both spans are widened by [`TALK_PAD_SECONDS`] first — "inside a word"
-/// is what the question means, and a span that only touches the gap by a fifth of a second is still inside it.
-/// Kept as a plain function of two span lists so the walk-back's rule can be tested without a session.
+/// S3: does anybody talk inside this gap? Both spans are widened by [`TALK_PAD_SECONDS`] first.
 pub fn hole_has_speech(gap: (f64, f64), talked: &[(f64, f64)]) -> bool {
     talked.iter().any(|talked| {
         let padded = (talked.0 - TALK_PAD_SECONDS, talked.1 + TALK_PAD_SECONDS);
@@ -461,10 +351,7 @@ pub fn hole_has_speech(gap: (f64, f64), talked: &[(f64, f64)]) -> bool {
     })
 }
 
-/// S3: close the small holes the model left, and only where somebody talked.
-///
-/// A quiet hole is left open on purpose: closing it would join two scenes across a silence the speaker
-/// made, and the seam would read as a jump cut in the middle of a thought.
+/// S3: close the small holes the model left, only where somebody talked; a quiet hole stays open (closing it would join scenes across a silence the speaker made).
 pub fn close_holes(segs: &[(f64, f64)], talked: &[(f64, f64)], seam_max: f64) -> Vec<(f64, f64)> {
     let mut sorted = coalesce(&[]);
     sorted.extend(coalesced_sorted(segs));
@@ -487,21 +374,14 @@ pub fn close_holes(segs: &[(f64, f64)], talked: &[(f64, f64)], seam_max: f64) ->
     out
 }
 
-/// `coalesce` without merging, so `close_holes` sees each segment on its own: two segments already
-/// touching have no hole between them to decide about, and merging them first would hide that.
+/// `coalesce` without merging, so touching segments keep their own identity for `close_holes`.
 fn coalesced_sorted(segs: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let mut sorted = segs.to_vec();
     sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     sorted
 }
 
-/// S3: move one stamped edge onto the best candidate near it.
-///
-/// The loop is here rather than in [`decisions::choose_edge`] because that helper takes ONE
-/// `moves_outward` flag for every candidate, which cannot know whether a given point lies outward from
-/// this stamp. Outward means away from the middle of the kept stretch — earlier for a start edge, later
-/// for an end edge — and §05 prefers it because it keeps more of what was filmed. No candidate inside
-/// the tolerance leaves the stamp exactly where it was.
+/// S3: move one stamped edge onto the best candidate near it. The loop is here because [`decisions::choose_edge`] takes ONE `moves_outward` flag for all candidates. Outward (earlier for a start, later for an end) is preferred (§05) as it keeps more footage. No candidate inside the tolerance leaves the stamp.
 pub fn snap_edge(candidates: &[(f64, Candidate)], stamp: f64, outward_is_earlier: bool) -> f64 {
     let mut best: Option<(f64, f64)> = None;
     for &(point, kind) in candidates {
@@ -519,8 +399,7 @@ pub fn snap_edge(candidates: &[(f64, Candidate)], stamp: f64, outward_is_earlier
         ) else {
             continue;
         };
-        // A tie keeps the nearer point, which is the smaller move: snapping further than needed for the
-        // same weight would look arbitrary on the band.
+        // A tie keeps the nearer point, the smaller move.
         let nearer = match best {
             Some((_best_point, best_score)) if best_score > score => continue,
             Some((best_point, best_score))
@@ -536,15 +415,11 @@ pub fn snap_edge(candidates: &[(f64, Candidate)], stamp: f64, outward_is_earlier
     best.map(|(point, _)| point).unwrap_or(stamp)
 }
 
-/// §S3's second line, spelled once: `">>> …and N effect(s): the speeds, the captions and the
-/// decorations"`. Two doors print it — [`apply`] after its own clamp, and
-/// [`crate::cut_suggest_passes`], which counts what the three passes actually placed after the cut landed —
-/// so the wording lives here rather than in either caller.
+/// §S3's second line: `">>> …and N effect(s): the speeds, the captions and the decorations"`, printed by [`apply`] and [`crate::cut_suggest_passes`].
 pub fn effects_line(count: usize) -> String {
     format!(">>> \u{2026}and {count} effect(s): the speeds, the captions and the decorations")
 }
 
-/// What the walk-back produced.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Applied {
     pub segs: Vec<(f64, f64)>,
@@ -553,10 +428,7 @@ pub struct Applied {
     pub log: Vec<String>,
 }
 
-/// The walk-back's own words, as one sentence: the line [`apply`] puts first in its log — §S3's account of
-/// what the walk made of the model's answer, and the same sentence `cut_suggest_land` prints on the status
-/// row. §1 asks whether an unseen change can be explained in one sentence; this is that sentence, so
-/// [`walk_back_audit`] measures it instead of assuming it exists.
+/// The walk-back's one-sentence account (§S3, also on the status row via `cut_suggest_land`); [`walk_back_audit`] measures it.
 fn walk_account(segs: usize, inserts: usize, total: f64) -> String {
     format!(
         "suggested {} segments, {} total",
@@ -565,28 +437,13 @@ fn walk_account(segs: usize, inserts: usize, total: f64) -> String {
     )
 }
 
-/// Whether the walk-back this [`Walk`] would perform is allowed to happen unseen.
-///
-/// The three properties come from §1's fourth row. Two are read off the rule that does the placing rather
-/// than asserted here: **mechanical** because every edge move is bounded by the snap tolerance
-/// [`snap_edge`] scores with ([`decisions::SNAP_TOLERANCE_SECONDS`], `P.policy.snapToleranceSeconds`) — an
-/// unbounded move would be a judgement about content, and the bound is what keeps it mechanical; and
-/// **explainable in one sentence** because the walk-back has wording of its own: [`walk_account`] is the
-/// single line §S3 spells, the one `cut_suggest_land` puts on the status row. **Visible afterwards** is
-/// measured off the walk: the materialisation it places from — word edges and silence midpoints to snap
-/// to, or marks to take out — must be present, or nothing of the result can be pointed at on the lane.
-///
-/// Nothing here is fed back to the model: [`decision_audit::Home::WalkBack`] is the one home that answers
-/// false for `model_sees_it()`, which is why the three questions have to be asked in code.
+/// Whether this [`Walk`] may happen unseen (§1 fourth row). **Mechanical**: edge moves are bounded by [`decisions::SNAP_TOLERANCE_SECONDS`] (`P.policy.snapToleranceSeconds`) via [`snap_edge`]. **Explainable in one sentence**: [`walk_account`]. **Visible afterwards**: the materialisation (word edges, silence midpoints or marks) must be present. Not fed back to the model ([`decision_audit::Home::WalkBack`]).
 pub fn walk_back_audit(walk: &Walk) -> Result<&'static str, String> {
-    // The bound IS the tolerance: an edge may travel no further than this to reach a word edge, so no move
-    // the walk makes can exceed it. Read from the rule's own constant, never restated as a number here.
+    // An edge travels no further than the tolerance to reach a word edge.
     let mechanical = decisions::SNAP_TOLERANCE_SECONDS > 0.0;
-    // The sentence exists: `apply`'s first log line is §S3's one-sentence account of the walk, built
-    // unconditionally — even a walk with neither silences nor marks moved edges, and says so.
+    // The sentence exists: `apply`'s first log line is built unconditionally.
     let explainable = !walk_account(0, 0, 0.0).is_empty();
-    // Nothing to snap to and nothing to remove means nothing was placed by the machine at all, and a cut
-    // nobody can point at on the lane is not visible afterwards.
+    // Nothing to snap to and nothing to remove: nothing machine-placed, so not visible afterwards.
     let visible = !walk.snap_points.is_empty() || !walk.marks.is_empty();
     if decision_audit::walk_back_admits(mechanical, explainable, visible) {
         return Ok(decision_audit::Home::WalkBack.label());
@@ -607,23 +464,11 @@ pub fn walk_back_audit(walk: &Walk) -> Result<&'static str, String> {
     ))
 }
 
-/// S3: the walk-back — close the talked-in holes, snap both edges of every segment, take the marks out,
-/// take the dead air out, coalesce, and clamp the effects against what is now kept.
-///
-/// Hand-placed inserts come back untouched: they were put there by a person, not proposed, so no step of
-/// the walk has a claim on them. Effects are replaced as a LIST via [`cut_clamp::clamp_to_cut`], against
-/// the cut as it will actually play — F3.12's reason for existing, since every step above moved the
-/// seconds an effect was chosen for.
-///
-/// §1's rule of thumb is enforced at this door by [`walk_back_audit`]: a change the model never sees may
-/// only be made when it is mechanical, explainable in one sentence, and visible on screen afterwards.
-// The allow is for the clamp probe inside: clippy points at the `let` line above its own suggestion span,
-// so an attribute written where the lint appears cannot silence it, and the whole function is the narrowest
-// scope that can hold one.
+/// S3: the walk-back: close talked-in holes, snap both edges, take marks out, take dead air out, coalesce, clamp effects against what is kept. Hand-placed inserts come back untouched. Effects are replaced as a LIST via [`cut_clamp::clamp_to_cut`] (F3.12). §1's rule is enforced at this door by [`walk_back_audit`].
+/// The allow is for the clamp probe inside: clippy points at the `let` above its suggestion span, so only the whole function can hold it.
 #[allow(clippy::field_reassign_with_default)]
 pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk) -> Applied {
-    // The three properties, measured before anything moves. Refused, NOTHING is placed — the empty answer
-    // below says "no cut", so a caller cannot land a half-walked cut by mistake.
+    // Measured before anything moves; refused, NOTHING is placed, so no half-walked cut lands.
     if let Err(why) = walk_back_audit(walk) {
         return Applied {
             segs: Vec::new(),
@@ -638,9 +483,7 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
     let segs = walked.segs;
     let kept_inserts: Vec<Seg> = inserts.to_vec();
 
-    // Clamp against the cut as applied: the scenes below are the ones this walk just produced. The allow
-    // goes on the enclosing function, not here: clippy points at the `let` line ABOVE its own suggestion
-    // span, so an attribute written where the lint appears cannot silence it.
+    // Clamp against the cut as applied (the scenes this walk just produced).
     let mut probe = Cut::default();
     probe.segs = segs
         .iter()
@@ -673,34 +516,17 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
     }
 }
 
-/// What [`walk_back_spans`] counted, so [`apply`] can say it in its own §S3 wording and a words-path
-/// caller can say it in `>>>` form without re-running any of the arithmetic.
+/// What [`walk_back_spans`] counted, so [`apply`] and words-path callers can word it without redoing the arithmetic.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Walked {
-    /// The spans after every mechanical step, coalesced.
     pub segs: Vec<(f64, f64)>,
-    /// How many holes were closed, i.e. how many segments the walk joined back together.
     pub closed_len: usize,
-    /// How many stamped edges moved onto a word edge or a silence midpoint.
     pub moved: usize,
-    /// Marks that took seconds out, and the seconds of silence taken out — both 0 when nothing was marked.
     pub marks_out: usize,
     pub silence_out: f64,
 }
 
-/// §12 §4's fourth bullet as one function: **hole closing, edge snapping, mark removal, dead-air
-/// removal and coalescing**, in that order, over whatever spans a reply settled on.
-///
-/// This used to be inline in [`apply`], which only the model arm reaches — so on a words-mode reply
-/// (§S2a, no model asked) hole closing and edge snapping never ran at all, and §4's promise that the
-/// walk-back "runs after `finish` on every reply, model- or hand-made" was true of two of its five steps.
-/// Pulling them out is what lets BOTH doors run the same walk: `apply` adds the audit gate and the effect
-/// clamp on top, and [`crate::cut_suggest_words_run::run_words`] lands these spans and logs
-/// [`walk_report`] for the same reason the model arm does — the page shows what the machine did.
-///
-/// No judgement about the video happens here: every edge move is bounded by the snap tolerance
-/// ([`decisions::SNAP_TOLERANCE_SECONDS`]), a hole is only closed when somebody talked in it
-/// ([`hole_has_speech`]), and a snap that would cross its own segment keeps the stamp.
+/// §12 §4's fourth bullet as one function: hole closing, edge snapping, mark removal, dead-air removal, coalescing, in that order. Shared by [`apply`] (adds the audit gate and effect clamp) and [`crate::cut_suggest_words_run::run_words`], so words-mode replies get the same walk and [`walk_report`]. Edge moves are bounded ([`decisions::SNAP_TOLERANCE_SECONDS`]), holes close only where [`hole_has_speech`], a snap crossing its own segment keeps the stamp.
 pub fn walk_back_spans(segs: &[(f64, f64)], walk: &Walk) -> Walked {
     let closed = close_holes(segs, &walk.talked, SEAM_MAX_SECONDS);
     let snapped: Vec<(f64, f64)> = closed
@@ -711,14 +537,12 @@ pub fn walk_back_spans(segs: &[(f64, f64)], walk: &Walk) -> Walked {
             if end > start {
                 (start, end)
             } else {
-                // A snap that crossed the segment would make negative footage; the stamp wins, because
-                // the model's own numbers are the last thing known to be ordered.
+                // A snap crossing the segment would make negative footage; the stamp wins.
                 (*from, *to)
             }
         })
         .collect();
-    // One count per step, from the step itself rather than guessed from the lists afterwards: an edge that
-    // landed where it started is not a move, and a mark over footage already gone is not a removal.
+    // One count per step: an edge landing where it started is not a move; a mark over gone footage is not a removal.
     let moved = snapped
         .iter()
         .zip(closed.iter())
@@ -740,10 +564,7 @@ pub fn walk_back_spans(segs: &[(f64, f64)], walk: &Walk) -> Walked {
     }
 }
 
-/// §4's "the page shows what it did", spelled once so both doors say it identically: how many holes were
-/// joined, how many edges moved, and what was taken out. Empty when the walk changed nothing — a line
-/// claiming work that did not happen is worse than silence, and `words_cut` already logged its own
-/// account of the seconds it trimmed.
+/// §4 "the page shows what it did": holes joined, edges moved, what was taken out; empty when nothing changed.
 pub fn walk_report(closed_len: usize, moved: usize) -> String {
     format!("walk-back: {closed_len} stretch(es) after closing holes, {moved} edge(s) moved")
 }

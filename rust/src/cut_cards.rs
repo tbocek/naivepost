@@ -1,19 +1,6 @@
 //! §06-effects#5-cards-svg-inserts — cards: SVG files that carry their own picture and ask for their words.
-//!
-//! Spec: `spec/06-effects.md` §5. It is one prose paragraph rather than numbered steps, so its rules are read here
-//! as S1..S7: S1 the path's arguments, S2 what a document declares as inputs, S3 its holes, S4 the two shipped cards,
-//! S5 the seeds written on first use, S6 "the static file is the finished card", S7 the bake and the card's length.
-//!
-//! # What lives here and what does not
-//!
-//! The drawing is in the file; this module holds the arithmetic around it — reading a path's arguments, filling holes,
-//! deciding how long a card runs, sampling its animation at the render's frame rate. Seeding goes through
-//! [`crate::cut_insert::seed_cards`], which already refuses to overwrite; nothing here touches a window (Cut is not
-//! drawn yet) and nothing here runs a rasteriser.
 
 use crate::cut_insert;
-
-// --- S1: the path may carry arguments ------------------------------------------------------------------------------
 
 /// S1 (`escapes % & = ? only`): the four characters that would otherwise be read as structure — `%` because it opens
 /// an escape, `&` because it separates arguments, `=` because it divides a key from its value, `?` because it opens
@@ -104,8 +91,6 @@ pub fn join_path(path: &Path) -> String {
     format!("{}?{}", path.file, query.join("&"))
 }
 
-// --- S2: what a document declares ----------------------------------------------------------------------------------
-
 /// One declared input. `keep` means the value stays with the insert rather than being re-asked each time; `logo`
 /// means the value names an image file — both change the widget the form builds, which is why they are in the file.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -189,13 +174,6 @@ pub fn xml_escape(value: &str) -> String {
     out
 }
 
-/// The words a card's picture actually shows: every `<text>` element's content, in document order, XML-
-/// unescaped and whitespace-collapsed. §12 #28 asks what is ON the card, and the only honest answer is the one
-/// read out of the finished document — not the file name, whose query is a *request* for text (a hole nobody
-/// answered keeps its fallback, an unanswered `?title=` shows the card's own placeholder, not a title).
-///
-/// Self-closing tags are skipped by counting angle brackets, so `<text/>` contributes nothing; a comment is
-/// dropped because a card documents its holes in comments and those braces are not on screen.
 pub fn card_words(doc: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut rest = doc;
@@ -285,8 +263,6 @@ fn blank_comments(doc: &str) -> String {
     String::from_utf8(out).expect("blanking comments keeps valid UTF-8")
 }
 
-// --- S3: holes -----------------------------------------------------------------------------------------------------
-
 /// One hole and what it says when nobody answers it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Hole {
@@ -299,9 +275,6 @@ pub fn holes(doc: &str) -> Vec<Hole> {
     find_holes(doc).into_iter().map(|(hole, _)| hole).collect()
 }
 
-/// The holes with the byte range each one occupies — what [`fill`] writes over. A hole inside `<!-- … -->` is skipped:
-/// a card explains its own holes in a comment, and replacing that would erase the explanation for whoever writes the
-/// next card.
 fn find_holes(doc: &str) -> Vec<(Hole, (usize, usize))> {
     let blanked = blank_comments(doc);
     let mut out = Vec::new();
@@ -328,8 +301,6 @@ fn find_holes(doc: &str) -> Vec<(Hole, (usize, usize))> {
     out
 }
 
-// --- the canvas, and the two shipped cards -------------------------------------------------------------------------
-
 /// S6 (`Canvas 1920×1080`): every card is drawn at the render's landscape frame size. A card that came out smaller
 /// would be scaled by the encoder and lose the crispness that makes a title readable on a phone.
 pub const CANVAS: (i32, i32) = (1920, 1080);
@@ -355,10 +326,6 @@ pub fn is_frame_size(size: (i32, i32)) -> bool {
     size == CANVAS
 }
 
-/// S6 (`Every animation starts at 0 and waits inside keyTimes, so the static file is the finished card`): the first
-/// keyTime must be 0 — the animation is already at its finished state when nothing has run yet — the last must reach
-/// 1, and they must ascend. A card whose animation starts part-way through shows a half-drawn picture to anyone who
-/// opens the file, which is exactly what this rule exists to prevent.
 pub fn starts_at_zero_and_waits(key_times: &[f64]) -> bool {
     let (Some(first), Some(last)) = (key_times.first(), key_times.last()) else {
         return false;
@@ -445,10 +412,6 @@ pub fn parse_delay(text: &str) -> Option<f64> {
 
 /// S4 (`badge` — one big letter with a caption). The animation slides the letter up into place and stops; its keyTimes
 /// start at 0, so the file opened in a browser is the finished badge.
-///
-/// The stamp's `data-naivepost-args` spells these two as `letter=<L>&caption=<text>` (the spelling
-/// [`crate::produce_cards::redraw`] reads back when a path asks for a different badge than the one that shipped), and
-/// the generators write it so a redraw can merge over real defaults instead of inventing them.
 pub fn badge_svg(letter: &str, caption: &str) -> String {
     let (w, h) = CANVAS;
     let cx = w / 2;
@@ -525,14 +488,9 @@ pub fn tier_svg(rows: &[Item], new: &[Arrival]) -> String {
     )
 }
 
-// --- S5: the seeds --------------------------------------------------------------------------------------------------
-
 /// S5 (`seeds s a b c d f .svg, tier.svg and CARDS.md written into assets/ on first use, never overwriting`), in the
 /// order §8 of this spec writes them: badges first, then the board — which embeds the badge files as its logos, so it
 /// is generated from them — then the guide.
-///
-/// Writing is not done here: hand the list to [`crate::cut_insert::seed_cards`], which skips whatever already exists.
-/// A board someone restyled is theirs, and a rewrite pass would silently take it back on their next open.
 pub fn seeds() -> Vec<(&'static str, &'static str)> {
     let mut out: Vec<(&'static str, &'static str)> = TIER_ROWS
         .iter()
@@ -551,8 +509,6 @@ pub fn seeds() -> Vec<(&'static str, &'static str)> {
     out.push((cut_insert::CARD_GUIDE_FILE, cut_insert::CARD_GUIDE));
     out
 }
-
-// --- S7: the bake ---------------------------------------------------------------------------------------------------
 
 /// S7 (`to frames at the render fps (default 25)`): `// card.bakeFps`, §10's "bake 25 fps". The preview runs a card at
 /// [`crate::cut_insert::PREVIEW_FPS`] because it must keep up; the bake has no clock to beat, so it can afford the
@@ -765,10 +721,6 @@ pub fn value_at(anim: &Anim, t: f64) -> Option<String> {
     Some(anim.values.last()?.clone())
 }
 
-/// Two values and a fraction between them. Numbers and lengths interpolate in the open and keep their unit; colours
-/// interpolate per channel, which is what a viewer reads as a cross-fade. `additive` adds the value to the base rather
-/// than replacing it — for `animateTransform` that is how SMIL composes two transforms, and adding the numbers is the
-/// same arithmetic read on one axis at a time.
 fn interpolate(from: &str, to: &str, at: f64, additive: bool) -> Option<String> {
     let base = parse_value(from)?;
     let target = parse_value(to)?;
@@ -798,17 +750,11 @@ fn interpolate(from: &str, to: &str, at: f64, additive: bool) -> Option<String> 
 }
 
 fn number(v: f64, _additive: bool) -> String {
-    // `additive="sum"` means "on top of the attribute's own value", and the base belongs to the element being drawn,
-    // not to this animation — so the caller adds it. The flag is deliberately not applied to the number here; doing
-    // so would add the base twice on the second frame. Kept as an argument so both branches format identically and a
-    // reader cannot mistake the omission for an oversight.
     if v == v.trunc() {
         return format!("{}", v as i64);
     }
     format!("{v}")
 }
-
-// --- S7: the CSS subset ---------------------------------------------------------------------------------------------
 
 /// The declarations of one rule body, `property`/`value` pairs in order.
 pub fn css_declares(decls: &str) -> Vec<(String, String)> {
@@ -872,14 +818,6 @@ pub fn easing(name: &str) -> Option<(f64, f64, f64, f64)> {
     }
 }
 
-/// S7 (`Card length = last moving moment, offered as the insert's length`): when the card stops changing. `None` means
-/// it never does — an animation repeating forever has no own length, and §8 says such a document takes the default
-/// insert length ([`crate::cut_insert::DEFAULT_SECONDS`]) instead of being timed by itself. A card with no animation
-/// at all is `None` for the same reason: nothing moves, so nothing says when to stop.
-///
-/// [`STILLNESS_SECONDS`] is not added here. It is the stillness the *generator* leaves inside its own timeline, so it
-/// is already part of the last moving moment of a shipped card; adding it again would make every card two seconds too
-/// long.
 pub fn card_length(animations: &[Anim]) -> Option<f64> {
     if animations.is_empty() {
         return None;
@@ -893,12 +831,7 @@ pub fn card_length(animations: &[Anim]) -> Option<f64> {
     }
     Some(last)
 }
-// --- §8: how a card was arrived at ---------------------------------------------------------------------------------
 
-/// §8 (`a shipped card carries `data-naivepost=<kind>` and `data-naivepost-args=<defaults>` on its root`): the two
-/// attributes that make a file one of the app's own cards rather than somebody's SVG. They are read off the root
-/// tag, which is where [`badge_svg`] and [`tier_svg`] write them; nothing else in a document is a stamp, because a
-/// card that could be stamped by an author's comment would also be stamped by a mistake.
 pub const STAMP: &str = "data-naivepost";
 
 /// §8: the second half of the pair — the arguments the card was drawn with last time, so an insert redraws it with
@@ -917,10 +850,6 @@ pub fn stamped(doc: &str) -> Option<(&str, &str)> {
     Some((kind, args))
 }
 
-/// One quoted attribute of the root tag. Written here rather than reusing the bake's [`attribute`], which returns an
-/// owned `String` and reads double quotes only — a stamp is borrowed out of the document, and a single-quoted one is
-/// somebody else's document that gets read as unstamped: filling its holes is still right, drawing it as a card of
-/// ours would be guessing.
 fn stamp_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     for quote in ['"', '\''] {
         let key = format!("{name}={quote}");
@@ -951,11 +880,6 @@ pub fn drawn_by(name: &str, except: Option<&str>) -> String {
     }
 }
 
-/// §8 (`Logged per render, how a card was arrived at`): which of its three notes one insert earns. A stamped file is
-/// drawn again by its card whatever the path asks for; an unstamped one only gets its holes filled; and an
-/// unstamped file with no holes to fill takes no notice of the parameters at all, which is said rather than
-/// swallowed because a path asking for a title the picture has nowhere for is otherwise a change nobody sees —
-/// either in the video or in the absence of one.
 pub fn arrived_at(doc: &str, args: &[(String, String)]) -> String {
     if let Some((kind, _)) = stamped(doc) {
         return drawn_by(kind, None);
@@ -969,12 +893,6 @@ pub fn arrived_at(doc: &str, args: &[(String, String)]) -> String {
     IGNORED.to_string()
 }
 
-/// §8's contract (`self-contained … the render folder resolves no relative href, refuses an absolute one`): both
-/// halves as one check. A baked card is written to a temporary folder and read from there, so an `href` naming a
-/// file — relative, absolute or a URL — points somewhere that reader cannot reach: an absolute one is refused
-/// outright and a relative one resolves against nothing. Only a `data:` URL travels with the document, which is what
-/// "self-contained" means here. The empty value is left alone: it is how an attribute declares "no image here"
-/// without breaking the shape of the tag.
 pub fn absolute_href(doc: &str) -> Option<String> {
     let mut rest = doc;
     while let Some(at) = rest.find("href=\"") {

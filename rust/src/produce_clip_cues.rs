@@ -1,15 +1,9 @@
 //! F5.4 S1 — which clip contributes cues, and which lines those cues are built from.
 //!
-//! §F5.4's first diamond asks about the CLIP: narration lines if it has any, else its own speech, and
-//! that only where the clip is footage at all — never an insert, a freeze or a clip with no video. The
-//! rule itself lives in [`crate::produce_subtitles::cues`]; this module answers the one question that
-//! module cannot: what kind of clip the render is holding. It exists as its own file because
-//! `produce_exec` builds the cue sheet and has no business classifying segments on the side.
-//!
-//! Everything here reads fields the render already filled in [`crate::produce_render::plan_clips`], so
-//! there is no second opinion about what a segment is: `source` is `seg.ins` verbatim, and the same
-//! `ins` spelling decides insert vs pasted stretch everywhere else in the render (`Seg::insert_asset`,
-//! `Materials::source_file`).
+//! §F5.4's first diamond asks about the CLIP: narration lines if it has any, else its own speech, and only
+//! where it is footage (never an insert, a freeze or a clip with no video). The rule lives in
+//! [`crate::produce_subtitles::cues`]; this answers what kind of clip the render holds, from fields
+//! [`crate::produce_render::plan_clips`] already filled (`source` is `seg.ins` verbatim).
 
 use crate::narrate_screen::SPEECH_CHARS_PER_SECOND;
 use crate::narration::Entry;
@@ -17,12 +11,10 @@ use crate::produce_render::{Clip, Placed};
 use crate::produce_subtitles::{self as subs, Source};
 
 /// What one clip is, for the cue question. Each case reads one field of [`Clip`]:
-/// - `source` non-empty → an inserted sound or picture, or a pasted `copy:<s>` stretch
-///   ([`Source::Insert`]). Both say nothing the words of the session said: the asset is somebody
-///   else's clip, and a pasted stretch was captioned where it was recorded.
-/// - `on_screen <= 0.0` → nothing runs on screen to caption ([`Source::NoVideo`]). A freeze holds one
-///   frame over running footage rather than being its own clip (§4), so the render hands no such clip
-///   here today; the arm stays because S1 names a freeze explicitly and a later round may place one.
+/// - `source` non-empty → an inserted sound or picture, or a pasted `copy:<s>` stretch ([`Source::Insert`]);
+///   neither says what the session's words said.
+/// - `on_screen <= 0.0` → nothing on screen to caption ([`Source::NoVideo`]). The render hands no such clip
+///   today (a freeze holds a frame over running footage, §4); the arm stays because S1 names a freeze.
 /// - otherwise → footage, whose own speech is worth reading.
 pub fn source_of(clip: &Clip) -> Source {
     if !clip.source.is_empty() {
@@ -34,11 +26,9 @@ pub fn source_of(clip: &Clip) -> Source {
     Source::Footage
 }
 
-/// S1 (§F5.4): the clip's OWN aligned words, on the clip's own recording clock — the narrator mic
-/// already excluded and the spellings already taken from the fixed transcript (`word_list`). Asked only
-/// where the clip has no narration line of its own and is footage; [`crate::produce_clip_cues`] asks
-/// that question, this answers where the words come from. An empty list means "this session has no
-/// aligned words for this clip", which yields no cues rather than a guess.
+/// S1 (§F5.4): the clip's OWN aligned words, on the clip's recording clock, narrator mic excluded and
+/// spellings taken from the fixed transcript (`word_list`). Asked only where the clip has no narration line
+/// and is footage ([`crate::produce_clip_cues`]). An empty list yields no cues rather than a guess.
 pub fn words_for(
     clip: &Clip,
     list: &[crate::word_list::Word],
@@ -68,21 +58,16 @@ pub fn words_for(
 
 /// S1: the cues one clip contributes, through the one door §F5.4 draws.
 ///
-/// The branch order is `subs::cues`' own — it asks whether there are lines BEFORE it asks what the clip
-/// is — so this function supplies both halves and adds no decision of its own. Two things make that more
-/// than a pass-through:
-/// - [`crate::produce_render::Placed`] carries seconds only (`fit` places timing, never text), so a
-///   placed line's words and placement are looked up in the narration record by `entry_index`. Without
-///   that lookup every cue would be empty, `subs::cues` would read "no lines" for a clip that has them,
-///   and the clip's raw recognised words would land over its own written narration — the wrong-branch bug
-///   this wiring is tested against.
-/// - the seconds need converting back: `Placed.at` is clip-relative OUTPUT time and `subs::Cue` works in
-///   the clip's own recording seconds until `on_clock` moves the track onto the video. A line with no
-///   take keeps a floor so `tidy` cannot fold a silent caption out of the sheet.
+/// The branch order is `subs::cues`' own (lines BEFORE clip kind), so this supplies both halves and decides
+/// nothing. Two things make it more than a pass-through:
+/// - [`crate::produce_render::Placed`] carries seconds only, so a placed line's words and placement are looked
+///   up in the narration record by `entry_index`; without that, `subs::cues` would read "no lines" for a clip
+///   that has them and the raw recognised words would land over its own written narration.
+/// - `Placed.at` is clip-relative OUTPUT time while `subs::Cue` works in the clip's recording seconds until
+///   `on_clock` moves the track onto the video. A line with no take keeps a floor so `tidy` cannot fold it out.
 ///
-/// `placed` is the render's per-line placement for this clip; `entries` is the whole narration record,
-/// indexed by `Placed::entry_index`; `words` are the clip's aligned words on its own recording clock,
-/// narrator mic excluded and respelled from the fixed transcript.
+/// `placed` is the render's per-line placement for this clip; `entries` the whole narration record indexed by
+/// `Placed::entry_index`; `words` the clip's aligned words on its recording clock.
 pub fn build(
     clip: &Clip,
     placed: &[Placed],

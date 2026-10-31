@@ -1,21 +1,6 @@
-//! F2.12 (Insert a card, still, video or sound) — `spec/05-cut.md` F2.12 and
-//! `spec/inventory/cut.md` §G.
-//!
-//! Insert takes a file the session does not contain — a sting, a still, a tier board, a song — and puts it
-//! in the cut one of three ways: BETWEEN the footage, which cuts the clip open and makes the video longer by
-//! the card's own seconds while costing no session time; OVER it, which takes exactly the seconds it runs
-//! (the same as － Remove) and is what a selection asks for; or on a LANE of its own, which adds a row and
-//! cuts nothing. A sound has no third way and no picture of its own: it is laid over the kept footage, one
-//! piece per stretch, and refuses where there is none.
-//!
-//! One flag carries the whole sound question — [`crate::cut::Seg::mute`] — because the mode already says what
-//! is underneath it, so the tick's sentence changes with the mode and the stored cut does not (see
-//! [`tick_label`]).
-//!
-//! No UI lives here and none is wired: `rust/src/ui/window.rs` builds widgets for the Prepare page only, so
-//! there is no Insert button to attach yet (as with F2.1–F2.11) and no `spec/img/05-insert.png` to compare
-//! against — §A's toolbar names the button, the images stop at 05-trim. The widget layer will forward the
-//! presses, open the chooser at [`chooser_dir`] and print what these return.
+//! F2.12 (insert a card, still, video or sound) — `spec/05-cut.md` F2.12, `spec/inventory/cut.md` §G.
+//! Placed BETWEEN footage (video longer, no session time), OVER it (takes those seconds like － Remove), or on a
+//! LANE (a row, cuts nothing). A sound is only laid over kept footage. No UI here; one flag, [`crate::cut::Seg::mute`], carries the sound question (see [`tick_label`]).
 
 use std::path::{Path, PathBuf};
 
@@ -28,18 +13,12 @@ use crate::tools;
 
 // --- S1: a line or a selection -------------------------------------------------------------------------------
 
-/// F2.12 S1 (`Needs a line or a selection`): the refusal when neither exists yet. The page opens with no red
-/// line, and "there" is not a second until the timeline is clicked (F2.4 owns where the line comes from).
-/// Distinct from [`crate::cut_copy::NO_LINE_YET`], which is ⧉ Paste's sentence for the same missing thing —
-/// two buttons, two sentences, one rule.
+/// F2.12 S1: the refusal when neither a line nor a selection exists; ⧉ Paste has its own ([`crate::cut_copy::NO_LINE_YET`]).
 pub const NO_LINE_YET: &str = "click the timeline where the insert goes first";
 
-/// F2.12 S1: where the insert goes. A selection wins over the line and gives its own start, because marking
-/// seconds and then pressing Insert is a sentence that says what those seconds are for; with no selection the
-/// red line is the answer, and with neither there is nothing to answer with.
+/// F2.12 S1: where the insert goes. A selection wins and gives its own start; otherwise the red line.
 ///
-/// Read once, when the button is pressed, and handed down: the chooser is a window the hand can reach around,
-/// so the file that comes back has to be placed where the timeline read at the press.
+/// Read once at the press: the chooser is a window, so the place must be the one read then.
 pub fn needs_place(line: Option<f64>, selection: Option<&Selection>) -> Result<f64, &'static str> {
     if let Some(band) = selection {
         return Ok(band.start.min(band.end));
@@ -49,13 +28,10 @@ pub fn needs_place(line: Option<f64>, selection: Option<&Selection>) -> Result<f
 
 // --- S2: the chooser, and what kind of file came back ---------------------------------------------------------
 
-/// F2.12 S2 (`chooser "Insert a clip, image, animation or sound"`): the title for footage-scoped seconds — or
-/// no seconds at all, since nothing was marked and the form will ask what the file does to the sound.
+/// F2.12 S2: the chooser title for footage-scoped or no seconds.
 pub const CHOOSER_TITLE: &str = "Insert a clip, image, animation or sound";
 
-/// F2.12 S2 (`"Insert a sound over the selected seconds" for a sound-scoped selection`): a selection drawn in
-/// a lane is about sound, and offering a tier board there would be offering to put a picture where the hand
-/// pointed at a waveform. The chooser's filter narrows with it (audio extensions only).
+/// F2.12 S2: the title for a sound-scoped selection; the filter narrows to audio.
 pub const CHOOSER_TITLE_SOUND: &str = "Insert a sound over the selected seconds";
 
 /// F2.12 S2: which chooser to open, read off the scope the selection was drawn with.
@@ -66,15 +42,12 @@ pub fn chooser_title(selection: Option<&Selection>) -> &'static str {
     }
 }
 
-/// F2.12 S2 (`opening in ‹root›/assets`): the folder the chooser opens at. Cards live at root level, shared by
-/// every project under it, which is [`layout::assets_dir`]'s rule rather than one of this module's.
+/// F2.12 S2: the folder the chooser opens at ([`layout::assets_dir`]'s rule).
 pub fn chooser_dir(root: &Path) -> PathBuf {
     layout::assets_dir(root)
 }
 
-/// F2.12 S2: the note written beside the cards. Uppercase so it sorts above them and reads as a note about
-/// them rather than as one of them, and short for the same reason §G is: what it has to carry is the hole
-/// format the form reads, since that is the only part someone writing a card can get wrong silently.
+/// F2.12 S2: the note written beside the cards, documenting the hole format.
 pub const CARD_GUIDE: &str = concat!(
     "# Writing a card\n",
     "\n",
@@ -107,16 +80,11 @@ pub const CARD_GUIDE: &str = concat!(
     "small: about 0.58em of advance per character is a safe estimate for these faces.\n",
 );
 
-/// F2.12 S2: write the built-in cards and [`CARD_GUIDE`] into `dir`, returning what was actually written —
-/// which is nothing at all on the second open.
-///
-/// Never over a card that is already there: these are starting points, and a board someone restyled is theirs.
-/// The chooser's opening is also the only moment where a card is what someone is after, so a folder that opens
-/// empty teaches that there is nothing to insert.
+/// F2.12 S2: write the built-in cards and [`CARD_GUIDE`] into `dir`; returns what was written.
+/// Never over an existing card: a restyled board is the user's.
 pub fn seed_cards(dir: &Path, cards: &[(&str, &str)]) -> Vec<String> {
     let mut wrote = Vec::new();
-    // A folder we cannot make is not a reason to lose the file someone is about to choose: the chooser simply
-    // opens wherever it was going to, and the log line is the caller's.
+    // A folder we cannot make must not lose the chosen file; the caller logs.
     if std::fs::create_dir_all(dir).is_err() {
         return wrote;
     }
@@ -139,13 +107,12 @@ pub fn seed_cards(dir: &Path, cards: &[(&str, &str)]) -> Vec<String> {
 /// F2.12 S2: the note's filename, uppercase on purpose (see [`CARD_GUIDE`]).
 pub const CARD_GUIDE_FILE: &str = "CARDS.md";
 
-/// What an insert file IS, which is the only thing that decides how it is drawn and what the form offers.
+/// What an insert file IS: decides how it is drawn and what the form offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// A moving picture with sound of its own: the one kind that may have a lane.
     Video,
-    /// A card drawn by the app from its holes — animated or not, which is a second question (see
-    /// [`preview_fps`]).
+    /// A card drawn from its holes, animated or not (see [`preview_fps`]).
     Svg,
     /// Sound alone. Its picture is the session's own, which is why it is laid over footage and never between.
     Audio,
@@ -153,11 +120,8 @@ pub enum Kind {
     Still,
 }
 
-/// F2.12 S2 (`insKind by extension: video|svg|audio|still`): what a file is, from its name alone.
-///
-/// By extension deliberately: the alternative is probing every asset on every dialog, and an `.svg` that a
-/// probe calls a png stream is not more true than the name someone gave the file. The query comes off first,
-/// because `tier.svg?S=Dust II` is one card's parameter and not part of its name.
+/// F2.12 S2: what a file is, from its extension alone.
+/// The query comes off first: `tier.svg?S=Dust II` is a parameter, not part of the name.
 pub fn kind(path: &str) -> Kind {
     let file = path.split(['?', '#']).next().unwrap_or_default();
     let ext = match file.rfind('.') {
@@ -174,23 +138,16 @@ pub fn kind(path: &str) -> Kind {
 
 // --- S3: what the gesture answers before anything is asked ----------------------------------------------------
 
-/// F2.12 S3 (`else P.policy.insertDefaultSeconds = 4`) — §10's row, prototype `insDefault`. A card nobody
-/// reads in four seconds is a card that was too wordy to be a card, which is why this is the fallback and not
-/// something longer.
+/// F2.12 S3 — §10's row, `insDefault`: the fallback length of an insert.
 pub const DEFAULT_SECONDS: f64 = 4.0;
 
-/// F2.12 S3 (`the file's own length (video/audio duration, SVG animation length, else …)`): how long an insert
-/// runs when nothing has been typed yet.
+/// F2.12 S3: how long an insert runs when nothing has been typed yet.
 ///
-/// `file_seconds` is what a probe found for a video or audio file, or what the card's own animation says — and
-/// `None` for a still, for an SVG whose CSS animation has no `@keyframes` in it (drawn as a still, so it has no
-/// length), and for a probe that failed. `animated_svg` is kept beside it rather than folded into it because
-/// the two come from different reads of the file and the log names one of them.
+/// `file_seconds` is `None` for a still, an SVG without `@keyframes` (drawn as a still), or a failed probe.
 pub fn default_length(file_seconds: Option<f64>, animated_svg: bool) -> f64 {
     match file_seconds {
         Some(seconds) if seconds > 0.0 => seconds,
-        // An SVG with no animation is a still: its length was never the question, so `animated_svg` only says
-        // that there was nothing to find in the first place.
+        // No animation: a still, so there was no length to find.
         _ => {
             let _ = animated_svg;
             DEFAULT_SECONDS
@@ -198,13 +155,9 @@ pub fn default_length(file_seconds: Option<f64>, animated_svg: bool) -> f64 {
     }
 }
 
-/// F2.12 S3 (`Defaults: selection → its length, overwrite; none → splice, the file's own length`): the two
-/// answers the gesture gives before the form opens, so the radios arrive already meaning what the hand did.
+/// F2.12 S3: the gesture's answers before the form opens: a selection asks for OVER, nothing asks for BETWEEN.
 ///
-/// The length is `None` for no selection on purpose — the file has to be chosen before its length can be read,
-/// and inventing 4 s at the press would put a number in the form that the file then contradicts. The caller
-/// fills it with [`default_length`] once the chooser comes back. A selection's span is normalised because a
-/// drag may run either way (F2.6).
+/// Length is `None` without a selection: the caller fills it with [`default_length`] after the chooser. The span is normalised (F2.6).
 pub fn default_modes(selection: Option<&Selection>) -> (bool, Option<f64>) {
     match selection {
         Some(band) if band.length() >= MIN_SCENE_SECONDS => (false, Some(band.length())),
@@ -214,8 +167,7 @@ pub fn default_modes(selection: Option<&Selection>) -> (bool, Option<f64>) {
 
 // --- S4: the form in the column -------------------------------------------------------------------------------
 
-/// One thing the card asks for: its key (what goes on the path), what to call it in the dialog, what to say
-/// about it, what is already written on the path, and the two flags that change the widget.
+/// One card hole: path key, dialog label, hint, current value, and widget flags.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub key: String,
@@ -225,22 +177,18 @@ pub struct Field {
     pub value: String,
     /// A file to pick rather than words to type: the Logo\u{2026} picker.
     pub logo: bool,
-    /// Arrives empty and stays out of the path when untouched (a hole that would only ever repeat its own
-    /// placeholder is noise on the path).
+    /// Arrives empty and stays off the path when untouched.
     pub keep: bool,
 }
 
-/// F2.12 S4 (`one entry per declared card field (Logo… picker for logo fields)`): what a card asks for, in the
-/// order it asks, read out of the document's own comments —
+/// F2.12 S4: what a card asks for, in order, read from the document's own comments:
 ///
 /// ```text
 /// <!-- Input: title | Title | over the board, empty for none -->
 /// <!-- Input: S[keep logo] | Tier S | what is in it, comma separated -->
 /// ```
 ///
-/// Key, label, hint; brackets are flags. Everything after the second bar is the hint, bars included, so a hint
-/// may quote a path. A repeat of a key (compared without case) is dropped: two entries for one hole would be
-/// two widgets writing one value, and which wins would depend on where the hand clicked.
+/// Key, label, hint; brackets are flags. The hint keeps any bars. A repeated key (case-insensitive) is dropped.
 pub fn card_fields(svg: &[u8]) -> Vec<Field> {
     let text = String::from_utf8_lossy(svg);
     let mut out: Vec<Field> = Vec::new();
@@ -261,7 +209,6 @@ pub fn card_fields(svg: &[u8]) -> Vec<Field> {
         let mut field = Field {
             key: String::new(),
             label: parts.next().unwrap_or_default().trim().to_string(),
-            // Everything after the second bar, bars included.
             hint: parts.next().unwrap_or_default().trim().to_string(),
             value: String::new(),
             logo: false,
@@ -303,14 +250,10 @@ pub fn card_fields(svg: &[u8]) -> Vec<Field> {
     out
 }
 
-/// §G (`what you type is kept on the end of the path`): the file's path with the form's answers written onto it.
+/// §G: the file's path with the form's answers written onto it.
 ///
-/// This is the half that made `{{name}}` filling reachable at all: the producer reads its arguments off the clip's
-/// source (`cut_cards::split_path`), so an answer that never reaches the path is an answer the render never sees.
-/// A blank or whitespace-only value writes nothing — an unanswered hole keeps its own fallback (§5) rather than
-/// being filled with emptiness — and no answers at all return the path byte-for-byte, which is what a video, a
-/// still or a sound insert needs. Keys already on the path are replaced where they stand, so re-editing a card
-/// does not grow a second `?title=`; new keys join in the order the card declared them.
+/// The producer reads a card's arguments off the path (`cut_cards::split_path`). Blank values write nothing, so a hole keeps its fallback (§5);
+/// no answers returns the path unchanged. Existing keys are replaced in place, new ones follow in declared order.
 pub fn answer_path(path: &str, answers: &[(String, String)]) -> String {
     let mut split = crate::cut_cards::split_path(path);
     for (key, value) in answers {
@@ -330,10 +273,8 @@ pub fn answer_path(path: &str, answers: &[(String, String)]) -> String {
     crate::cut_cards::join_path(&split)
 }
 
-/// The part of a card document its answers actually change: the holes it declares, with each one's value read
-/// from the scope the way [`crate::cut_cards::fill`] will read it (an empty answer falls back, so it counts as
-/// untouched). Deciding "did anything change" here rather than by comparing whole documents keeps the sentence
-/// about the card's holes, not about whitespace between them.
+/// The holes a card declares, valued as [`crate::cut_cards::fill`] will read them (empty falls back, so counts as untouched).
+/// Compares holes, not whole documents, so whitespace does not matter.
 pub fn answered_holes(doc: &str, args: &[(String, String)]) -> Vec<(String, String)> {
     crate::cut_cards::holes(doc)
         .into_iter()
@@ -345,7 +286,7 @@ pub fn answered_holes(doc: &str, args: &[(String, String)]) -> Vec<(String, Stri
         .collect()
 }
 
-/// How the card sits in the cut. Three radios rather than a tick: it is what the card DOES to the footage.
+/// How the card sits in the cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// The footage is cut open for it; the video gets longer and nothing filmed is lost.
@@ -359,9 +300,8 @@ pub enum Mode {
 /// F2.12 S4: the three radios' labels, verbatim (§G).
 pub const BETWEEN_LABEL: &str =
     "Insert BETWEEN the footage \u{2014} the video gets longer by the card, nothing filmed is lost";
-/// F2.12 S4/S5: the first radio's placement when a sound-scoped card is silenced — the same splice, plus the
-/// reason its sound is not there (§G's status clause). One string, not a concatenation: the `\` continuation
-/// swallows the newline and the indent, so this stays one space wide.
+/// F2.12 S4/S5: the first radio when a sound-scoped card is silenced (§G's status clause).
+/// One string: the `\` continuation swallows the newline and indent.
 pub const BETWEEN_SILENT_LABEL: &str =
     "between the footage, which is cut open for it, and silent \u{2014} the \
                                         selection was scoped to the picture alone";
@@ -373,20 +313,15 @@ pub const OVER_LABEL: &str =
 pub const LANE_LABEL: &str =
     "Put it on a LANE of its own \u{2014} a row of the band to cut to, and nothing is cut yet";
 
-/// F2.12 S4 (`LANE, video only`): only a moving picture may have a row of its own. A still on a lane would be
-/// a row that never changes, and an audio file has no picture to cut to — the green could choose it and show
-/// nothing.
+/// F2.12 S4 (`LANE, video only`): a still on a lane never changes and audio has no picture.
 pub fn lane_offered(kind: Kind) -> bool {
     matches!(kind, Kind::Video)
 }
 
-/// F2.12 S4 (`sound tick — shown only when there is a sound to answer for`): whether the form asks the
-/// question at all.
+/// F2.12 S4: whether the form asks the sound question at all.
 ///
-/// A sound insert IS the sound, so asking what it does to the sound answers nothing; a lane cuts nothing, so
-/// there is nothing underneath it yet and the question waits until ＋ Add chooses between the rows. Spliced,
-/// only the file's own sound is in play; over, either the file's or the session's under it opens the question —
-/// a still with no sound laid over silent footage asks nothing, which is what keeps the form short.
+/// A sound insert IS the sound; a lane has nothing underneath until ＋ Add chooses a row. Spliced, only the file's own sound is in play;
+/// over, either the file's or the session's sound opens the question.
 pub fn sound_open(
     kind: Kind,
     mode: Mode,
@@ -408,9 +343,7 @@ pub const SILENT_LABEL: &str = "Play it SILENT \u{2014} the insert's own sound i
 pub const KEEP_LABEL: &str =
     "Keep the sound running under it \u{2014} only the picture is replaced";
 
-/// F2.12 S4: which sentence the one stored flag says. `mute` is one flag because it is one sentence — this
-/// insert brings no sound of its own — and two behaviours, because the mode already says what is underneath it:
-/// spliced and silent plays nothing, over and silent lets the session carry on.
+/// F2.12 S4: which sentence the stored `mute` flag says; the mode says what is underneath.
 pub fn tick_label(splice: bool) -> &'static str {
     if splice {
         SILENT_LABEL
@@ -419,17 +352,12 @@ pub fn tick_label(splice: bool) -> &'static str {
     }
 }
 
-/// F2.12 S4 (`Seconds`): the floor the entry holds to — `P.policy.minSceneSeconds`, read from
-/// [`crate::cut_select`] where §10's row is catalogued. A card under a second is a flash nobody can grab an
-/// edge of, and the same bound ＋ Add keeps a scene to.
+/// F2.12 S4 (`Seconds`): the floor, `P.policy.minSceneSeconds` (see [`crate::cut_select`]); same bound ＋ Add keeps a scene to.
 pub fn seconds_accepts(seconds: f64) -> bool {
     seconds >= MIN_SCENE_SECONDS
 }
 
-/// F2.12 S4: what was typed, or the length already settled on. Unparsable text and a number under the floor
-/// both keep the fallback rather than refusing the press: the entry is where someone types `3` and means three
-/// seconds, and an entry that ate it silently would be worse — hence the floor's own sentence living in the
-/// tooltip, not in an error.
+/// What was typed, or the length already settled on. Unparsable or under-floor text keeps the fallback rather than refusing the press.
 pub fn seconds_or_default(text: &str, fallback: f64) -> f64 {
     match text.trim().parse::<f64>() {
         Ok(seconds) if seconds_accepts(seconds) => seconds,
@@ -439,8 +367,7 @@ pub fn seconds_or_default(text: &str, fallback: f64) -> f64 {
 
 // --- S5: placing it -----------------------------------------------------------------------------------------
 
-/// What a placement did: the segments it wrote (empty for a lane, which cuts nothing), one clause on HOW the
-/// card sits, and the status line the page prints.
+/// What a placement did: segments written (none for a lane), how the card sits, and the status line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Placed {
     pub segs: Vec<Seg>,
@@ -450,20 +377,13 @@ pub struct Placed {
 
 /// F2.12 S5 (`Placed`): put the file in the cut and say so.
 ///
-/// * [`Mode::Between`] — one segment with `s == e` and a `dur`, which is what makes it spliced
-///   ([`Seg::is_insert`]): the cut is opened there, the footage carries on from the very next frame, and the
-///   session's clock is untouched (see [`crate::cut_screen::cut_seconds`], which counts the card for its `dur`
-///   and no footage twice).
-/// * [`Mode::Over`] — the seconds are taken as － Remove would take them and the card laid in their place, so
-///   it carries NO `dur` of its own: an overwriting insert runs for exactly the footage it replaced. One piece
-///   per kept stretch, because footage that was already gone stays gone rather than being covered twice.
-/// * [`Mode::Lane`] — a [`crate::cut::Lane`] and no segment at all: the point of a lane is that ＋ Add chooses
-///   between it and the cameras beside it, and a row that arrived already green would have made that choice.
-/// * A sound goes over the kept footage whatever was asked, one piece per stretch — it is the one insert that
-///   must leave the picture exactly as it found it — and refuses where there is no picture under it.
+/// * [`Mode::Between`] — one segment with `s == e` and a `dur` ([`Seg::is_insert`]); the session's clock is untouched
+///   (see [`crate::cut_screen::cut_seconds`]).
+/// * [`Mode::Over`] — the seconds are taken as － Remove would; the card has NO `dur`, one piece per kept stretch.
+/// * [`Mode::Lane`] — a [`crate::cut::Lane`] and no segment: ＋ Add chooses between it and the cameras.
+/// * A sound goes over kept footage, one piece per stretch, and refuses where there is none.
 ///
-/// `silent` is [`Seg::mute`], read by the mode (see [`tick_label`]); `lane_row` is unused here because a lane's
-/// row comes from the rows already in use, which the caller owns.
+/// `silent` is [`Seg::mute`]; `lane_row` is unused here (the caller owns row numbering).
 pub fn place(
     cut: &mut Cut,
     path: &str,
@@ -473,8 +393,7 @@ pub fn place(
     silent: bool,
 ) -> Result<Placed, String> {
     let was = cut_screen::cut_seconds(cut);
-    // A sound is placed through its own door: it has no picture, so BETWEEN would have nothing to be between
-    // and a lane would be a row that shows nothing.
+    // A sound has no picture: BETWEEN has nothing to split and a lane would show nothing.
     if kind(path) == Kind::Audio {
         return place_sound(cut, path, at, length, was);
     }
@@ -523,8 +442,7 @@ pub fn place(
             ..Default::default()
         }
     };
-    // One string, not a concatenation: `\` inside a literal swallows the newline and the indent with it, and a
-    // status line with the words welded together reads wrong on the page.
+    // One string: `\` in a literal swallows the newline and indent.
     let how = match mode {
         Mode::Between if silent => BETWEEN_SILENT_LABEL,
         Mode::Between => "between the footage, which is cut open for it",
@@ -547,9 +465,8 @@ pub fn place(
     })
 }
 
-/// F2.12 S5 (`sound → over kept footage`): the sound laid over the picture, one piece per kept stretch, each
-/// carrying its own part of the file so pieces either side of a hole are parts of one sound and not its opening
-/// seconds twice. Zero stretches means no picture under it, which is what the refusal says.
+/// F2.12 S5: a sound laid over the kept footage, one piece per stretch, each with its own part of the file.
+/// Zero stretches means no picture under it (the refusal).
 fn place_sound(
     cut: &mut Cut,
     path: &str,
@@ -620,9 +537,7 @@ fn place_sound(
     })
 }
 
-/// F2.12 S5 (`overwriting → replaces those seconds`): the card put over the footage, which gives up the seconds
-/// under it exactly as － Remove would. Footage the span never reached stays in the list untouched, and a hole
-/// already in the cut stays a hole — one piece per kept stretch, so the card is never drawn over nothing.
+/// F2.12 S5: the card put over the footage, which gives up those seconds as － Remove would; one piece per kept stretch.
 /// Returns the pieces written, one per stretch that had footage under it.
 fn lay_over_footage(cut: &mut Cut, card: &Seg) -> Vec<Seg> {
     let (from, to) = (card.s, card.e);
@@ -663,13 +578,10 @@ fn lay_over_footage(cut: &mut Cut, card: &Seg) -> Vec<Seg> {
     pieces
 }
 
-/// F2.12 S5 (`Status "<file> inserted at m:ss for X s, <how> — the cut is now a (was b) — ↶ Undo takes it
-/// back"`): the whole sentence, in §G's order.
+/// F2.12 S5: the status sentence in §G's order.
 ///
-/// The length of the finished video is said here because this is the one edit whose effect on it cannot be read
-/// off the timeline: the timeline is the session's clock and stays as long as the recording, while a card
-/// spliced into it makes the VIDEO longer by its own seconds. One decimal, which is how §G spells `X s` — this
-/// does NOT go through [`tools::tenths`], whose `… s` would put the unit twice.
+/// The finished length is stated because a spliced card makes the VIDEO longer while the timeline stays the session's clock.
+/// One decimal, as §G spells `X s`; not [`tools::tenths`], whose `… s` would put the unit twice.
 pub fn status_line(path: &str, at: f64, length: f64, how: &str, now: f64, was: f64) -> String {
     format!(
         "{} inserted at {} for {:.1} s, {how} \u{2014} the cut is now {} (was {}) \u{2014} \u{21b6} Undo takes it back",
@@ -681,8 +593,7 @@ pub fn status_line(path: &str, at: f64, length: f64, how: &str, now: f64, was: f
     )
 }
 
-/// The file's name off a path that may carry a card's parameters: the status names the card someone chose, and
-/// `?S=Dust II` is what makes it a different board, not part of its name.
+/// The file's name off a path that may carry card parameters (`?S=Dust II` is not part of the name).
 pub fn base_name(path: &str) -> String {
     let file = path.split('?').next().unwrap_or_default();
     match file.rfind(['/', '\\']) {
@@ -693,17 +604,13 @@ pub fn base_name(path: &str) -> String {
 
 // --- S6: holding a card makes Insert into Edit ----------------------------------------------------------------
 
-/// F2.12 S6 (`Right-click or double left click a card on the track to hold it; Insert becomes Edit`): whether
-/// the button opens the held card instead of choosing a new file. Holding one is a statement about what someone
-/// is working on, and "insert another card at the playhead" is not what anyone means while holding one.
+/// F2.12 S6: whether the button opens the held card instead of choosing a new file.
 pub fn hold(seg: Option<&Seg>) -> bool {
     seg.is_some_and(Seg::is_insert)
 }
 
-/// F2.12 S6 (`re-opens the form ("that card is no longer in the cut" if gone)`): find the card again by what it
-/// IS rather than by where it was — its file, parameters included, and the second it starts at. The dialog does
-/// not hold the timeline still: a trim, a merge or another insert renumbers the list under it, so an index kept
-/// across the window would open the wrong card.
+/// F2.12 S6: find the held card again by file (parameters included) and start second, not by index:
+/// a trim, merge or insert renumbers the list while the dialog is open.
 pub fn find_card(cut: &Cut, path: &str, at: f64) -> Option<usize> {
     cut.segs
         .iter()
@@ -722,10 +629,8 @@ pub fn edit_verb(held: bool) -> &'static str {
     }
 }
 
-/// F2.12 S6 (`switching modes returns or takes footage`): what the change does to the seconds under the card.
-/// `Some(true)` takes them (BETWEEN → OVER, which costs the footage as － Remove would), `Some(false)` returns
-/// them (OVER → BETWEEN, which gives them back and lengthens the video by the card), and `None` means the card
-/// was already in that mode — or only its lane moved, which touches no footage at all.
+/// F2.12 S6: what a mode switch does to the seconds under the card. `Some(true)` takes them (BETWEEN → OVER),
+/// `Some(false)` returns them (OVER → BETWEEN), `None` means no footage changes.
 pub fn switching_takes_footage(from: Mode, to: Mode) -> Option<bool> {
     match (from, to) {
         (Mode::Between, Mode::Over) => Some(true),
@@ -739,9 +644,7 @@ pub fn switching_takes_footage(from: Mode, to: Mode) -> Option<bool> {
 /// F2.12 S7 (`cards render at 8 fps`): frames a second for anything that moves — §I's `insPreviewFPS`.
 pub const PREVIEW_FPS: f64 = 8.0;
 
-/// F2.12 S7 (`one frame for stills`): the rate to ask ffmpeg for, or `None` for one frame. A picture that never
-/// changes needs one texture and not sixty-four of the same one, and an SVG with a CSS animation but no
-/// `@keyframes` in the file is drawn as a still — so it is a still here too, whatever its extension says.
+/// F2.12 S7: the fps to ask ffmpeg for, or `None` for one frame (stills, and SVGs with CSS animation but no `@keyframes`).
 pub fn preview_fps(kind: Kind, animated: bool) -> Option<f64> {
     match kind {
         Kind::Video => Some(PREVIEW_FPS),
@@ -750,8 +653,7 @@ pub fn preview_fps(kind: Kind, animated: bool) -> Option<f64> {
     }
 }
 
-/// F2.12 S7: the seconds each rendered frame stands at, first frame included — a card that runs 2 s at 8 fps is
-/// sixteen frames and not fifteen, because the last one is what plays in its final tenth of a second.
+/// F2.12 S7: the seconds each rendered frame stands at, first included (2 s at 8 fps is sixteen frames).
 pub fn frame_times(length: f64, fps: f64) -> Vec<f64> {
     if length <= 0.0 || fps <= 0.0 {
         return Vec::new();
@@ -760,26 +662,19 @@ pub fn frame_times(length: f64, fps: f64) -> Vec<f64> {
     (0..count).map(|n| n as f64 / fps).collect()
 }
 
-/// F2.12 S7 (`nearest rendered frame shown`): which texture to put on screen for the playhead at `t`. Nothing
-/// is decoded on the fly — a card whose frames have not arrived shows the nearest one that has, and an empty
-/// list shows nothing rather than guessing.
+/// F2.12 S7: the rendered frame nearest the playhead `t`; an empty list shows nothing.
 pub fn nearest_rendered(times: &[f64], t: f64) -> Option<f64> {
-    // `total_cmp` on a difference compares magnitudes only when the difference does not cross zero, and a
-    // frame before the playhead produces exactly that: 0.0 - 0.34 would have ranked first for being negative.
+    // Rank by absolute difference: a signed 0.0 - 0.34 would rank first for being negative.
     times
         .iter()
         .copied()
         .min_by(|a, b| (a - t).abs().total_cmp(&(b - t).abs()))
 }
 
-/// F2.12 S7 (`48-texture cap`, §I's `insFilmMax`): frames held in memory for one card. A minute of a sting at
-/// 8 fps is four hundred and eighty textures nobody will look at, so the strip stops filling there and the
-/// nearest rendered frame rule above covers what falls outside it.
+/// F2.12 S7 (`48-texture cap`, §I's `insFilmMax`): frames held in memory for one card; the nearest-frame rule covers the rest.
 pub const TEXTURE_CAP: usize = 48;
 
-/// F2.12 S7 (`rendered via ffmpeg at ≤960 px`, §I's `insPreviewW`): the width a preview is decoded at. The
-/// preview is a film strip in a column, never the exported picture, so nothing wider than that is ever drawn
-/// and nothing narrower is widened.
+/// F2.12 S7 (§I's `insPreviewW`): the width a preview is decoded at; never widened.
 pub fn preview_width(width: u32) -> u32 {
     width.min(PREVIEW_WIDTH)
 }
@@ -787,18 +682,10 @@ pub fn preview_width(width: u32) -> u32 {
 /// F2.12 S7: the cap [`preview_width`] holds previews to.
 pub const PREVIEW_WIDTH: u32 = 960;
 
-/// F2.12 S7: how ffmpeg is asked for a card's frames — an argument vector, no subprocess, so the shape of the
-/// call is testable and the running of it stays with [`crate::subprocess`]. `-an` because a preview strip has
-/// no business decoding sound it will not play: a card's own audio is its own pipeline (see [`held_status`]).
-/// How ffmpeg is asked for a card's frames — an argument vector, no subprocess, so the shape of the
-/// call is testable and the running of it stays with [`crate::subprocess`] (see
-/// [`crate::ui::cut_card_preview::render_card`], which runs it). `-an` because a preview strip has no business
-/// decoding sound it will not play: a card's own audio is its own pipeline (see [`held_status`]).
+/// F2.12 S7: the ffmpeg argv for a card's frames, run by [`crate::ui::cut_card_preview::render_card`]. `-an`: no sound is played.
 ///
-/// The scale is written as `if(gte(iw\,960)\,960\,iw):-2`: ffmpeg's `scale` needs a literal `-2` to keep the
-/// aspect, and inside a filter graph a bare comma both separates filters and separates arguments, so the ones
-/// belonging to `if()` are escaped. A frame at or under the cap passes through at its own width, so a preview
-/// is never widened.
+/// The scale `if(gte(iw\,960)\,960\,iw):-2` needs a literal `-2` to keep the aspect; the commas inside `if()` are escaped
+/// because a bare comma separates filters. A frame under the cap keeps its width.
 pub fn ffmpeg_frames_argv(
     ffmpeg: &str,
     path: &str,
@@ -827,8 +714,7 @@ pub fn ffmpeg_frames_argv(
         args.push("-frames:v".into());
         args.push("1".into());
     }
-    // The output name has to end in something ffmpeg recognises or it cannot choose an muxer, so the sequence
-    // is written as an explicit image2/png pair rather than left to the extension.
+    // Explicit image2/png: ffmpeg needs a recognisable output name to pick a muxer.
     args.push("-f".into());
     args.push("image2".into());
     args.push("-c:v".into());
@@ -837,16 +723,12 @@ pub fn ffmpeg_frames_argv(
     args
 }
 
-/// The same argv, fps stated as a rate (the moving case). Kept as its own door because §I's `insPreviewFPS`
-/// tests read it by name.
+/// The same argv with fps as a rate (§I's `insPreviewFPS` tests read it by name).
 pub fn ffmpeg_frames(ffmpeg: &str, path: &str, fps: f64, width: u32, out: &str) -> Vec<String> {
     ffmpeg_frames_argv(ffmpeg, path, Some(fps), width, out)
 }
 
-/// F2.12 S7 (`a spliced card holds the footage while it plays on the wall clock`): what the page says while the
-/// picture stands still. A spliced card costs no session time, so the playhead cannot carry it — the card runs
-/// on the clock and the footage waits under it, which is worth saying because everywhere else on this page the
-/// picture moves when the clock does.
+/// F2.12 S7: the page status while a spliced card holds the footage; it costs no session time, so the clock runs under a still picture.
 pub fn held_status(card: &str) -> String {
     format!(
         "{} \u{2014} the footage is held while it plays",
@@ -856,14 +738,10 @@ pub fn held_status(card: &str) -> String {
 
 // --- the form's opening plan -------------------------------------------------------------------------------
 
-/// What the insert form shows when a file comes back from the chooser (or when a held card is re-opened):
-/// the length the `Seconds` entry starts with, which radio is lit, and which of the two conditional controls
-/// are drawn at all.
+/// What the insert form shows for a file: the starting length, the lit radio, and which conditional controls are drawn.
 ///
-/// This is the whole S3+S4 decision for one file, kept out of the widget layer so the page only draws what it
-/// reads. The spec is silent on how the mode is picked when a *held* card is edited rather than a new file
-/// chosen; the answer taken here is that the card's own shape says — `s == e` means it was spliced, a span
-/// means it was laid over, a lane card is not a segment at all and never reaches this door.
+/// The S3+S4 decision for one file, kept out of the widget layer. For a *held* card its shape picks the mode: `s == e` was spliced,
+/// a span was laid over; a lane card is not a segment and never reaches here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormPlan {
     /// What the file IS, off its extension ([`kind`]).
@@ -875,8 +753,7 @@ pub struct FormPlan {
     pub mode: Mode,
     /// Whether the LANE radio is drawn at all — video only (S4, [`lane_offered`]).
     pub lane_shown: bool,
-    /// Whether the sound tick is drawn (S4, [`sound_open`]). A still with no sound over silent footage asks
-    /// nothing, which is what keeps the form short.
+    /// Whether the sound tick is drawn (S4, [`sound_open`]).
     pub sound_shown: bool,
     /// The tick's sentence for the lit mode ([`tick_label`]).
     pub sound_label: &'static str,
@@ -887,10 +764,8 @@ pub struct FormPlan {
     pub values: Vec<(String, String)>,
 }
 
-/// F2.12 S3 + S4: the plan the form is built from. `file_seconds` is what a probe found for a video or audio
-/// file, or what the card's own animation runs for; `None` (a still, a probe-less headless run) falls back to
-/// [`default_length`]'s [`DEFAULT_SECONDS`]. `silent` is what the tick is set to, which decides the sentence
-/// along with the mode.
+/// F2.12 S3 + S4: the plan the form is built from. `file_seconds` is `None` for a still or a probe-less run
+/// (falls back to [`DEFAULT_SECONDS`]); `silent` is the tick's state.
 pub fn form_plan(
     path: &str,
     selection: Option<&Selection>,
@@ -918,10 +793,7 @@ pub fn form_plan(
 
 // --- the answer the form gives back ------------------------------------------------------------------------
 
-/// What was typed into the open form, ready to hand to [`place`]. One struct so the widget layer collects
-/// answers instead of deciding anything: the mode comes off the radios, the seconds through
-/// [`seconds_or_default`] (an unparsable or too-short entry keeps the length the plan opened with rather than
-/// refusing the press), and `silent` off the sound tick.
+/// What was typed into the open form, ready for [`place`]; an unparsable or too-short entry keeps the plan's length.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormAnswer {
     pub mode: Mode,
@@ -941,9 +813,7 @@ impl FormAnswer {
     }
 }
 
-/// F2.12 S7: whether the playhead has moved. Held by a spliced card, the footage does not advance however much
-/// time passes; released, seconds are seconds. `rate` is the player's own rate (F2.1), so a card played at half
-/// speed still holds the footage for twice as long on the wall clock.
+/// F2.12 S7: whether the playhead has moved. A held (spliced) card holds the footage; `rate` is the player's (F2.1).
 pub fn playhead_advance(held: bool, elapsed: f64, rate: f64) -> f64 {
     if held {
         0.0
@@ -952,11 +822,8 @@ pub fn playhead_advance(held: bool, elapsed: f64, rate: f64) -> f64 {
     }
 }
 
-/// F2.12 S4's Logo… picker: the picked image files added to a field's comma-separated items, each as a bare path
-/// (an item that is only its logo; "Name|path" is typed by hand for both). A file inside the project is written
-/// relative to it, without a `project:` prefix, because the card being drawn reads it, looking beside itself and
-/// then in the project folder; one outside is absolute, since a card is baked somewhere else entirely. What was
-/// typed before stays, in its order (the prototype's `pickLogos`).
+/// F2.12 S4's Logo… picker: picked images added to a field's comma-separated items as bare paths.
+/// A file inside the project is written relative to it (no `project:` prefix), one outside absolute; earlier text stays.
 pub fn add_logos(existing: &str, picked: &[std::path::PathBuf], project: &Path) -> String {
     let mut items: Vec<String> = existing
         .split(',')

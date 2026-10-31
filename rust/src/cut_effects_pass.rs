@@ -1,19 +1,4 @@
 //! F3.11 Decorations proposed by the model (after the cut) — `spec/06-effects.md` F3.11, steps S1–S5.
-//!
-//! One call over every kept clip asks for zooms, one stop and some volume, told what the captions and the speeds
-//! already did to each clip; the answer comes back as `add_effect(clip, kind, start, end, gain?)` calls closed by
-//! `finish`. This module owns what happens around those calls: what the request says (S1), that a clip outside the list
-//! throws the whole reply away while an unknown kind or an empty span is skipped without ceremony (S2, S3), the app's
-//! own defaults for a decoration nobody sized by hand (S4), and the lines the log gets when the pass succeeds or gives
-//! up (S5).
-//!
-//! The three passes of §F3 are deliberately shaped alike — [`crate::cut_captions`] places captions, [`crate::cut_speed_pass`]
-//! rates, this one decorations — so a caller drives them with the same `Call` / `Answer` / `Reply` reading and the same
-//! one-retry budget. What differs is where a bad call lands: F3.9's out-of-batch clip loses the reply, F3.10's fast rate
-//! over captions refuses one call, and here BOTH happen, because a clip number the model invented says the answer is not
-//! about this cut while a `blur` in place of a `zoom` only says that one line is unusable.
-//! `rust/src/ui/window.rs` renders only Prepare today, so nothing here draws; a proposed decoration appears on the lane
-//! as an ordinary zoom / stop / volume effect, each with its own screen (§F3.1, §F3.3, §F3.6).
 
 use crate::cut::Fx;
 use crate::cut_captions;
@@ -21,23 +6,13 @@ use crate::cut_speed_pass;
 use crate::fx_zoom;
 use crate::tools::clips::Clips;
 
-// --- S1: the one call over every clip ----------------------------------------------------------------------------------
-
 /// F3.11 S1 (`one call over every clip · told the captions and speeds`): the whole request. Each clip's line carries
 /// what has already been decided about it — a caption means it runs at 1, a rate means the picture is already moving —
 /// because both change what a decoration should be ("never zoom past captions").
-///
-/// The caption note is spelled exactly as [`crate::cut_speed_pass::brief`] spells it and the rate note exactly as the
-/// prototype's does. Two small format sites rather than one shared helper: each section of the spec quotes its own
-/// brief wording, so a helper would have to be parameterised by which section is asking — more machinery than text.
 pub fn brief(clips: &Clips, speeds: &[(u32, f64)]) -> String {
     brief_over(clips, speeds, &[], &[])
 }
 
-/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`):
-/// the same brief with the session's camera rows and heard lanes in front of it, which is
-/// what a caller holding a real cut passes. One row and one lane adds nothing (§9's model
-/// passes know nothing of cameras until there is more than one to tell apart).
 pub fn brief_over(
     clips: &Clips,
     speeds: &[(u32, f64)],
@@ -80,12 +55,6 @@ fn trim_number(value: f64) -> String {
     text
 }
 
-// --- S2/S3: the call and its outcomes -----------------------------------------------------------------------------------
-
-/// F3.11 S2 (`tools: add_effect(clip, kind zoom|stop|volume, start, end, gain?)`): one proposed decoration — a clip
-/// number, one of three kinds, two offsets inside that clip, and volume's gain when it has one. `gain` stays an
-/// `Option`: an omitted field and a 1 are the same ask ("nothing"), which S3 ignores, while an explicit 0 is silence
-/// and is kept.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Call {
     pub clip: u32,
@@ -124,16 +93,6 @@ impl Reply {
 }
 
 /// F3.11 S2–S5: the reply turned into effects.
-///
-/// Membership first and over the whole answer — [`cut_captions::clip_outside`] words it exactly as §F3.11 does, `clip N
-/// is not one of the clips given (1 to M)`, and it is the same sentence F3.9 and F3.10 produce from the same function:
-/// three passes, one formatter, so the number the model has to correct cannot be spelled three ways. A hit means nothing
-/// else in the reply is placed and no tool call is made.
-///
-/// Everything after that is per call. A volume with no gain or a gain of 1 is [`Answer::Ignored`] before the tool is
-/// reached: §F3.11 says "gain of 1 or none ignored", and [`Clips::add_effect`] answers that case with an error sentence,
-/// which would read to the model as a fault it has to fix when nothing is wrong. Any other error out of the tool —
-/// `blur`, or a span that clamps to nothing — is §F3.11's "skipped": [`Answer::Refused`], no effect, reply still usable.
 pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
     let count = clips.clips().len() as u32;
     for call in calls {
@@ -203,18 +162,10 @@ fn span_of(body: &serde_json::Value) -> Option<(f64, f64)> {
     Some((span.first()?.as_f64()?, span.get(1)?.as_f64()?))
 }
 
-// --- S4: the app's defaults ----------------------------------------------------------------------------------------------
-
 /// F3.11 S4 (`zoom centred at 60 % height`): how tall a proposed zoom's region is, as a share of the frame.
-/// `// effects.proposedZoomHeight` — §10 gives this no `P.` row, so it takes the bare prefix of the rule that reads it,
-/// as F3.10's two rows do. Sixty per cent is the punch-in that keeps a speaker in shot; the tool's own default box is
-/// half the frame and belongs to §3.7's report, not to what this app writes into `cut.json`.
 pub const ZOOM_HEIGHT: f64 = 0.6;
 
 /// F3.11 S4 (`stop 2 s, fades min(0.3, d/4)`): the cap on a proposed stop's fade at each edge.
-/// `// effects.proposedStopFadeSeconds`. This is **not** P.policy.effectDefaultFades' "stop 0.5" — that is §F3.3's value
-/// for a stop someone placed by hand from ⏩ Speed, and this flow's own text says 0.3. A frame held for two seconds wants
-/// the softer edge; the difference is the spec's, not a drift.
 pub const STOP_FADE_CAP_SECONDS: f64 = 0.3;
 
 /// F3.11 S4 (`glides min(1, d/3)`): the glide a proposed zoom gets — [`fx_zoom::GLIDE_SECONDS`], P.policy.effectDefaultFades'
@@ -236,19 +187,6 @@ pub fn ramp(dur: f64) -> f64 {
     cut_speed_pass::PROPOSED_RAMP_SECONDS.min(dur / 4.0)
 }
 
-/// F3.11 S4 (`the app's defaults`): the record a placed decoration becomes, given the span §3.7 reported and the clip's
-/// session second. The tool says WHERE an effect landed; what it fades like, how tall its region is, and whether it is a
-/// stop or a speed are this app's rules — which is why none of the three uses the `fade` the tool reports (that one is
-/// §3.7's own `min(0.15, d/2)`, a report about the tool's answer, not what goes in `cut.json`).
-///
-/// The three kinds and their records:
-/// - `zoom` → centred (`cx`/`cy` 0.5) at [`ZOOM_HEIGHT`] with S4's glide.
-/// - `stop` → a **speed whose rate is 0** (`fx_record::is_stop` says so), because §06#1's table has no stop kind: the picture
-///   stands still while its footage runs on under it. Its own default length, 2 s — [`cut_speed::STOP_SECONDS`],
-///   P.policy.effectDefaultSeconds ("stop/speed/volume/label 2") — is what a stop is asked for when nothing says
-///   otherwise; this pass cannot apply it to a span, because the flowchart skips an empty one instead of padding it —
-///   which is why the prototype's `if d <= 0 { d = 2 }` was unreachable behind its own parse.
-/// - `volume` → the gain as sent, kept even at 0: silence is a decision someone can mean (`fx_record::gain_is_silence`).
 pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx {
     let dur = span.1 - span.0;
     let t = at + span.0;
@@ -305,26 +243,10 @@ pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx 
     }
 }
 
-// --- S5: what the log says ------------------------------------------------------------------------------------------------
-
-// --- the cap on what one reply may propose -------------------------------------------------------
-
 /// P.machine.maxProposedEffects — the ceiling on how many effects one cut reply may propose.
-/// `cut_effects_pass::MAX_PROPOSED_EFFECTS`, the prototype's `fxMaxProposed`.
-///
-/// A thousand is deliberately not a shape: §10 says so itself ("effectively none: the prompt decides"),
-/// and §F3.11 keeps the real limit as the prompt's own wording, "few and deliberate: three or four
-/// across five minutes". So this number never curates an edit — it bounds a runaway reply, the answer
-/// that streams ten thousand zooms because the model lost the thread. That is also why it lives here
-/// rather than in the policy home: nobody tunes it per project.
 pub const MAX_PROPOSED_EFFECTS: usize = 1000;
 
 /// How much one kind of effect counts against [`MAX_PROPOSED_EFFECTS`].
-///
-/// Zero for a speed, one for everything else. The exemption is [`cut_suggest::exempt_from_decorations_cap`]
-/// and its reason is 05-cut#8: a rate the cut asked for decides *how long the segment runs*, so letting
-/// the caption count decide whether the cap is blown would let the decoration pass hold the cut's shape
-/// to ransom. Every other kind adds something on top and is charged one.
 pub fn counts_against_effect_cap(kind: crate::cut::EffectKind) -> usize {
     if crate::cut_suggest::exempt_from_decorations_cap(kind) {
         0
@@ -334,10 +256,6 @@ pub fn counts_against_effect_cap(kind: crate::cut::EffectKind) -> usize {
 }
 
 /// What a proposed list counts against the cap.
-///
-/// An effect whose `kind` string this build does not recognise is charged one rather than waved through:
-/// a cap that cannot see a kind is no cap at all, and charging the unknown is the conservative side of
-/// the mistake — it trims a decoration nobody can name instead of silently lifting the bound.
 pub fn proposed_effect_count(fx: &[crate::cut::Fx]) -> usize {
     fx.iter()
         .map(|effect| match effect.effect_kind() {
@@ -348,9 +266,6 @@ pub fn proposed_effect_count(fx: &[crate::cut::Fx]) -> usize {
 }
 
 /// Whether a counted reply fits under the cap.
-///
-/// Inclusive: a reply of exactly the cap is a reply the cap permits, which is the reading §10's word
-/// "cap" carries and the boundary a retune must not shift by accident.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CapVerdict {
     pub allowed: bool,
@@ -377,18 +292,10 @@ pub fn effect_cap_allows_reply(fx: &[crate::cut::Fx]) -> CapVerdict {
 }
 
 /// Whether a counted reply fits under the cap.
-///
-/// Inclusive: a reply of exactly the cap is a reply the cap permits, which is the reading §10's word
-/// "cap" carries and the boundary a retune must not shift by accident. The pass asks it through
-/// [`check_reply_for_test`], which is where a refusal gets its sentence.
 pub fn effect_cap_allows(count: usize) -> bool {
     count <= MAX_PROPOSED_EFFECTS
 }
 
-/// F3.11 S5 (`"!!! effects: no usable answer -- the cut stands without them"`): the pass gave up after its one retry and
-/// the cut keeps no decorations. ASCII `--` this time, verified against `spec/06-effects.md`'s bytes — as in F3.9's
-/// captions line and unlike F3.10's two, which use an em dash; each flow quotes its own punctuation and this file does
-/// not quietly unify them. The second half is the promise: a plain cut, and a whole one.
 pub fn no_answer() -> String {
     "!!! effects: no usable answer -- the cut stands without them".to_string()
 }
@@ -406,20 +313,6 @@ pub fn rejected(problem: &str) -> String {
     format!(">>> effects rejected: {problem}")
 }
 
-// --- the density the prompt asks for (P.policy.decorationDensity) -------------------------------
-
-/// `P.policy.decorationDensity`, whose §10 default is spelled "three or four per five minutes" and
-/// whose prototype constant is `fxRules` — the whole effects prompt. The rule rides in that wording, so
-/// this is the clause as the shipped prompt states it (`spec/prompts/effects.md`: "Few and deliberate:
-/// three or four across five minutes of finished video"), copied here so a test can pin the two
-/// against each other and neither can drift.
-///
-/// Deliberately NOT a number the app tunes: it is catalogued as [`crate::params`]'s
-/// `P.policy.decorationDensity` row because §10 gives that id a row ("three or four per five minutes", home
-/// `fxRules`), and the row points HERE rather than at a tuning constant — nothing multiplies this by anything to
-/// decide what gets placed. What refuses a runaway reply is `P.machine.maxProposedEffects`
-/// ([`MAX_PROPOSED_EFFECTS`]); this only says out loud when a reply is more than the guide expects, and
-/// `spec/12-decisions.md` keeps the home at "density (prompt)".
 pub const DENSITY_GUIDE: &str = "three or four across five minutes of finished video";
 
 /// The same guide as its band: low and high decorations per [`FIVE_MINUTES_SECONDS`] of finished video.
@@ -430,9 +323,6 @@ pub const FIVE_MINUTES_SECONDS: f64 = 300.0;
 
 /// What the guide expects of an edit this long, scaled from [`DENSITY_PER_FIVE_MINUTES`]: 300 s →
 /// `(3, 4)`, 600 s → `(6, 8)`, 60 s → `(1, 1)`, nothing rendered → `(0, 0)`.
-///
-/// The floor never falls below one while there is a picture: the prompt's own sentence ends "Not one on
-/// every clip, and not none", so a short video is still expected to carry a decoration rather than zero.
 pub fn expected_decorations(finished_seconds: f64) -> (u32, u32) {
     if finished_seconds <= 0.0 {
         return (0, 0);
@@ -444,12 +334,6 @@ pub fn expected_decorations(finished_seconds: f64) -> (u32, u32) {
 }
 
 /// Whether this many decorations is past the top of the guide for an edit this long.
-///
-/// Nothing trims on it. The app's bound is [`MAX_PROPOSED_EFFECTS`] (`P.machine.maxProposedEffects`),
-/// which catches a runaway reply; being over the guide only means the number is worth saying out loud.
-/// Silently cutting here would be wrong twice over: the User Context outranks the default ("Asked for
-/// more, write more" — `spec/prompts/effects.md`), and the standing rule is that a proposal gets
-/// reported, not quietly discarded.
 pub fn above_density_guide(count: usize, finished_seconds: f64) -> bool {
     count > expected_decorations(finished_seconds).1 as usize
 }

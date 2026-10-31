@@ -1,19 +1,4 @@
 //! Where each kind of decision lives — directive A, `spec/11-flow-index.md` §5.
-//!
-//! Directive A sorts every decision the app makes into four kinds and gives each one home:
-//!
-//! | kind | where it lives | who owns it here |
-//! |---|---|---|
-//! | what the video becomes | editing policy (§10 §2) | [`crate::params`] rows, [`crate::project::Field`]/[`Origin`] |
-//! | how a job is worded | the prompts | [`crate::prompts`] keys, [`crate::settings`]'s prompt files |
-//! | which servers and binaries | machine settings | [`crate::settings`]'s `llm.conf` keys |
-//! | how the app looks, waits and caches | engineering constants | the module whose rule reads the value |
-//!
-//! This module holds no values of its own — that would break the very rule it describes. It only
-//! routes an id to its kind, so a caller (a doc test, a form, a review script) can ask "whose
-//! decision is this?" without knowing which prefix table answered. The routing delegates to the
-//! owners: [`prompts::is_known`], [`settings::Conf::key_names`],
-//! and [`params::family`], so none of the four homes can be claimed twice.
 
 use crate::{
     params::{self, Family},
@@ -79,10 +64,6 @@ impl Home {
 }
 
 /// Whether this conf or slot key is one of the machine's own settings (§10 §1).
-///
-/// These are `llm.conf` KEYNAMES rather than §10 parameter ids — `LLM_SERVER`, `FFMPEG` — so they
-/// cannot be routed by the `P.*` prefix rule and need their own check. The list is read from the store
-/// itself, so a key added there is a machine setting here too.
 pub fn is_machine_setting(conf_key: &str) -> bool {
     settings::Conf::key_names().contains(&conf_key)
 }
@@ -118,10 +99,6 @@ pub fn home_of(id: &str) -> Option<Home> {
         Family::Policy => return Some(Home::Policy),
         Family::Machine => return Some(Home::Machine),
         Family::Eng => return Some(Home::Engineering),
-        // `Family::Project` and `Family::Other` both fall through to the bare-prefix rule below:
-        // §3's tab controls and §10's unrowed values are both "fixed in code" as far as directive
-        // A's fourth bullet goes — the project stores a *choice* made from a list this build ships,
-        // and the list itself is the constant.
         Family::Project | Family::Other => {}
     }
     // A dot with something on both sides is a prefixed id; the prefix says which module owns it, and

@@ -1,7 +1,7 @@
 //! §07-narrate#1-screen: what the Narrate page shows and what a press would do; no gtk, so greying, tooltips and take
 //! seconds are answerable without a display (spec/00-principles.md §5). §1's numbered widgets are spec/inventory/narrate.md §A.
 //! The record is [`crate::narration`] (`wav_exists` for [`status`] comes from [`crate::narration::tts_file`]); the shell's one-line
-//! summary is [`crate::shell::inputs`] and [`inputs_readout`] is the page's fuller row. Fitting a line to its clip is F4.3's
+//! summary is `crate::shell::inputs` and [`inputs_readout`] is the page's fuller row. Fitting a line to its clip is F4.3's
 //! (the render); [`mirror_fit`] takes the numbers. Every §10 number lives once, in the module whose rule uses it ([`crate::params`] catalogues them).
 
 use crate::cut::Seg;

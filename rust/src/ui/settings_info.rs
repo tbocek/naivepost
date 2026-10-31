@@ -1,27 +1,10 @@
 //! §03-shell.md §5's last sentence: "Each section's ⓘ explains at length what the server is expected
 //! to speak."
-//!
-//! The dialog draws four sections (Writing, Cutting, Audio, Drawing) and each one talks to a different
-//! machine with a different API. §5 says the ⓘ has to say, AT LENGTH, what that machine must answer —
-//! which is the part of spec/02-services.md §1 a person typing an address actually needs: an address
-//! that answers something else looks identical to one that answers nothing.
-//!
-//! **How the explanation reaches the person.** The ⓘ is a button carrying its paragraph as its
-//! tooltip, the same shape the shell's own ⓘ uses (`window.rs`'s `tab-info-button`, whose tooltip
-//! follows `Shell::info_tip()`). A tooltip needs no second window, so the text cannot get lost behind
-//! a popup GTK cannot paint into a snapshot, and it is readable by a pointer and by a test alike. A
-//! click therefore does nothing beyond showing it: no handler is wired, because inventing one would
-//! give the text two places to be shown from.
-//!
-//! Nothing here decides a value: the slots counts live on the spins beside the model boxes
-//! (`settings::SLOT_TIP`), and this file only says what each box's server owes in return.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
 /// The four sections, in dialog order: the widget-name key and the heading §5's inventory prints.
-/// `settings.rs` passes the display text (the two optional servers with " (optional)" appended) and
-/// derives its names from it through [`section_key`], so the list lives once here.
 pub const SECTIONS: [(&str, &str); 4] = [
     ("writing", "Writing"),
     ("cutting", "Cutting"),
@@ -29,8 +12,7 @@ pub const SECTIONS: [(&str, &str); 4] = [
     ("drawing", "Drawing"),
 ];
 
-/// The word §5's picture puts after the ⓘ of the two optional servers. Spelled here rather than read
-/// back out of the heading string, so a section can never gain the suffix without gaining the label.
+/// The word §5's picture puts after the ⓘ of the two optional servers.
 pub const OPTIONAL_WORD: &str = "optional";
 
 /// The heading text §5's inventory prints for the two optional servers, kept so [`section_key`] can
@@ -38,7 +20,7 @@ pub const OPTIONAL_WORD: &str = "optional";
 const OPTIONAL_SUFFIX: &str = " (optional)";
 
 /// The key for a heading as the dialog spells it, which is how `settings.rs` derives the ⓘ name from
-/// the text it was already passing. Unknown headings have no ⓘ, and stay exactly as they were.
+/// the text it was already passing.
 pub fn section_key(heading: &str) -> Option<&'static str> {
     let bare = heading.strip_suffix(OPTIONAL_SUFFIX).unwrap_or(heading);
     SECTIONS
@@ -49,8 +31,7 @@ pub fn section_key(heading: &str) -> Option<&'static str> {
 
 /// The ⓘ control's icon: the app's OWN packed ⓘ, from `icons/` -- the same one §1's header uses
 /// (`window.rs`'s `tab-info-button`, `window_page_box.rs`'s per-page ⓘ), and `icons.rs` lists it among
-/// the names the theme search must find. GTK has no info icon of its own that reads as ⓘ on every
-/// theme, and the circled-letter codepoint (ⓘ) renders as tofu on the fonts this container ships.
+/// the names the theme search must find.
 const INFO_ICON: &str = "help-about-symbolic";
 
 /// Whether §5 marks this section optional — the word sits after the ⓘ in the picture, not inside the
@@ -59,8 +40,7 @@ pub fn is_optional(heading: &str) -> bool {
     heading.ends_with(OPTIONAL_SUFFIX)
 }
 
-/// What this section's server is expected to speak, in the length §5 asks for. `None` for a key this
-/// module does not know, which is what makes an unlisted section impossible to give a wrong ⓘ.
+/// What this section's server is expected to speak, in the length §5 asks for.
 pub fn explanation(section: &str) -> Option<&'static str> {
     Some(match section {
         "writing" => WRITING,
@@ -108,13 +88,9 @@ tenant squatting on 1234 otherwise reads as a server that merely has no capabili
 thumbnail depends on it: down, the render completes and the drawing half fails alone.";
 
 /// §5's ⓘ for one section: the icon, its stable name, and the explanation, which a click opens in a popover
-/// beside it and a hover shows as its tooltip. A tooltip alone answered a click with nothing at all.
-///
-/// Named `settings-info-<key>` so a test and the snapshot find it the way they find every other control
-/// on this dialog. `None` for an unknown key: the caller then draws the heading alone, as it did before.
+/// beside it and a hover shows as its tooltip.
 pub fn info_button(section: &str) -> Option<gtk::MenuButton> {
     let text = explanation(section)?;
-    // The app's own ⓘ icon: see [`INFO_ICON`] about themes and the circled-letter glyph.
     let button = gtk::MenuButton::new();
     button.set_icon_name(INFO_ICON);
     button.set_widget_name(&format!("settings-info-{section}"));

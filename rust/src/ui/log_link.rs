@@ -1,32 +1,19 @@
 //! Which log lines are clickable, and what clicking one opens.
 //!
-//! Two rules meet here. §7 names the per-run model exchange page as the log's link line and spells its
-//! wording; §1 closes its own log bullet with "New: every path the log names is a link to it", which is
-//! the rewrite's rule over the prototype's "only one log line is a link" (the same `Prototype:`/`New:`
-//! pairing the chapter uses elsewhere, where `New:` replaces what came before it). So a line is clickable
-//! when it is §7's page line — tagged whole, exactly as §7's tests pin it — or when it NAMES a path, in
-//! which case the tag covers just that path's span and clicking opens the first path the line names. The
-//! reading rule (what counts as a path, and where a token points) lives in [`super::log_paths`], free of
-//! widgets; this module owns only the marking and the opening, through GTK's launcher with an `xdg-open`
-//! fallback.
-//!
-//! Split out of `window.rs`, which is past its size budget; the shell only calls [`install`] once and
-//! [`paint_line`] per line.
+//! §7 names the per-run model exchange page as the log's link line; §1 adds "every path the log names is a
+//! link to it". A line is clickable when it is §7's page line (tagged whole, as §7's tests pin) or NAMES a
+//! path (tag covers that span; clicking opens the first). What counts as a path lives in [`super::log_paths`];
+//! this module owns the marking and the opening, through GTK's launcher with an `xdg-open` fallback.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::exchanges;
 
-/// The opening leg, injected so a test can watch an activation without launching a browser.
 pub type Opener = std::rc::Rc<dyn Fn(&str) -> Result<(), String>>;
 
-/// The line's own prefix, taken from the door that writes it so the reader and the writer cannot drift:
-/// The line's own prefix, taken from the door that writes it so the reader and the writer cannot drift:
-/// if §7's wording changes, `exchanges::link_line` changes first and this follows it. The page name is
-/// the tail of the line, so the prefix is everything up to the LAST `: ` — not the first, because §7's
-/// own sentence contains a comma but a page name may hold more, and the tail split is the one that
-/// cannot eat part of the wording.
+/// The line's own prefix, taken from the door that writes it (`exchanges::link_line`) so they cannot drift.
+/// The prefix is everything up to the LAST `: `, since a page name may hold more than one.
 pub fn link_prefix() -> String {
     let sample = exchanges::link_line("");
     match sample.rfind(": ") {
@@ -35,8 +22,8 @@ pub fn link_prefix() -> String {
     }
 }
 
-/// The page path a link line names — §7's `llm/<name>.html` and nothing else. Split from [`target_of`]
-/// so the "is this the link line" question can be asked without a session folder to resolve against.
+/// The page path a link line names: §7's `llm/<name>.html` and nothing else. Split from [`target_of`] so
+/// "is this the link line" needs no session folder.
 pub fn page_rel_of(line: &str) -> Option<String> {
     let rel = line.strip_prefix(link_prefix().as_str())?.trim();
     // §7's page lives in `llm/`; anything else the line could name is not this link.
@@ -46,12 +33,9 @@ pub fn page_rel_of(line: &str) -> Option<String> {
     Some(rel.to_string())
 }
 
-/// The page a log line points at, as an absolute `file://` URI under `session_dir`.
-///
-/// Only §7's link line qualifies — §1 forbids a second clickable path, so a line that merely names a
-/// file answers `None`. The relative name is resolved against the session folder **at paint time**, not
-/// when the line was written: Save as (F0.10) moves the folder mid-session, and a link frozen to the old
-/// path would open nothing.
+/// The page a log line points at, as an absolute `file://` URI under `session_dir`. Only §7's link line
+/// qualifies (§1 forbids a second clickable path). Resolved at **paint time**: Save as (F0.10) moves the
+/// folder mid-session and a frozen path would open nothing.
 pub fn target_of(line: &str, session_dir: &std::path::Path) -> Option<String> {
     let rel = page_rel_of(line)?;
     Some(format!("file://{}", session_dir.join(rel).display()))
@@ -60,20 +44,12 @@ pub fn target_of(line: &str, session_dir: &std::path::Path) -> Option<String> {
 /// Draw one log line into `buffer`: its MESSAGE, tagged with its level (§1) and, when the line names
 /// something to open, as a link.
 ///
-/// This is the shell's ONE log painter — every repaint of the log body goes through [`paint_lines`] — so
-/// §1's "each line is the message alone" holds everywhere the log is drawn, not in one caller. The level
-/// and the stripped text come from [`super::log_level`], which answers them with no widget in sight.
+/// The shell's ONE log painter (every repaint goes through [`paint_lines`]). Level and stripped text come
+/// from [`super::log_level`]. The link tag is created here if the buffer never had §7's door installed, so a
+/// line is never painted plain just because nothing connected: the MARK is paint's job, the OPENING needs the door.
 ///
-/// The link tag is created here if this buffer has never had §7's door installed, so a line can never be
-/// painted plain merely because nothing connected to the view: the MARK is paint's job, and only the
-/// OPENING needs the door. Applied to the whole line because §7 links the line, not a word in it.
-///
-/// §7's page line is tagged WHOLE, as its own tests (`sec_03_shell_7_…_s7/s8`, which read back exactly one
-/// tagged line for a run's three) pin it: its path is the tail of the line, so tagging the token span and
-/// tagging the line would differ by the words "this run's exchanges, images included:" — and §7 links the
-/// LINE, not a word in it. Every other line that names a path is tagged over the path's own span, which is
-/// what §1's "every path the log names is a link to it" asks for while leaving the rest of the sentence as
-/// plain text.
+/// §7's page line is tagged WHOLE (its tests read back exactly one tagged line per run); every other line
+/// that names a path is tagged over the path's own span (§1).
 pub fn paint_line(buffer: &gtk::TextBuffer, line: &str, session_dir: &std::path::Path) {
     let end_before = buffer.end_iter().offset();
     super::log_level::paint(buffer, line);
@@ -83,8 +59,7 @@ pub fn paint_line(buffer: &gtk::TextBuffer, line: &str, session_dir: &std::path:
     let drawn = super::log_level::body_of(line);
     if target_of(line, session_dir).is_some() {
         let start = buffer.iter_at_offset(end_before);
-        // The link covers the line as drawn, i.e. the message without its `>>> ` marker: §7 links the
-        // line, and §1 draws the line without the marker, so the two rules meet on the message.
+        // The link covers the line as drawn (message without its `>>> ` marker): §7 and §1 meet on the message.
         let end = buffer
             .iter_at_line(start.line() + 1)
             .unwrap_or_else(|| buffer.end_iter());
@@ -98,7 +73,7 @@ pub fn paint_line(buffer: &gtk::TextBuffer, line: &str, session_dir: &std::path:
     }
 }
 
-/// The text of one line of `buffer`, as drawn (so: the message, without any level marker).
+/// The text of one line of `buffer`, as drawn (the message, without any level marker).
 pub fn line_text(buffer: &gtk::TextBuffer, line: i32) -> Option<String> {
     let start = buffer.iter_at_line(line)?;
     let end = buffer
@@ -107,13 +82,9 @@ pub fn line_text(buffer: &gtk::TextBuffer, line: i32) -> Option<String> {
     Some(buffer.slice(&start, &end, false).trim_end().to_string())
 }
 
-/// The buffer's whole body as drawn, one entry per line — §1's message-alone text. FOR THE TEST BINARIES
-/// ONLY: the program never asks what the view drew, it asks `window_logs()` for the lines it logged (in
-/// §7's marked wording, which is what the sinks and the exchange recorder keep). A test that must show §1's
-/// "each line is the message alone" has to read the drawing rather than the sink, and this is that read.
-///
-/// The trailing empty line a text buffer always carries after its last newline is dropped: it is GTK's
-/// insertion point, not a logged message.
+/// The buffer's whole body as drawn, one entry per line (§1's message-alone text). FOR THE TEST BINARIES
+/// ONLY: the program asks `window_logs()` for the lines it logged. The trailing empty line a text buffer
+/// carries after its last newline is dropped.
 pub fn painted_lines_for_test(buffer: &gtk::TextBuffer) -> Vec<String> {
     let mut lines: Vec<String> = (0..buffer.line_count())
         .filter_map(|line| line_text(buffer, line))
@@ -124,9 +95,8 @@ pub fn painted_lines_for_test(buffer: &gtk::TextBuffer) -> Vec<String> {
     lines
 }
 
-/// Draw a whole log body, one [`paint_line`] per line. The session folder is read once here, at PAINT
-/// time, because Save as (F0.10) can move it mid-session; [`activate_line`] reads it again when the line
-/// is clicked, so neither moment freezes the other's answer.
+/// Draw a whole log body, one [`paint_line`] per line. The session folder is read once, at PAINT time (Save
+/// as can move it); [`activate_line`] reads it again on click.
 pub fn paint_lines(buffer: &gtk::TextBuffer, lines: &[String]) {
     let session = session_now();
     for line in lines {
@@ -134,17 +104,13 @@ pub fn paint_lines(buffer: &gtk::TextBuffer, lines: &[String]) {
     }
 }
 
-/// The buffer tag marking the link line. Named so [`paint_line`] can apply it by name after every
-/// repaint, since `paint_progress` rewrites the body whole.
+/// The buffer tag marking the link line, applied by name after every repaint (`paint_progress` rewrites the body).
 const LINK_TAG: &str = "exchange-link";
 
-/// How the link line is drawn: GTK cannot be asked to paint a `links` span on this GTK build (see
-/// [`install_with`]), so the tag carries the link colour itself — the shell's log has no other link.
+/// GTK cannot paint a `links` span on this build (see [`install_with`]), so the tag carries the link colour itself.
 const LINK_COLOUR: &str = "#1c71d8";
 
-/// The folder a log line's page sits under, read at PAINT time and again at ACTIVATION time (never
-/// stored): Save as (F0.10) moves the session mid-session, and either moment freezing the answer would
-/// leave the link pointing at a folder that no longer exists.
+/// The folder a log line's page sits under, read at PAINT and at ACTIVATION time, never stored (Save as moves it).
 fn session_now() -> std::path::PathBuf {
     crate::startup::open_dir()
 }
@@ -154,18 +120,14 @@ pub fn install(view: &gtk::TextView) {
     install_with(view, std::rc::Rc::new(open));
 }
 
-/// [`install`] with the opening leg supplied — the seam the program itself uses, so a test can watch an
-/// activation without launching a browser (`narrate_tts::speak_line` passes its network legs the same
-/// way). `install` is this with the real launcher.
+/// [`install`] with the opening leg supplied, so a test can watch an activation without launching a browser.
 ///
-/// gtk4-rs 0.11 exposes no reachable link-activation door on `GtkTextView` — no `activate-link`
-/// signal and no class slot for one (checked against the installed GTK 4.22 through gtk4-sys) — so the
-/// app draws the link itself, as the tag's own `foreground`, and opens it from the keyboard door below.
-/// Both that door and a test route through [`activate_line`], which is where the rule lives.
+/// gtk4-rs 0.11 exposes no reachable link-activation door on `GtkTextView` (no `activate-link` signal; checked
+/// against GTK 4.22 through gtk4-sys), so the app draws the link as the tag's own `foreground` and opens it
+/// from the keyboard door below. That door and a test both route through [`activate_line`].
 pub fn install_with(view: &gtk::TextView, open: Opener) {
     let buffer = view.buffer();
-    // The tag `paint_line` marks the link line with — made there too, so a mark never depends on this
-    // having run; what only `install` can give the view is the door that OPENS the line.
+    // `paint_line` makes the tag too, so a mark never depends on this having run; only `install` gives the OPENING door.
     if buffer.tag_table().lookup(LINK_TAG).is_none() {
         buffer.create_tag(Some(LINK_TAG), &[("foreground", &LINK_COLOUR)]);
     }
@@ -180,9 +142,7 @@ pub fn install_with(view: &gtk::TextView, open: Opener) {
             return glib::Propagation::Proceed;
         }
         let buffer = key_view.buffer();
-        // The view's OWN insert mark: the caret a click, a tab to the view, or `buffer.place_cursor`
-        // leaves behind. A freshly built unnamed mark reads offset 0 whatever the buffer holds, which would
-        // answer "no link" for every line but the first.
+        // The view's OWN insert mark: a freshly built unnamed mark reads offset 0 and would answer "no link" for every line but the first.
         let Some(caret) = buffer.mark("insert") else {
             return glib::Propagation::Proceed;
         };
@@ -218,8 +178,7 @@ pub fn install_with(view: &gtk::TextView, open: Opener) {
     view.add_controller(click);
 }
 
-/// Where on `view` a click lands on `line` (the middle of its first character), in the view's own
-/// coordinates: what a test needs to drive the click gesture at a real line.
+/// Where on `view` a click lands on `line` (the middle of its first character), for driving the click gesture in a test.
 pub fn line_point_for_test(view: &gtk::TextView, line: i32) -> Option<(f64, f64)> {
     let iter = view.buffer().iter_at_line(line)?;
     let rect = view.iter_location(&iter);
@@ -231,22 +190,14 @@ pub fn line_point_for_test(view: &gtk::TextView, line: i32) -> Option<(f64, f64)
     Some((f64::from(wx), f64::from(wy)))
 }
 
-/// Open a log line, and report what was opened.
+/// Open a log line, and report what was opened. The single door every activation goes through (the Enter
+/// handler and a test). In order:
 ///
-/// The single door every activation goes through — the Enter handler and a test that cannot synthesise a
-/// mouse press. Two rules, in this order:
+/// * §7's page line opens its run's `llm/` page (`target_of` keeps §7's meaning).
+/// * any other line that NAMES a path ([`super::log_paths::paths_of`]) opens the first one it names (§1).
 ///
-/// * §7's page line opens its run's `llm/` page. That branch is unchanged, so `target_of` keeps §7's
-///   meaning ("is this THE page line") and §7's tests stay green for the right reason.
-/// * any other line that NAMES a path ([`super::log_paths::paths_of`]) opens its first named path — §1's
-///   "every path the log names is a link to it". The activation door carries a LINE and no caret column,
-///   so a line naming several paths opens the first one it names; which one that was is on screen, tagged.
-///
-/// A target is derived from the CURRENT session folder on every call and never stored, so Save as (F0.10)
-/// moving the folder mid-session cannot leave a link pointing at a folder that no longer exists.
-///
-/// A failure to open is logged, not returned: §7 says recording never fails the call, and neither may
-/// opening what was recorded. The `Some(uri)` still comes back, because the click WAS the link's.
+/// The target is derived from the CURRENT session folder on every call (Save as moves it). A failure to open
+/// is logged, not returned (§7: recording never fails the call); `Some(uri)` still comes back.
 pub fn activate_line(
     view: &gtk::TextView,
     line: i32,
@@ -262,18 +213,15 @@ pub fn activate_line(
     if !linked {
         return None;
     }
-    // Read the line as DRAWN (no `>>> ` marker, §1) and put the marker back before asking §7's rule:
-    // `target_of` is written against the wording §7 quotes, and the two must not have to agree about
-    // whether the marker is on the line. Re-derived from [`super::log_level`] rather than typed, so the
-    // two rules cannot drift apart: a line is the link line exactly when the marker + the drawn text is.
+    // Read the line as DRAWN (no `>>> ` marker, §1) and put the marker back (re-derived from [`super::log_level`])
+    // before asking §7's rule, which is written against the quoted wording.
     let drawn = line_text(&buffer, line).unwrap_or_default();
     let marked = restore_mark(&drawn);
     let session = session_now();
     let uri = match target_of(&marked, &session) {
         Some(page) => page,
         None => {
-            // Not §7's page line: then whatever path it names, if any. A line with no path in it is plain
-            // text and nothing opens, which is what keeps an unrelated "h264/vp9" sentence inert.
+            // Not §7's page line: then whatever path it names; a line with no path stays inert ("h264/vp9").
             let first = super::log_paths::paths_of(&drawn).into_iter().next()?;
             super::log_paths::resolve(&first, &session)
         }
@@ -285,9 +233,8 @@ pub fn activate_line(
     Some(uri)
 }
 
-/// Put a level marker back in front of a drawn line, so a rule written against the recorded wording
-/// (`target_of`, which matches §7's quoted `">>>   this run's exchanges…"`) can be asked about what the
-/// log actually shows. The marker is recovered from the level rule itself, never retyped.
+/// Put a level marker back in front of a drawn line so a rule written against the recorded wording
+/// (`target_of`) can be asked about what the log shows; recovered from the level rule, never retyped.
 fn restore_mark(drawn: &str) -> String {
     for (mark, level) in [
         (">>> ", super::log_level::Level::Progress),
@@ -303,7 +250,7 @@ fn restore_mark(drawn: &str) -> String {
 
 static BLOCKED_OPENS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// How many opens this test binary has refused, for the test that pins the refusal.
+/// How many opens this test binary has refused.
 pub fn blocked_opens_for_test() -> usize {
     BLOCKED_OPENS.load(std::sync::atomic::Ordering::SeqCst)
 }
@@ -317,13 +264,10 @@ fn running_as_test() -> bool {
     })
 }
 
-/// Open one page: GTK's launcher first, `xdg-open` as §1's named fallback.
-///
-/// Never panics and never propagates into the call that logged the line (§7: "recording never fails the
-/// call"): failures come back as `Err` and the handler turns them into a log line.
+/// Open one page: GTK's launcher first, `xdg-open` as §1's named fallback. Never panics or propagates
+/// into the call that logged the line (§7); failures come back as `Err` for the handler to log.
 pub fn open(uri: &str) -> Result<(), String> {
-    // A test presses the buttons that open things, and the launcher reaches the real desktop whatever display the
-    // test window is on: a test run opened the user's files in their session. A test binary opens nothing.
+    // A test binary opens nothing: the launcher reaches the real desktop whatever display the test window is on.
     if running_as_test() {
         BLOCKED_OPENS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         return Ok(());
@@ -346,10 +290,8 @@ pub fn open(uri: &str) -> Result<(), String> {
         return Ok(());
     }
     let launcher = gtk::UriLauncher::new(uri);
-    // The completion is a no-op on purpose: §1 asks for the page to be opened, not for the browser's
-    // verdict, and a desktop portal reports success late or not at all. A launcher that cannot even
-    // start is the failure worth reporting, and `launch` reports that by panicking out of a callback
-    // context, so it is caught here and handed to the fallback.
+    // The completion is a no-op on purpose (§1 asks for the page to be opened; a portal reports late or never).
+    // A launcher that cannot start panics out of a callback context, so it is caught and handed to the fallback.
     let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         launcher.launch(
             None as Option<&gtk::Window>,
@@ -374,8 +316,7 @@ pub fn open(uri: &str) -> Result<(), String> {
     open_fallback(uri)
 }
 
-/// §1's named fallback, logged as a shell would take it before it runs. Spawned and not waited on: the press is
-/// on the window thread, which never waits (§03-shell §1), and the file manager outlives the call anyway.
+/// §1's named fallback. Spawned and not waited on: the window thread never waits (§03-shell §1).
 fn open_fallback(uri: &str) -> Result<(), String> {
     // The path itself, decoded (a folder with a space in its name is `%20` in its URI).
     let decoded = glib::filename_from_uri(uri)

@@ -1,14 +1,11 @@
 //! §F0.5 / §7 — the window's log: the launch lines held until a window exists, the thread-local sink
 //! every flow writes its `→→` notes and `‡‡‡` refusals into, and the readers a test asserts against.
-//! Split out of `window.rs`, which is past its size budget; its doors are re-exported through `window`, so
-//! no caller's path changed.
+//! Its doors are re-exported through `window`.
 
 use std::cell::RefCell;
 
 thread_local! {
-    /// The window's log lines, standing in for F0.5's log expander: `>>> moved the output folder
-    /// to …` and the `!!!` refusals have nowhere to be drawn until that row exists, and a test has
-    /// to be able to see that they were said at all.
+    /// The window's log lines, standing in for F0.5's log expander: `>>> moved the output folder to …` and the `!!!` refusals must be visible to a test.
     static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -16,7 +13,7 @@ thread_local! {
 static PENDING_LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// §7's launch lines: `main` produces them while there is still no log to write into, so they wait in
-/// [`PENDING_LOGS`] and the first [`build_window`] drains them through [`note_startup`].
+/// [`PENDING_LOGS`] and the first `build_window` drains them through [`note_startup`].
 pub fn note_startup(lines: &[String]) {
     if let Ok(mut pending) = PENDING_LOGS.lock() {
         pending.extend(lines.iter().cloned());
@@ -31,8 +28,7 @@ pub fn note_startup(lines: &[String]) {
 }
 
 pub(crate) fn log_line(line: &str) {
-    // A worker's line waits for the window thread: this thread-local is the window thread's record, and a
-    // worker's own copy of it is a list nobody reads (§03-shell §1, "The window thread never waits").
+    // A worker's line waits for the window thread: this thread-local is the window thread's record (§03-shell §1).
     if crate::ui::background::on_worker() {
         crate::ui::background::hold_line(line);
         return;
@@ -45,35 +41,26 @@ pub fn clear_logs_for_test() {
     LOGS.with(|logs| logs.borrow_mut().clear());
 }
 
-/// What the log holds right now, for the test that must say WHY a write did not land rather than only that
-/// it did not: a failed `narrate/pitch.txt` write is invisible on disk but named in the log.
+/// What the log holds right now, for a test that must say WHY a write did not land (a failed `narrate/pitch.txt` write is invisible on disk but named in the log).
 pub fn logs_for_test() -> Vec<String> {
     LOGS.with(|logs| logs.borrow().clone())
 }
 
-/// The one line a finished run leaves about its audio housekeeping. Called from the unload thread,
-/// so it goes through the same log sink as everything else; `log_line` itself stays `pub(crate)`
-/// because only this crate's own flows are allowed to write to the user's log.
+/// The one line a finished run leaves about its audio housekeeping, from the unload thread via the same log sink; `log_line` stays `pub(crate)` so only this crate's flows write to the user's log.
 pub fn note_unload(said: &str) {
-    // Written straight to the shared buffer: this runs on the unload's own thread, whose thread-local
-    // sink no reader ever sees.
+    // Written straight to the shared buffer: the unload's own thread has a thread-local sink no reader sees.
     crate::ui::run_close::log(&format!("{}{said}", crate::ui::run_close::UNLOAD_PREFIX));
 }
 
 /// Every line the window has logged this session, oldest first.
 ///
-/// The thread-local is THE record: every reader counts lines in it (a migration note checked as
-/// `before + 1` counts exactly what it added). §S4's unload answers on its own thread and does NOT join
-/// this record -- its news lives in [`crate::ui::run_close::SHARED_LOG`] because a
-/// sentence written after the close returned would land after the run's last word (§2).
+/// The thread-local is THE record: every reader counts lines in it. §S4's unload answers on its own thread and does NOT join it: its news lives in `crate::ui::run_close::SHARED_LOG`,
+/// since a sentence written after the close returned would land after the run's last word (§2).
 pub fn window_logs() -> Vec<String> {
     LOGS.with(|logs| logs.borrow().clone())
 }
 
-/// A write a person's action asked for failed (§03-shell §7: such a write never fails silently). Said in the log at
-/// once, and put on the status line once the handler that caused it has returned (an idle), so the handler's own
-/// sentence about the action cannot paint over it. On a worker only the log line is said: the status line belongs
-/// to the window thread, and the worker's line reaches the log there.
+/// A write a person's action asked for failed (§03-shell §7: never silent). Said in the log at once and put on the status line once the handler has returned (an idle), so its own sentence cannot paint over it. On a worker only the log line is said.
 pub(crate) fn say_failure(line: &str) {
     log_line(line);
     if crate::ui::background::on_worker() {
@@ -91,8 +78,7 @@ pub(crate) fn say_failure(line: &str) {
     });
 }
 
-/// Write the cut a press changed, saying a failed write (§03-shell §7). A session with no project folder yet keeps
-/// the cut in memory only, as before: there is no file to fail to write.
+/// Write the cut a press changed, saying a failed write (§03-shell §7). A session with no project folder keeps the cut in memory only.
 pub(crate) fn save_cut_or_say(cut_: &crate::cut::Cut) {
     if crate::layout::Tree::new(crate::startup::open_dir()).is_err() {
         return;

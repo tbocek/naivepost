@@ -1,17 +1,10 @@
 //! F5.6 S3/S6: the PIXELS behind the image row.
 //!
-//! [`crate::produce_upload`] holds every rule of the words half and touches no tool (its doc says so), so
-//! the row arrives there as strings — `frame:34.0`, `project:produce/publish/chosen-0.jpg`. Those strings
-//! are a PROMISE about a picture; this module is the half that keeps it: it resolves a row entry to the file
-//! on disk, crops it to the video's shape, and renders it as the `data:image/...;base64,` URL the sd.cpp
-//! body carries (§F5.6 S6: "base cropped, references raw"). The drawn or chosen bytes then land as
-//! `thumbnail-plain.png`, which is the only thing [`crate::produce_upload_print`] can print onto — without
-//! this module the walk can describe a thumbnail but never produce one.
+//! [`crate::produce_upload`] holds the words half and touches no tool, so rows arrive as strings (`frame:34.0`, `project:produce/publish/chosen-0.jpg`). This module keeps that promise: it resolves an entry to a file,
+//! crops it to the video's shape, and renders the `data:image/...;base64,` URL the sd.cpp body carries (§F5.6 S6: "base cropped, references raw"); the result lands as `thumbnail-plain.png`,
+//! which [`crate::produce_upload_print`] prints onto.
 //!
-//! ffmpeg comes through [`crate::subprocess::run`] like every other tool step, so its command line is in the
-//! log before it runs. Where it runs from follows `produce_probe::ffprobe_program` exactly: `NAIVEPOST_FFMPEG`
-//! when set, else the settings box, read per call so a re-typed box takes effect on the next crop — and a
-//! test points the SAME door at a fake rather than at a slot only tests fill.
+//! ffmpeg runs through [`crate::subprocess::run`]; its program follows `produce_probe::ffprobe_program`: `NAIVEPOST_FFMPEG`, else the settings box, read per call.
 
 use std::path::{Path, PathBuf};
 
@@ -19,8 +12,7 @@ use crate::produce_details as details;
 use crate::produce_upload_frames as spread;
 use crate::project::Publish;
 
-/// The program ffmpeg runs from: `NAIVEPOST_FFMPEG` when set and non-empty, else the settings box, else the
-/// name itself. Mirrors [`crate::produce_probe`]'s ffprobe rule so one environment pair relocates both.
+/// The program ffmpeg runs from: `NAIVEPOST_FFMPEG` when set and non-empty, else the settings box, else the name itself (as [`crate::produce_probe`]'s ffprobe rule).
 pub fn ffmpeg_program() -> String {
     let pointed = std::env::var("NAIVEPOST_FFMPEG").unwrap_or_default();
     if !pointed.trim().is_empty() {
@@ -38,8 +30,7 @@ pub fn ffmpeg_program() -> String {
     program
 }
 
-/// A JPEG read into a surface needs the mime the sd.cpp server expects; the extension is the only claim
-/// available and every frame Prepare writes is a `.jpg`.
+/// The mime sd.cpp expects; the extension is the only claim available and every frame Prepare writes is a `.jpg`.
 fn mime_of(path: &Path) -> &'static str {
     match path
         .extension()
@@ -53,11 +44,8 @@ fn mime_of(path: &Path) -> &'static str {
     }
 }
 
-/// One row entry → the file it names. `frame:<seconds>` (any spelling `produce_details::frame_line` reads)
-/// resolves through `frames`, the moments actually on disk beside their paths; `project:` and absolute and
-/// root-relative entries go through §1's ONE path rule ([`crate::layout::resolve`]). `None` when the file is
-/// not there — the caller logs [`crate::produce_details::reference_skipped_log`] rather than sending an
-/// image that does not exist.
+/// One row entry → the file it names. `frame:<seconds>` resolves through `frames` (moments on disk beside their paths); `project:`, absolute and root-relative entries go through [`crate::layout::resolve`].
+/// `None` when the file is not there; the caller logs [`crate::produce_details::reference_skipped_log`].
 pub fn entry_file(
     tree: &crate::layout::Tree,
     entry: &str,
@@ -82,8 +70,7 @@ pub fn entry_file(
     path.is_file().then_some(path)
 }
 
-/// A file as the data URL the image server takes. RAW bytes (§F5.6 S6 says references go raw), base64 from
-/// [`crate::checks::base64`] so every decoder the server might be implements it.
+/// A file as the data URL the image server takes: RAW bytes (§F5.6 S6), base64 from [`crate::checks::base64`].
 pub fn data_url(path: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
     if bytes.is_empty() {
@@ -96,10 +83,7 @@ pub fn data_url(path: &Path) -> Option<String> {
     ))
 }
 
-/// ffmpeg's argv for one centre-crop-and-scale: the source scaled to cover the draw size `wide`x`high` and
-/// then trimmed back to it, centred on `crop` (a fraction of each axis, §5's `Crop`). The scale is what makes
-/// the crop honest — a base sent at its own size is the server's problem to fit, and §F5.6 asks for the video's
-/// shape at long side 1280 — which is why the shape arrives only as that pixel pair.
+/// ffmpeg's argv for one centre-crop-and-scale: the source scaled to cover `wide`x`high` then trimmed to it, centred on `crop` (a fraction of each axis, §5's `Crop`).
 pub fn crop_args(from: &Path, to: &Path, crop: (f64, f64), wide: u32, high: u32) -> Vec<String> {
     vec![
         "-y".into(),
@@ -113,29 +97,20 @@ pub fn crop_args(from: &Path, to: &Path, crop: (f64, f64), wide: u32, high: u32)
     ]
 }
 
-/// `scale=W:H:force_original_aspect_ratio=increase,crop=W:H:x:y` — the crop centred on `crop` and clamped
-/// inside the source. ffmpeg's expressions keep the maths out of here, so one filter serves a 1280x720 and a
-/// 3840x2160 frame with no probe first. The draw size arrives as `wide`/`high` alone: they already ARE the
-/// shape (`frame_size_from_aspect` builds both from the cut's aspect), so no second shape argument exists to
-/// disagree with them.
+/// `scale=W:H:force_original_aspect_ratio=increase,crop=W:H:x:y`, the crop centred on `crop` and clamped inside the source; one filter serves any frame size with no probe.
+/// `wide`/`high` already ARE the video's shape (`frame_size_from_aspect`).
 ///
-/// WHY scale comes FIRST: a crop is a fraction OF THE SOURCE, so it cannot express "the video's shape at long
-/// side 1280" on its own — feeding the draw size to `crop` asks for a box 1280 pixels wide and ffmpeg refuses
-/// the whole filtergraph on a narrower frame (`Invalid too big or non positive size`). Scaling to cover first
-/// makes every source at least as big as the target on both axes, and the crop then trims the overshoot while
-/// honouring the centre as a fraction of that frame.
+/// Scale comes FIRST: a crop is a fraction OF THE SOURCE, and feeding the draw size to `crop` makes ffmpeg refuse the filtergraph on a narrower frame
+/// (`Invalid too big or non positive size`). Scaling to cover first makes every source at least target-sized.
 ///
-/// The chain stays ONE unquoted argument: ffmpeg's own filtergraph parser reads a quote inside `-vf` as an
-/// argument separator, and a mis-closed one rejects the graph ("Error parsing filterchain") before a pixel is
-/// read. No shell sits between this string and ffmpeg, so nothing needs shell quoting either.
+/// The chain stays ONE unquoted argument: a quote inside `-vf` reads as an argument separator ("Error parsing filterchain"); no shell sits between.
 pub fn crop_filter(crop: (f64, f64), wide: u32, high: u32) -> String {
     let cx = crop.0.clamp(0.0, 1.0);
     let cy = crop.1.clamp(0.0, 1.0);
     format!("scale={wide}:{high}:force_original_aspect_ratio=increase,crop={wide}:{high}:(iw-{wide})*{cx:.4}:(ih-{high})*{cy:.4}")
 }
 
-/// Crop one picture to the video's shape and the draw size, writing a PNG at `out`. `Err` carries ffmpeg's
-/// own complaint (via [`crate::subprocess::failure`]'s shape) so the log can name the file that failed.
+/// Crop one picture to the video's shape and the draw size, writing a PNG at `out`. `Err` carries ffmpeg's complaint ([`crate::subprocess::failure`]'s shape).
 pub fn crop_to_shape(
     from: &Path,
     out: &Path,
@@ -152,9 +127,7 @@ pub fn crop_to_shape(
     crate::subprocess::run(&ffmpeg_program(), &args, &mut log).map(|_| ())
 }
 
-/// The base as the request wants it: cropped to the video's shape, then the data URL. Written into a scratch
-/// file beside the pictures so the crop that went out is a file a person can look at afterwards, not a
-/// pipe nobody can inspect.
+/// The base cropped to the video's shape, then the data URL. Written to a scratch file beside the pictures so the crop that went out can be inspected.
 pub fn cropped_data_url(
     from: &Path,
     scratch: &Path,
@@ -165,8 +138,7 @@ pub fn cropped_data_url(
 ) -> Option<String> {
     match crop_to_shape(from, scratch, crop, wide, high, log) {
         Ok(()) => data_url(scratch),
-        // A crop that failed says so where a person reads: the base is then sent uncropped rather than not
-        // sent, because a picture at the wrong shape still shows the server what the video looks like.
+        // A failed crop is said where a person reads, and the base is sent uncropped: the wrong shape still shows the server the video.
         Err(why) => {
             crate::ui::window::log_line(&why);
             data_url(from)
@@ -174,18 +146,7 @@ pub fn cropped_data_url(
     }
 }
 
-/// The whole image row as the request wants it: the base cropped, everything after it RAW (§F5.6 S6).
-/// `frames` is every extracted moment on disk with its path, so a `frame:` entry resolves to pixels; an
-/// entry with no file is skipped and NAMED (the log line says which), because sending a URL for a missing
-/// file would read as the server ignoring an image rather than the app never having it.
-///
-/// The draw size arrives as `wide`/`high` alone — they already ARE the video's shape, since
-/// `frame_size_from_aspect` builds both from the cut's aspect — except where a percentage of the SOURCE's own
-/// width is reported (`crop_percent_of` reads that file's edges back).
-///
-/// The request's images as sd.cpp takes them: `(base_url, every_url, base_name, skipped)`.
-/// `base_url` is `None` when the row holds nothing that exists, which is §S6's "drawn from the instruction
-/// alone, no images" case; `every_url` then holds only what DID resolve, so the body never carries a phantom.
+/// The request's images as sd.cpp takes them. `base_url` is `None` when the row holds nothing that exists (§S6's "drawn from the instruction alone"); `urls` holds only what DID resolve.
 #[derive(Debug, Default, PartialEq)]
 pub struct Sent {
     /// The base, cropped to the video's shape and rendered as a data URL. `None` = nothing to edit.
@@ -194,8 +155,7 @@ pub struct Sent {
     pub urls: Vec<String>,
     /// The base file's name, which is what the request line prints as "editing <base>".
     pub base_name: String,
-    /// The base's crop as a percentage of the source's width, measured off that file's own edges (§S6:
-    /// "base cropped").
+    /// The base's crop as a percentage of the source's width, measured off that file's own edges.
     pub crop_percent: u32,
     /// The crop centre that went into the filter, so the request line states what was actually asked for.
     pub centre: (f64, f64),
@@ -243,8 +203,7 @@ pub fn request_images(
             }
         }
     }
-    // The crop the request line reports is measured off the file that was actually cropped, so a 100% claim
-    // means the source already had the video's shape.
+    // Measured off the file that was actually cropped: 100% means the source already had the video's shape.
     let percent = match &base_source {
         Some(source) => crop_percent_of(source, (wide, high)),
         None => 100,
@@ -259,9 +218,7 @@ pub fn request_images(
     }
 }
 
-/// The shape back down to the ratio it came from, so a percentage reads proportions rather than a pixel box:
-/// a shape produced by `frame_size` (long side 1280) is that same ratio with the common factor taken out —
-/// 1280x720 is 16:9, 1080x1080 is 1:1, and a shape with no common factor keeps its own pair.
+/// The shape back down to its ratio (1280x720 is 16:9, 1080x1080 is 1:1), so a percentage reads proportions rather than a pixel box.
 fn ratio_of(shape: (u32, u32)) -> (u32, u32) {
     let (wide, high) = (shape.0.max(1), shape.1.max(1));
     let gcd = (1..=wide.min(high))
@@ -271,18 +228,14 @@ fn ratio_of(shape: (u32, u32)) -> (u32, u32) {
     (wide / gcd, high / gcd)
 }
 
-/// How much of the source's width the crop to `shape` keeps, as the request line prints it: what fraction
-/// survives. Measured off the file that was actually cropped (ffprobe reads its edges back), so the number in
-/// the log is a fact about that JPEG and not about the shape the video happens to be — a 4:3 frame cropped to
-/// 16:9 keeps three quarters of its width, a source already at the video's shape keeps all of it. No probe
-/// (no ffprobe, an unreadable file) answers 100: absence is "nothing was trimmed", never a guessed fraction.
+/// How much of the source's width the crop to `shape` keeps, measured off the file actually cropped (ffprobe reads its edges back): a 4:3 frame cropped to 16:9 keeps three quarters.
+/// No probe (no ffprobe, an unreadable file) answers 100: absence is "nothing was trimmed", never a guessed fraction.
 pub fn crop_percent_of(source_file: &Path, shape: (u32, u32)) -> u32 {
     let Some(source) = crate::produce_probe::size_of(source_file) else {
         return 100;
     };
     let source_ratio = f64::from(source.0.max(1)) / f64::from(source.1.max(1));
-    // The shape's own ratio, with the draw size's common factor taken out: 1280x720 IS 16:9, and comparing
-    // ratios (never pixel boxes) is what makes a 1080p source and a 4K one answer the same percentage.
+    // Compare ratios, never pixel boxes, so a 1080p source and a 4K one answer the same percentage.
     let (rw, rh) = ratio_of(shape);
     let want = f64::from(rw) / f64::from(rh);
     // Wider than the shape: all the height survives and the width is trimmed to `height * want`.
@@ -294,9 +247,7 @@ pub fn crop_percent_of(source_file: &Path, shape: (u32, u32)) -> u32 {
     ((kept * 100.0).round() as u32).clamp(1, 100)
 }
 
-/// The chosen or picked frame as the plain picture (§F5.6 S3: "the nearest frame, cropped to the video's
-/// shape, IS the thumbnail", no model, no GPU). This is the leg the walk's own-frame branch calls: without it
-/// `thumbnail-plain.png` never exists, so nothing can be printed onto it and no stamp can be written.
+/// The chosen or picked frame as the plain picture (§F5.6 S3: "the nearest frame, cropped to the video's shape, IS the thumbnail"). Without it `thumbnail-plain.png` never exists.
 pub fn write_own_picture(
     tree: &crate::layout::Tree,
     publish: &Publish,
@@ -327,11 +278,8 @@ pub fn write_own_picture(
         .map_err(|why| format!("{}: {why}", tree.thumbnail_png().display()))
 }
 
-/// The JPEG quality ladder's rung as ffmpeg's `-q:v`. The mjpeg encoder takes a 2..31 scale where LOWER is
-/// better, roughly the inverse of the 0–100 quality the ladder is written in; the mapping is linear in the
-/// useful band and clamped, so quality 92 asks for near-lossless (2) and 40 for a heavy compression (12).
-/// §F5.7 names the rungs, not their encoder dial, so this table is the app's decision and is stated here
-/// rather than left implied by a magic number.
+/// The JPEG ladder's rung as ffmpeg's `-q:v` (mjpeg takes 2..31, LOWER is better): linear in the useful band and clamped, so 92 asks for near-lossless (2) and 40 for 12.
+/// §F5.7 names the rungs, not their encoder dial, so this table is the app's decision.
 pub fn q_v_of_quality(quality: u32) -> u32 {
     let rung = 2u32.saturating_add(60u32.saturating_sub(quality.min(100)) / 5);
     rung.clamp(2, 31)
@@ -351,18 +299,10 @@ pub fn jpeg_args(png: &Path, out: &Path, quality: u32) -> Vec<String> {
     ]
 }
 
-/// ⤓ export's real ladder: encode `png` at each rung of [`crate::produce_runs::JPEG_QUALITIES`] INTO `out`,
-/// stopping at the FIRST rung whose measured weight fits [`crate::produce_runs::JPEG_MAX_BYTES`]. §F5.7 says
-/// "the first of 92, 85, 75, 60, 40 that fits 2 MiB", so descending further after a fit would leave the file
-/// at the WORST quality that was tried rather than the best one that fits: the file left on disk IS the rung
-/// chosen, and the vec holds the weights of the rungs actually encoded, best first. When nothing fits, every
-/// rung is tried and the last attempt stays written — §F5.7 writes it even though it is over the cap, and
-/// "never rescaled" means there is no smaller picture left to offer.
+/// ⤓ export's real ladder: encode `png` at each rung of [`crate::produce_runs::JPEG_QUALITIES`] INTO `out`, stopping at the FIRST rung whose weight fits [`crate::produce_runs::JPEG_MAX_BYTES`] (§F5.7).
+/// The file left on disk IS the rung chosen; the vec holds the weights of the rungs actually encoded, best first. When nothing fits, the last attempt stays written.
 ///
-/// Every rung is measured, so [`crate::produce_runs::jpeg_rung`] answers with a number an encoder produced
-/// rather than with the size of the file that already existed (which made every ladder collapse to its first
-/// or last rung). A rung whose encode failed contributes the last good weight, so a failed rung never reads
-/// as a free win.
+/// Every rung is measured, so [`crate::produce_runs::jpeg_rung`] answers from encoder output; a failed rung contributes the last good weight, never a free win.
 pub fn jpeg_ladder(
     png: &Path,
     out: &Path,
@@ -386,11 +326,8 @@ pub fn jpeg_ladder(
     sizes
 }
 
-/// Every frame this session has on disk, as `(produced-clock moment, path)` pairs for `entry_file`.
-/// `listed` is [`listed_frames`] per source, with each moment already moved onto the produced clock by the
-/// caller (the page holds the cut, so only it can do that mapping). Duplicates collapse: two cameras showing
-/// the same instant is one picture to send — the moment is what makes an instant, not the file name a second
-/// source happens to write it into.
+/// Every frame this session has on disk, as `(produced-clock moment, path)` pairs for `entry_file`; `listed` is [`listed_frames`] per source with each moment already moved onto the produced clock by the caller.
+/// Duplicates collapse: the moment makes an instant, not the file name a second source writes it into.
 pub fn frame_files(listed: &[(f64, PathBuf)]) -> Vec<(f64, PathBuf)> {
     let mut out: Vec<(f64, PathBuf)> = Vec::with_capacity(listed.len());
     for (moment, path) in listed {
@@ -401,10 +338,8 @@ pub fn frame_files(listed: &[(f64, PathBuf)]) -> Vec<(f64, PathBuf)> {
     out
 }
 
-/// List one source's extracted frames as `(session seconds, path)` pairs, oldest first, using the ONE naming
-/// rule Prepare wrote them with: a frame is named by its real instant, and `zero` is the session's
-/// ([`crate::frames_run::session_zero`]) that turns it back into a session second
-/// ([`crate::clock::frame_session_seconds`], which also reads the first rewrite's 1970 names).
+/// List one source's extracted frames as `(session seconds, path)` pairs, oldest first, by Prepare's naming rule: `zero` is the session's ([`crate::frames_run::session_zero`])
+/// that turns the name back into a session second ([`crate::clock::frame_session_seconds`]).
 pub fn listed_frames(dir: &Path, zero: f64) -> Vec<(f64, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();

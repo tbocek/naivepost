@@ -1,58 +1,16 @@
 //! F6.2 — `spec/09-llm-and-tools.md` §3, retries.
-//!
-//! A call fails in one of two ways and they deserve opposite patience. A server that went away mid-call knows
-//! nothing wrong with the request, so the same request is asked again after a wait long enough to land past a
-//! container restart and a weight load. A server that answered — with a 4xx/5xx or with an answer this app
-//! cannot use — has already told us what it thinks, so asking again at once gets the same reply; one short retry
-//! covers the transient, and after that the step fails.
-//!
-//! Nothing here sleeps, spawns a thread or reads a clock: [`run`] takes the wait as a closure the caller passes,
-//! the way [`crate::tool_loop::run`] takes `ask` and `call`. That is what makes "the fifth death asks for nothing"
-//! and "⏹ ends a four-minute wait" facts a test can pin rather than facts a reviewer hopes about.
-//!
-//! # What this is not
-//!
-//! `P.eng.llmAttempts` (3) counts *validation* attempts at one job — the JSON was rejected twice and asked for
-//! again — and lives in [`crate::roles`] with its own tests. This module counts failures of the HTTP call itself.
-//! The two numbers are unrelated: a job may spend three validation attempts inside one successful call, and one
-//! call may die five times without ever rejecting an answer.
-//!
-//! # Ids used
-//!
-//! §10 lists these only in its by-area line ("backoff 5 s–4 min"), with no `P.` row, so they carry bare prefixes:
-//! `llm.backoffSeconds` and `llm.retrySeconds`, catalogued in [`crate::params`] from [`BACKOFF_SECONDS`] and
-//! [`RETRY_SECONDS`].
 
 use std::fmt::Display;
 
 use crate::degraded;
 use crate::exchanges::{Message, Part};
 
-// ---- The two patiences ---------------------------------------------------------------
-
-/// How long to wait before each attempt at a call that died in transit: five waits, roughly eight minutes of
-/// patience in total (§3's bullet; §10's by-area line "backoff 5 s–4 min"). Past the restart, not inside it —
-/// the container has to stop, come back and read tens of gigabytes of weights before it answers anything, and an
-/// attempt made while that is happening is a connection refused that costs one of the tries.
 pub const BACKOFF_SECONDS: [u64; 5] = [5, 20, 60, 120, 240];
 
 /// The one short retry for anything else — a 4xx/5xx or an unusable answer, first failure only (§3's second
 /// bullet). Two seconds is not patience about the server; it covers a request that tripped over something local.
 pub const RETRY_SECONDS: u64 = 2;
 
-// ---- Which kind of failure -----------------------------------------------------------
-
-/// The words that mean the connection died rather than answered. §3 names them — eof, connection reset,
-/// connection refused, broken pipe, server closed, no such host, transport is closing — and adds the conditions
-/// those strings come from (reset, refused, unreachable). `transport is closing` is net/http's and h2's way of
-/// reporting a server that closed on us.
-///
-/// Matched as whole words in their own space, so a model's own prose inside an error message cannot read as a
-/// dead connection: "the model refused to answer" must not cost five minutes of waiting for a server that is
-/// perfectly well. That is why §3's loose condition words are matched only alongside their noun (see
-/// [`DEATH_CONDITIONS`]) — net/http, Go's h2 transport and Rust's client all say `connection reset` /
-/// `connection refused`, so nothing real is lost, and a sentence about the model refusing is left alone.
-/// A reply carrying an HTTP status is never one of these; see [`status_of`] and [`GONE_REPLY`].
 const DEATH_WORDS: [&str; 7] = [
     "eof",
     "connection reset",
@@ -63,11 +21,6 @@ const DEATH_WORDS: [&str; 7] = [
     "transport is closing",
 ];
 
-/// What this app's own wire layer writes when a call got no reply: [`crate::server_leg::down`] formats every
-/// connect failure and mid-reply death as "‹server› (‹url›) is not answering: …". Named here rather than left to
-/// the word list because it is OUR wording, and its cancellation cases are not transport deaths at all: a ⏹ that
-/// landed before the send or during the reply is the user ending the run, not a server going away, and walking
-/// the ladder through eight minutes for a run already stopped would be worse than no retry.
 pub const GONE_REPLY: &str = "is not answering";
 
 /// The two ways `server_leg` says the USER ended a call rather than the server dying.
@@ -81,21 +34,9 @@ fn leg_says_gone(lower: &str) -> bool {
 /// §3's condition words — reset, refused, unreachable. `reset` and `refused` only count beside the noun that
 /// says what was reset or refused: net/http, Go's h2 transport and Rust's client all write `connection reset` /
 /// `connection refused`, so requiring the pair loses nothing real and keeps "the model refused to answer" out.
-/// `unreachable` is already specific to a socket, so it stands alone.
 const DEATH_CONDITIONS: [(&str, bool); 3] =
     [("reset", true), ("refused", true), ("unreachable", false)];
 
-/// §3's NEW rule: a 5xx whose body names a device or memory failure backs off like a transport death rather than
-/// being resent at once. A 500 normally means "the server answered, and will answer the same way in four minutes"
-/// — but an out-of-memory is not an answer about the request, it is the box having no room yet, which is exactly
-/// what a wait fixes.
-///
-/// §3 names the two kinds and not the words, so these are the phrases llama.cpp-family servers actually print:
-/// `out of memory` / `OOM` for memory, `CUDA` / `VRAM` / `GPU` for the device, plus the verbs that only ever
-/// appear beside them (`allocate`, `alloc`, `realloc`). Each is matched as a whole word (see [`contains_word`]),
-/// which is what keeps "resettable" out of the transport list and "allocation strategy" out of this one; the
-/// loose noun `device` is deliberately absent, because a 500 naming the model file on a device path is not an
-/// out-of-memory and would cost a healthy server eight minutes of waiting.
 pub const DEVICE_FAILURE_PHRASES: [&str; 8] = [
     "out of memory",
     "oom",
@@ -107,14 +48,6 @@ pub const DEVICE_FAILURE_PHRASES: [&str; 8] = [
     "gpu",
 ];
 
-/// Whether an error string is a transport death. Whole-word matching, so `refused` inside "the model refused to
-/// answer" is prose and `refused` inside "connection refused" is a dead socket: the words are matched as pairs
-/// (`connection refused`, not bare `refused`) precisely so a sentence about the model's behaviour cannot be read
-/// as a socket's. A message naming an HTTP status is never one — see [`status_of`] and §3's rule.
-///
-/// `server_leg`'s own wording for a call that got no reply ("llm (http://…) is not answering: …") counts as one
-/// by name as well as by its words: it is what a refused connect arrives as, and §3 lists "refused" outright —
-/// the restart policy leaves the port closed while weights load, so waiting is the whole point of the ladder.
 pub fn transport_death(error: &str) -> bool {
     if status_of(error).is_some() {
         return false;
@@ -146,11 +79,6 @@ pub fn device_failure(status: Option<u16>, body: &str) -> bool {
 }
 
 /// The HTTP status a message names, if it names one.
-///
-/// Only a *labelled* status counts: `400 bad request`, `HTTP 500`, `status: 503`. A bare three-digit run does
-/// not, because an error string is full of numbers that are not statuses — `127.0.0.1:8731` would otherwise read
-/// as one and turn every connection failure into a status the server supposedly sent, which §3 forbids for the
-/// opposite reason ("a status code is never the server went away").
 pub fn status_of(text: &str) -> Option<u16> {
     const LABELS: [&str; 5] = ["status", "http", "http/", "code", "response"];
     let lower = without_urls(text);
@@ -177,12 +105,6 @@ pub fn status_of(text: &str) -> Option<u16> {
 }
 
 /// The message with every URL blanked, lower-cased.
-///
-/// A URL is the one thing in a `server_leg` failure string that breaks [`status_of`] on its own: the address makes
-/// the label check fire (`http`) and its first quad (`127`, `873`… ) looks exactly like a status. §3 forbids reading
-/// a status out of a transport failure at all — "a status code is never the server went away" — so an address must
-/// be made unreadable to both scans rather than skipped by digit rules that would also hide real statuses. Only a
-/// whitespace-delimited word holding `://` goes; nothing else in this app's wording carries that sequence.
 fn without_urls(text: &str) -> String {
     text.to_lowercase()
         .split_whitespace()
@@ -191,10 +113,6 @@ fn without_urls(text: &str) -> String {
         .join(" ")
 }
 
-/// Is `word` present in `lower` as a whole word? The boundaries are anything that is not a letter or digit, plus
-/// the ends of the string — which is why each candidate is padded with spaces before searching: it turns "the
-/// socket reset" into a hit and "resettable" into a miss without needing a regex. Punctuation counts as a
-/// boundary, so `eof` inside "unexpected eof while reading" is found.
 fn contains_word(lower: &str, word: &str) -> bool {
     let haystack = format!(" {lower} ");
     let needle = format!(" {word}");
@@ -210,14 +128,8 @@ fn contains_word(lower: &str, word: &str) -> bool {
     false
 }
 
-// ---- How long, and whether at all ----------------------------------------------------
-
 /// The flowchart's two branches as one question: given what failed and how many failures this call has already
 /// seen, how long to wait before asking again — or `None`, which means the step fails.
-///
-/// A death walks [`BACKOFF_SECONDS`] and stops when the ladder runs out: five waits is the patience §3 allows,
-/// and a sixth death is a server that is not coming back. Anything else gets [`RETRY_SECONDS`] once, on the
-/// first failure only.
 pub fn wait_seconds(died: bool, failure: u32) -> Option<u64> {
     if died {
         return BACKOFF_SECONDS.get(failure as usize).copied();
@@ -225,10 +137,6 @@ pub fn wait_seconds(died: bool, failure: u32) -> Option<u64> {
     (failure == 0).then_some(RETRY_SECONDS)
 }
 
-/// A wait as §3 spells it in its own prose — "5 s, 20 s, 1 min, 2 min, 4 min". The prototype prints Go's
-/// `durOf` instead (`1m0s`), which is a duration formatted for a programmer; the spec's words are what a person
-/// reads in the log, so they win. A number the ladder does not hold keeps the unit that fits it, so a shortened
-/// backoff still reads sensibly rather than falling through to seconds.
 pub fn wait_spelling(seconds: u64) -> String {
     if seconds >= 60 && seconds.is_multiple_of(60) {
         let minutes = seconds / 60;
@@ -259,8 +167,6 @@ pub fn waited_log(step: &str, reason: &str) -> String {
     )
 }
 
-// ---- The loop -----------------------------------------------------------------------
-
 /// What a retrying call ended with. `answer` is `None` when the step fails; `stopped` says ⏹ ended it, which the
 /// caller must not report as a server problem.
 #[derive(Debug, Clone)]
@@ -285,14 +191,6 @@ impl<T, E> Run<T, E> {
 }
 
 /// Ask until the call answers, the patience runs out, or ⏹ says otherwise.
-///
-/// `call` is the request — retried with the same arguments every time, which is what "the same request again"
-/// means and why a transport retry of a tool loop re-runs from the original messages rather than continuing a
-/// half-finished conversation. `sleep` waits and answers `false` when the run was stopped instead: eight minutes
-/// of blocking sleep is eight minutes of a ⏹ button that does nothing, so the wait belongs to the caller and this
-/// loop stops the moment either one says the run is over. `died` classifies the error — the real one is
-/// [`went_away`] against the response's status and body; taking it as an argument keeps the classification
-/// testable without a server.
 pub fn run<T, E: Display>(
     step: &str,
     call: &mut dyn FnMut() -> Result<T, E>,
@@ -339,8 +237,6 @@ pub fn run<T, E: Display>(
     }
 }
 
-// ---- S: content repair in degraded (JSON) mode --------------------------------------
-
 /// Why an answer could not be used, and what the retry does about it. §3 names four repairs — `noAnswer`,
 /// `cutOff`, `thinkAgain` (see [`think_again`]), `retryTurn` (see [`retry_turn`]) — and with tools they become
 /// tool results rather than user turns.
@@ -355,9 +251,6 @@ pub enum Repair {
 }
 
 /// The correction for a reply with no answer in it at all: the thinking budget spent and not a word written.
-/// A JSON parser cannot name this — it reports "unexpected end of JSON input", the same words it uses for an
-/// answer truncated at the ceiling, and those two want opposite fixes. Kept as the prototype's sentence so the
-/// model sees the words it was tuned on: what happened, then what to write.
 pub const NO_ANSWER: &str = "you returned no answer at all -- the whole reply was reasoning. \
                              Think briefly, then write the complete JSON: every segment and every effect, \
                              not a sample";
@@ -390,20 +283,11 @@ pub fn no_answer(reply: &str) -> Option<&'static str> {
     None
 }
 
-/// Whether the next attempt may still think. An empty answer means the thinking budget was spent with no words,
-/// and the same question asked the same way will answer the same way — so that retry sends thinking off with the
-/// shorter ceiling. Bad JSON or the wrong shape keeps thinking: that model is writing and getting it wrong, and
-/// turning its reasoning off makes the next answer worse, not better.
 pub fn think_again(thinking: bool, reply: &str) -> bool {
     thinking && no_answer(reply).is_none()
 }
 
 /// Put a rejected answer and its correction back into the conversation so the next attempt sees what it got wrong.
-///
-/// An empty reply is not appended: there is no message to send, and an assistant turn holding nothing makes the
-/// history read as though the model had answered with a blank. With tools the correction arrives as a `tool`
-/// result — §3's "with tools these become tool results" — because on that path the model is mid-round and expects
-/// its calls answered, not a new instruction from the user.
 pub fn retry_turn(
     messages: Vec<Message>,
     reply: &str,

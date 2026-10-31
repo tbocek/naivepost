@@ -1,18 +1,9 @@
 //! F5.7 Page runs — the wiring that turns a Produce-page click into a `produce_presses` walk.
 //!
-//! Split out of `ui::produce_page`, which is at its size budget. The page keeps one-line forwarders so
-//! every call site (the `wire()` table, `wire_slot_buttons`, `produce_words`, the tests) reads exactly as
-//! before; everything that *decides* what a press does lives in `crate::produce_presses`, and everything
-//! that GATHERS what the press needs lives here. Three layers, one job each:
-//!
-//! - `produce_presses` — the order: refuse → open → do → end, and the cost counts.
-//! - this module — the legs: what the page's held state, the live cut and the session folder answer when a
-//!   leg asks. Nothing here decides an order or prints a spec sentence.
-//! - `produce_page` — the widgets, and the status line a press ends on.
-//!
-//! Legs are built per press rather than held: each closure reads the world at call time, so a state change
-//! between two clicks lands in the next one, and a test can swap a scripted seam between presses without
-//! rebuilding anything.
+//! `crate::produce_presses` decides the order (refuse → open → do → end, and the cost counts); this module
+//! builds the legs, i.e. what the page's held state, the live cut and the session folder answer; `produce_page`
+//! holds the widgets. Legs are built per press so each closure reads the world at call time and a test can
+//! swap a scripted seam between presses.
 
 use adw::prelude::*;
 
@@ -20,7 +11,7 @@ use crate::produce_runs as runs;
 use crate::ui::produce_page;
 
 /// The frame images the row can point at: every extracted JPEG this session has, as `(seconds in the
-/// recording, path)` pairs across every footage source's prepare folder. Empty when nothing is extracted.
+/// recording, path)` pairs across every footage source's prepare folder.
 fn session_frame_files() -> Vec<(f64, std::path::PathBuf)> {
     frames_of(&frame_source_stems())
 }
@@ -36,15 +27,13 @@ fn frames_of(stems: &[String]) -> Vec<(f64, std::path::PathBuf)> {
             zero,
         ));
     }
-    // One rule for "the same picture twice": two cameras showing the same instant is one image to send, and
-    // the moment is what makes an instant — not the file name a second source happens to write it into.
+    // One rule for "the same picture twice": two cameras showing the same instant is one image to send.
     crate::produce_upload_media::frame_files(&out)
 }
 
-/// Which prepare folders hold frames a slot could be set from or added to the row: one per footage recording of
-/// the live project, named the way Prepare names them (the file's stem), the same folders the run's request
-/// reads. The first rewrite named them after the cut's cameras (`cam0`), a folder Prepare never writes, so no
-/// slot ever found its picture.
+/// Which prepare folders hold frames a slot could be set from: one per footage recording of the live project,
+/// named as Prepare names them (the file's stem), the folders the run's request reads. Naming them after the
+/// cut's cameras (`cam0`) found no picture, as Prepare never writes that folder.
 pub fn frame_source_stems() -> Vec<String> {
     crate::ui::window::live_project()
         .sources
@@ -54,9 +43,9 @@ pub fn frame_source_stems() -> Vec<String> {
         .collect()
 }
 
-/// **3** Set Thumbnail from a slot: record the choice (`own`, so ▶ keeps it), put that
-/// picture's cropped pixels where the print pass reads them (§F5.6 S3: the chosen frame IS the thumbnail,
-/// no model, no GPU), then let the shared print pass letter the picture that now stands.
+/// **3** Set Thumbnail from a slot: record the choice (`own`, so ▶ keeps it), put the picture's cropped pixels
+/// where the print pass reads them (§F5.6 S3: the chosen frame IS the thumbnail, no model, no GPU), then let
+/// the shared print pass letter it.
 pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
     let state = produce_page::read_state();
     let Some(path) = state.frames.get(index) else {
@@ -69,8 +58,8 @@ pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
     out.status
 }
 
-/// The slot's ↻ Set Thumbnail as its button fires it: the choice is recorded and drawn at once, the crop
-/// and the print (a decode and an encode) walk on a worker (§03-shell §1).
+/// The slot's ↻ Set Thumbnail as its button fires it: the choice is recorded and drawn at once; the crop
+/// and the print walk on a worker (§03-shell §1).
 pub fn set_thumbnail_from_button(window: &adw::ApplicationWindow, index: usize) {
     let state = produce_page::read_state();
     let Some(path) = state.frames.get(index).cloned() else {
@@ -90,17 +79,15 @@ pub fn set_thumbnail_from_button(window: &adw::ApplicationWindow, index: usize) 
     );
 }
 
-/// The chosen picture cropped where the print pass reads it, then the shared print: the half of Set
-/// Thumbnail that reads and writes pictures.
+/// The chosen picture cropped where the print pass reads it, then the shared print.
 fn set_thumbnail_walk(
     path: &str,
     files: &[(f64, std::path::PathBuf)],
     (wide, high): (u32, u32),
     legs: &crate::produce_presses::Legs,
 ) -> crate::produce_presses::Outcome {
-    // The crop is to the video's own shape at the thumbnail tier (S6's size rule), and the file behind the
-    // entry is looked up the same way the request looks its images up, so a slot press and a draw cannot
-    // disagree about which JPEG a row entry means.
+    // Crop to the video's shape at the thumbnail tier (S6), looking the file up as the request does so a
+    // slot press and a draw cannot disagree about which JPEG an entry means.
     let tree = crate::ui::produce_languages::session_tree();
     let record = crate::project::Publish {
         frames: vec![path.to_string()],
@@ -114,7 +101,7 @@ fn set_thumbnail_walk(
         high,
         crate::ui::window::log_line,
     ) {
-        // With an earlier picture standing the words still go on; with none there is nothing to report as taken.
+        // With an earlier picture standing the words still go on; with none there is nothing reported as taken.
         crate::ui::window::log_line(&format!("!!! {why}"));
         if !tree.thumbnail_plain_png().is_file() {
             return crate::produce_presses::Outcome {
@@ -128,8 +115,7 @@ fn set_thumbnail_walk(
 }
 
 /// The size a chosen picture is cropped to: the cut's aspect at the thumbnail tier, falling back to the
-/// first footage frame's measured shape when the cut says "source" (§9 makes that frame the video's).
-/// `pub` because a test measures the crop against the SAME number rather than restating 1280x720 by hand.
+/// first footage frame's measured shape when the cut says "source" (§9). `pub` so a test measures the same number.
 pub fn thumb_size() -> (u32, u32) {
     let tree = crate::ui::produce_languages::session_tree();
     let (w, h) = crate::ui::produce_snapshot::first_footage_shape(
@@ -144,20 +130,15 @@ pub fn thumb_size() -> (u32, u32) {
 
 /// The path a save dialog would answer with, if anyone answered it.
 ///
-/// A headless run (this container, CI, `just snapshot`) has no dialog to answer, and neither does the
-/// thumbnail's Change… door (`produce_slots::next_stood_in`): the app's convention is a STAND-IN at the seam
-/// rather than a button that does nothing, so the press still runs the real copy. What the seam answers is
-/// the only path a press ever gets — a real `FileChooserNative` response would forward here exactly as
-/// `cut_svg::open_svg_chooser` forwards its pick to `svg_chosen`.
+/// A headless run has no dialog to answer, nor has the thumbnail's Change… door (`produce_slots::next_stood_in`):
+/// the convention is a STAND-IN at the seam so the press still runs the real copy. A real `FileChooserNative`
+/// response would forward here as `cut_svg::open_svg_chooser` forwards its pick to `svg_chosen`.
 pub fn asked_path() -> Option<String> {
     ASKED_PATH.with(|held| held.borrow().clone())
 }
 
-/// Record the path a save dialog settled on: `Some` for a chosen one, `None` to clear it (the person moved on
-/// from what the dialog was opened for, so the next press offers its own default again).
-/// Called from `ui::produce_page::set_setting` when the Container row changes — a different container, a
-/// different default name — and by a test that points the same door at a path of its own, the way every other
-/// leg here is scripted.
+/// Record the path a save dialog settled on (`None` clears it so the next press offers its default again).
+/// Called from `ui::produce_page::set_setting` when the Container row changes, and by tests.
 pub fn answer_path(answer: Option<&str>) {
     ASKED_PATH.with(|held| *held.borrow_mut() = answer.map(str::to_string));
 }
@@ -167,15 +148,13 @@ thread_local! {
     static ASKED_PATH: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
-/// What the save dialog would be OFFERED for ⤓ Save video: `<project>.<container>`, the row's own container.
-/// A test reads this instead of restating the spelling.
+/// What the save dialog would be OFFERED for ⤓ Save video: `<project>.<container>`.
 pub fn offered_save_name() -> String {
     runs::save_default(&project_name(), produce_page::container_of_row())
 }
 
-/// …and for ⤓ export: `<project>-thumbnail.jpg`, with the extension already forced, beside the video. This is
-/// what the export dialog is OPENED on and, when nobody answers it, the path the press writes — `export_path`
-/// is the only caller besides a test that reads the offer back.
+/// …and for ⤓ export: `<project>-thumbnail.jpg`, extension forced, beside the video. It is also the path the
+/// press writes when nobody answers the dialog.
 pub fn offered_export_name() -> String {
     crate::ui::produce_languages::session_tree()
         .export_jpg()
@@ -183,10 +162,8 @@ pub fn offered_export_name() -> String {
         .to_string()
 }
 
-/// The path ⤓ writes: the save dialog's answer when it answered (extension forced), else this project's own
-/// offer from [`offered_export_name`] — one rule stated once, so the name the dialog shows and the file the
-/// ladder writes cannot drift apart. The old `export_name("final")` name is the `<video>` tag's poster file,
-/// not what a person uploads elsewhere.
+/// The path ⤓ writes: the save dialog's answer (extension forced), else [`offered_export_name`], so the
+/// dialog's name and the written file cannot drift. `export_name("final")` is the `<video>` poster, not an upload.
 pub fn export_path(asked: Option<&str>) -> String {
     match asked.filter(|typed| !typed.trim().is_empty()) {
         Some(typed) => runs::force_suffix(typed, runs::EXPORT_SUFFIX),
@@ -194,15 +171,14 @@ pub fn export_path(asked: Option<&str>) -> String {
     }
 }
 
-/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The walk runs the ladder (every rung
-/// really encoded) and reports the weight of the file it wrote, so no byte count is ever assumed.
+/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The ladder really encodes every rung
+/// and reports the weight of the file written; no byte count is assumed.
 pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
     let pressed = legs();
     if !(pressed.has_picture)() {
         return report(window, runs::EXPORT_NO_PICTURE.to_string());
     }
-    // The dialog's answer is what the path door holds: nothing typed headless, the typed name when a chooser
-    // ran (and the page's own stand-in, whose answer a test installs the same way).
+    // The dialog's answer is what the path door holds: nothing typed headless, else the typed name.
     let out = crate::produce_presses::press_export(&export_path(asked_path().as_deref()), &pressed);
     if out.refused {
         return report(window, out.status);
@@ -221,8 +197,7 @@ pub fn redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
     land_written(window, out)
 }
 
-/// **8** ↻ beside Title: the title and the description, together so they cannot disagree about what the video
-/// is. The images, the instruction and the picture stay as they are.
+/// **8** ↻ beside Title: the title and the description together; images, instruction and picture stay.
 pub fn reword(window: &adw::ApplicationWindow) -> String {
     let run = produce_page::press_run(window);
     let out = crate::produce_presses::press_reword(
@@ -241,17 +216,16 @@ fn with_run(
     run.map_or(Ok(()), walk)
 }
 
-/// What the press left in `publish.json` onto the page, whichever way it ended: a failed print still wrote the text.
+/// What the press left in `publish.json` onto the page, whichever way it ended (a failed print still wrote the text).
 fn land_written(window: &adw::ApplicationWindow, out: crate::produce_presses::Outcome) -> String {
     crate::ui::produce_languages::report(&out);
     produce_page::take_written_publish(window);
     report(window, out.status)
 }
 
-/// **10** ↻ Transcode: an encode with no model call. Refused while a render runs. The file is the page's OWN
-/// output — `produce/final.<container>` for whatever the Container row says (§1's Output line), not a
-/// hardcoded `.mp4`: with the row on webm this must re-encode the webm, and `transcode_args` picks its audio
-/// codec and mux off the same row's container.
+/// **10** ↻ Transcode: an encode with no model call, refused while a render runs. The file is the page's OWN
+/// output, `produce/final.<container>`, not a hardcoded `.mp4` (`transcode_args` picks codec and mux off the
+/// same row's container).
 pub fn transcode_again(window: &adw::ApplicationWindow) -> String {
     let settings = produce_page::row_settings();
     let video = crate::ui::produce_languages::session_tree()
@@ -269,8 +243,7 @@ pub fn transcode_again(window: &adw::ApplicationWindow) -> String {
     report(window, out.status)
 }
 
-/// **10** ⤓ Save video: a copy out to a chosen path, so `produce/final` keeps its place as the stamped
-/// output. The path is what the host's save dialog answered.
+/// **10** ⤓ Save video: a copy out to the host's save-dialog path, so `produce/final` stays the stamped output.
 pub fn save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> String {
     let out =
         crate::produce_presses::press_save_video(to, bytes, &legs(), crate::ui::window::log_line);
@@ -278,9 +251,8 @@ pub fn save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> Stri
     report(window, out.status)
 }
 
-/// **10** ⤓ Save video as the widget fires it: the destination is what the save door answered (§F5.7 "a copy
-/// to a chosen path"), falling back to that door's own offer — `<project>.<container>` — and the weight is
-/// read off the RENDER's own file rather than assumed (the copy has not been made yet when the line prints).
+/// **10** ⤓ Save video as the widget fires it: the destination is the save door's answer (§F5.7), else its
+/// offer; the weight is read off the RENDER's file since the copy is not made when the line prints.
 pub fn save_video_from_button(window: &adw::ApplicationWindow) -> String {
     let to = save_destination();
     let bytes = std::fs::metadata(produce_page::rendered_video())
@@ -289,8 +261,8 @@ pub fn save_video_from_button(window: &adw::ApplicationWindow) -> String {
     save_video(window, &to, bytes)
 }
 
-/// **10** ⤓ Save video as the button fires it: the copy is a whole video's bytes, so it walks on a worker
-/// (§03-shell §1) and is said when it lands. Destination and weight as [`save_video_from_button`] reads them.
+/// **10** ⤓ Save video as the button fires it: the copy walks on a worker (§03-shell §1). Destination and
+/// weight as [`save_video_from_button`] reads them.
 pub fn save_video_on_worker(window: &adw::ApplicationWindow) {
     let to = save_destination();
     let bytes = std::fs::metadata(produce_page::rendered_video())
@@ -318,8 +290,7 @@ pub(crate) fn save_destination() -> String {
     }
 }
 
-/// The project's own name for the save default: the session folder's, falling back to the app's name when
-/// the folder is not a project tree at all.
+/// The project's own name for the save default: the session folder's, else the app's name.
 fn project_name() -> String {
     let dir = crate::startup::open_dir();
     match crate::layout::Tree::new(dir) {
@@ -336,8 +307,8 @@ fn legs() -> crate::produce_presses::Legs {
                 .map(|w| !crate::ui::window::review_cut_of(&w).segs.is_empty())
                 .unwrap_or(false)
         },
-        // §08 "⤓ Save video and ↻ Transcode both refuse while a render runs": asked of the run bar itself, the
-        // one place that knows; the page state's flag it read before was set by nothing but tests.
+        // §08 "⤓ Save video and ↻ Transcode both refuse while a render runs": asked of the run bar itself; the
+        // page state's flag was set by nothing but tests.
         || {
             produce_page::held_window().is_some_and(|w| {
                 crate::ui::window_doors::running_step(&w) == Some(crate::run::Step::Produce)
@@ -347,8 +318,7 @@ fn legs() -> crate::produce_presses::Legs {
     );
     // This page reports its own reprint passes; the F5.6 words half counts its own elsewhere.
     pressed.count_prints = true;
-    // §F5.7: ↻ over the thumbnail clears `own` — in the page's held state and in `publish.json`, so the
-    // picture is the app's again after the press rather than only on screen.
+    // §F5.7: ↻ over the thumbnail clears `own`, in the held state and in `publish.json`, so the picture is the app's again.
     pressed.clear_own = Box::new(|| {
         produce_page::clear_own_thumbnail();
         Ok(())
@@ -356,8 +326,7 @@ fn legs() -> crate::produce_presses::Legs {
     pressed
 }
 
-/// What a press's legs read off the window, taken there before the press walks on its worker (§03-shell §1):
-/// the live cut and the run bar are the window's, not the worker's.
+/// What a press's legs read off the window, taken before the press walks on its worker (§03-shell §1).
 struct Found {
     has_cut: bool,
     rendering: bool,
@@ -374,9 +343,8 @@ fn found() -> Found {
     Found { has_cut, rendering }
 }
 
-/// [`legs`] on the worker: the window's answers are the ones [`found`] took, the page's state is the copy
-/// [`crate::ui::produce_worker::Carried`] loaded. A cleared `own` is noted so the landing clears the
-/// window's own copy too.
+/// [`legs`] on the worker: the window's answers are those [`found`] took, the page's state is the copy
+/// [`crate::ui::produce_worker::Carried`] loaded. A cleared `own` is noted so the landing clears the window's copy too.
 fn worker_legs(
     found: Found,
 ) -> (
@@ -400,8 +368,8 @@ fn worker_legs(
     (pressed, cleared)
 }
 
-/// One page press on its worker (§03-shell §1): the press named `button` greys while `work` walks with the
-/// worker's legs, and `land` takes the answer on the window thread. Ignored while another press walks.
+/// One page press on its worker (§03-shell §1): the press named `button` greys while `work` walks, and `land`
+/// takes the answer on the window thread. Ignored while another press walks.
 fn on_worker<T: Send + 'static>(
     window: &adw::ApplicationWindow,
     button: &str,
@@ -451,7 +419,6 @@ pub fn reword_from_button(window: &adw::ApplicationWindow) {
     );
 }
 
-/// **6** ↻ redraw, as the button fires it: [`redraw_thumbnail`] on a worker.
 pub fn redraw_from_button(window: &adw::ApplicationWindow) {
     let run = produce_page::press_run(window);
     on_worker(
@@ -470,7 +437,6 @@ pub fn redraw_from_button(window: &adw::ApplicationWindow) {
     );
 }
 
-/// **6** ⤓ export, as the button fires it: [`export_thumbnail`] on a worker.
 pub fn export_from_button(window: &adw::ApplicationWindow) {
     let path = export_path(asked_path().as_deref());
     on_worker(
@@ -488,7 +454,6 @@ pub fn export_from_button(window: &adw::ApplicationWindow) {
     );
 }
 
-/// **10** ↻ Transcode, as the button fires it: [`transcode_again`] on a worker.
 pub fn transcode_from_button(window: &adw::ApplicationWindow) {
     let settings = produce_page::row_settings();
     let video = crate::ui::produce_languages::session_tree()
@@ -511,9 +476,8 @@ pub fn transcode_from_button(window: &adw::ApplicationWindow) {
     );
 }
 
-/// Put one press's sentence on the status line AND in the log, the page's two output channels: the ending
-/// is what a person reads now, and the log is what they read afterwards. The `>>>` opening lines reach the
-/// log through the walk's own `log` leg; this is where the closing sentence goes to both.
+/// Put one press's sentence on the status line AND in the log: the ending is what a person reads now, the log
+/// afterwards. The `>>>` opening lines reach the log through the walk's own `log` leg.
 fn report(window: &adw::ApplicationWindow, said: String) -> String {
     if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
         status.set_text(&said);

@@ -1,13 +1,8 @@
 //! The program's own write side for the machine files of spec/01-project-and-files.md §7.
 //!
-//! [`crate::settings`] owns the FORMATS — how `llm.conf` is quoted, rendered, read and mode-set,
-//! where a hang dump goes, what the desktop entry says. What it never did was get CALLED: its
-//! writer ran only in tests, so the `PROJECT_<n>` pairs §7 says the conf holds were never
-//! persisted, the legacy `settings.json` recovery was never taken up, a watchdog give-up wrote no
-//! dump, and nothing installed the desktop entry or told the MIME and desktop databases about it.
-//! This module is that missing caller: every function here is a door a real code path walks through
-//! (startup, Open a project, the Settings dialog, F6.3's stall watch), and every one of them ends
-//! in a settings.rs writer rather than in a second copy of its rules.
+//! [`crate::settings`] owns the FORMATS; this is the caller. Every function is a door a real code path walks
+//! through (startup, Open a project, the Settings dialog, F6.3's stall watch) and ends in a settings.rs
+//! writer rather than a second copy of its rules.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -20,15 +15,12 @@ use crate::settings::{self, Conf, Paths};
 
 /// The launch's settings read, with §7's two one-time jobs done on the way.
 ///
-/// Order is §6's precedence: a `<root>/llm.conf` still beside the videos is copied into the config
-/// folder first (only while the config folder has none of its own), then the conf is read, and only
-/// then does the legacy `settings.json` get asked — which it is ONLY when the conf has no
-/// `PROJECT_*` keys at all (§7's "read once … on the launch after the merge"). When it does answer,
-/// the conf is written back immediately: that write is what makes "once" true on disk rather than a
-/// rule to remember, because the next launch finds `PROJECT_*` keys and stops asking.
+/// Order is §6's precedence: a `<root>/llm.conf` beside the videos is copied into the config folder first
+/// (only while that has none), then the conf is read, and only then is the legacy `settings.json` asked,
+/// and ONLY when the conf has no `PROJECT_*` keys (§7's "read once"). When it answers, the conf is written
+/// back immediately, so "once" is true on disk.
 pub fn open_and_recover(paths: &Paths, root: &Path) -> Result<Conf, String> {
-    // A migration that cannot be done must not cost the launch, which is the same rule main.rs states
-    // for an unreadable conf: the file stays for the person to look at.
+    // A migration that cannot be done must not cost the launch; the file stays for the person to look at.
     let _ = settings::migrate_legacy(paths, root);
     let mut conf = settings::read(paths)?;
     if settings::recover_projects(&mut conf, paths)? {
@@ -39,10 +31,8 @@ pub fn open_and_recover(paths: &Paths, root: &Path) -> Result<Conf, String> {
 
 /// Record this opened project against its root and put the pair in `llm.conf` (§7's state).
 ///
-/// Returns whether the file changed. The numbering and the byte-identical-when-unchanged property
-/// come from [`settings::render`] sorting the pairs by folder, so nothing here sorts or numbers
-/// anything; the map is the caller's (the window keeps one per launch) and is updated through
-/// [`open_project::remember`], the same data-level door F0.9 S4 uses.
+/// Returns whether the file changed. Ordering and byte-identical-when-unchanged come from [`settings::render`]
+/// sorting by folder; the map is the caller's, updated through [`open_project::remember`].
 pub fn persist_project(
     paths: &Paths,
     projects: &mut BTreeMap<String, String>,
@@ -50,24 +40,20 @@ pub fn persist_project(
     file: &Path,
 ) -> Result<bool, String> {
     open_project::remember(projects, root, file);
-    // Read-modify-write, so a key this build does not know survives the edit. With no conf readable
-    // there is nothing to modify, and writing a default over an unreadable file would erase settings
-    // nobody asked to lose — so the pair simply is not remembered this launch.
+    // Read-modify-write, so unknown keys survive. With no conf readable, writing a default over an unreadable
+    // file would erase settings, so the pair is not remembered this launch.
     let mut conf = settings::read(paths)?;
-    // The pair goes INTO the file's own list. Replacing the list with the caller's map lost every other
-    // root's project: Open's map holds only what this launch opened, so opening one project erased the
-    // remembered project of every other folder the app is launched from.
+    // The pair goes INTO the file's own list: replacing it with the caller's map (only what this launch opened)
+    // erased the remembered project of every other folder.
     open_project::remember(&mut conf.projects, root, file);
     settings::save(paths, &conf)
 }
 
-/// The dialog's pending write: what was typed, when the beat is due, and what the file said when the
-/// dialog opened.
+/// The dialog's pending write: what was typed, when the beat is due, and what the file said at open.
 ///
-/// §5 gives the Settings dialog no Save button: every box is written 600 ms after the last keystroke
-/// and again on close. [`checks::Draft`] already holds that beat ([`checks::CONF_SAVE_WAIT`]) and its
-/// caches-invalidated-on-save rule; what it could not do was reach the file, so this struct pairs it
-/// with the [`Paths`] and the base [`Conf`] and does the one write both doors go through.
+/// §5 gives the Settings dialog no Save button: every box is written 600 ms after the last keystroke and on
+/// close. [`checks::Draft`] holds that beat ([`checks::CONF_SAVE_WAIT`]); this pairs it with the [`Paths`]
+/// and the base [`Conf`] and does the one write both doors go through.
 pub struct Store {
     paths: Paths,
     base: Conf,
@@ -75,7 +61,7 @@ pub struct Store {
 }
 
 impl Store {
-    /// Open the store over the conf as it stands right now — the values the boxes are seeded from.
+    /// Open the store over the conf as it stands now, the values the boxes are seeded from.
     pub fn open(paths: &Paths) -> Result<Self, String> {
         Ok(Self {
             paths: paths.clone(),
@@ -84,7 +70,7 @@ impl Store {
         })
     }
 
-    /// The conf the boxes were seeded from, so the dialog can show what is on disk rather than blanks.
+    /// The conf the boxes were seeded from.
     pub fn value_for(&self, key: &str) -> Option<&str> {
         field_of(key).map(|get| get(&self.base))
     }
@@ -94,8 +80,8 @@ impl Store {
         self.base.clone()
     }
 
-    /// Change the conf behind the boxes (a server entry picked in §5's section dropdown: its settings, the
-    /// ones with no box of their own included, become the values the next write puts in `llm.conf`).
+    /// Change the conf behind the boxes (a server entry picked in §5's dropdown: its settings, boxless ones
+    /// included, become what the next write puts in `llm.conf`).
     pub fn adopt(&mut self, change: impl FnOnce(&mut Conf)) {
         change(&mut self.base);
     }
@@ -110,9 +96,8 @@ impl Store {
         self.draft.state.due_at()
     }
 
-    /// The beat elapsed: write what is in the boxes now. `values` is every box's key and current
-    /// text, read by the caller out of its widgets — the dialog owns the widgets, this owns the file.
-    /// Answers the line §5 puts in the log when bytes actually changed, `None` when they did not.
+    /// The beat elapsed: write what is in the boxes now. `values` is every box's key and text, read by the
+    /// caller. Answers the line §5 puts in the log when bytes changed, `None` otherwise.
     pub fn flush(
         &mut self,
         now: Duration,
@@ -124,8 +109,7 @@ impl Store {
         self.write(values)
     }
 
-    /// Closing the window: write if a beat has not elapsed, because losing the last thing typed is
-    /// the one failure this dialog must not have.
+    /// Closing the window: write if a beat has not elapsed (losing the last thing typed is the one failure to avoid).
     pub fn on_close(&mut self, values: &[(String, String)]) -> Result<Option<String>, String> {
         if !self.draft.close() {
             return Ok(None);
@@ -133,9 +117,8 @@ impl Store {
         self.write(values)
     }
 
-    /// The one write both doors share: apply every recognised box onto a fresh copy of the base conf
-    /// and hand the whole store to settings' writer, which quotes it, compares the bytes and sets the
-    /// modes. Unrecognised keys (a row that stores nothing, like Vision) are skipped, not refused.
+    /// The one write both doors share: apply every recognised box onto a fresh copy of the base conf and hand
+    /// it to settings' writer. Unrecognised keys (a row that stores nothing, like Vision) are skipped.
     fn write(&mut self, values: &[(String, String)]) -> Result<Option<String>, String> {
         let mut next = self.base.clone();
         for (key, value) in values {
@@ -147,8 +130,7 @@ impl Store {
     }
 }
 
-/// The conf field a dialog box edits, read side. `None` for a box that stores nothing in the conf —
-/// Vision tests the model above it rather than holding its own id.
+/// The conf field a dialog box edits, read side. `None` for a box that stores nothing in the conf.
 pub fn field_of(key: &str) -> Option<fn(&Conf) -> &str> {
     Some(match key {
         "server" => |c: &Conf| &c.server,
@@ -201,10 +183,8 @@ pub fn text_for(conf: &Conf, key: &str) -> Option<String> {
 
 /// Write one watchdog dump (`hang-*.txt`, §7) naming the component that stopped answering.
 ///
-/// `unresponsive` is the silence the stall watch measured, in seconds. Errors are swallowed to
-/// `None`: principle 8 — a failure to record is a log line at most, never a failed step, and the
-/// give-up that called this has already said its piece. One dump per stall second: a stamp already
-/// on disk means another dump would only bury the first, so nothing more is written.
+/// `unresponsive` is the silence the stall watch measured, in seconds. Errors are swallowed to `None`
+/// (principle 8). One dump per stall second: a stamp already on disk means another would bury the first.
 pub fn note_hang(component: &str, unresponsive: Duration) -> Option<PathBuf> {
     let paths = settings::from_environment()?;
     let stamp = local_stamp();
@@ -214,16 +194,15 @@ pub fn note_hang(component: &str, unresponsive: Duration) -> Option<PathBuf> {
     settings::write_hang_dump(&paths, component, std::process::id(), unresponsive, &stamp).ok()
 }
 
-/// Today's local date and time as `MMDD-HHMMSS`, the stamp [`settings::hang_stamp`] wants — month
-/// first so the dumps sort in the order they happened. Local, not UTC: a dump is read by whoever was
-/// watching the clock when the app stalled.
+/// Today's local date and time as `MMDD-HHMMSS`, the stamp [`settings::hang_stamp`] wants. Month first so
+/// dumps sort in order; local, not UTC, since a dump is read by whoever watched the clock.
 pub fn local_stamp() -> String {
     // Seconds since the epoch, turned into the LOCAL calendar by glib (std has no local offset).
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let Ok(local) = glib::DateTime::from_unix_local(now.as_secs() as i64) else {
-        // No local zone to speak of: a dump still gets written, stamped from the epoch.
+        // No local zone: a dump still gets written, stamped from the epoch.
         return settings::hang_stamp(1, 1, 0, 0, 0);
     };
     settings::hang_stamp(
@@ -235,29 +214,24 @@ pub fn local_stamp() -> String {
     )
 }
 
-/// Whether this launch runs inside a Flatpak, whose manifest exports both files itself (§7): a
-/// desktop entry written from inside the sandbox would name a path that only exists in there.
+/// Whether this launch runs inside a Flatpak, whose manifest exports both files itself (§7).
+/// A desktop entry written from inside the sandbox would name a path that only exists there.
 pub fn inside_flatpak() -> bool {
     std::env::var("FLATPAK_ID").is_ok() || Path::new("/.flatpak-info").exists()
 }
 
-/// Whether `exe` is being run out of a build cache rather than installed. `cargo run` and
-/// `just build` leave the binary under a `target/` directory, and an entry pointing there would
-/// offer the app until somebody types `cargo clean`.
+/// Whether `exe` is being run out of a build cache (`target/`), where an entry would offer the app until `cargo clean`.
 pub fn in_build_cache(exe: &Path) -> bool {
     exe.components().any(|part| part.as_os_str() == "target")
 }
 
-/// Install the desktop entry and the MIME package when this launch may (§7), and say what the
-/// desktop's databases now need re-running.
+/// Install the desktop entry and the MIME package when this launch may (§7), and say what the desktop's
+/// databases now need re-running.
 ///
-/// Returns the log lines plus the commands, in the shape [`icons::Databases::refresh`] expects:
-/// neither file counts as "written" when its bytes already match, which is what keeps a launch from
-/// re-telling the databases the same thing every time the app opens. Deciding whether to install at
-/// all is [`settings::wants_desktop_file`]'s rule; the two cases it cannot see from here — running
-/// inside a Flatpak, and running out of a build cache — are read by [`inside_flatpak`] and
-/// [`in_build_cache`] and passed in, because a test must be able to prove both refuse without the
-/// machine they run on having to be a Flatpak.
+/// Returns the log lines plus the commands, in the shape [`icons::Databases::refresh`] expects; a file whose
+/// bytes already match is not "written", so a launch does not re-tell the databases. Whether to install is
+/// [`settings::wants_desktop_file`]'s rule; Flatpak and build-cache are passed in ([`inside_flatpak`],
+/// [`in_build_cache`]) so a test can prove both refuse.
 pub fn register_with_desktop(
     paths: &Paths,
     exe: &Path,
@@ -275,9 +249,8 @@ pub fn register_with_desktop(
         let _ = settings::install_mime_package(paths);
     }
     let mut log = Vec::new();
-    // The folder each database is told about is its own: `applications` for the entry, `mime` for
-    // the package. `refresh` logs one line for the first, so it is handed the mime folder (the one
-    // whose type decides whether a file manager offers naivepost at all).
+    // `refresh` logs one line for the first folder, so it is handed the mime folder (its type decides whether
+    // a file manager offers naivepost at all).
     let commands = databases.refresh(
         wrote_entry,
         wrote_mime,
@@ -287,13 +260,11 @@ pub fn register_with_desktop(
     (log, commands)
 }
 
-/// Run the desktop's refresh tools in the background (§7: the app must start whether or not they
-/// exist) and answer a log line for each one that could not be started.
+/// Run the desktop's refresh tools in the background (§7: the app must start whether or not they exist)
+/// and answer a log line for each one that could not be started.
 ///
-/// Both are `freedesktop-utils`/`desktop-file-utils` binaries; a minimal system has one and not the
-/// other, and a missing helper is worth one line, not a failed launch. Their output is nobody's
-/// input, so they are spawned with piped stdio and left — the databases are small and the tools exit
-/// on their own.
+/// A minimal system may lack one of the two binaries; that is a line, not a failed launch. Their output is
+/// nobody's input, so they are spawned with piped stdio and left to exit.
 pub fn run_refresh(commands: &[Vec<String>]) -> Vec<String> {
     let mut log = Vec::new();
     for command in commands {
@@ -311,8 +282,7 @@ pub fn run_refresh(commands: &[Vec<String>]) -> Vec<String> {
     log
 }
 
-/// Whether a file needs writing: absent, unreadable, or different bytes. Unreadable counts as needing
-/// a write — a file we cannot compare is one the desktop cannot use either.
+/// Whether a file needs writing: absent, unreadable (we cannot compare it, the desktop cannot use it), or different.
 fn differs(path: &Path, body: &str) -> bool {
     std::fs::read_to_string(path)
         .map(|text| text != body)

@@ -1,26 +1,4 @@
 //! F4.5 Preview the cut with narration — `spec/07-narrate.md` F4.5, steps S1–S6.
-//!
-//! ▶ on the Narrate page runs the *cut* with the narration riding along: the picture leads and a line's wav
-//! is laid over it at the second the picture reaches that line. Two things make this more than "play the
-//! video": the stretch between two clips is material the edit removed, so the tick skips it forward instead
-//! of playing it, and a line whose take does not exist yet stops the picture until it does — a few seconds of
-//! waiting is the honest version of previewing a cut nobody would watch otherwise.
-//!
-//! Everything here is a plain function over state the page already holds: which clips there are, what the
-//! lines say and where, which takes exist, and where the picture is. The GTK layer calls these and decides
-//! nothing (spec/00-principles.md §5), so every branch below is testable without a display or a player.
-//!
-//! What this module does **not** own:
-//! - the players themselves — [`crate::preview`] is F2.1's ▶ and its `Player`/`Press`; the two pipelines here
-//!   (picture, narration) are the page's to build and cue;
-//! - speaking a line ([`crate::narrate_tts`], F4.4). This module notices that a take is missing and says what
-//!   to tell the person; it never calls a server;
-//! - fitting a line to its clip — F4.3's packing, growing and tempo live in the render, and the boundary this
-//!   flow holds at [`MAX_EXTEND_SECONDS`] is the same ceiling that lets the render grow a clip at all;
-//! - the row buttons' six answers ([`crate::narrate_screen::audition`]) and everything else about the row
-//!   ([`crate::narrate_screen`]);
-//! - the tick timer, the seeks and the camera reloads they imply — the page's plumbing, called from here by
-//!   the answers below.
 
 use crate::cut::{Cut, Fx, Seg};
 use crate::cut_hear;
@@ -28,23 +6,18 @@ use crate::narrate_screen::AUDITION_LEAD_SECONDS;
 use crate::narration::Entry;
 
 /// P.eng.narrationMaxExtendSeconds: how long past its own end a clip boundary is held while a line still
-/// speaks. The render may grow a clip by exactly this much to fit its line, so the preview holds a boundary
-/// the render would hold and no longer — otherwise the preview runs on two seconds early and stops being a
-/// preview of the render.
+/// speaks.
 pub const MAX_EXTEND_SECONDS: f64 = 4.0;
 
 // --- What the person is told (S1, S2) ------------------------------------------------------------------------
 
-/// S1: there is nothing to play. Em dash because that is how the sentence reads in the prototype and on the
-/// screen — a hyphen here would be a different string than the one a person reports seeing.
 pub const NOTHING_TO_PREVIEW: &str = "nothing to preview yet \u{2014} cut some clips first";
 
 /// S1: there are clips, but the second being cued is on no recording, so nothing can be loaded and the
 /// frame would sit black while the transport claimed to be playing.
 pub const NO_RECORDING_AT_START: &str = "no recording covers the start of the cut";
 
-/// S2: the picture has paused for a line that has never been spoken. Numbered from one, because the rows are
-/// counted from one on the screen.
+/// S2: the picture has paused for a line that has never been spoken.
 pub fn synthesizing(line: usize) -> String {
     format!("synthesizing line {}", line + 1)
 }
@@ -54,16 +27,12 @@ pub fn line_ready(line: usize) -> String {
     format!("line {} ready", line + 1)
 }
 
-/// S2: a line failed while the picture was waiting for it, and the run carries on without its voice. Two
-/// hyphens, as the prototype writes them — deliberately unlike [`sticky_failed`]'s em dash, which is a
-/// different sentence in the same log and keeps its own punctuation.
+/// S2: a line failed while the picture was waiting for it, and the run carries on without its voice.
 pub fn failed_playing_on(line: usize) -> String {
     format!("line {} failed -- see log; playing on without it", line + 1)
 }
 
-/// S2: this take's synthesis already failed, so the clip runs mute again. A sticky silent failure reads as
-/// "the TTS stopped working" rather than as a line that failed once, so it is said every time it comes
-/// around — and it names the row's own ▶ as the way out. Em dash and ▶ (U+25B6) as written in the prototype.
+/// S2: this take's synthesis already failed, so the clip runs mute again.
 pub fn sticky_failed(line: usize) -> String {
     format!(
         "line {} failed to synthesize \u{2014} see log; its \u{25b6} retries",
@@ -79,25 +48,16 @@ pub const PLAY_ICON: &str = "\u{25b6}";
 /// S1 (`play from the line, else the cut's start`): what a press of ▶ or a click on the picture means.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Start {
-    /// Cue here and play.
     Play(f64),
-    /// No clips at all — say [`NOTHING_TO_PREVIEW`] rather than toggling an empty pipeline.
     NoClips,
-    /// The second is on no recording: cueing it would report itself as playing over a black frame.
     Uncovered { at: f64 },
 }
 
-/// S1: what a press of ▶ or a click on the picture amounts to. ONE answer serves both controls because
-/// inventory §A.3 and §A.4 describe them as the same toggle — "click the picture to play the cut with its
-/// narration, and again to pause" is the transport's play/pause wearing a different face. Routing both
-/// through here is what keeps a picture click and a button press from disagreeing about what "play" means.
+/// S1: what a press of ▶ or a click on the picture amounts to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pressed {
-    /// Nothing to preview: carries the sentence to say ([`NOTHING_TO_PREVIEW`] or [`NO_RECORDING_AT_START`]).
     Refused(String),
-    /// Cue here and start the two players.
     Playing { from: f64 },
-    /// It was playing; stop the picture and the voice riding along with it.
     Paused,
 }
 
@@ -116,10 +76,7 @@ impl Pressed {
     }
 }
 
-/// S1: the whole of one click. Already playing means pause — nothing else is asked of the cut. Otherwise the
-/// start point decides: no clips at all is [`NOTHING_TO_PREVIEW`], a cue landing off every recording is
-/// [`NO_RECORDING_AT_START`], and anything else plays from the line's second or, with no line under the
-/// playhead, from the cut's own start (`start_point`'s answer for `line: None`).
+/// S1: the whole of one click.
 pub fn press_picture(
     playing: bool,
     segs: &[Seg],
@@ -136,9 +93,7 @@ pub fn press_picture(
     }
 }
 
-/// S1: the second to start from, and whether anything can be shown there. A selected line wins over the top
-/// of the cut — that is what "play from the line" means — and either way the second has to be inside a
-/// recording, which `covered` answers ([`crate::timeline::filmed_runs`] is who computes it).
+/// S1: the second to start from, and whether anything can be shown there.
 pub fn start_point(segs: &[Seg], line: Option<f64>, covered: &[(f64, f64)]) -> Start {
     let Some(first) = segs.first() else {
         return Start::NoClips;
@@ -153,9 +108,7 @@ pub fn start_point(segs: &[Seg], line: Option<f64>, covered: &[(f64, f64)]) -> S
 
 // --- S2 which line owns a second -----------------------------------------------------------------------------
 
-/// S2: the second a line's window ends. The next spoken line on the same clip starts this one's end — a clip
-/// may carry several lines, and each owns the seconds up to its successor — and otherwise it is the clip's
-/// own end. Timed by session second rather than by index so an edited cut still speaks the right line.
+/// S2: the second a line's window ends.
 pub fn line_end(index: usize, entries: &[Entry]) -> f64 {
     let entry = &entries[index];
     entries
@@ -165,9 +118,7 @@ pub fn line_end(index: usize, entries: &[Entry]) -> f64 {
         .map_or(entry.e, |next| next.s + next.at)
 }
 
-/// S2: the line whose seconds `t` falls in — from its own start (`s + at`) to wherever its window ends. A
-/// line with no words is skipped entirely: it is a deliberate silence, and offering it to the tick would send
-/// an empty string to the speech server.
+/// S2: the line whose seconds `t` falls in — from its own start (`s + at`) to wherever its window ends.
 pub fn line_at(t: f64, entries: &[Entry]) -> Option<usize> {
     (0..entries.len()).find(|&index| {
         let entry = &entries[index];
@@ -191,37 +142,26 @@ pub enum Take {
     Failed,
 }
 
-/// S2: what one tick of the picture means. The page acts on this and nothing else — the decisions are here so
-/// they can be tested without a player.
+/// S2: what one tick of the picture means.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tick {
     /// Nothing to change: still inside the same line's seconds, or over a clip with no line.
     Idle,
-    /// A gap, but a line is still speaking and the render would have grown the clip for it: hold the
-    /// boundary rather than jumping away from the middle of a sentence.
     Hold,
-    /// Past the last clip: the cut is over, so both players stop.
     Pause,
-    /// A gap the edit removed: skip forward to where the cut starts again.
     SkipTo(f64),
-    /// Entering a line whose take exists: start its wav at the offset the picture is at.
-    Speak { line: usize, offset: f64 },
-    /// Entering a line with no take: pause the picture and speak it ([`synthesizing`]).
-    Synthesize { line: usize },
-    /// Entering a line whose take already failed: run the clip mute and say so again ([`sticky_failed`]).
-    Mute { line: usize },
+    Speak {
+        line: usize,
+        offset: f64,
+    },
+    Synthesize {
+        line: usize,
+    },
+    Mute {
+        line: usize,
+    },
 }
 
-/// S2: one tick. In the prototype's order, because the order is the behaviour:
-///
-/// 1. inside a clip → look at its line (or stay [`Tick::Idle`]);
-/// 2. in a gap with a line still speaking within [`MAX_EXTEND_SECONDS`] of its clip's end → [`Tick::Hold`];
-/// 3. in a gap past the last clip → [`Tick::Pause`];
-/// 4. any other gap → [`Tick::SkipTo`] the next clip's start.
-///
-/// `takes` is one entry per line, in order; a missing answer counts as [`Take::Missing`], which is the safe
-/// reading — a take nobody has looked for has not been spoken yet. `speaking` is the line whose audio is
-/// running, if any.
 pub fn tick(
     t: f64,
     segs: &[Seg],
@@ -236,15 +176,12 @@ pub fn tick(
         let entry = &entries[line];
         let offset = t - (entry.s + entry.at);
         return match takes.get(line).copied().unwrap_or(Take::Missing) {
-            // Already playing: starting it again would stack a second voice on every tick.
             Take::Exists if speaking == Some(line) => Tick::Idle,
             Take::Exists => Tick::Speak { line, offset },
             Take::Missing => Tick::Synthesize { line },
             Take::Failed => Tick::Mute { line },
         };
     }
-    // A second the cut removed. The line still talking is the render's business up to the extension it is
-    // allowed, so hold rather than skip: the boundary jump would drop the middle of a sentence.
     if let Some(line) = speaking.filter(|line| entries.get(*line).is_some()) {
         if t < entries[line].e + MAX_EXTEND_SECONDS {
             return Tick::Hold;
@@ -260,15 +197,7 @@ pub fn tick(
     }
 }
 
-/// S2: the second the picture stands on one tick later. The head walks to the END of the clip it is in and
-/// no further: a boundary is where [`tick`] decides whether to hold or skip, so the clock may not walk
-/// through it on its own. A second already in a removed stretch stands (`tick` answers hold or skip), and a
-/// second past the last clip stands too — that is what makes `tick` answer [`Tick::Pause`].
-///
-/// `rate` is what the cut says this second plays at (S3's speed-at-the-seek): `gst-play-1.0` takes no rate
-/// flag ([`crate::cut_play_back::set_rate`] documents the same limit for the Cut page's player), so the
-/// app's own clock walks at the cut's rate and a 2x stretch moves the head twice as far per tick. The
-/// caller passes [`seek_rate`] for the second it is standing on.
+/// S2: the second the picture stands on one tick later.
 pub fn advance(t: f64, delta: f64, rate: f64, segs: &[Seg]) -> f64 {
     let Some(scene) = cut_hear::scene_at(segs, t).and_then(|index| segs.get(index)) else {
         return t;
@@ -276,11 +205,7 @@ pub fn advance(t: f64, delta: f64, rate: f64, segs: &[Seg]) -> f64 {
     ((t + delta * rate).max(0.0)).min(scene.e)
 }
 
-/// S2: where the picture goes when a synthesis ends. Success resumes at the line's own start, not at the
-/// second the picture froze: a hold can land mid-line (an edited line is re-synthesized where its old audio
-/// used to be), and starting the new wav at that stale offset would begin it past its end whenever the new
-/// line is shorter — a video with no voice. Failure has no new line to land on, so the picture simply carries
-/// on from where it stopped.
+/// S2: where the picture goes when a synthesis ends.
 pub fn resume_after_synthesis(frozen: f64, line_start: f64, ok: bool) -> f64 {
     if ok {
         line_start
@@ -289,9 +214,7 @@ pub fn resume_after_synthesis(frozen: f64, line_start: f64, ok: bool) -> f64 {
     }
 }
 
-/// S2: the takes the server has already refused. Keyed on the wav rather than the row — a take is named by
-/// what was spoken, so re-editing a line gives it a new key and a fresh chance, while the same failed take
-/// stays mute however many times the cut runs past it.
+/// S2: the takes the server has already refused.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Failed {
     wavs: Vec<String>,
@@ -311,8 +234,7 @@ impl Failed {
     }
 
     /// The row's ▶ retried this line: clear the failure first, so a second failure is noticed as a second
-    /// failure. Answers whether there was one to clear — which is what tells the page this press was a retry
-    /// rather than a first attempt.
+    /// failure.
     pub fn retry(&mut self, wav: &str) -> bool {
         let before = self.wavs.len();
         self.wavs.retain(|known| known != wav);
@@ -321,24 +243,13 @@ impl Failed {
 }
 
 /// S2 (`a failed line is sticky per wav until its own ▶ retries it, which first clears the failure`):
-/// free this take to be spoken again. Returns whether a failure was actually cleared, so the caller can tell a
-/// retry from a first attempt without asking twice. This is the door F4.4's row ▶ goes through before it
-/// dials the speech server: without it a take that failed once would stay mute forever, however many times
-/// its own button was pressed. Kept apart from [`Failed::retry`] only in name-free shape so a caller holding
-/// the set does not have to know the type — the behaviour is that method's, not a second copy.
 pub fn retry_line(failed: &mut Failed, line_wav_key: &str) -> bool {
     failed.retry(line_wav_key)
 }
 
 // --- S3 the sound is the render's ------------------------------------------------------------------------------
 
-/// S3 (`ducked by the game volume`): how loud the whole clip is while a line speaks. The value is the
-/// project's P.policy.gameVolume — §10's default 0.22 belongs to [`crate::project`] and is not re-declared
-/// here — and 1 when nothing is being spoken, so the duck is only ever a lowering.
-///
-/// Where this sits in the render's chain is [`crate::render_fx`]'s answer (after the lane mix, before the
-/// narration), and the per-lane dips are [`crate::fx_lane`]'s; the preview multiplies this by what those
-/// owners already said rather than inventing a third gain.
+/// S3 (`ducked by the game volume`): how loud the whole clip is while a line speaks.
 pub fn duck(line_speaking: bool, game_volume: f64) -> f64 {
     if line_speaking {
         game_volume
@@ -347,9 +258,7 @@ pub fn duck(line_speaking: bool, game_volume: f64) -> f64 {
     }
 }
 
-/// S3 (`lanes and hushes follow the cut`): which recordings this second hears. [`crate::cut_hear`] owns the
-/// rule — a scene silences lanes by property, an insert has no say over any — so this only asks it the
-/// question at the picture's second; a preview that disagreed with the cut would preview a different video.
+/// S3 (`lanes and hushes follow the cut`): which recordings this second hears.
 pub fn lanes_heard(cut: &Cut, t: f64) -> Vec<String> {
     match cut_hear::scene_at(&cut.segs, t).and_then(|scene| cut.segs.get(scene)) {
         Some(scene) => cut_hear::hush(scene).to_vec(),
@@ -357,9 +266,7 @@ pub fn lanes_heard(cut: &Cut, t: f64) -> Vec<String> {
     }
 }
 
-/// S3 (`speed effects apply at seeks`): the rate to seek and play at for this second. Owned by
-/// [`crate::cut_hear::rate_under`], which is also what the render reads, so a clip hurried by an effect is
-/// hurried in both.
+/// S3 (`speed effects apply at seeks`): the rate to seek and play at for this second.
 pub fn seek_rate(fx: &[Fx], t: f64) -> f64 {
     cut_hear::rate_under(fx, t)
 }
@@ -367,19 +274,12 @@ pub fn seek_rate(fx: &[Fx], t: f64) -> f64 {
 // --- S4 seeks land on the cut --------------------------------------------------------------------------------
 
 /// S4: a target inside a clip is its own answer; a target in a gap goes back to the previous clip's end or
-/// forward to the next clip's start, because those seconds are not in the video at all. Outside the cut there
-/// is no boundary to snap to, so the target stands and the caller decides what it means.
-/// §C.4 `cutEdge` (`P.eng.scrubEdgeSeconds`, §10): how far inside a clip a backwards scrub lands. Going back answers a second
-/// just INSIDE the clip it fell back to, so the frame that shows is that clip's last frame and not the black
-/// of the removed stretch; going forward lands exactly on the next clip's start, already inside its clip.
-/// SPLIT from the cue's snap on purpose: a player cued at a second outside the footage shows no frame, while
-/// the clock must read a second that is still ON a clip — one number cannot serve both jobs.
+/// forward to the next clip's start, because those seconds are not in the video at all.
 pub const SCRUB_EDGE_SECONDS: f64 = 0.05;
 
 /// The second a seek's CLOCK takes (what the label reads), as opposed to the second the player is cued at
 /// ([`snap_seek`]): going back, the end of the clip nearest behind the target entered by `SCRUB_EDGE_SECONDS`,
-/// so the reading is inside the clip whose frame shows. Going forward, and for a target already on a clip, it
-/// is the same number the cue gets.
+/// so the reading is inside the clip whose frame shows.
 pub fn snap_clock(t: f64, segs: &[Seg], forward: bool) -> f64 {
     if forward || cut_hear::scene_at(segs, t).is_some() {
         return snap_seek(t, segs, true);
@@ -392,7 +292,6 @@ pub fn snap_clock(t: f64, segs: &[Seg], forward: bool) -> f64 {
 
 pub fn snap_seek(t: f64, segs: &[Seg], forward: bool) -> f64 {
     if cut_hear::scene_at(segs, t).is_some() {
-        // Already on a clip: its own second stands.
         return t;
     }
     if forward {
@@ -404,9 +303,7 @@ pub fn snap_seek(t: f64, segs: &[Seg], forward: bool) -> f64 {
             .min_by(|left, right| left.s.total_cmp(&right.s))
             .map_or(t, |seg| seg.s);
     }
-    // The clip that ends nearest before the target. Not "the last one in the list": a preview runs the cut,
-    // so going back means the end closest behind this second, whatever order the segments arrived in. The
-    // CLOCK enters that clip by the scrub's edge (`snap_clock`); the player is cued at the boundary itself.
+    // The clip that ends nearest before the target.
     segs.iter()
         .filter(|seg| seg.e <= t)
         .max_by(|left, right| left.e.total_cmp(&right.e))
@@ -415,8 +312,7 @@ pub fn snap_seek(t: f64, segs: &[Seg], forward: bool) -> f64 {
 
 // --- S5 the rows follow the picture, and the picture follows the rows ----------------------------------------
 
-/// S5 (`row selection follows the playhead`): which row is blue right now. The same lookup the tick uses —
-/// one line owns a second, whether it was found for the picture or for the list.
+/// S5 (`row selection follows the playhead`): which row is blue right now.
 pub fn selected_row(t: f64, entries: &[Entry]) -> Option<usize> {
     line_at(t, entries)
 }
@@ -438,8 +334,6 @@ pub fn lead_in(target: usize, entries: &[Entry]) -> f64 {
 
 // --- S6 ⏹ ----------------------------------------------------------------------------------
 
-/// S6: what a press of ⏹ leaves behind — both players stopped and the triangle free for the step's own use
-/// again, not held by a preview that is no longer running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stopped {
     pub picture_paused: bool,
@@ -460,8 +354,7 @@ pub fn stop() -> Stopped {
 }
 
 /// S6 (`hands ▶ back to the step`): the sentence the run bar shows once ⏹ has stopped the preview, naming
-/// whose button the triangle is again. Held here rather than written where it is painted so the bar cannot
-/// claim ▶ back while the preview still holds it.
+/// whose button the triangle is again.
 pub const HANDED_BACK: &str = "\u{25b6} is the step's again \u{2014} the preview stopped";
 
 /// What ⏹ hands back: the ownership sentence when both players really stopped, `None` when the struct says

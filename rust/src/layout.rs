@@ -1,8 +1,4 @@
 //! The project's folder layout: spec/01-project-and-files.md §1.
-//!
-//! A project is a folder ending in `.naivepost`, and the folder **is** the output
-//! folder — nothing stores where work goes, so nothing can disagree. This module
-//! is the only place those paths are spelled; pure std, no UI (directive C).
 
 use std::fs;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -83,8 +79,7 @@ impl Tree {
 
     // --- prepare ------------------------------------------------------------
 
-    /// `KEY=VALUE` lines; its existence says the sources were read. §6 says the
-    /// rewrite MAY drop it, so `create_dirs` does not expect it and nothing reads it.
+    /// `KEY=VALUE` lines; its existence says the sources were read.
     pub fn meta_env(&self) -> PathBuf {
         self.prepare_dir().join("inputs/meta.env")
     }
@@ -134,14 +129,12 @@ impl Tree {
         self.input_file(source, "turns.json")
     }
 
-    /// ASR chunks (c00.wav…) — scratch while running. When it is removed is the
-    /// Prepare flows' rule (F1.x), not a layout question.
+    /// ASR chunks (c00.wav…) — scratch while running.
     pub fn asr_scratch(&self, source: &str) -> PathBuf {
         self.input_dir(source).join("asr")
     }
 
-    /// Forced alignment scratch: `w<ms>.wav` per window and its `.plan`. When it is removed is the
-    /// Prepare flows' rule (F1.x), not a layout question.
+    /// Forced alignment scratch: `w<ms>.wav` per window and its `.plan`.
     pub fn align_scratch(&self, source: &str) -> PathBuf {
         self.input_dir(source).join("align")
     }
@@ -158,9 +151,7 @@ impl Tree {
         self.prepare_dir().join("inputs/frames").join(source)
     }
 
-    /// `<grid>|<scene threshold>` — §6. Frames are always the video's own size, so
-    /// nothing else is stored; the prototype's `.interval` held `<interval>|<scale name>`
-    /// and had no scenes at all.
+    /// `<grid>|<scene threshold>` — §6.
     pub fn frames_marker(&self, source: &str) -> PathBuf {
         self.frames_dir(source).join(".frames")
     }
@@ -245,8 +236,7 @@ impl Tree {
     }
 
     /// F1.13's one session word list: the glued, re-timed, dressed and re-dressed words every later
-    /// pass reads (retakes, joins, `final.txt`, subtitles). Written once after the fix pass, so its
-    /// presence is that step's resume marker; see `word_list::save`/`load`.
+    /// pass reads (retakes, joins, `final.txt`, subtitles).
     pub fn session_word_list_json(&self) -> PathBuf {
         self.prepare_dir().join("word_list.json")
     }
@@ -264,8 +254,7 @@ impl Tree {
     }
 
     /// F3.5 S5 (`preview raster 512 px, cached per file`): where a drawing's preview copy is kept — one png per
-    /// source file, named by [`crate::fx_svg::raster_file_name`]. Beside the other caches because it is the same
-    /// kind of thing: derived from inputs, safe to throw away, and re-made on the next ask.
+    /// source file, named by [`crate::fx_svg::raster_file_name`].
     pub fn svg_raster_dir(&self) -> PathBuf {
         self.dir.join("cache/svg")
     }
@@ -383,8 +372,6 @@ impl Tree {
     }
 
     /// `<project>-thumbnail.jpg`: the export's default name, beside the video the uploader is paired with.
-    /// §F5.7 names the picture after the PROJECT (it is about to be uploaded somewhere else), not after the
-    /// video's stem — that one is `produce/final.jpg`, which the `<video>` tag's poster still reads.
     pub fn export_jpg(&self) -> PathBuf {
         let project = self.name().unwrap_or("naivepost");
         self.produce_dir()
@@ -399,9 +386,7 @@ impl Tree {
         self.produce_dir().join("final.html")
     }
 
-    /// The upload text and thumbnail state. A project written before the move
-    /// keeps them in `<name>.naivepost/publish/`, is read there for ever, and is
-    /// never migrated — so reads go through [`Tree::publish_dir`] rather than here.
+    /// The upload text and thumbnail state.
     fn publish_new_dir(&self) -> PathBuf {
         self.produce_dir().join("publish")
     }
@@ -411,7 +396,7 @@ impl Tree {
     }
 
     /// Where this project's upload text lives: the new place once it exists, else
-    /// the legacy one. Nothing is moved or copied — the spec forbids migrating.
+    /// the legacy one.
     pub fn publish_dir(&self) -> PathBuf {
         let now = self.publish_new_dir();
         if now.exists() {
@@ -456,16 +441,8 @@ impl Tree {
     // --- creating and writing ----------------------------------------------
 
     /// The project's directory spine, every directory at 0755.
-    ///
-    /// Created one component at a time: `DirBuilder::recursive(true)` applies the
-    /// mode only to the last component, which would leave every parent at the
-    /// umask default. The mode is then set outright, because a create's mode is
-    /// masked by the umask. Files are not created here — `meta.env` is dropped (§6
-    /// says the rewrite may) and everything else appears when its flow writes it.
     pub fn create_dirs(&self) -> Result<(), String> {
         for dir in self.dir_spine() {
-            // Absolute so the first component is the root ("/") and not a
-            // relative path that `push` would then have to replace.
             let mut built = self.dir.join(dir);
             let mut parents = vec![built.clone()];
             while let Some(parent) = built.parent() {
@@ -475,8 +452,6 @@ impl Tree {
                 built = parent.to_path_buf();
                 parents.push(built.clone());
             }
-            // Deepest first is fine: each component that is missing gets created,
-            // and `parents` runs from the leaf up to just under the project dir.
             for path in parents.iter().rev() {
                 if path.is_dir() {
                     continue;
@@ -492,8 +467,6 @@ impl Tree {
                         }
                     })
                     .map_err(|err| format!("{}: {err}", path.display()))?;
-                // The creation mode is masked by the umask, so 0755 has to be set
-                // outright — under a strict umask `create` alone yields 0700.
                 fs::set_permissions(path, fs::Permissions::from_mode(DIR_MODE))
                     .map_err(|err| format!("{}: {err}", path.display()))?;
             }
@@ -510,7 +483,6 @@ impl Tree {
             "prepare/inputs/frames",
             "prepare/describe",
             "prepare/transcript",
-            // F1.13's word list sits directly under prepare/, beside the transcript folder it dresses from.
             "prepare",
             "cache/llm",
             "cache/waves",
@@ -528,8 +500,7 @@ impl Tree {
         .collect()
     }
 
-    /// Write a project file at 0644. The mode is set after the write because a
-    /// new file's creation mode is masked by the process umask.
+    /// Write a project file at 0644.
     pub fn write_file(&self, rel: &Path, bytes: &[u8]) -> Result<(), String> {
         let path = self.dir.join(rel);
         if let Some(parent) = path.parent() {
@@ -541,14 +512,12 @@ impl Tree {
     }
 }
 
-/// SVG cards and other inserts, shared by every project under the root. Root
-/// level on purpose, so it is not a method of [`Tree`].
+/// SVG cards and other inserts, shared by every project under the root.
 pub fn assets_dir(root: &Path) -> PathBuf {
     root.join("assets")
 }
 
-/// The one path rule, read side. Where the application root comes from is a
-/// machine setting (spec/10-parameters.md), so both roots are passed in.
+/// The one path rule, read side.
 pub fn resolve(root: &Path, project: &Path, written: &str) -> PathBuf {
     if let Some(rel) = written.strip_prefix("project:") {
         project.join(rel)

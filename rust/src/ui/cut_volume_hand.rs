@@ -1,9 +1,4 @@
 //! F3.6 🔊 Volume by hand — the page half of the flow: the press, the form drawer, the Apply.
-//!
-//! Split out of `window.rs` unchanged: the rules live in [`crate::fx_volume`], and what is here is only
-//! the state a press leaves behind and the widgets that show it — the percent entry, the fade dropdowns
-//! and the two buttons. No decision of its own. A volume has no box and no gesture, so unlike Text and
-//! SVG there is nothing to arm: the press goes straight to the form, the way Speed's does.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -17,15 +12,6 @@ use crate::ui::window::{
     live_form_refused, log_line, paste_line, record_edit, refresh_effects_lane, review_cut_of,
     save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
-
-// --- F3.6 Volume by hand: the press, the form, the Apply -------------------------------------------------
-//
-// The rule half lives in `src/fx_volume.rs` (`press`/`Pressed`, `NO_SECONDS`, `initial`/`initial_at_line`,
-// `DEFAULT_GAIN`/`FADE_SECONDS`/`LINE_SECONDS`/`MIN_SECONDS`/`max_percent`, `form_title`, `FORM_FIELDS`,
-// the three help sentences, `Form`, `percent_of`/`gain_of_percent`, `apply`, `label`/`verb`/`percent_label`/
-// `placed_status`, `heard_while_paused`). What is here is only the state a press leaves behind and the widgets
-// that show it — no decision of its own. A volume has no box and no gesture, so unlike Text and SVG there is
-// nothing to arm: the press goes straight to the form, the way Speed's does.
 
 /// This window's volume-form holder name. Only the Cut tab's instance is ever drawn into or read from —
 /// `page_box` runs once per tab, so an unscoped name exists four times per window and every lookup lands on
@@ -46,12 +32,6 @@ fn volume_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
 /// F3.6 S1: what pressing 🔊 Volume did — as the sentence for the status line, with the form opened when there
 /// is something to settle. NOTHING is recorded on this press: the record happens in [`press_volume_apply`],
 /// because until someone gives the percent there is no loudness to place.
-///
-/// The refusal is answered BEFORE any form is drawn, so a cancelled dialog can never cost the user a refusal
-/// (the F2.12 Insert lesson). A band under [`cut_speed::MIN_MARKED_SECONDS`] is not a band at all and falls
-/// through to the line exactly as the flowchart draws it; the line is read through the same seam Paste, Insert
-/// and Speed use (`paste_line`) and gated by whether one was ever placed, so the page has one notion of
-/// "a line exists".
 pub fn press_volume_item(window: &adw::ApplicationWindow) -> String {
     let band = selection(window)
         .filter(|band| band.length() > 0.0)
@@ -64,11 +44,6 @@ pub fn press_volume_item(window: &adw::ApplicationWindow) -> String {
             fx_volume::NO_SECONDS.to_string()
         }
         pressed => {
-            // `initial` is the effect the press opens the form with: twice as loud over the marked seconds,
-            // or two seconds from the line. Its `t`/`dur` are the form's Length; its gain is the percent
-            // field's starting number. For the line branch `initial` cannot know the playhead (it leaves
-            // 0.0), so `initial_at_line` supplies the real second rather than letting the form title say
-            // `Volume 00:00`.
             let fx = match (pressed, line) {
                 (fx_volume::Pressed::LoudAtLine, Some(at)) => fx_volume::initial_at_line(at),
                 (pressed, _) => fx_volume::initial(pressed).unwrap_or_default(),
@@ -110,10 +85,6 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         holder.remove(&old);
     }
     LAST_VOLUME_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
-    // §1's `lane` is settled HERE, not in Apply: these are the seconds the form is about, and only this window
-    // knows which lanes it has. A record that already named one keeps it (`lane_answer`); a fresh press gets the
-    // lane its seconds fall wholly inside, or `""` for the whole bed — and §A.6 gives the form no field for it,
-    // so nothing on screen can contradict what gets stored.
     let fx = &{
         let answered = crate::fx_volume::lane_answer(&review_cut_of(window).lanes, &fx.lane);
         cut::Fx {
@@ -132,9 +103,6 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     heading.set_widget_name("volume-heading");
 
     // Row 1: Volume % then Length (s), the order §A.6 reads them and the order the spec's picture shows.
-    // The percent is first because it is the only answer about the sound. Prefilled with what the press put on
-    // the record, read through `percent_of` so the field shows 200 for the default gain of 2.0 and nobody
-    // writes a second copy of that pairing here.
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let percent_key = gtk::Label::new(Some(fx_volume::FORM_FIELDS[0]));
     percent_key.set_xalign(0.0);
@@ -155,9 +123,6 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         &trim_seconds(fx.dur),
     ));
 
-    // Row 2: Fade in, Fade out, Curve. Curve is a DropDown rather than the plain label the speed form uses:
-    // the spec's picture draws a dropdown reading "Linear", and the list is §A.1's, owned by zoom, borrowed
-    // here rather than copied so the two forms cannot offer different curves.
     let bottom = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     bottom.append(&zoom_field_row(
         fx_volume::FORM_FIELDS[2],
@@ -200,10 +165,6 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     wire_volume_buttons(window);
 }
 
-/// The form a press starts from, built out of the record so no default is invented in the widget layer. The
-/// percent is the stored gain read in the field's own unit; the curve starts on the one choice §A.1 lists; and the
-/// lane rides along from the record itself, so ✎ Edit of a volume that names one lane keeps naming it (§F3.8's
-/// "always takes its values from the live effect").
 fn volume_form_of(fx: &cut::Fx) -> fx_volume::Form {
     fx_volume::Form {
         t: fx.t,
@@ -423,10 +384,6 @@ pub(crate) fn wire_volume_esc(window: &adw::ApplicationWindow) {
     window.add_controller(controller);
 }
 
-/// F3.6 S5 (`applied in the preview even while paused`): the page's name for the loudness of one second. It is
-/// the SAME function the playing preview asks (§06#2) — `fx_volume::heard_while_paused` is `cut_hear::gain_under`
-/// by another name — so parking the red line inside a raised passage gives what will play, which is the only way
-/// the two fades can be judged without a moving frame. The mix-side twin is [`apply_mix`] / `cut_hear::mix_at`.
 pub fn paused_preview_gain(window: &adw::ApplicationWindow, t: f64) -> f64 {
     fx_volume::heard_while_paused(&review_cut_of(window).fx, t)
 }

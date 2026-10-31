@@ -1,21 +1,6 @@
-//! F2.8 S1/S2/S3 — the Cut page's trim-and-move PRESS half, split out of `window.rs` (over its budget).
-//!
-//! `cut_trim` holds the RULES (where a border may go, what a right-press takes, what the sentence says).
-//! This module holds the three things only the page can supply:
-//!
-//! * the strip's real vertical bands and the NAME a press in each of them resolves to — the recorders'
-//!   band answers the LANE whose painted span holds x, the wave strip answers the recording whose filmed
-//!   run holds the press second, so "that recording slides" and "the recording under the pointer slides"
-//!   are geometry, not the y-accident of a shared placeholder span;
-//! * the page side of a gesture — what gets persisted, how often history is pushed, which folds the drag
-//!   opened and must refold, and the live re-seek that makes a dragged border scrub the picture;
-//! * S3's unmoved press: a right click is a click and says `this one`.
-//!
-//! DECISION (spec states the band ORDER in §27 Tracks and pictures it in `spec/img/05-trim.png` but gives
-//! no pixel heights for the strip's own lane/wave rows): the kept bar keeps exactly the span it had
-//! (`RULER_H .. RULER_H + BAR_H`) so no press y changes band, and the recorders' band and the wave strip
-//! are ADDED below it, each its own span, each present only when the cut actually has lanes / filmed
-//! recordings. With neither, the strip answers the old placeholder layout.
+//! F2.8 S1/S2/S3 — the Cut page's trim-and-move PRESS half. `cut_trim` holds the RULES; this holds what only
+//! the page can supply: the strip's real bands and the name a press in each resolves to, what gets persisted
+//! and pushed to history, the folds a drag opens and refolds, and the live re-seek that scrubs the picture.
 
 use crate::cut::Cut;
 use crate::cut_trim::{self, Band, StripBands};
@@ -23,32 +8,24 @@ use crate::timeline::Recording;
 use crate::ui::window;
 use adw::prelude::*;
 
-/// F2.8 S2: the recorders' band's height — one lane row, short because it carries a plate, not pictures.
+/// F2.8 S2: the recorders' band's height: one lane row, short because it carries a plate, not pictures.
 pub const LANE_H: f64 = 18.0;
-/// F2.8 S1/S2: the wave strip's height. The row's own sound strip (§27 Tracks: "each row's first audio
-/// track as a strip below it"), drawn under the kept bar for the same reason the spec pictures it there.
+/// F2.8 S1/S2: the wave strip's height (§27 Tracks: "each row's first audio track as a strip below it").
 pub const WAVE_H: f64 = 18.0;
 
-/// The strip's TOTAL height when every row it can draw is drawn: ruler, kept bar, the recorders' band and
-/// the wave strip. `window.rs` sizes the drawing area with this, because a band a press can resolve must
-/// also have room to be painted in — sizing the strip by the tallest answer [`bands`] can give is what
-/// keeps a short cut and a cut with lanes in one layout rather than two, which is also what keeps an
-/// existing press y in the band it meant.
+/// The strip's TOTAL height when every row is drawn. `window.rs` sizes the drawing area with this, so a
+/// band a press can resolve always has room to be painted in.
 pub const STRIP_H: f64 = cut_trim::RULER_H + cut_trim::BAR_H + LANE_H + WAVE_H;
 
-/// This strip's bands RIGHT NOW: what the painter draws and what a press resolves against, so the two can
-/// never disagree. The kept bar keeps its old span so every press y that meant "bar" still means "bar";
-/// the two new rows sit under it, and each is only there when there is something to press in it. No lanes
-/// and no filmed recordings means the strip draws one row only, and answering the placeholder layout is the
-/// honest answer for a strip that drew one row.
+/// This strip's bands RIGHT NOW: what the painter draws and what a press resolves against. The kept bar
+/// keeps its old span; the two new rows sit under it, each only when there is something to press in it.
 pub fn bands(cut_: &Cut, filmed: &[Recording]) -> StripBands {
     let bar_top = cut_trim::RULER_H;
     let bar_bottom = bar_top + cut_trim::BAR_H;
     if cut_.lanes.is_empty() && filmed.is_empty() {
         return cut_trim::PLACEHOLDER_STRIP_BANDS;
     }
-    // A missing row collapses to zero height at the bottom of the row above it, so `band_at` can never
-    // answer a band the painter did not draw.
+    // A missing row collapses to zero height, so `band_at` can never answer a band the painter did not draw.
     let lane_top = bar_bottom;
     let lane_bottom = if cut_.lanes.is_empty() {
         lane_top
@@ -69,20 +46,17 @@ pub fn bands(cut_: &Cut, filmed: &[Recording]) -> StripBands {
     }
 }
 
-/// F2.8 S1: how the wave strip's peaks are cached, when a cache exists. Not a new dial: `wave::write`'s own
-/// rate, restated here because the painter needs *some* window to ask the cache with, and `params.rs` holds
-/// no numbers to catalogue it under (F2.11 owns the real waveform rows).
+/// F2.8 S1: the wave strip's peak-cache rate: `wave::write`'s own, restated because `params.rs` holds no
+/// numbers (F2.11 owns the real waveform rows).
 const WAVE_HZ: f64 = 20.0;
 
-/// F2.8 S2 ("a footage selection the press falls inside"): does the press's second lie inside the band's
-/// seconds? The band's LENGTH is not the question — a band that exists but sits nowhere near the pointer
-/// takes nothing. `Selection` lives in `window.rs`'s layer, so the rule is asked of the span itself.
+/// F2.8 S2: does the press's second lie inside the band's seconds? A band that sits nowhere near the pointer
+/// takes nothing.
 pub fn press_falls_inside(band: Option<&crate::cut_select::Selection>, at_seconds: f64) -> bool {
     band.is_some_and(|band| band.start <= at_seconds && at_seconds <= band.end)
 }
 
-/// The lane painted under x on the recorders' band: its span is `at .. at + dur` at this strip's zoom,
-/// which is exactly what [`paint_bands`] draws, so the plate the eye saw is the plate the hand picked.
+/// The lane painted under x on the recorders' band: its span is `at .. at + dur`, as [`paint_bands`] draws it.
 fn lane_at_x(cut_: &Cut, x: f64, pps: f64) -> Option<String> {
     let at = x / pps;
     cut_.lanes
@@ -91,8 +65,7 @@ fn lane_at_x(cut_: &Cut, x: f64, pps: f64) -> Option<String> {
         .map(|lane| lane.name.clone())
 }
 
-/// The recording whose filmed run holds the press second — the wave strip's answer, named by
-/// `Recording::base` like every other place a recording is named.
+/// The recording whose filmed run holds the press second, the wave strip's answer.
 fn recording_at_x(filmed: &[Recording], x: f64, pps: f64) -> Option<String> {
     let at = x / pps;
     filmed
@@ -104,10 +77,8 @@ fn recording_at_x(filmed: &[Recording], x: f64, pps: f64) -> Option<String> {
 /// The single door from a press position to the flowchart's three inputs, read off the painted geometry:
 /// `(recorders_band, wave_strip, on_border)`. `window.rs::right_press_took` forwards here.
 ///
-/// A name can only come from a plate that was PAINTED. Where the strip drew no lane row or no wave row
-/// there is nothing to read a name off, so a caller that already knows which recording its press means
-/// keeps its answer through `seam` instead of losing the branch — and only for the row that is absent: a
-/// cut that does have lanes gets its name from the lane under x, never from the seam.
+/// A name can only come from a PAINTED plate; where a row was not drawn, `seam` keeps the caller's answer
+/// for that row only.
 pub fn press_targets_at(
     cut_: &Cut,
     x: f64,
@@ -117,18 +88,10 @@ pub fn press_targets_at(
     seam: Option<&str>,
 ) -> (Option<String>, Option<String>, bool) {
     let on_border = cut_trim::border_at(boxes, x).is_some();
-    // The wave strip's recordings come from the page, so the door asks them itself rather than trusting a
-    // caller that has no way to know what was painted.
     let filmed = filmed_rows(cut_);
-    // A name can only come from a plate that was PAINTED. Where a row is absent — collapsed to zero height,
-    // or the whole layout back to the placeholder because this strip drew one row — there is nothing to read
-    // a name off, so a caller that already knows which recording its press means keeps its answer through
-    // `seam`. A row that WAS drawn answers only from the plate under x, never from the seam.
+    // Where a row is absent (collapsed, or the placeholder layout) there is nothing to read a name off, so
+    // `seam` stands in for THAT row only. A row that WAS drawn answers only from the plate under x.
     let drawn = painted_bands(cut_, &filmed);
-    // Which row the press fell on is decided by the SAME numbers the painter used, through
-    // [`painted_bands`]: a row with nothing to plate for it has collapsed to zero height there, so it can
-    // never be answered. Where a row was not painted there is nothing to read a name off, and the caller's
-    // seam stands in for THAT row only — a cut that does have lanes gets its name from the lane under x.
     let no_lane_row = cut_.lanes.is_empty();
     match band_at(y, &drawn) {
         Band::Recorders => (
@@ -142,18 +105,14 @@ pub fn press_targets_at(
     }
 }
 
-/// `cut_trim::band_at` over THIS strip's bands. Kept local so the page never passes the placeholder const
-/// by accident; the rule itself stays in `cut_trim` and stays tested there.
+/// `cut_trim::band_at` over THIS strip's bands, so the page never passes the placeholder const by accident.
 fn band_at(y: f64, bands: &StripBands) -> Band {
     cut_trim::band_at(y, bands)
 }
 
-/// The strip's bands as a PRESS must read them. Identical to [`bands`] except in the one case where the two
-/// questions genuinely differ: `bands` sizes the drawing area, so it always reserves the two rows; a press
-/// may only resolve a row that was PAINTED, and the painter paints the recorders' band per lane and the wave
-/// strip per recording the page was handed. With neither, this strip drew ONE row, and answering the
-/// placeholder layout is what makes such a press land on the bar (flowchart M3/M4/M5) instead of on a band
-/// whose plate is not there.
+/// The strip's bands as a PRESS must read them: like [`bands`] except that a press may only resolve a row that
+/// was PAINTED (recorders' band per lane, wave strip per recording). With neither, the strip drew ONE row and
+/// the placeholder layout makes the press land on the bar (flowchart M3/M4/M5).
 fn painted_bands(cut_: &Cut, filmed: &[Recording]) -> StripBands {
     if cut_.lanes.is_empty() || filmed.is_empty() {
         return cut_trim::PLACEHOLDER_STRIP_BANDS;
@@ -161,19 +120,14 @@ fn painted_bands(cut_: &Cut, filmed: &[Recording]) -> StripBands {
     bands(cut_, filmed)
 }
 
-/// Is the wave strip's recording read from a plate at all? Only when the recorders' band sits above it,
-/// i.e. only when the cut has lanes: without them [`painted_bands`] answers the placeholder layout, whose
-/// wave span shares the bar's row — one painted row, so no plate of its own to name, and the caller's seam
-/// stands in. This is asked separately from [`painted_bands`] because the two are different questions: the
-/// placeholder makes a wave y resolve to WAVE (so the branch fires), while the naming rule must still know
-/// there was no plate behind it.
+/// Is the wave strip's recording read from a plate at all? Only when the cut has lanes; otherwise the
+/// placeholder's wave span shares the bar's row, so there is no plate to name and the seam stands in.
 fn wave_plate_exists(cut_: &Cut, filmed: &[Recording]) -> bool {
     !filmed.is_empty() && !cut_.lanes.is_empty()
 }
 
-/// The wave strip's answer for this press: the RECORDING whose plate lies under x when such a plate was
-/// painted, and otherwise the caller's seam — which is what keeps flowchart M2 reachable on a strip that drew
-/// one row, where there is nothing to read a name off.
+/// The wave strip's answer for this press: the RECORDING whose plate lies under x if one was painted,
+/// else the caller's seam (keeps flowchart M2 reachable on a one-row strip).
 fn wave_answer(
     cut_: &Cut,
     filmed: &[Recording],
@@ -187,16 +141,13 @@ fn wave_answer(
     seam.map(str::to_string)
 }
 
-/// The recordings the wave strip is painted over: ONLY what the page was handed (`page_recordings`). A cut's
-/// own kept footage is not a substitute — that is what the PICTURE ROWS are made of (F2.11), and the wave
-/// strip under them belongs to those recordings; a page nobody handed a session list drew no wave plates, so
-/// there is nothing to read a name off and the caller's seam stands in.
+/// The recordings the wave strip is painted over: ONLY what the page was handed (`page_recordings`), not the
+/// cut's kept footage; a page nobody handed a session list drew no wave plates.
 pub fn filmed_rows(_cut_: &Cut) -> Vec<Recording> {
     crate::ui::cut_folds::page_recordings()
 }
 
-/// S2's questions in the order the flowchart asks them, bundled because the page answers them all at the
-/// press and the move rule then needs every one of them.
+/// S2's questions in the order the flowchart asks them.
 pub type MoveScope = (
     Option<String>, // the recorders' band's lane, if the press landed on one
     Option<String>, // the wave strip's recording, if it landed on one
@@ -205,10 +156,8 @@ pub type MoveScope = (
     f64,            // where the press fell, in seconds: S2's "a selection the press falls inside"
 );
 
-/// F2.8 S2/S3: the move rule, with the scope bundle standing in for the flowchart's five questions so the
-/// signature stays readable: `(recorders' band, wave strip, on a border, scene, press second)`. Both doors
-/// land here from `window.rs`: the widget's position-driven `press_move_at` and the older seam-only
-/// `press_move`, which passes whatever seams were primed.
+/// F2.8 S2/S3: the move rule; the scope bundle is `(recorders' band, wave strip, on a border, scene, press
+/// second)`. Both doors land here: `press_move_at` and the seam-only `press_move`.
 pub fn press_move_with_override(
     window: &adw::ApplicationWindow,
     scope: MoveScope,
@@ -226,8 +175,7 @@ pub fn press_move_with_override(
     )
 }
 
-/// [`press_move_with_override`] at a zoom of the caller's: the painted band measures S2's 8 px snap at its
-/// own pixels per second, not the placeholder strip's.
+/// [`press_move_with_override`] at the caller's zoom: S2's 8 px snap is measured at the painted band's pps.
 pub(crate) fn press_move_scaled(
     window: &adw::ApplicationWindow,
     scope: MoveScope,
@@ -237,11 +185,8 @@ pub(crate) fn press_move_scaled(
     pps: f64,
 ) -> cut_trim::Gesture {
     let (recorders_band, wave_strip, on_border, hand_scene, press_second) = scope;
-    // The scene seam only answers when this press took neither a band, nor a border, nor a selection the
-    // press fell inside: the flowchart asks those questions BEFORE it asks about a scene. A band the press
-    // falls outside, and a border, both still answer `None` here — one answer, so the two branches cannot
-    // drift apart. A door that already worked out which scene the press landed on hands it in the scope
-    // (`hand_scene`); the seam answers for the doors that have nothing to hand.
+    // The scene seam only answers when the press took neither a band, a border, nor a selection it fell inside
+    // (the flowchart asks those BEFORE a scene). `hand_scene` carries a scene a door already worked out.
     let scene = if recorders_band.is_some()
         || wave_strip.is_some()
         || on_border
@@ -261,7 +206,6 @@ pub(crate) fn press_move_scaled(
     )
 }
 
-/// F2.8 S2: the move rule with every input supplied, including which scene (if any) the press fell on.
 fn press_move_core(
     window: &adw::ApplicationWindow,
     scope: MoveScope,
@@ -271,16 +215,14 @@ fn press_move_core(
     pps: f64,
 ) -> cut_trim::Gesture {
     let (recorders_band, wave_strip, on_border, scene, press_second) = scope;
-    // The opening state, as `cut_trim::right_gesture` asks: the hold's travel is from the press.
     let cut_ = MOVE_OPEN
         .with(|cell| cell.borrow().clone())
         .unwrap_or_else(window::newest_review_cut);
     let band = window::selection(window);
     let band_name = recorders_band
         .clone()
-        // F2.8 S2: the shift lands on whichever recording the press took, and a wave-strip press names its
-        // recording in `wave_strip`, not in `recorders_band` — leaving this at the band alone wrote the
-        // correction to no source at all for every M2 press.
+        // The shift lands on whichever recording the press took; a wave-strip press names it in `wave_strip`,
+        // not `recorders_band`.
         .or_else(|| wave_strip.clone());
     let selected: Vec<usize> = match (&band, &cut_) {
         (Some(band), cut_) => cut_
@@ -324,8 +266,7 @@ fn press_move_core(
         &sources,
         false,
     );
-    // What the answer costs (persistence, the one Undo step, the folds) is [`apply_gesture`]; the sentence
-    // the rule earned goes on this window's own status line.
+    // What the answer costs (persistence, the one Undo step, the folds) is [`apply_gesture`].
     apply_gesture(window, &gesture);
     if let cut_trim::Gesture::Slid { status, .. } = &gesture {
         if let Some(status_line) = window::find_status(window.upcast_ref()) {
@@ -335,18 +276,16 @@ fn press_move_core(
     gesture
 }
 
-/// S3 from the widget: the release of a right press that never moved. `spec/inventory/cut.md`'s summary of
-/// this surface gives the wording ("Unmoved right press = \"this one\" (status only)"); a click writes
-/// nothing at all, so this is the whole of what the page does with it.
+/// S3 from the widget: the release of a right press that never moved. A click writes nothing
+/// (`spec/inventory/cut.md`: "Unmoved right press = \"this one\" (status only)").
 pub fn press_unmoved(window: &adw::ApplicationWindow) {
     if let Some(status_line) = window::find_status(window.upcast_ref()) {
         status_line.set_text(CLICK_STATUS);
     }
 }
 
-/// The plate colours the spec's picture uses: a dim lane plate under the ruler's kept greens, and the
-/// recordings' own blue wave strip. The GEOMETRY is the point — a press must land where a plate is — so
-/// the waveform is best-effort and a missing cache draws a flat baseline rather than nothing.
+/// The plate colours: a dim lane plate under the kept greens, and the recordings' blue wave strip. The
+/// geometry is the point; a missing cache draws a flat baseline.
 pub fn paint_bands(cr: &cairo::Context, w: f64, cut_: &Cut, filmed: &[Recording], pps: f64) {
     let bands = bands(cut_, filmed);
     let (lane_top, lane_bottom) = bands.recorders;
@@ -377,13 +316,8 @@ pub fn paint_bands(cr: &cairo::Context, w: f64, cut_: &Cut, filmed: &[Recording]
     }
 }
 
-/// One row's wave strip, painted at whatever geometry the caller has: the placeholder strip calls this from
-/// [`paint_bands`] with its own span, and the PAINTED band's picture rows call it with the lower third of
-/// each camera row (`cut_tracks::row_wave_px`). Split out of [`paint_bands`] so both surfaces ink the same
-/// plate from the same cache instead of drawing two different answers to "what does this row sound like".
-///
-/// The peaks are decoration: a cache that cannot be read draws a flat baseline, so the row still reads as a
-/// row and a press there means what its band says.
+/// One row's wave strip at the caller's geometry: the placeholder strip and the PAINTED band's picture rows
+/// (`cut_tracks::row_wave_px`) both call it, so both ink the same plate from the same cache.
 pub fn paint_row_wave(
     cr: &cairo::Context,
     w: f64,
@@ -403,8 +337,7 @@ pub fn paint_row_wave(
     cr.set_source_rgba(0.2, 0.4, 0.8, 0.30);
     cr.rectangle(x, top, wide, bottom - top);
     let _ = cr.fill();
-    // Ask the real cache (`cache/waves/<base>.wave`) and draw a peak column every `1/WAVE_HZ` s that fits
-    // in this strip; no cache, flat baseline.
+    // Ask the real cache (`cache/waves/<base>.wave`) and draw a peak column every `1/WAVE_HZ` s; none, flat baseline.
     let peaks = cached_peaks(&rec.base);
     cr.set_source_rgb(0.15, 0.32, 0.66);
     let mid = top + (bottom - top) / 2.0;
@@ -432,26 +365,17 @@ pub fn paint_row_wave(
     }
 }
 
-/// F2.9 S2: the pieces a sound paste LAID over the kept footage, painted on top of everything else in the
-/// bar. A segment whose `lane` is non-empty is exactly what [`crate::cut_copy::lay_pieces`] writes — `ins`
-/// names the file, `lane` the recording it stands in for, `ss` the file second it opens on — and it is
-/// neither kept footage nor an insert, so the kept green and the insert violet would both be a lie about it.
+/// F2.9 S2: the pieces a sound paste LAID over the kept footage, painted on top of the bar. A segment with a
+/// non-empty `lane` is what [`crate::cut_copy::lay_pieces`] writes; it is neither kept footage nor an insert.
 ///
-/// Colour is the painter's own decision: §A's inventory gives the band a kept green and an insert violet and
-/// says nothing about a laid-over sound, so this takes the same blue as every wave plate in this strip
-/// ([`paint_row_wave`]) — one colour for "this is audio", whatever row carries it — drawn as a thin plate at
-/// the bar's bottom so the picture under it stays visible: the spec's point is that the video did NOT change.
-/// The lane name goes on when the box is wide enough to hold it; a narrow piece reads as a plate alone rather
-/// than as a plate with a word cut off it.
+/// Drawn in the wave-plate blue ("this is audio") as a thin plate at the bar's bottom so the picture stays
+/// visible. The lane name goes on only when the box is wide enough to hold it.
 pub fn paint_laid_pieces(cr: &cairo::Context, w: f64, cut_: &Cut, pps: f64) {
     paint_laid_pieces_in(cr, w, cut_, pps, cut_trim::RULER_H, 8.0);
 }
 
-/// [`paint_laid_pieces`] with the strip's own geometry handed in: `top` is where the caller's kept bar
-/// begins and `plate_from_top` how tall that bar is, so the plate sits at the bottom of whichever bar carries
-/// it — the window's placeholder strip (RULER_H / BAR_H) and the PAINTED band (its picture-row top and
-/// height) then show the same pieces, and a paste that only inked one surface would read as a failed paste on
-/// the other.
+/// [`paint_laid_pieces`] with the caller's bar geometry (`top`, and `plate_from_top` as the bar's height), so
+/// the placeholder strip and the PAINTED band show the same pieces.
 pub fn paint_laid_pieces_in(
     cr: &cairo::Context,
     w: f64,
@@ -482,15 +406,11 @@ pub fn paint_laid_pieces_in(
     }
 }
 
-/// This recording's cached mono envelope, if `cache/waves` holds one that applies. Best-effort by design:
-/// a cache that cannot be read is a missing decoration, never a reason the strip draws nothing.
+/// This recording's cached mono envelope, if `cache/waves` holds one that applies; best-effort.
 fn cached_peaks(base: &str) -> Option<Vec<u8>> {
-    // Which folder's cache to read: the shot's own project first, then the working copy beside the launch. A
-    // headless snapshot renders a FIXTURE in another directory (`cut_picture::set_snapshot_dir`) and stages its
-    // envelope beside THAT fixture, so without this the strip asks the launch's working copy, finds nothing, and
-    // draws the flat baseline the spec's picture does not show — the same reason `install` lists the bench's
-    // frames through the same door. A project folder's inner `session.naivepost` is tried too, because that is
-    // where the staging doors (`snapshot_lane::stage_envelope`) put a session's own cache.
+    // Which folder's cache to read: the shot's own project first, then the working copy beside the launch.
+    // A headless snapshot renders a FIXTURE elsewhere and stages its envelope beside THAT fixture; a project
+    // folder's inner `session.naivepost` is tried too (`snapshot_lane::stage_envelope`).
     let shot = crate::ui::cut_picture::snapshot_frame_tree();
     let from_launch = crate::layout::Tree::new(crate::startup::open_dir()).ok();
     let candidates = shot.iter().cloned().chain(from_launch).flat_map(|tree| {
@@ -502,8 +422,7 @@ fn cached_peaks(base: &str) -> Option<Vec<u8>> {
         let Ok(meta) = std::fs::metadata(&path) else {
             continue;
         };
-        // Held per file version: the strip paints on every move of the hand, and a stat is all a paint may cost
-        // (§03-shell §1). A rewritten cache (new size or time) is read again.
+        // Held per file version: a stat is all a paint may cost (§03-shell §1); a rewritten cache is read again.
         let stamp = (meta.len(), meta.modified().ok());
         if let Some((at, held)) = PEAKS.with(|peaks| peaks.borrow().get(&path).cloned()) {
             if at == stamp {
@@ -530,29 +449,24 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-// --- what the page holds between the press and the release ---------------------------------------------
-
 thread_local! {
     /// Has this gesture's hold already spent its Undo step? One act of the hand is one step
-    /// (`cut_trim::pushes_undo`), and a drag fires an update per mouse-move event. Reset at `drag-begin`.
+    /// (`cut_trim::pushes_undo`). Reset at `drag-begin`.
     static MOVE_PUSHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The cut as the hold's press found it, set at `drag-begin` and dropped at the release; `None` for a
-    /// door called with no hold open (one answer from the cut as it is now).
+    /// The cut as the hold's press found it, set at `drag-begin`, dropped at the release; `None` with no hold open.
     static MOVE_OPEN: std::cell::RefCell<Option<crate::cut::Cut>> = const { std::cell::RefCell::new(None) };
-    /// The folds THIS drag opened, as the spans they were, so the release can refold exactly those and
-    /// leave alone a fold the user had already opened.
+    /// The folds THIS drag opened, as spans, so the release refolds exactly those.
     static DRAG_FOLDS: std::cell::RefCell<Vec<[f64; 2]>> = const { std::cell::RefCell::new(Vec::new()) };
-    /// The folds the gesture in flight asked to open, newest write last — what `ui::open_folds` reads.
+    /// The folds the gesture in flight asked to open, newest write last: what `ui::open_folds` reads.
     static DRAG_OPEN: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The move gesture's `drag-begin`: start the hold clean, so the first real move is the one that pushes.
 pub fn begin_move() {
     MOVE_PUSHED.with(|cell| cell.set(false));
-    // The cut as the press found it: every update of the hold measures its travel from THIS, not from the
-    // cut the last update left, or eight mouse-moves of one second each would slide eight seconds.
+    // Every update measures its travel from the cut as the press found it, or eight one-second moves would slide eight seconds.
     MOVE_OPEN.with(|cell| *cell.borrow_mut() = Some(window::newest_review_cut()));
-    // §7: the file waits for the release. Every write between now and `end_move` is refused at the writer.
+    // §7: the file waits for the release; every write until `end_move` is refused at the writer.
     crate::cut_save::begin_gesture();
     DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());
     DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
@@ -568,24 +482,19 @@ pub fn open_folds() -> Vec<usize> {
     DRAG_OPEN.with(|cell| cell.borrow().clone())
 }
 
-/// The folds the rule asked to open, as the cut's own fold spans. Indexing into the cut rather than
-/// reading the surface is what makes the answer the same whether the cut has two folds or none.
+/// The folds the rule asked to open, as the cut's own fold spans.
 fn fold_spans(cut_: &Cut, open: &[usize]) -> Vec<[f64; 2]> {
     open.iter()
         .filter_map(|index| cut_.folds.get(*index).copied())
         .collect()
 }
 
-/// F2.8 S2: apply a right gesture to this window's cut. Called from `window.rs`' move path, which owns
-/// the press position and the status line; this owns what the answer COSTS:
+/// F2.8 S2: apply a right gesture to this window's cut. This owns what the answer COSTS:
 ///
-/// * `Gesture::Click` (S3) writes nothing at all and prints `this one` — the wording
-///   `spec/inventory/cut.md` gives for an unmoved right press ("Unmoved right press = \"this one\" (status
-///   only)"), and a click that wrote a history step would make ↶ eat a press nobody made.
-/// * a slide writes the shift map, the row pin and the trimmed seconds to cut.json through the same door
-///   every editing press uses, so a correction survives a reopen;
-/// * the first real move of a hold goes through `record_edit` (it pushes the one Undo step); the updates
-///   after it write state without pushing, which is what `pushes_undo` means on this path.
+/// * `Gesture::Click` (S3) writes nothing and prints `this one`; a history step would make ↶ eat a press nobody made.
+/// * a slide writes the shift map, row pin and trimmed seconds to cut.json through the usual editing door;
+/// * the first real move of a hold goes through `record_edit` (the one Undo step); later updates write state
+///   without pushing.
 /// * the folds the rule asked to open are opened now and refolded on release ([`end_move`]).
 pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gesture) -> bool {
     let cut_trim::Gesture::Slid {
@@ -613,8 +522,7 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());
         DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
     } else {
-        // Open them for the drag through F2.11's own door (a fold is a view: saved, and it spends no
-        // Undo step), remembered by span so the release can put back exactly these.
+        // Open them through F2.11's own door (a fold is a view: saved, no Undo step), remembered by span for the release.
         DRAG_FOLDS.with(|cell| *cell.borrow_mut() = opened.clone());
         DRAG_OPEN.with(|cell| *cell.borrow_mut() = open.clone());
         let mut cut_open = cut_.clone();
@@ -627,28 +535,22 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         crate::ui::cut_folds::refresh_fold_badges(window);
         cut_ = cut_open;
     }
-    // §7's one Undo per drag, in full: the FIRST real move of the hold spends the history step and nothing
-    // else does, and the FILE waits for the gesture's end on both paths — a write per mouse-move is I/O in the
-    // drag loop, and the disk would hold whichever edge the pointer last passed.
+    // §7's one Undo per drag: the FIRST real move spends the history step, and the FILE waits for the gesture's end.
     if already_pushed() {
         crate::ui::window_history_zoom::amend_edit(window, &cut_);
     } else {
         crate::ui::window::record_edit(window, &cut_);
         MOVE_PUSHED.with(|cell| cell.set(true));
     }
-    // NOT a file write: this runs on every mouse-move of the hold. §7's one writer stays at the gesture's end
-    // (the release path below, and `end_move`), because a file per tick is I/O in the drag loop and would leave
-    // the disk holding whichever edge the pointer happened to be over when it last moved.
+    // NOT a file write: this runs on every mouse-move; §7's one writer stays at the gesture's end.
     true
 }
 
-/// S3: an unmoved right press is a click. Nothing is written, nothing is undone; the page says `this one`.
-/// `spec/inventory/cut.md`'s summary of this surface is the source of the wording.
+/// S3: an unmoved right press is a click: nothing written or undone; the page says `this one`.
 pub const CLICK_STATUS: &str = "this one";
 
-/// §7 bullet 7 / F2.8 S1: the trim's release. The drag itself only updates state (§7's `one Undo per drag`
-/// skips the history mid-hold); THIS is the door that writes `cut.json`, so the file ends up holding the edge
-/// the hand left rather than whichever one a mid-drag tick happened to catch.
+/// §7 bullet 7 / F2.8 S1: the trim's release. The drag only updates state; THIS door writes `cut.json`, so
+/// the file holds the edge the hand left.
 pub fn end_release() {
     // The gesture ends HERE, so the write below is the first one the hold is allowed.
     crate::cut_save::end_gesture();
@@ -656,9 +558,8 @@ pub fn end_release() {
     land_trim(&window::main_window());
 }
 
-/// S1 on release: what a trim settles once the hand lets go. A neighbour landed against within a frame joins, and
-/// effects over what the trim took away are clamped, both in the step the trim already took. Mid-drag a join would
-/// lose the far side of a border the hand may still pull back.
+/// S1 on release: what a trim settles once the hand lets go. A neighbour landed against within a frame joins,
+/// and effects over what the trim took away are clamped. Mid-drag a join would lose the far side of a border.
 pub fn land_trim(window: &adw::ApplicationWindow) {
     let Some((index, border)) = TRIMMED.with(std::cell::Cell::take) else {
         return;
@@ -682,9 +583,8 @@ thread_local! {
     static TRIMMED: std::cell::Cell<Option<(usize, cut_trim::Border)>> = const { std::cell::Cell::new(None) };
 }
 
-/// F2.8 S2 ("refold after"): the drag released. Put back exactly the folds this drag opened, newest span
-/// first so a list that shifted under the unfolds lands where it was, and leave every other fold alone —
-/// a fold the user had already opened is not this drag's to close.
+/// F2.8 S2 ("refold after"): the drag released. Put back exactly the folds this drag opened, newest span first
+/// so a shifted list lands where it was; a fold the user had already opened is not this drag's to close.
 pub fn end_move(window: &adw::ApplicationWindow) {
     MOVE_OPEN.with(|cell| cell.borrow_mut().take());
     let opened =
@@ -692,8 +592,7 @@ pub fn end_move(window: &adw::ApplicationWindow) {
     if opened.is_empty() {
         DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
         MOVE_PUSHED.with(|cell| cell.set(false));
-        // The hold still moved the edge, so the release still writes it: §7's one writer runs at the gesture's
-        // end whether or not the drag had any fold to put back.
+        // The hold still moved the edge, so the release still writes it, fold or no fold.
         crate::cut_save::end_gesture();
         crate::ui::window::save_insert_cut(&crate::ui::window::newest_review_cut());
         return;
@@ -705,8 +604,7 @@ pub fn end_move(window: &adw::ApplicationWindow) {
         }
     }
     crate::ui::cut_folds::sync_page_folds(&mut cut_);
-    // `record_edit`, not a bare seed: opening the drag's folds and refolding them is ONE act of the hand,
-    // so the refold belongs to the step the move already opened rather than spending one of its own.
+    // One act of the hand: the refold belongs to the step the move already opened.
     crate::ui::window::record_edit(window, &cut_);
     crate::cut_save::end_gesture();
     crate::ui::cut_folds::save_folds(&cut_);
@@ -715,11 +613,9 @@ pub fn end_move(window: &adw::ApplicationWindow) {
     MOVE_PUSHED.with(|cell| cell.set(false));
 }
 
-/// F2.8 S1 ("picture scrubs live · the picture lands on the edge"): where the border the hand just landed
-/// on actually is in the cut, so the page asks the PLAYER for the second the picture must show rather than
-/// trusting the pixel the pointer reached. [`crate::cut_trim::clamp_edge`] is the only thing that decides
-/// a border's place, so reading the segment back after the write is what keeps a scrub past the recording's
-/// end, or past a neighbour, from showing a picture the cut does not contain.
+/// F2.8 S1: where the border the hand just landed on actually is in the cut, so the page asks the PLAYER for
+/// the second the picture must show rather than trusting the pointer's pixel. Reading the segment back after
+/// the write keeps a scrub past the recording's end or a neighbour from showing a picture the cut lacks.
 pub fn edge_second(index: usize, border: cut_trim::Border) -> f64 {
     let cut_ = crate::ui::window::newest_review_cut();
     match cut_.segs.get(index) {
@@ -727,18 +623,15 @@ pub fn edge_second(index: usize, border: cut_trim::Border) -> f64 {
             cut_trim::Border::Start => seg.s,
             cut_trim::Border::End => seg.e,
         },
-        // Nothing there to scrub: the segment went away (a release that joined two scenes) or the index is
-        // stale. 0.0 is never asked for, because the caller only scrubs a border it just wrote.
+        // The segment went away (a release that joined two scenes) or the index is stale; 0.0 is never asked for.
         None => 0.0,
     }
 }
 
-/// F2.8 S1 ("picture scrubs live (throttled)"): re-seek the RUNNING media leg to the second the dragged border just landed on, through the same player path every other press
-/// uses — `cut_record_play`'s own file list into `cut_play_back::cue_clips`, which is the leg the
-/// `NAIVEPOST_PLAYER` seam records. Answers whether anything was re-seeked: with no preview running there
-/// is no picture to scrub, and starting one on a trim would be the page inventing playback nobody asked
-/// for. The release calls this too, unconditionally, so the LAST edge always reaches the picture even when
-/// the [`crate::cut_trim::SCRUB_MS`] throttle swallowed the updates before it.
+/// F2.8 S1: re-seek the RUNNING media leg to the second the dragged border just landed on, through
+/// `cut_play_back::cue_clips` (the leg the `NAIVEPOST_PLAYER` seam records). Answers whether anything was
+/// re-seeked: with no preview running there is no picture to scrub. The release calls this too, so the LAST
+/// edge always reaches the picture despite the [`crate::cut_trim::SCRUB_MS`] throttle.
 pub fn scrub_picture(window: &adw::ApplicationWindow, at_secs: f64) -> bool {
     if !crate::ui::window::preview_player(window).transport.playing {
         return false;
@@ -755,11 +648,9 @@ pub fn scrub_picture(window: &adw::ApplicationWindow, at_secs: f64) -> bool {
         .is_ok()
 }
 
-/// F2.8 S1 with the drag in hand remembered: `first` says whether THIS move is the hold's first, which is the
-/// only one that spends an Undo step (§7's `one Undo per drag`, read through [`cut_trim::pushes_undo`] and
-/// [`crate::cut_hand::picking_up`]). Mid-drag updates still write the cut and still persist it — they just leave
-/// the history alone, so one ↶ takes back a whole drag rather than one mouse-move at a time. Split out of
-/// `window.rs`, which is past its size budget; the rule about where a border may go stays in [`cut_trim`].
+/// F2.8 S1 with the drag in hand remembered: `first` says whether THIS move is the hold's first, the only one
+/// that spends an Undo step (§7; [`cut_trim::pushes_undo`], `crate::cut_hand::picking_up`). Mid-drag updates
+/// write and persist the cut but leave history alone, so one ↶ takes back a whole drag.
 pub fn press_border_move(
     window: &adw::ApplicationWindow,
     index: usize,
@@ -796,11 +687,10 @@ pub fn press_border_move(
     if crate::ui::cut_hand::picking_up(first) {
         window::record_edit(window, &cut_);
     } else {
-        // Still writing the cut and still refreshing what reads it; no new step, the drag's own step amended.
+        // The drag's own Undo step is amended.
         crate::ui::window_history_zoom::amend_edit(window, &cut_);
     }
-    // S1: the picture follows the edge, at the second the cut now holds (not the pixel the pointer reached,
-    // which a clamp may have stopped short of).
+    // S1: the picture follows the edge, at the second the cut now holds (a clamp may stop short of the pointer).
     scrub_picture(window, edge_second(index, border));
     if !status.is_empty() {
         if let Some(status_line) = window::find_status(window.upcast_ref()) {

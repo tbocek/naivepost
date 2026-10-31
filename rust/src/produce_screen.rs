@@ -1,20 +1,13 @@
 //! §08-produce#1-screen — 1. Screen: the Produce page's settings, images row, thumbnail editor and readouts.
 //!
-//! The page is two columns (§A): left the images/thumbnail column, right the written column above the
-//! encoder settings in a scroller. Nothing here draws; each rule §1 states is one plain function or
-//! constant, so the widget layer only renders these answers and forwards presses. `P.policy.gameVolume`
-//! (0.22) is the one §10 number this page shows; every encode number is ffmpeg's own (`tool:ffmpeg.encode`).
-//!
-//! What the pictures *are* — which is the base, which are references — stays [`crate::publish`]'s answer;
-//! this module only edits the list and says what each slot offers.
+//! Nothing here draws: each rule §1 states is one plain function or constant, and the widget layer renders
+//! them. `P.policy.gameVolume` (0.22) is the one §10 number shown; which picture is the base stays
+//! [`crate::publish`]'s answer.
 
 use crate::project::{Codec, Container, Publish, Subtitles, TextMark};
 use crate::tools::mm_ss;
 
-// ---- A. encoder settings (§1's "Encoder settings", options/tooltips in inventory §A) --
-
-/// The rows of the settings scroller, in §A's order — the page draws them in this order and nowhere else
-/// keeps it, so a test can pin the list against the table.
+/// The rows of the settings scroller, in §A's order, so a test can pin the list against the table.
 pub const SETTINGS_ROWS: [&str; 13] = [
     "Container",
     "Codec",
@@ -31,9 +24,8 @@ pub const SETTINGS_ROWS: [&str; 13] = [
     "Frame edges",
 ];
 
-/// The encoder rows the Produce page draws: every stored row but `Game audio`, which is the narration's own level
-/// (how loud the recording plays under a spoken line) and so lives on the Narrate page (§07 §1). It is still
-/// stored with the encoder settings, which the render reads.
+/// The encoder rows the Produce page draws: every stored row but `Game audio`, which lives on the Narrate
+/// page (§07 §1) but is still stored with the encoder settings.
 pub fn settings_rows_shown() -> Vec<&'static str> {
     SETTINGS_ROWS
         .iter()
@@ -42,11 +34,8 @@ pub fn settings_rows_shown() -> Vec<&'static str> {
         .collect()
 }
 
-/// §A's Container row: mp4, mkv, webm.
 pub const CONTAINERS: [&str; 3] = ["mp4", "mkv", "webm"];
-/// §A's Codec row: h264, h265, vp9.
 pub const CODECS: [&str; 3] = ["h264", "h265", "vp9"];
-/// §A's Preset row, fastest to smallest.
 pub const PRESETS: [&str; 6] = [
     "ultrafast",
     "veryfast",
@@ -55,26 +44,22 @@ pub const PRESETS: [&str; 6] = [
     "slow",
     "veryslow",
 ];
-/// §A's Resolution row: the short side of the frame, or the footage's own size.
 pub const RESOLUTIONS: [&str; 3] = ["720p", "1080p", "original"];
 /// §A's Frame rate row. `source` keeps the recording's own rate.
 pub const FRAME_RATES: [&str; 4] = ["source", "60", "30", "24"];
-/// §A's Audio row, in kbit/s.
 pub const AUDIO_KBPS: [&str; 4] = ["128", "192", "256", "320"];
 /// §A's Subtitles row: what the VIDEO carries. An .srt and a .vtt are written beside it regardless (§C).
 pub const SUBTITLE_CHOICES: [&str; 3] = ["burned in", "track in file", "none in the video"];
-/// §A's Translate row: the three languages the app can write subtitles in.
 pub const TRANSLATE_LANGUAGES: [&str; 3] = ["English", "German", "French"];
-/// §A's Quality row: CRF runs 14..34 and the slider carries a mark at 24, where the default sits.
+/// §A's Quality row: CRF runs 14..34 and the slider carries a mark at 24, the default.
 pub const CRF_MIN: u32 = 14;
 pub const CRF_MAX: u32 = 34;
 pub const CRF_MARK: u32 = 24;
-/// §A's three tick rows, each with the label the tick itself carries.
 pub const VFR_TICK: &str = "peak rate (VFR)";
 pub const MONO_TICK: &str = "mono";
 pub const EDGES_TICK: &str = "blurred";
 
-/// The options of one row, exactly as §A lists them. An unknown row has no list rather than a guessed one.
+/// The options of one row, as §A lists them. An unknown row has no list.
 pub fn options(row: &str) -> Option<&'static [&'static str]> {
     match row {
         "Container" => Some(&CONTAINERS),
@@ -84,14 +69,13 @@ pub fn options(row: &str) -> Option<&'static [&'static str]> {
         "Frame rate" => Some(&FRAME_RATES),
         "Audio" => Some(&AUDIO_KBPS),
         "Subtitles" => Some(&SUBTITLE_CHOICES),
-        // The list is the session's language removed from it; this is the whole menu.
+        // The session's language is removed from this list.
         "Translate" => Some(&TRANSLATE_LANGUAGES),
         _ => None,
     }
 }
 
-/// The default of one row, spelled as §A spells it. `off`/`on` because three rows are ticks and a tick has
-/// no option list to name its starting point with.
+/// The default of one row, as §A spells it; `off`/`on` for the three tick rows.
 pub fn defaults() -> [(&'static str, &'static str); 13] {
     [
         ("Container", "mp4"),
@@ -103,7 +87,6 @@ pub fn defaults() -> [(&'static str, &'static str); 13] {
         ("Subtitles", "none in the video"),
         // No language ticked: translating is asked for, never assumed.
         ("Translate", ""),
-        // P.policy.gameVolume.
         ("Game audio", "0.22"),
         ("Quality (CRF)", "24"),
         ("Frame timing", "off"),
@@ -113,7 +96,7 @@ pub fn defaults() -> [(&'static str, &'static str); 13] {
     ]
 }
 
-/// §A's Tooltip column, one sentence per row — the reason for the choice, not a restatement of it.
+/// §A's Tooltip column, one sentence per row.
 pub fn tooltip(row: &str) -> &'static str {
     match row {
         "Container" => "mp4 plays everywhere; mkv keeps subtitle tracks best; webm forces VP9 + Opus",
@@ -124,7 +107,6 @@ pub fn tooltip(row: &str) -> &'static str {
         "Audio" => "audio bitrate in kbit/s",
         "Subtitles" => "what the VIDEO carries; an .srt is written beside the video either way, one per language ticked",
         "Translate" => "Also write the subtitles in these languages, translated — this video's own language is not offered",
-        // P.policy.gameVolume: the value, not a second copy of it.
         "Game audio" => "how loud the original game audio sits under the narration",
         "Quality (CRF)" => "quality: lower is better and bigger (18–24 is the usual range; 24 is the default, marked)",
         "Frame timing" => "Treat the frame rate above as a ceiling rather than a target",
@@ -134,8 +116,7 @@ pub fn tooltip(row: &str) -> &'static str {
     }
 }
 
-/// §1: the session's own language is never offered for translation — a track that repeats what the viewer
-/// already hears is not a translation. An unknown language removes nothing, so all three stay offered.
+/// §1: the session's own language is never offered for translation. An unknown language removes nothing.
 pub fn translate_options(session_language: &str) -> Vec<&'static str> {
     TRANSLATE_LANGUAGES
         .into_iter()
@@ -143,9 +124,8 @@ pub fn translate_options(session_language: &str) -> Vec<&'static str> {
         .collect()
 }
 
-/// §A's two forcing rules, applied to the page's own controls: webm carries vp9 and nothing else, and a
-/// subtitle track is not something webm holds, so "track in file" becomes "none in the video". Every other
-/// container leaves both choices alone.
+/// §A's two forcing rules: webm carries vp9 and nothing else, and holds no subtitle track, so "track in
+/// file" becomes "none in the video". Other containers leave both alone.
 pub fn apply_container_rules(
     container: Container,
     codec: Codec,
@@ -157,8 +137,7 @@ pub fn apply_container_rules(
     }
 }
 
-/// §A: the output file is not a question — `produce/final.<container>`, which is
-/// [`crate::layout::Tree::final_video`]. The name only, because the folder is the project's business.
+/// §A: the output is `produce/final.<container>` ([`crate::layout::Tree::final_video`]); the name only.
 pub fn output_name(container: Container) -> String {
     let stem = match container {
         Container::Mp4 => "mp4",
@@ -168,36 +147,27 @@ pub fn output_name(container: Container) -> String {
     format!("final.{stem}")
 }
 
-/// §A's ↻ Transcode: an encode with no model call, and the two things the render does not own left alone.
+/// §A's ↻ Transcode: an encode with no model call.
 pub const TRANSCODE_TIP: &str = "Encode the video again from the cut and these settings — no model call, and the thumbnail and the upload text are left alone";
 
-/// §A's ⤓ Save video: a copy out, so `produce/final` keeps its place as the one output that is stamped.
+/// §A's ⤓ Save video: a copy out, so `produce/final` stays the one output that is stamped.
 pub const SAVE_VIDEO_TIP: &str =
     "Save the finished video somewhere else — a copy; produce/final stays where it is";
-
-// ---- B. the images row (§1's "Images row") ---------------------------------------
 
 /// §1: up to 8 pictures go to the image model, the first being the base it edits.
 pub const MAX_IMAGES: usize = 8;
 
-/// §A: the empty state's first sentence — with nothing given, the instruction is all the model has.
 pub const EMPTY_IMAGES: &str = "No image — the thumbnail will be drawn from the instruction alone.";
 
-/// §A: its second sentence, the action that clears the empty state.
 pub const EMPTY_IMAGES_HINT: &str = "Add image… to edit one of your own frames instead.";
 
-/// What ＋ Add image and Change… say when there is nothing to choose from. The spec spells what a chooser's
-/// answer does (§1 items 1/3: a real path appends, an empty cancel adds nothing) but says nothing about the
-/// wording of a cancel, so this names the button that fixes it — the same principle as everywhere else here:
-/// say which thing failed where, and leave everything else alone.
+/// What ＋ Add image and Change… say when there is nothing to choose from; names the button that fixes it.
 pub const NO_FRAME_TO_ADD: &str =
     "no extracted frame to add \u{2014} Prepare takes frames before a picture can be chosen";
 
-/// The heading's sentence (§A): what the row is for, in the order that decides what is base.
 pub const IMAGES_HEADING_TIP: &str = "What the image model is given, in order. The FIRST is the base — the picture being edited — and the others are references the instruction can name.";
 
-/// §1: adding never replaces anything and a ninth picture is refused rather than dropping one — which
-/// frame was chosen first is not something an add should be able to decide.
+/// §1: adding never replaces anything and a ninth picture is refused rather than dropping one.
 pub fn add_image(frames: &mut Vec<String>, path: &str) -> bool {
     if frames.len() >= MAX_IMAGES {
         return false;
@@ -206,43 +176,34 @@ pub fn add_image(frames: &mut Vec<String>, path: &str) -> bool {
     true
 }
 
-/// §10's `P.policy.publishFrames` (prototype `defPubFrames`): the first run hands the model three of the
-/// frames Prepare extracted rather than none — a thumbnail drawn from an instruction alone is recognisably
-/// not this video. Three is a start, not a cap: [`MAX_IMAGES`] stays the row's ceiling, and the first of
-/// these three is the base the model edits ([`crate::publish::base`]).
+/// §10's `P.policy.publishFrames`: the first run hands the model three Prepare frames, not none. Three is a
+/// start, not a cap ([`MAX_IMAGES`]); the first is the base ([`crate::publish::base`]).
 pub const FIRST_IMAGES: usize = 3;
 
-/// The first run's frames: up to [`FIRST_IMAGES`] of what the session offers, in the order offered, so the
-/// earliest is the base. Fewer available means fewer taken; none means an empty row, which is the state
-/// [`EMPTY_IMAGES`] describes rather than a reason to draw from nothing by default.
+/// The first run's frames: up to [`FIRST_IMAGES`] of what the session offers, in order, so the earliest is
+/// the base. None means an empty row ([`EMPTY_IMAGES`]).
 pub fn seed_frames(available: &[String]) -> Vec<String> {
     available.iter().take(FIRST_IMAGES).cloned().collect()
 }
 
-// ---- the thumbnail's own box --------------------------------------------------------
-
-/// §10's `P.machine.thumbnailLongSide` (prototype `pubLongSide`): 1280 because that is the size every
-/// uploader displays a thumbnail at, so a bigger picture is rescaled by someone else with worse settings.
-/// The *long* side — a 9:16 thumbnail is 720×1280, not 1280 turned sideways.
+/// §10's `P.machine.thumbnailLongSide`: 1280, the size every uploader displays. The *long* side: a 9:16
+/// thumbnail is 720×1280.
 pub const THUMB_LONG_SIDE: u32 = 1280;
 
-/// §2's frame-box rule for the thumbnail: no aspect (or the row's `source`) means the video's own shape,
-/// which with nothing to read it off is 16:9; otherwise the picture's own ratio. The longer edge stops at
-/// [`THUMB_LONG_SIDE`] and both sides come out even — a chosen picture keeps its shape rather than being
-/// cropped to the project's, since choosing it *is* the choice of shape.
+/// §2's frame-box rule: no aspect (or `source`) means the picture's own shape, else its ratio; with nothing
+/// to read it off, 16:9. The longer edge stops at [`THUMB_LONG_SIDE`] and both sides come out even.
 ///
-/// `aspect` is `"w:h"`, or empty / `source` for "the picture's own", in which case `wide`/`high` — the
-/// picture ffprobe reported — decide the shape and 16:9 is only the last resort when even those are unknown.
+/// `aspect` is `"w:h"`, or empty / `source`; then `wide`/`high` (what ffprobe reported) decide the shape.
 pub fn thumb_box(aspect: &str, wide: u32, high: u32) -> (u32, u32) {
     let own = (wide.max(1), high.max(1));
     let (w, h) = match ratio(aspect) {
         Some(shape) => shape,
-        // "source", empty, or an unparseable shape: the picture's own edges, and 16:9 if nothing is known.
+        // "source", empty, or unparseable: the picture's own edges, and 16:9 if nothing is known.
         None if wide > 0 && high > 0 => own,
         None => (16, 9),
     };
     let (w, h) = (w.max(1), h.max(1));
-    // Scale from the longer edge so neither side is ever asked to exceed the tier.
+    // Scale from the longer edge so neither side exceeds the tier.
     if w >= h {
         (THUMB_LONG_SIDE, even(THUMB_LONG_SIDE * h / w))
     } else {
@@ -250,7 +211,6 @@ pub fn thumb_box(aspect: &str, wide: u32, high: u32) -> (u32, u32) {
     }
 }
 
-/// `w:h` as two whole numbers, or `None` for the row's non-shapes.
 fn ratio(aspect: &str) -> Option<(u32, u32)> {
     let (w, h) = aspect.split_once(':')?;
     let w: u32 = w.trim().parse().ok()?;
@@ -258,15 +218,14 @@ fn ratio(aspect: &str) -> Option<(u32, u32)> {
     (w > 0 && h > 0).then_some((w, h))
 }
 
-/// Rounded down to even: the encoders this page offers are all 4:2:0, which refuses a chroma sample on an
-/// odd edge, and rounding up would push the long side past [`THUMB_LONG_SIDE`].
+/// Rounded down to even: the encoders are 4:2:0, which refuses an odd edge, and rounding up would pass
+/// [`THUMB_LONG_SIDE`].
 fn even(side: u32) -> u32 {
     side - side % 2
 }
 
-/// §1: `Make base` on every non-base slot. The chosen reference goes to the front and what was the base
-/// joins the references behind it, so no picture is lost by re-pointing the edit. Slot 0 has no such
-/// button and out-of-range slots are refused.
+/// §1: `Make base` on every non-base slot: the chosen reference goes to the front and the old base joins the
+/// references. Out-of-range slots are refused.
 pub fn make_base(frames: &mut Vec<String>, slot: usize) -> bool {
     if slot == 0 || slot >= frames.len() {
         return false;
@@ -276,7 +235,7 @@ pub fn make_base(frames: &mut Vec<String>, slot: usize) -> bool {
     true
 }
 
-/// §1's remove. The last picture going leaves the empty state, not a base of nothing.
+/// §1's remove. The last picture going leaves the empty state.
 pub fn remove_image(frames: &mut Vec<String>, slot: usize) -> bool {
     if slot >= frames.len() {
         return false;
@@ -285,8 +244,7 @@ pub fn remove_image(frames: &mut Vec<String>, slot: usize) -> bool {
     true
 }
 
-/// §1's `Change…`: the slot keeps its place, only its picture changes — a reference the instruction has
-/// already named stays the second image when it is replaced.
+/// §1's `Change…`: the slot keeps its place, only its picture changes.
 pub fn change_image(frames: &mut Vec<String>, slot: usize, path: &str) -> bool {
     let Some(slot) = frames.get_mut(slot) else {
         return false;
@@ -295,9 +253,8 @@ pub fn change_image(frames: &mut Vec<String>, slot: usize, path: &str) -> bool {
     true
 }
 
-/// What a slot offers. `Set Thumbnail` puts the picture on the thumbnail as it is — cropped to the video's
-/// shape, no model and no GPU (§A) — so it belongs on every slot; `Make base` only on a reference. The
-/// remove button's label is §1's word, "remove".
+/// What a slot offers. `Set Thumbnail` crops to the video's shape, no model and no GPU (§A), so it is on
+/// every slot; `Make base` only on a reference.
 pub fn slot_actions(slot: usize, count: usize) -> &'static [&'static str] {
     const BASE: [&str; 3] = ["Set Thumbnail", "Change…", "remove"];
     const REFERENCE: [&str; 4] = ["Make base", "Set Thumbnail", "Change…", "remove"];
@@ -308,12 +265,8 @@ pub fn slot_actions(slot: usize, count: usize) -> &'static [&'static str] {
     }
 }
 
-/// §1: the base wears a crop box when its shape differs from the video's, because the thumbnail keeps only
-/// the video's own shape of it. No image, no box; the same shape needs none either.
-/// §1: the base wears a crop box when its shape differs from the video's, because the thumbnail keeps only
-/// the video's own shape of it. No image, no box; the same shape needs none either. A video shape with a
-/// zero side means NO SHAPE IS KNOWN YET (the page holds `(0, 0)` until something reads the finished file),
-/// and an unknown frame is not a difference — guessing one would draw a box over a picture that needs none.
+/// §1: the base wears a crop box when its shape differs from the video's. A video shape with a zero side
+/// means NO SHAPE IS KNOWN YET (the page holds `(0, 0)`), which is not a difference.
 pub fn shows_crop_box(base_shape: Option<(u32, u32)>, video_shape: (u32, u32)) -> bool {
     if video_shape.0 == 0 || video_shape.1 == 0 {
         return false;
@@ -324,48 +277,40 @@ pub fn shows_crop_box(base_shape: Option<(u32, u32)>, video_shape: (u32, u32)) -
     }
 }
 
-/// §A: the instruction box is four lines, the negative prompt two — the instruction has a picture to
-/// describe and the negative only has things to keep out.
+/// §A: the instruction box is four lines, the negative prompt two.
 pub const INSTRUCTION_LINES: usize = 4;
 pub const NEGATIVE_LINES: usize = 2;
 
-/// §A's Edit instruction tooltip: what the model is told, and the rule that words never come from here.
+/// §A's Edit instruction tooltip.
 pub const INSTRUCTION_TIP: &str = "What the image model is told to make out of the images. No words: the title and the marked texts are printed on afterwards.";
 
-/// §A's Negative prompt tooltip.
 pub const NEGATIVE_TIP: &str =
     "What must stay out of the picture — watermarks, logos, lettering, extra limbs.";
 
-// ---- C. the thumbnail and its text overlays (§1) ---------------------------------
-
-/// §A's ⤓ export: what YouTube takes is a JPEG under 2 MB, so the export says which limit it keeps under.
+/// §A's ⤓ export: YouTube takes a JPEG under 2 MB, so the export says which limit it keeps under.
 pub const EXPORT_TIP: &str =
     "Export the thumbnail as a JPEG — what YouTube takes, under its 2 MB limit";
 
-/// §A's ↻ redraw: the same images and instruction, a fresh draw.
 pub const REDRAW_TIP: &str =
     "Draw the thumbnail again from the images and the instruction as they stand — a fresh draw";
 
-/// §A ("Text overlays"): the picture column's width, the smallest box that can hold words, the snap
-/// distance to the picture's edges and middles and to other boxes, and the ✎ chip's size.
+/// §A ("Text overlays"): the picture column's width, the smallest box that holds words, the snap distance
+/// to edges, middles and other boxes, and the ✎ chip's size.
 pub const OVERLAY_EDGE_PX: f64 = 200.0;
 pub const OVERLAY_MIN_PX: f64 = 28.0;
 pub const OVERLAY_SNAP_PX: f64 = 10.0;
 pub const OVERLAY_CHIP_PX: f64 = 22.0;
 
-/// A box smaller than [`OVERLAY_MIN_PX`] in either direction cannot be read as words, so a drag that ends
-/// there is not a box. Pixels, because the minimum is what a hand leaves behind on the picture.
+/// A drag that ends smaller than [`OVERLAY_MIN_PX`] in either direction is not a box. Pixels, the hand's unit.
 pub fn box_is_too_small(w_px: f64, h_px: f64) -> bool {
     w_px < OVERLAY_MIN_PX || h_px < OVERLAY_MIN_PX
 }
 
-/// How near a box's border a press takes hold of that border rather than of the whole box: a 2 px dashed line
-/// is not a mouse target, this reach on either side of it is (the prototype's `fxGrab`).
+/// How near a box's border a press takes that border rather than the box: a 2 px dashed line is not a mouse target.
 pub const OVERLAY_GRAB_PX: f64 = 9.0;
 
-/// What a press at a point has hold of on one box (the prototype's `fxEdges`): a side border (`horiz`: the
-/// left or right edge, `left` says which), a top or bottom border (`vert`, `top`), both at a corner, or the
-/// middle (`inside`). Nothing set is a press beside the box.
+/// What a press at a point has hold of on one box: a side border (`horiz`; `left` says which), a top or bottom
+/// border (`vert`, `top`), both at a corner, or the middle (`inside`). Nothing set is a press beside the box.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Grip {
     pub horiz: bool,
@@ -381,9 +326,7 @@ impl Grip {
         self.horiz || self.vert || self.inside
     }
 
-    /// The pointer over the box, named before anything is pressed, which is the whole of how anyone finds out
-    /// a border resizes: the resize arrows on borders and corners, the move hand inside (the prototype's
-    /// `fxCursorName`).
+    /// The pointer over the box, named before any press: resize arrows on borders and corners, move hand inside.
     pub fn cursor(&self) -> &'static str {
         match (self.horiz, self.vert) {
             (true, true) if self.left == self.top => "nwse-resize",
@@ -396,7 +339,6 @@ impl Grip {
     }
 }
 
-/// The grip a press at `(x, y)` takes on the box `(rx, ry, rw, rh)`, all in the same pixels.
 pub fn grip_at(x: f64, y: f64, (rx, ry, rw, rh): (f64, f64, f64, f64)) -> Grip {
     let reach = OVERLAY_GRAB_PX;
     let in_x = x >= rx - reach && x <= rx + rw + reach;
@@ -414,10 +356,8 @@ pub fn grip_at(x: f64, y: f64, (rx, ry, rw, rh): (f64, f64, f64, f64)) -> Grip {
     }
 }
 
-/// A border drag on a box of words (the prototype's `resizeFree`): the hand at `(x, y)`, the box as it was
-/// `was`, the grip it was taken by. A side moves one edge, a corner two, and an edge that was not grabbed does
-/// not move; the far edge stays where it was. No box gets smaller than [`OVERLAY_MIN_PX`], so the hand can
-/// still find its border.
+/// A border drag on a box of words: the hand at `(x, y)`, the box as it was `was`, the grip it was taken by.
+/// A side moves one edge, a corner two; the far edge stays. No box gets smaller than [`OVERLAY_MIN_PX`].
 pub fn resize_box(x: f64, y: f64, was: (f64, f64, f64, f64), grip: Grip) -> (f64, f64, f64, f64) {
     let (mut nx, mut ny, mut nw, mut nh) = was;
     let (x0, y0, w0, h0) = was;
@@ -444,10 +384,9 @@ pub fn resize_box(x: f64, y: f64, was: (f64, f64, f64, f64), grip: Grip) -> (f64
     (nx, ny, nw, nh)
 }
 
-/// The move half of the snapping (the prototype's `snapEdgePx`): a whole box slides, so any of its three lines
-/// on one axis, near edge, middle or far edge, may be the one that lands on a target. `near` is the near edge
-/// and `length` the box's size on that axis; the box is carried by whichever line came closest within
-/// [`OVERLAY_SNAP_PX`], and nothing within reach leaves it where the hand put it.
+/// The move half of the snapping: any of a whole box's three lines on one axis (near edge, middle, far edge)
+/// may land on a target. `near` is the near edge, `length` the box's size on that axis; the closest line
+/// within [`OVERLAY_SNAP_PX`] wins.
 pub fn snap_slide(near: f64, length: f64, targets: &[f64]) -> f64 {
     let mut best = (near, OVERLAY_SNAP_PX);
     for mine in [near, near + length / 2.0, near + length] {
@@ -461,9 +400,8 @@ pub fn snap_slide(near: f64, length: f64, targets: &[f64]) -> f64 {
     best.0
 }
 
-/// A box in picture pixels `(x, y, w, h)` back into the fractions a mark and the title band are stored in, held
-/// inside the picture (the prototype's `fxBox.clamp`: never narrower than 4 % nor shorter than 3 %, never off
-/// an edge).
+/// A box in picture pixels `(x, y, w, h)` back into stored fractions, held inside the picture (never narrower
+/// than 4 % nor shorter than 3 %, never off an edge).
 pub fn box_fractions(rect: (f64, f64, f64, f64), wide: f64, high: f64) -> crate::project::TitleBox {
     let (x, y, w, h) = rect;
     let wf = (w / wide).clamp(0.04, 1.0);
@@ -476,9 +414,8 @@ pub fn box_fractions(rect: (f64, f64, f64, f64), wide: f64, high: f64) -> crate:
     }
 }
 
-/// §A's snap targets for one drag: the picture's own edges and middles plus EVERY box already on it, in the
-/// plate's pixels (§A states its numbers in pixels, and a mark stores fractions, so the conversion happens
-/// here at the size the plate actually has). `(x targets, y targets)` — feed each to [`snap`].
+/// §A's snap targets for one drag: the picture's edges and middles plus EVERY box already on it, in the
+/// plate's pixels (marks store fractions, so the conversion happens at the plate's size). `(x targets, y targets)`.
 pub fn overlay_snap_targets(
     plate_w: f64,
     plate_h: f64,
@@ -497,9 +434,7 @@ pub fn overlay_snap_targets(
     (xs, ys)
 }
 
-/// A drag lands on the nearest snap target — a picture edge or middle, or another box's edge — when it came
-/// within [`OVERLAY_SNAP_PX`] of one; otherwise it stays where the hand left it. §A's snapping rule, in the
-/// page's own pixels.
+/// A drag lands on the nearest snap target within [`OVERLAY_SNAP_PX`]; otherwise it stays where the hand left it.
 pub fn snap(value: f64, targets: &[f64]) -> f64 {
     let nearest = targets
         .iter()
@@ -513,10 +448,9 @@ pub fn snap(value: f64, targets: &[f64]) -> f64 {
     nearest.copied().unwrap_or(value)
 }
 
-/// §1: dragging a box over the picture puts words on it, printed to fill the box like a Text effect in Cut.
-/// The geometry is stored as fractions of the picture — [`crate::project::TextMark`]'s own shape — so a
-/// resize of the column never rescales the words' position. An empty text is not a mark: ✎ with nothing in
-/// it removes rather than keeps a blank box.
+/// §1: dragging a box over the picture puts words on it, printed to fill the box. Stored as fractions of the
+/// picture ([`crate::project::TextMark`]), so a column resize never rescales position. An empty text is not
+/// a mark: ✎ with nothing in it removes the box.
 pub fn place_words(mark: &mut TextMark, cx: f64, cy: f64, wf: f64, hf: f64, text: &str) {
     mark.cx = cx;
     mark.cy = cy;
@@ -530,8 +464,7 @@ pub fn set_words(mark: &mut TextMark, text: &str) {
     mark.text = text.trim().to_string();
 }
 
-/// §1's ✎ remove: the box is gone, the others keep their order — a reword dialog that removed the wrong box
-/// would otherwise move words nobody touched.
+/// §1's ✎ remove: the others keep their order.
 pub fn remove_words(marks: &mut Vec<TextMark>, index: usize) -> bool {
     if index >= marks.len() {
         return false;
@@ -540,31 +473,24 @@ pub fn remove_words(marks: &mut Vec<TextMark>, index: usize) -> bool {
     true
 }
 
-/// §A: the title band's default box, in fractions of the picture — across the top, on its own. The title is
-/// printed there and nowhere else, which is why it is a box rather than part of the picture.
+/// §A: the title band's default box, in fractions of the picture: across the top, on its own.
 pub const TITLE_BOX_DEFAULT: (f64, f64, f64, f64) = (0.5, 0.25, 1.0, 0.4);
 
-// ---- D. title, description, suggest (§1) -----------------------------------------
-
-/// §A's ↻ suggest: the only thing on this page that asks a model to rewrite text, and it rewrites all three
-/// of the written things at once so they cannot disagree about what the video is.
+/// §A's ↻ suggest rewrites all three written things at once so they cannot disagree about the video.
 pub const SUGGEST_TIP: &str =
     "Ask the model for a fresh title and description — the only thing that does";
 
-/// §A's title entry placeholder.
 pub const TITLE_PLACEHOLDER: &str =
     "the video's title, also printed on the thumbnail — ▶ suggests one";
 
-/// §A's title tooltip: the first thumbnail takes the title as its printed line; after that the two are
-/// separate, because a title retyped for YouTube should not silently repaint a published picture.
+/// §A's title tooltip: the first thumbnail takes the title as its printed line; after that the two are separate.
 pub const TITLE_TIP: &str = "Four to seven words. The first thumbnail takes it as its printed line; after that the two are separate.";
 
-/// §A's description box: eight lines, which is roughly what YouTube shows before "more".
+/// §A's description box: eight lines, roughly what YouTube shows before "more".
 pub const DESCRIPTION_LINES: usize = 8;
 
-/// §1 (`printed across the thumbnail the first time only; then separate`): the first draw prints the title,
-/// and after that the printed line is the thumbnail's own. `title_seeded` is the page's memory of having
-/// printed it, so a retitled project never repaints a picture somebody chose. True when this call copied.
+/// §1 (`printed across the thumbnail the first time only; then separate`): `title_seeded` is the page's memory
+/// of having printed it. True when this call copied.
 pub fn seed_title(publish: &mut Publish) -> bool {
     if publish.title_seeded || !publish.thumb_title.trim().is_empty() {
         return false;
@@ -577,15 +503,11 @@ pub fn seed_title(publish: &mut Publish) -> bool {
     true
 }
 
-// ---- E. Inputs / Outputs readouts (§1's last bullet) ------------------------------
-
-/// §1: with no cut there is nothing to produce, and the page says it in the other pages' words.
+/// §1: with no cut there is nothing to produce; the page says it in the other pages' words.
 pub const NO_CUT_LINE: &str = crate::narrate_details::NO_CUT_LINE;
 
-/// The Inputs row: `N clip(s) · mm:ss`, then which of the two narration states applies — never both — then
-/// whether the upload text exists yet. `no_narration` is the narration having no line with words (there is no
-/// switch, §07 §1); `to_speak` counts the lines ▶ has to speak, which is what makes the wait legible before
-/// anything runs.
+/// The Inputs row: `N clip(s) · mm:ss`, then which narration state applies (never both), then whether the
+/// upload text exists. `no_narration`: no line has words (there is no switch, §07 §1); `to_speak`: lines ▶ has to speak.
 pub fn inputs_line(
     clips: usize,
     seconds: f64,
@@ -608,9 +530,8 @@ pub fn inputs_line(
     line
 }
 
-/// The Inputs tooltip: what will be spoken first, which recordings are mixed, the voice, and whether
-/// `publish.json` exists. A row is dropped when there is nothing to say for it — a tooltip of "none"s reads
-/// as a broken page rather than an empty one.
+/// The Inputs tooltip: what is spoken first, which recordings are mixed, the voice, whether `publish.json`
+/// exists. A row with nothing to say is dropped.
 pub fn inputs_tooltip(
     cut_line: &str,
     first_line: Option<&str>,
@@ -640,23 +561,16 @@ pub fn inputs_tooltip(
     rows.join("\n\n")
 }
 
-/// The page's `publish_written`, answered the way §A asks the question: does `publish.json` exist.
+/// The page's `publish_written`, answered as §A asks: does `publish.json` exist.
 ///
-/// The page cannot answer this from its own rows. The Go prototype asks the file (`publishRecorded` is
-/// `exists(publish/publish.json)`, read both for the Inputs readout and for ▶'s opening line), because the
-/// page only knows what is on screen NOW: a session whose first ▶ already ran holds a written upload text
-/// in the folder, and a page reload would not see it in any row. Deriving the answer from the rows alone
-/// prints "no upload text" beside a `publish.json` the next ▶ is about to rewrite.
-///
-/// `held` is what a flow published to the page (or the empty `Publish::default()` on a page with no
-/// session); either side saying "written" makes the row say it, because both are true statements about the
-/// folder and neither can be read without the other.
+/// The page cannot answer from its own rows: a session whose first ▶ already ran holds an upload text a page
+/// reload would not see, and rows alone would print "no upload text" beside a file the next ▶ rewrites.
+/// `held` is what a flow published to the page; either side saying "written" makes the row say it.
 pub fn publish_written(held: bool, file_exists: bool) -> bool {
     held || file_exists
 }
 
-/// The Outputs row counts, and only counts (§1): the page owns a folder of files whose sizes mean nothing
-/// until one of them is opened. MB above 1, KB below — a folder of 200 kB should not read as "0 MB".
+/// The Outputs row counts, and only counts (§1). MB above 1, KB below, so 200 kB does not read as "0 MB".
 pub fn outputs_summary(files: usize, bytes: u64) -> String {
     const MIB: u64 = 1024 * 1024;
     if files == 0 {
@@ -668,6 +582,6 @@ pub fn outputs_summary(files: usize, bytes: u64) -> String {
     format!("{files} files, {} MB", (bytes + MIB / 2) / MIB)
 }
 
-/// §1's folder-button tooltip: the four things this step writes, in the order a person looks for them.
+/// §1's folder-button tooltip: the four things this step writes.
 pub const FOLDER_TIP: &str =
     "produce/ \u{2014} the finished video, the per-clip encodes, the thumbnail and the upload text";

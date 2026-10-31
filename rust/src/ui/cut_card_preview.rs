@@ -1,15 +1,3 @@
-//! F2.12 S7 — what the preview shows while a card plays. `spec/05-cut.md` F2.12 S7:
-//! "cards render at 8 fps (one frame for stills) via ffmpeg, nearest rendered frame shown; a spliced card
-//! holds the footage while it plays on the wall clock; card sound is its own pipeline."
-//!
-//! `cut_insert` catalogues the numbers (§I's `insPreviewFPS`, the frame-second ladder, the 48-texture stop);
-//! this module RUNS them: it asks the real ffmpeg for a card's frames, puts the nearest rendered one on the
-//! preview panel, says when the footage is being held under a spliced card, and answers the hearing question
-//! a card poses. Nothing here decodes a frame on the fly and nothing here invents a frame: what ffmpeg did
-//! not write is not shown.
-//!
-//! Split out of `window.rs`, which is past its size budget.
-
 use std::path::{Path, PathBuf};
 
 use crate::cut::{Cut, Seg};
@@ -37,8 +25,6 @@ pub fn frame_dir(root: &Path, card_path: &str) -> PathBuf {
 pub const FFPROBE: &str = "ffprobe";
 
 /// Ask the real ffprobe for a file's own seconds — S3's "the file's own length (video/audio duration…)".
-/// `None` on any failure, which is what sends the form back to `P.policy.insertDefaultSeconds` rather than
-/// refusing the insert: an unreadable duration is a fallback case, not a broken button.
 pub fn probe_seconds(ffprobe: &str, path: &str) -> Option<f64> {
     let out = subprocess::run(
         ffprobe,
@@ -104,12 +90,6 @@ pub fn frame_second(path: &Path, fps: f64) -> Option<f64> {
 }
 
 /// The card's frames, rendered for real if they are not there yet.
-///
-/// Resume first (AGENTS.md: a step's own output is its marker): a folder that already holds frames is the
-/// pass having happened before, and re-running ffmpeg over a card nobody changed would cost a second for
-/// nothing. Otherwise the ladder comes from `cut_insert::frame_times` at `preview_fps`'s rate (a STILL asks
-/// for one frame, not sixty-four of the same one) and stops at `TEXTURE_CAP`, and ffmpeg is asked through
-/// `subprocess::run` so the command reaches the log and a failure names the tool and its reason.
 pub fn render_card(
     ffmpeg: &str,
     card_path: &str,
@@ -222,10 +202,6 @@ pub fn probe_card_seconds(window: &adw::ApplicationWindow, path: &str) -> Option
 
 /// The card's own frames, on the panel. Answers the sentence the page prints, or `None` when the line is on
 /// footage — the caller then shows the session's own frame as it always has.
-///
-/// The frames live in the folder [`frame_dir_for`] names: this window's project, or the one a snapshot named,
-/// because a headless render has no project open and must still not fail. A card whose frames cannot be
-/// rendered answers `None`, leaving the panel on the session's frame.
 pub fn show_card_frame(window: &adw::ApplicationWindow, cut_: &Cut, t: f64) -> Option<CardFrame> {
     // A spliced card costs no session time, so the picture stands still while the wall clock runs: worth
     // saying because everywhere else on this page the picture moves when the clock does. `held` is that fact.
@@ -335,9 +311,6 @@ pub fn svg_is_animated(file: &Path) -> bool {
 }
 
 /// F2.12 S7 (`card sound is its own pipeline`): does this card bring sound the app must answer for?
-///
-/// A card with a `mute` is silent — that is the tick's whole meaning — and a still or a drawn card has no
-/// sound track at all, so only a video file (or a sound laid over the picture) has a pipeline of its own.
 pub fn card_sound(seg: &Seg) -> bool {
     !seg.mute && matches!(cut_insert::kind(&seg.ins), Kind::Video | Kind::Audio)
 }
@@ -348,10 +321,6 @@ pub fn footage_held_while_card(seg: &Seg) -> bool {
     seg.is_insert()
 }
 
-/// F2.12 S7 (`a spliced card holds the footage while it plays on the wall clock`): how far the line may move
-/// for a tick's worth of elapsed time. The arithmetic is `cut_insert::playhead_advance`; what lives here is the
-/// decision about WHICH second is held, so no tick loop grows a card rule of its own. Asked through
-/// `cut_record_tick::WindowPage::card_advance`, the program's own door.
 pub fn card_hold_advance(seg: Option<&Seg>, elapsed: f64, rate: f64) -> f64 {
     cut_insert::playhead_advance(seg.is_some_and(|s| s.is_insert()), elapsed, rate)
 }

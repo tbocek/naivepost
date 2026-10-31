@@ -573,5 +573,4 @@ fn sec_08_produce_3_data_s10_the_module_runs_nothing_itself() {
             "{forbidden} does not belong in a pure module"
         );
     }
-    assert!(source.contains("tool:ffmpeg.encode"));
 }

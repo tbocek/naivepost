@@ -1,9 +1,6 @@
 //! `requests.tsv` and the ASR sidecars of spec/01-project-and-files.md §6: the log of
 //! every request sent outside, the four JSON documents a recording leaves behind, the
 //! `meta.env` marker, and the frame-scanning pair `.frames` / `scenes.tsv`.
-//!
-//! Pure data. The clock is the one thing that cannot be pure here, so [`format_started`]
-//! takes its instant and its offset as arguments.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -15,24 +12,17 @@ use serde::{Deserialize, Serialize};
 use crate::layout;
 
 /// A recording shorter than this is a start and a stop, not a take: it is written up as
-/// silence with no server asked (§6). P.policy.minTakeSeconds; the prototype's constant was
-/// `shortTake`.
+/// silence with no server asked (§6).
 pub const MIN_TAKE_SECONDS: f64 = 2.0;
 
-/// The header of `requests.tsv`, §6's eighteen columns in order. One place, because the
-/// reader has to recognise it and a log written before a column existed has to be readable
-/// beside one written after.
-///
-/// Spelled out: `started` `run` `step` `job` `service` `model` `kind` `sent_bytes` `images`
-/// `received_bytes` `tokens_in` `tokens_out` `wait_s` `first_byte_s` `on_wire_s`
-/// `thinking_s` `outcome` `attempt`.
+/// The header of `requests.tsv`, §6's eighteen columns in order.
 pub const HEADER: &str = concat!(
     "started\trun\tstep\tjob\tservice\tmodel\tkind\tsent_bytes\timages",
     "\treceived_bytes\ttokens_in\ttokens_out\twait_s\tfirst_byte_s\ton_wire_s",
     "\tthinking_s\toutcome\tattempt",
 );
 
-/// Which server a request went to. §6 says "one of", so these four and nothing else.
+/// Which server a request went to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Service {
@@ -56,8 +46,7 @@ impl Service {
     }
 }
 
-/// How a request ended. `error` carries the status or the reason, which is why it is not a
-/// bare unit variant: §6 writes it as `error <status or reason>`.
+/// How a request ended.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Outcome {
     /// The default because a row that says nothing else ended well.
@@ -93,8 +82,6 @@ impl FromStr for Outcome {
             "stalled" => Ok(Self::Stalled),
             "cancelled" => Ok(Self::Cancelled),
             rest => match rest.strip_prefix("error ") {
-                // The reason may hold spaces ("error connection refused"), so only the
-                // label is taken off and the rest kept whole.
                 Some(reason) if !reason.is_empty() => Ok(Self::Error(reason.to_string())),
                 _ => Err(format!("{text:?} is not an outcome this build knows")),
             },
@@ -102,8 +89,7 @@ impl FromStr for Outcome {
     }
 }
 
-/// One request sent outside, timed. A retry is a row of its own with a higher `attempt`; a
-/// reply served from the cache is a row too, with no time on the wire.
+/// One request sent outside, timed.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Request {
     /// Local time with milliseconds, as [`format_started`] writes it.
@@ -114,8 +100,7 @@ pub struct Request {
     pub service: Service,
     pub model: String,
     /// What kind of call: `chat`, `asr`, `align`, `diarize`, `tts`, `separate`, `upload`,
-    /// `image`, `search`, `read`. §6 lists those with an "e.g.", so it stays free-form and
-    /// a new kind costs no format change.
+    /// `image`, `search`, `read`.
     pub kind: String,
     pub sent_bytes: Option<i64>,
     pub images: Option<u32>,
@@ -133,9 +118,6 @@ pub struct Request {
 }
 
 /// The row `request` is written as: eighteen tab-separated fields, newline-terminated.
-/// Seconds carry two decimals and are empty when the request never knew them — an empty
-/// field and a zero mean different things here, which is what keeps a cache line from
-/// reading as a request that took no time rather than no wire.
 pub fn write_line(request: &Request) -> String {
     let seconds = |v: Option<f64>| v.map(|v| format!("{v:.2}")).unwrap_or_default();
     let number = |v: i64| v.to_string();
@@ -166,11 +148,7 @@ pub fn write_line(request: &Request) -> String {
         + "\n"
 }
 
-/// Read one row. Fields missing at the END are taken as unknown: a log written by an older
-/// build has none of a column added since, and the file is kept across runs, so old rows
-/// stay in it. A row short of what every build writes — or with a number or an outcome that
-/// does not parse — is an error naming the row, because guessing there would move a
-/// request's timings onto the wrong request.
+/// Read one row.
 pub fn parse_line(line: &str) -> Result<Request, String> {
     let row = line.trim_end_matches(['\n', '\r']);
     let f: Vec<&str> = row.split('\t').collect();
@@ -178,7 +156,6 @@ pub fn parse_line(line: &str) -> Result<Request, String> {
         return Err(format!("{row}: a request row starts with seven fields"));
     }
     let missing = |n: usize| f.len() > n;
-    // An absent column and an empty one are the same answer — the request did not say.
     let opt_number = |n: usize| -> Result<Option<i64>, String> {
         if !missing(n) || f[n].is_empty() {
             return Ok(None);
@@ -243,12 +220,7 @@ pub fn record(tree: &layout::Tree, request: &Request) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
     }
-    // The header belongs to the file, not to a row. It goes in when there is no file or
-    // nothing in it, and also when the file exists but opens on something that is not the
-    // header — a log written by an older build has no header line at all, and its rows are
-    // as readable as anyone's. What never happens is rewriting what is already there: this
-    // file is the only record of the requests, so repairing it by hand would be inventing
-    // history rather than correcting it.
+    // The header belongs to the file, not to a row.
     let needs_header = match fs::read_to_string(&path) {
         Ok(text) => text.lines().next().is_none_or(|line| line != HEADER),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
@@ -260,8 +232,6 @@ pub fn record(tree: &layout::Tree, request: &Request) -> Result<(), String> {
         .open(&path)
         .map_err(|err| format!("{}: {err}", path.display()))?;
     if needs_header {
-        // Only a file that already ended in a newline can take the header glued to it, so
-        // the byte is written explicitly either way.
         let prefix = match fs::read_to_string(&path) {
             Ok(text) if !text.is_empty() && !text.ends_with('\n') => "\n",
             _ => "",
@@ -278,8 +248,7 @@ pub fn record(tree: &layout::Tree, request: &Request) -> Result<(), String> {
         .map_err(|err| format!("{}: {err}", path.display()))
 }
 
-/// The log's rows, in the order they were appended. A missing file is no rows: a new
-/// project starts an empty one (§6).
+/// The log's rows, in the order they were appended.
 pub fn read(tree: &layout::Tree) -> Result<Vec<Request>, String> {
     let path = tree.requests_tsv();
     let text = match fs::read_to_string(&path) {
@@ -296,7 +265,6 @@ fn read_rows(text: &str, path: &Path) -> Result<Vec<Request>, String> {
         if line.trim().is_empty() {
             continue;
         }
-        // The header is the file saying what its columns are, not a request.
         if n == 0 && line == HEADER {
             continue;
         }
@@ -306,15 +274,9 @@ fn read_rows(text: &str, path: &Path) -> Result<Vec<Request>, String> {
 }
 
 /// Local time with milliseconds, `YYYY-MM-DD HH:MM:SS.mmm` — §6's `started`.
-///
-/// Written from the epoch plus the machine's offset rather than from a date-time crate:
-/// this has to be writable by any build of the app, and the arithmetic is twenty lines.
-/// Days are counted from 1970-01-01 with Howard Hinnant's civil-from-days algorithm, which
-/// needs no month table and gets leap years right without a rule for 1900.
 pub fn format_started(epoch_ms: i64, offset_secs: i32) -> String {
     let local = epoch_ms + i64::from(offset_secs) * 1000;
     let (days, millis) = (local.div_euclid(86_400_000), local.rem_euclid(86_400_000));
-    // Hinnant's civil_from_days, whose epoch is 0000-03-01; the constant shifts ours to it.
     let days = days + 719_468;
     let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
     let day_of_era = days - era * 146_097;
@@ -351,8 +313,7 @@ pub struct Word {
     pub end_sample: u64,
 }
 
-/// `words.json` — the ASR server's own document, kept as it came back. `text` defaults so
-/// the silence file, which §6 spells as `{"text":""}`, reads.
+/// `words.json` — the ASR server's own document, kept as it came back.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WordsDoc {
@@ -385,8 +346,7 @@ pub struct Chunk {
     pub text: String,
 }
 
-/// Write `words.json`. The document is written as the server sent it; an empty word list is
-/// left out, which is how §6 spells the silence file.
+/// Write `words.json`.
 pub fn write_words(tree: &layout::Tree, source: &str, doc: &WordsDoc) -> Result<(), String> {
     write_json(&tree.words_json(source), doc)
 }
@@ -443,7 +403,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, S
 }
 
 /// Is this recording shorter than the bound, so that it is a start and a stop rather than a
-/// take? Strictly shorter: a recording of exactly the bound is a take.
+/// take?
 pub fn is_short(duration_secs: f64, min: f64) -> bool {
     duration_secs < min
 }
@@ -462,9 +422,7 @@ pub fn write_silence(tree: &layout::Tree, source: &str) -> Result<(), String> {
 
 // --- meta.env, .frames, scenes.tsv --------------------------------------------
 
-/// Write `meta.env` as `KEY=VALUE` lines. Values are taken verbatim — no quoting and no
-/// escaping — because §1 lists plain paths and numbers, and a quoting rule would be a
-/// second format for anyone reading the file by hand.
+/// Write `meta.env` as `KEY=VALUE` lines.
 pub fn write_meta(tree: &layout::Tree, pairs: &[(String, String)]) -> Result<(), String> {
     let mut out = String::new();
     for (key, value) in pairs {
@@ -473,8 +431,7 @@ pub fn write_meta(tree: &layout::Tree, pairs: &[(String, String)]) -> Result<(),
     write_raw(&tree.meta_env(), out.as_bytes())
 }
 
-/// Read `meta.env`, in order. A line's value is everything after the FIRST `=`, so a path
-/// or a phrase holding one survives; blank lines and `#` comments are skipped.
+/// Read `meta.env`, in order.
 pub fn read_meta(tree: &layout::Tree) -> Result<Vec<(String, String)>, String> {
     let path = tree.meta_env();
     let text = match fs::read_to_string(&path) {
@@ -496,16 +453,12 @@ pub fn read_meta(tree: &layout::Tree) -> Result<Vec<(String, String)>, String> {
     Ok(out)
 }
 
-/// Has the sources step run? §6 makes the file's existence the answer, and keeps it for
-/// humans and scripts — §6 permits dropping it and [`layout::Tree::meta_env`]'s own doc says
-/// nothing in the rewrite reads it, so nothing here depends on what is inside.
+/// Has the sources step run?
 pub fn sources_read(tree: &layout::Tree) -> bool {
     tree.meta_env().exists()
 }
 
-/// Write `.frames`: `<grid>|<scene threshold>`. Nothing else, because frames are always the
-/// video's own size (§6). The prototype's `.interval` held `<interval>|<scale name>` and had
-/// no scenes to mark.
+/// Write `.frames`: `<grid>|<scene threshold>`.
 pub fn write_frames_marker(
     tree: &layout::Tree,
     source: &str,
@@ -584,15 +537,6 @@ pub fn read_scenes(tree: &layout::Tree, source: &str) -> Result<Vec<SceneChange>
 }
 
 /// Write a file WHOLE at §1's 0644, making its directory.
-///
-/// §5 of 04-prepare makes every stage's output file its resume marker, and a marker is a promise that
-/// the work behind it finished. `fs::write` straight onto the name cannot keep that promise: a ⏹ or a
-/// full disk halfway through leaves a truncated file on the real name, and the next ▶ reads the marker,
-/// believes it, and skips the stage whose output was never written. So the bytes go to `<name>.part`
-/// beside the destination — the same in-flight spelling §1 gives a source copy — are flushed and given
-/// their mode there, and only then renamed onto the name. A rename within one directory is atomic, so an
-/// observer sees either nothing or the whole file; anything that goes wrong removes the `.part` and
-/// leaves the previous contents standing.
 fn write_raw(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;

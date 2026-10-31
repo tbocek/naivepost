@@ -1,20 +1,4 @@
 //! §12 entry 21 — reading a target length out of the User Context's own words.
-//!
-//! The prototype found the length with a regex over free text and had no fallback: "half an hour" matched
-//! nothing, became `targetLengthSeconds: 0`, and that single silent miss changed three things at once — the
-//! cut brief the model was sent, both segment-count gates and the length gate. §12's answer is that the
-//! number is a policy field (`P.policy.targetLengthSeconds`), derived by F0.7 and said in the log,
-//! so a missed reading is visible instead of load-bearing.
-//!
-//! This module is that reading, and nothing else: words in, seconds out. It is deliberately not a model call
-//! — a length a person typed in plain words is arithmetic, not interpretation, and asking a model costs a
-//! round trip to learn what the sentence already says. F0.7's derivation still runs alongside it and can
-//! still set the field from prose a parser would never catch ("about the length of a podcast episode"); this
-//! covers the plainly-spelled lengths that used to be missed for want of one more regex arm.
-//!
-//! Two facts a caller must be able to tell apart, so [`Reading`] carries both: no length mentioned, and a
-//! length mentioned that this reader cannot spell ("a while"). Both leave the field at 0, but only one of
-//! them is worth saying out loud — the other is what a person who never mentions a length expects.
 
 /// One read of a User Context: the seconds, and whether the text actually spoke a length.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,11 +19,6 @@ impl Reading {
 }
 
 /// Spelled number words, lower case, as they appear inside a length phrase ("twenty minutes", "two hours").
-///
-/// A named list rather than a spelled-out grammar on purpose: §12 entry 21 asks that "twenty minutes" stop
-/// being a silent miss, and every value here is one a person actually writes. Anything beyond nineteen is
-/// read as digits, which is what people type for an odd length ("45 min", "90 seconds"); the words are for
-/// the round numbers prose prefers.
 const SPELLED_NUMBERS: [(&str, f64); 20] = [
     ("one", 1.0),
     ("two", 2.0),
@@ -80,11 +59,6 @@ const UNITS: [(&str, f64); 5] = [
 /// Read a plain length out of the User Context's words. Returns [`Reading::NONE`] when the text speaks no
 /// length, and a `mentioned: true` reading with 0 seconds when it speaks one this reader cannot spell —
 /// the caller tells those two apart in its log, which is the whole point of the entry.
-///
-/// Recognised shapes, case-insensitive, anywhere in the prose:
-/// * `45 min`, `90 seconds`, `2 hours`, `1h`, `30m` — a digit directly followed by a unit;
-/// * `twenty minutes`, `half an hour`, `an hour and a half`, `two and a half hours` — the spelled forms;
-/// * `1h20` — a spelled-out hour with trailing minutes, the way a duration gets typed in a hurry.
 pub fn target_length_of(context: &str) -> Reading {
     let text = context.to_lowercase();
     // Half FIRST, and before any article rule: "half an hour" contains the phrase "an hour", so a reader that
@@ -280,10 +254,6 @@ fn unit_at_start(tail: &str) -> Option<f64> {
 }
 
 /// Whether the text talks about a length at all, for the log line that says a mentioned one went unread.
-///
-/// The words are duration nouns and duration adjectives, and "how long" — the question a person writes when
-/// they have a length in mind but typed no number. Deliberately narrow: "no length mentioned" has to answer
-/// `false`, or every context that never mentions a duration would be logged as an unread one.
 fn mentions_length(text: &str) -> bool {
     for word in [
         "length",

@@ -1,15 +1,5 @@
-//! §06-effects#4-render-how-each-effect-becomes-ffmpeg — the render's half of every effect.
-//!
-//! Spec: `spec/06-effects.md` §4. It is a bullet list, not numbered steps, so its six bullets are read here as
-//! S1..S6 and its closing frame-box rule as S7. This module turns an effect record into filter TEXT and the
-//! arithmetic behind it; it never runs ffmpeg ([`crate::subprocess`] owns running and quoting a command) and never
-//! touches a window, which is what makes all of it testable without a render.
-//!
-//! # Why the numbers are here
-//!
-//! §4 gives three values no other module asks for — the grid an animated camera runs on, the depth ffmpeg's
-//! `zoompan` refuses to go past, and the resolution tier naming a frame's short side. Each lives once, below, and
-//! `params::cut()` / `params::engineering()` catalogue it.
+//! §06-effects#4-render: the render's half of every effect (`spec/06-effects.md` §4; its six bullets are read as S1..S6 and the frame-box rule as S7). Turns an effect record into filter TEXT and the arithmetic behind it; never runs ffmpeg ([`crate::subprocess`]) or touches a window.
+//! Three §4 values live once below and are catalogued by `params::cut()` / `params::engineering()`: the animated camera grid, the `zoompan` depth cap, and the resolution tier.
 
 use crate::cut::{EffectKind, Fx, Seg};
 use crate::cut_speed;
@@ -18,35 +8,27 @@ use crate::fx_record;
 use crate::fx_text;
 use crate::fx_zoom;
 
-// --- S7: the frame every clip comes out at -----------------------------------------------------------------------
-
-/// §4 (`the resolution tier names the short side`): 1080p means 1080 on the SHORT edge, so a 9:16 video is
-/// 1080×1920 and not 1920×1080 turned sideways. The tier is named by an edge because that is the one number that
-/// survives a change of shape: pick 9:16 on an existing project and its pictures stay just as sharp.
+/// §4 (`the resolution tier names the short side`): 1080p is 1080 on the SHORT edge (9:16 is 1080×1920), the one number that survives a change of shape.
 pub const TIER_SHORT_SIDE: i32 = 1080;
 
-/// S7 (`no aspect → the footage's own`): what `cut.aspect` holds when nobody chose a shape — empty for the file,
-/// `"source"` for the dropdown's first row (both spellings arrive here).
+/// S7 (`no aspect → the footage's own`): `cut.aspect` empty or `"source"` (both spellings arrive here).
 pub fn frame_box(aspect: &str, src_w: i32, src_h: i32) -> (i32, i32) {
     if aspect.is_empty() || aspect == crate::fx_aspect::SOURCE {
         return (src_w, src_h);
     }
-    // A string that is not `w:h` behaves like no aspect at all. The alternative is a render that refuses to start
-    // because one word of a settings field is odd, and the shape of the output is not worth stopping a video for.
+    // A string that is not `w:h` behaves like no aspect; a stray word in settings should not stop a render.
     let Some((w, h)) = ratio(aspect) else {
         return (src_w, src_h);
     };
     let short_side = TIER_SHORT_SIDE;
     if w <= h {
-        // Tall shape: the width is the tier's edge, the height follows the ratio. A square is this branch too, and
-        // answers 1080×1080 because `tier_other` returns the short side when the legs are equal.
+        // Tall shape: width is the tier's edge; a square lands here too (`tier_other` returns the short side for equal legs).
         return (even(short_side), even(tier_other(short_side, w, h)));
     }
-    // Even sides: the encoders this project offers are all 4:2:0, which refuses a chroma sample on an odd edge.
+    // Even sides: all offered encoders are 4:2:0.
     (even(tier_other(short_side, h, w)), even(short_side))
 }
 
-/// `w:h` as two whole numbers, or `None`. Both parts must be positive integers.
 fn ratio(aspect: &str) -> Option<(i32, i32)> {
     let (w, h) = aspect.split_once(':')?;
     let w: i32 = w.trim().parse().ok()?;
@@ -54,7 +36,6 @@ fn ratio(aspect: &str) -> Option<(i32, i32)> {
     (w > 0 && h > 0).then_some((w, h))
 }
 
-/// The other edge, given the short one and a ratio leg pair (`9:16`'s `9` over its `16`).
 fn tier_other(short_side: i32, short_leg: i32, long_leg: i32) -> i32 {
     ((short_side as i64 * long_leg as i64) / short_leg.max(1) as i64) as i32
 }
@@ -63,10 +44,6 @@ fn even(v: i32) -> i32 {
     v + v % 2
 }
 
-// --- S1: speed, the only effect that changes the clip list -------------------------------------------------------
-
-/// One stretch of one scene as the render sees it: session seconds, the rate it plays at, and the filter that says
-/// so (`None` when there is nothing to say).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picture {
     pub from: f64,
@@ -75,12 +52,9 @@ pub struct Picture {
     pub setpts: Option<String>,
 }
 
-/// S1 (`clips split at rate boundaries`): the scene as a list of pictures. [`cut_speed::rate_spans`] is what does
-/// the splitting — it already cuts the timeline where a rate starts or ends and averages overlapping rates — so this
-/// function only clips those spans to the scene and decides what each one's clock filter is.
+/// S1 (`clips split at rate boundaries`): the scene as pictures. [`cut_speed::rate_spans`] does the splitting; this clips spans to the scene and picks each clock filter.
 pub fn split_pictures(fx: &[Fx], seg: &Seg) -> Vec<Picture> {
-    // `is_insert` is a spliced card; an overwriting insert runs for the footage it replaces and so does keep its own
-    // clock too. Neither is sped: a card's length IS its timing, and re-timing it would move every other card.
+    // A spliced card or overwriting insert is never sped: its length IS its timing.
     if seg.is_insert() || seg.is_overwrite_insert() {
         return vec![Picture {
             from: seg.s,
@@ -89,15 +63,8 @@ pub fn split_pictures(fx: &[Fx], seg: &Seg) -> Vec<Picture> {
             setpts: None,
         }];
     }
-    // §4's words are `clips split at rate boundaries, THE MIDDLE carries the rate`: a scene with no
-    // speed effect on it is one picture as filmed, and one with an effect over part of it splits into
-    // the staircase plus the untouched seconds either side. The stairs come from [`cut_speed::stairs_in`]
-    // through [`cut_speed::steps_of`], so every stretch handed to ffmpeg holds ONE rate: one `setpts`
-    // per stair here and one `atempo` chain per stair in the sound, rather than one filter per ramp.
     let spans = cut_speed::render_stairs(fx, seg);
-    // §4's words are `clips split at rate boundaries, THE MIDDLE carries the rate`: a scene with no speed effect over
-    // it is one picture as filmed, and one with an effect over part of it splits into the sped stretch plus the
-    // untouched seconds either side of it. Those seconds need no filter, which is why only the middle says anything.
+    // §4: `clips split at rate boundaries, THE MIDDLE carries the rate`. An unsped scene is one picture; stairs come from [`cut_speed::stairs_in`] via [`cut_speed::steps_of`], so each stretch holds ONE rate (one `setpts` and one `atempo` chain per stair). Only the middle needs a filter.
     let mut out = Vec::new();
     let mut from = seg.s;
     for span in spans
@@ -143,8 +110,7 @@ pub fn split_pictures(fx: &[Fx], seg: &Seg) -> Vec<Picture> {
     out
 }
 
-/// S1 (`the middle carries the rate (setpts=PTS/rate)`): a stretch at 1× needs no filter, and writing one would
-/// put a step in the graph that changes nothing but the log's length.
+/// S1 (`the middle carries the rate (setpts=PTS/rate)`): a stretch at 1× needs no filter.
 pub fn setpts(rate: f64) -> Option<String> {
     if rate == 1.0 {
         return None;
@@ -152,9 +118,7 @@ pub fn setpts(rate: f64) -> Option<String> {
     Some(format!("setpts=PTS/{rate}"))
 }
 
-/// S1 (`sound by atempo chain`): tempo held, and the rates one `atempo` instance will not take reached by chaining.
-/// The filter refuses below 0.5 and old builds refuse above 2, so both ends are walked in halves and doublings —
-/// which every build takes.
+/// S1 (`sound by atempo chain`): tempo held, rates beyond one `atempo` (below 0.5, above 2 on old builds) reached by chaining halves and doublings.
 pub fn atempo_chain(rate: f64) -> String {
     if rate <= 0.0 || rate == 1.0 {
         return String::new();
@@ -175,8 +139,7 @@ pub fn atempo_chain(rate: f64) -> String {
     parts.join(",")
 }
 
-/// S1 (`asetrate when pitched`): the sound goes with the picture's clock, pitch and all, by moving the sample rate
-/// and resampling back so the rest of the graph still sees 48 kHz.
+/// S1 (`asetrate when pitched`): the sound goes with the picture's clock by moving the sample rate and resampling back to 48 kHz.
 pub fn asetrate_chain(rate: f64) -> String {
     if rate <= 0.0 || rate == 1.0 {
         return String::new();
@@ -184,8 +147,7 @@ pub fn asetrate_chain(rate: f64) -> String {
     format!(",asetrate=48000*{rate},aresample=48000")
 }
 
-/// S1 (`a mute expression when silent`): silence the whole bed for the stretch, the way the preview already does
-/// (§06-effects §9's MUST row) rather than only the lens camera's sound.
+/// S1 (`a mute expression when silent`): silence the whole bed, as the preview does (§06-effects §9 MUST row).
 pub fn mute_expr(spans: &[(f64, f64)]) -> String {
     let windows: Vec<String> = spans
         .iter()
@@ -194,31 +156,25 @@ pub fn mute_expr(spans: &[(f64, f64)]) -> String {
     format!("volume=0:enable='{}'", windows.join("+"))
 }
 
-/// S1 (`a planned 1× read head with 0.15 s dips at run ends`): where the sound that stayed at 1× fades down into
-/// the splice and back out, as `(in, out)` windows in the run's own seconds. The dip is [`fx_lane::SOUND_DIP_SECONDS`]
-/// — short enough not to hear, long enough not to click.
+/// S1 (`a planned 1× read head with 0.15 s dips at run ends`): `(in, out)` fade windows in the run's seconds, [`fx_lane::SOUND_DIP_SECONDS`] each.
 pub fn read_head(run: (f64, f64)) -> (f64, f64) {
     let dip = fx_lane::SOUND_DIP_SECONDS;
     let len = (run.1 - run.0).max(0.0);
-    // A run shorter than two dips shares what it has rather than going silent whole.
+    // A run shorter than two dips shares what it has.
     let share = (len / 2.0).min(dip);
     (run.0 + share, run.1 - share)
 }
 
-/// S1: the sound of one sped stretch — exactly one of the four answers §4 lists, chosen by the stored answer and
-/// nothing else. `snd` is [`crate::cut_speed`]'s spelling: `""`, `"pitch"`, `"own"`, `"scene"`, `"mute"`.
+/// S1: the sound of one sped stretch, one of §4's four answers by `snd` ([`crate::cut_speed`]: `""`, `"pitch"`, `"own"`, `"scene"`, `"mute"`).
 pub fn sound_filters(rate: f64, snd: &str) -> Vec<String> {
     match snd {
         "pitch" => vec![asetrate_chain(rate).trim_start_matches(',').to_string()],
-        // Silent for the whole stretch: `enable` takes a window and the caller has one per picture.
         "mute" => vec![mute_expr(&[(0.0, f64::MAX)])],
-        // The sound stays at 1× while the picture runs on: a planned read head, whose only graph presence is the
-        // dip where it opens and closes. §4 says "planned", so this names the windows and stops there.
+        // The sound stays at 1× while the picture runs on: only the dip windows are named (§4 "planned").
         "own" | "scene" => {
             let (in_at, out_at) = read_head((0.0, 1.0));
             vec![format!("read head at 1x: dips {in_at}..{out_at}")]
         }
-        // `""` and anything unrecognised: tempo held, which is the answer for a stretch nobody re-timed sound for.
         _ => {
             let chain = atempo_chain(rate);
             if chain.is_empty() {
@@ -229,14 +185,9 @@ pub fn sound_filters(rate: f64, snd: &str) -> Vec<String> {
     }
 }
 
-// --- S2: the stop, a frame held over footage that runs on --------------------------------------------------------
-
-/// S2 (`a still of the frame at t … overlaid with alpha fades for the frozen spans; footage runs on at 1×`): the
-/// freeze is not a rate and never was — giving it one would turn a still into slow motion the moment the cut moved
-/// under it, which is why [`crate::cut_speed`] refuses to clamp it either.
+/// S2 (`a still of the frame at t … overlaid with alpha fades for the frozen spans; footage runs on at 1×`): the freeze is not a rate; giving it one would make slow motion, which is why [`crate::cut_speed`] refuses to clamp it.
 pub fn still_overlay(frozen: (f64, f64), fades: (f64, f64), frame: (i32, i32)) -> Overlay {
     let mut built = overlay(frozen, fades, (0, 0, frame.0, frame.1));
-    // One frame of the footage, held for as long as the clip runs.
     built.prep.insert(
         0,
         format!("trim=end_frame=1,loop=loop=-1:size=1,setpts=N/{OVERLAY_FPS}/TB"),
@@ -244,10 +195,7 @@ pub fn still_overlay(frozen: (f64, f64), fades: (f64, f64), frame: (i32, i32)) -
     built
 }
 
-/// S2: does the footage under these effects run at its own speed? A stop is not a rate — [`cut_speed::steps_of`]
-/// carries it as `rate 0`, which §4 means as "a frame held", so it never becomes a sped picture here either. What
-/// counts against this is any stretch whose applied rate (and [`cut_speed::applied_rate`] reads a stop back to 1) is
-/// not 1×.
+/// S2: does the footage under these effects run at its own speed? A stop is carried as `rate 0` ([`cut_speed::steps_of`]); any stretch whose applied rate ([`cut_speed::applied_rate`], stop reads as 1) is not 1× counts against.
 pub fn footage_stays_at_one(fx: &[Fx]) -> bool {
     cut_speed::rate_spans(fx)
         .iter()
@@ -255,23 +203,17 @@ pub fn footage_stays_at_one(fx: &[Fx]) -> bool {
         .all(|span| cut_speed::applied_rate(span.rate) == 1.0)
 }
 
-/// A rate span carries no kind; `rate 0` is the only thing that can say "a frame held" (§1's column reads
-/// speed/stop), and a real rate is never 0, so this is [`fx_record::is_stop`] read on a span.
+/// A rate span carries no kind; `rate 0` means "a frame held", so this is [`fx_record::is_stop`] on a span.
 fn is_stop_span(span: &cut_speed::Span) -> bool {
     span.rate == 0.0
 }
 
-// --- S3: the camera -------------------------------------------------------------------------------------------------
-
-/// §4 (`at fixed fps (default 30)`): `zoompan` places its window per frame, so an animated camera needs a grid to
-/// be sampled on; 30 is the render's default frame rate, and it is the same number the preview draws at.
+/// §4 (`at fixed fps (default 30)`): the grid an animated camera is sampled on; the render's default rate, same as the preview.
 pub const ZOOM_GRID_FPS: f64 = 30.0;
 
-/// §4 (`> 10× capped`): how deep ffmpeg's `zoompan` will go before it stops being a magnifier and becomes a
-/// blur of one pixel. Past this the samples are pulled back to the cap and the log says so.
+/// §4 (`> 10× capped`): how deep `zoompan` goes before it blurs to one pixel; deeper samples are pulled back and the log says so.
 pub const ZOOM_DEPTH_CAP: f64 = 10.0;
 
-/// Where the camera is at one moment, in the source's own fractions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sample {
     pub t: f64,
@@ -280,9 +222,7 @@ pub struct Sample {
     pub hf: f64,
 }
 
-/// §4 (`sampled at clip ends and every zoom's breakpoints, straight lines between`): the moments to read. A zoom has
-/// four — arriving, parked, letting go, gone — and missing one is missing a move: an unsampled hold renders as the
-/// camera drifting across the rest of the clip instead of standing still and then releasing.
+/// §4 (`sampled at clip ends and every zoom's breakpoints, straight lines between`): a zoom has four moments (arriving, parked, letting go, gone); missing one makes a hold drift.
 pub fn camera_samples(fx: &[Fx], sess_s: f64, span: f64) -> Vec<Sample> {
     let mut at = vec![sess_s, sess_s + span];
     for zoom in fx
@@ -292,7 +232,6 @@ pub fn camera_samples(fx: &[Fx], sess_s: f64, span: f64) -> Vec<Sample> {
         let (tin, tout) = glides(zoom);
         let end = zoom.t + zoom.dur.max(0.0);
         at.extend([zoom.t, zoom.t + tin]);
-        // A staying zoom is parked on its rectangle from the moment it arrives, so its end says nothing new.
         if !zoom.stay {
             at.extend([end - tout, end]);
         }
@@ -303,9 +242,7 @@ pub fn camera_samples(fx: &[Fx], sess_s: f64, span: f64) -> Vec<Sample> {
     at.iter()
         .map(|t| {
             let mut frame = fx_zoom::camera_at(fx, *t);
-            // A staying zoom parks the camera on its rect for good (§A.1), so a sample after it is that rect and not
-            // the settled frame; `camera_at` only knows this up to the zoom's own end. The render has to agree with
-            // what the preview drew at that second, and both read the same walk.
+            // A staying zoom parks on its rect for good (§A.1), so a later sample is that rect; `camera_at` knows this only up to the zoom's end. Render and preview read the same walk.
             if let Some(last) = fx
                 .iter()
                 .filter(|e| e.effect_kind() == Some(EffectKind::Zoom) && e.stay && *t >= e.t)
@@ -327,14 +264,12 @@ pub fn camera_samples(fx: &[Fx], sess_s: f64, span: f64) -> Vec<Sample> {
         .collect()
 }
 
-/// The two glides a zoom actually gets, each inside its own band — the same clamp the preview draws with.
 fn glides(zoom: &Fx) -> (f64, f64) {
     let dur = zoom.dur.max(0.0);
     let tin = zoom.trans.max(0.0).min(dur);
     (tin, zoom.tout.max(0.0).min(dur - tin))
 }
 
-/// §4 (`static → crop + scale`): has the camera anywhere to go?
 pub fn is_static(samples: &[Sample]) -> bool {
     samples
         .get(1)
@@ -345,9 +280,7 @@ fn near(a: &Sample, b: &Sample) -> bool {
     (a.cx - b.cx).abs() < 1e-9 && (a.cy - b.cy).abs() < 1e-9 && (a.hf - b.hf).abs() < 1e-9
 }
 
-/// §4: the filters that realise the camera. A still camera is two filters; a moving one pads black where a rectangle
-/// reaches past the source, crops to the union of every rectangle grown to the output's shape (so the window inside it
-/// never distorts), and runs `zoompan` on piecewise-linear expressions of input time.
+/// §4: the filters that realise the camera. A still camera is two; a moving one pads black where a rectangle reaches past the source, crops to the union of every rectangle grown to the output shape, and runs `zoompan` on piecewise-linear expressions of input time.
 pub fn camera_chain(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> Vec<String> {
     if samples.is_empty() {
         return vec![format!("scale={}:{}", frame.0, frame.1)];
@@ -375,7 +308,7 @@ pub fn camera_chain(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> V
         let vs: Vec<f64> = samples.iter().map(pick).collect();
         piece_expr(&ts, &vs)
     };
-    // `it` runs on the stream's own clock, so a caller hands `t` from the clip's start. d=1: one frame out per frame in.
+    // `it` runs on the stream's own clock, so `t` is from the clip's start. d=1: one frame out per frame in.
     chain.push(format!(
         "zoompan=z=1/({hf}):x=({cx})*iw-iw/zoom/2:y=({cy})*ih-ih/zoom/2:d=1:s={w}x{h}:fps={ZOOM_GRID_FPS}",
         hf = along(|s| s.hf),
@@ -387,7 +320,6 @@ pub fn camera_chain(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> V
     chain
 }
 
-/// A sample's rectangle in source pixels: `hf` of the source height tall, exactly the output's shape wide.
 fn rect_px(s: &Sample, src: (i32, i32), out_a: f64) -> (f64, f64, f64, f64) {
     let h = s.hf * src.1 as f64;
     let w = h * out_a;
@@ -399,8 +331,7 @@ fn rect_px(s: &Sample, src: (i32, i32), out_a: f64) -> (f64, f64, f64, f64) {
     )
 }
 
-/// §4 (`pad black as needed`): the padded frame, only when a rectangle actually reaches past the source — padding a
-/// camera that never looks off the edge would rescale every frame for nothing.
+/// §4 (`pad black as needed`): only when a rectangle reaches past the source, else every frame is rescaled for nothing.
 fn pad_box(samples: &[Sample], src: (i32, i32), out_a: f64) -> Option<(i32, i32, i32, i32)> {
     let mut left = 0.0_f64;
     let mut top = 0.0_f64;
@@ -432,9 +363,7 @@ fn clip_int(v: f64, max: i32) -> i32 {
     (v.round() as i32).clamp(0, max.max(0))
 }
 
-/// §4 (`piecewise-linear expressions`): a value over input time as nested `if`s, one per interval, flat past either
-/// end. Straight between samples is exact here, because everything the camera does between its own breakpoints is a
-/// straight lerp too — the same function the preview draws with, which is what makes the two agree.
+/// §4 (`piecewise-linear expressions`): a value over input time as nested `if`s, flat past either end; exact because the camera is a straight lerp between breakpoints, as in the preview.
 pub fn piece_expr(ts: &[f64], vs: &[f64]) -> String {
     let n = ts.len().min(vs.len());
     if n == 0 {
@@ -457,9 +386,7 @@ pub fn piece_expr(ts: &[f64], vs: &[f64]) -> String {
     expr
 }
 
-/// §4: how deep the moving window goes — box heights per window, which is `zoompan`'s own measure of zoom. One
-/// number per sample (the union of every rectangle divided by that window's height); the deepest one is what the cap
-/// is read against.
+/// §4: how deep the moving window goes, in box heights per window (`zoompan`'s measure); the deepest is read against the cap.
 pub fn zoom_depths(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> Vec<f64> {
     let out_a = frame.0 as f64 / frame.1 as f64;
     let box_h = union_height(samples, src, out_a);
@@ -472,15 +399,13 @@ pub fn zoom_depths(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> Ve
         .collect()
 }
 
-/// The deepest window in the journey.
 pub fn max_zoom(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> f64 {
     zoom_depths(samples, src, frame)
         .into_iter()
         .fold(0.0_f64, f64::max)
 }
 
-/// The union of every rectangle's vertical reach, which is the box `zoompan` works inside — grown to the output's
-/// shape by [`camera_chain`], so its height is what a window's depth is measured against.
+/// The union of every rectangle's vertical reach, the box `zoompan` works inside (grown by [`camera_chain`]).
 fn union_height(samples: &[Sample], src: (i32, i32), out_a: f64) -> f64 {
     let mut top = f64::MAX;
     let mut bottom = f64::MIN;
@@ -492,10 +417,7 @@ fn union_height(samples: &[Sample], src: (i32, i32), out_a: f64) -> f64 {
     (bottom - top).max(1.0)
 }
 
-/// §4 (`> 10× capped and logged`): the samples with nothing deeper than [`ZOOM_DEPTH_CAP`] in them, and the line to
-/// log when they had to be pulled back. Only the windows that were too deep are raised; a journey that spends part of
-/// its time shallow keeps those frames, because shrinking them would move picture the person never framed out. The
-/// wording is the prototype's, kept: it names the clip and what ffmpeg refuses, which is what a render log reader wants.
+/// §4 (`> 10× capped and logged`): samples with nothing deeper than [`ZOOM_DEPTH_CAP`], and the log line when pulled back. Only too-deep windows are raised, so shallow frames are kept. Wording is the prototype's.
 pub fn cap_zoom(
     samples: &[Sample],
     src: (i32, i32),
@@ -515,7 +437,6 @@ pub fn cap_zoom(
             if *depth <= ZOOM_DEPTH_CAP {
                 return *s;
             }
-            // The window that deep is exactly the box's height over the cap, read back as a fraction of the source.
             Sample {
                 t: s.t,
                 cx: s.cx,
@@ -531,27 +452,20 @@ pub fn depth_log(clip_no: usize) -> String {
     format!("clip {clip_no}: the zoom goes deeper than ffmpeg's 10× \u{2014} it is rendered at 10×")
 }
 
-// --- S4: words and drawings ---------------------------------------------------------------------------------------
-
-/// §4 (`composited after the camera and burned subtitles`): the order the graph runs in. A title is put on the
-/// finished frame, so it holds still while the camera moves under it; a subtitle is burned before either, because it
-/// belongs to the picture and not to the decoration over it.
+/// §4 (`composited after the camera and burned subtitles`): a title goes on the finished frame so it holds still under a moving camera; a subtitle is burned before either.
 pub fn picture_order() -> Vec<&'static str> {
     vec!["camera", "burned subtitles", "text and svg"]
 }
 
-/// The rate a looped picture input is read at.
 pub const OVERLAY_FPS: u32 = 30;
 
-/// One picture laid over the clip: the filters its own input runs through, then the overlay that places it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Overlay {
     pub prep: Vec<String>,
     pub place: String,
 }
 
-/// §4: one title or drawing, with alpha fades and an enable window. A fade of no length gets no filter: ffmpeg reads
-/// `d=0` as its default of 25 frames. `shortest` because the picture's input loops for ever.
+/// §4: one title or drawing with alpha fades and an enable window. A zero-length fade gets no filter (`d=0` means 25 frames); `shortest` because the input loops.
 pub fn overlay(enable: (f64, f64), fades: (f64, f64), box_px: (i32, i32, i32, i32)) -> Overlay {
     let mut prep = vec![
         "format=rgba".to_string(),
@@ -576,29 +490,16 @@ pub fn overlay(enable: (f64, f64), fades: (f64, f64), box_px: (i32, i32, i32, i3
     }
 }
 
-/// §4 (`title: generated transparent frame-sized SVG, black round-joined stroke then white fill`) and F3.4 S4
-/// (`same function for preview and render`): the sheet is laid out by [`crate::fx_text`] — the size, the line break,
-/// the baselines and the edge's thickness are all asked of the module the preview paints from
-/// ([`crate::ui::cut_preview_caption`]), so a caption that wraps to three lines on the panel comes out of the render
-/// as three lines at the same relative size. Before this it invented its own size off the box height, one unwrapped
-/// a fixed 12-px stroke, which was a second layout nobody kept in step. `w`/`h` are the effect's BOX in px (see
-/// [`crate::produce_fx_chain::box_px`]); `overlay_chain` scales the sheet into that box, so the sheet is box-sized
-/// and its own origin is 0,0. The stroke is written before the fill because SVG paints in document order: outline
-/// under letters, or the letters eat their own edge on a bright picture.
+/// §4 (`title: generated transparent frame-sized SVG, black round-joined stroke then white fill`) and F3.4 S4 (`same function for preview and render`): the sheet is laid out by [`crate::fx_text`] (size, line breaks, baselines, edge thickness), as the preview ([`crate::ui::cut_preview_caption`]), so wrapping matches. `w`/`h` are the BOX in px ([`crate::produce_fx_chain::box_px`]); `overlay_chain` scales the sheet into it. Stroke is written before fill (SVG paints in document order), or the letters eat their edge.
 pub fn title_svg(words: &str, w: i32, h: i32) -> String {
-    // Colours spelled as words: `#` starts a fragment in SVG and would need escaping twice over to survive the
-    // format string. The paint order is what matters — stroke before fill, so the outline sits under the letters.
+    // Colours as words: `#` starts a fragment in SVG.
     let (size, lines) = fx_text::fit(words, w as f64, h as f64);
-    // `fx_text` is the module BOTH halves ask: the preview paints from it through
-    // [`crate::ui::cut_preview_caption`], and every number below — size, lines, baselines, stroke — comes from here so
-    // neither side can drift. The SVG spelling of the face the preview selects (`cairo::FontWeight::Bold`): §S4 says
-    // bold sans-serif, and both halves have to say it or the video's words come out lighter than the panel's.
+    // Every number below comes from `fx_text`, shared with the preview. Bold sans-serif (`cairo::FontWeight::Bold`, §S4) on both halves.
     let mut texts = String::new();
     if size > 0.0 {
         let ys = fx_text::baselines(0.0, h as f64, size, lines.len());
         for (line, y) in lines.iter().zip(ys.iter()) {
             if line.is_empty() {
-                // A blank typed line draws nothing; the sheet still exists, so ffmpeg keeps a valid input.
                 continue;
             }
             texts.push_str(&format!(
@@ -608,8 +509,6 @@ pub fn title_svg(words: &str, w: i32, h: i32) -> String {
             ));
         }
     }
-    // One call site per shared door, so a reader can count them: `fx_text::fit` above, `fx_text::baselines` above,
-    // `fx_text::render_stroke_width` below.
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\
          <g font-family=\"sans-serif\" font-weight=\"bold\" font-size=\"{size:.3}\" text-anchor=\"middle\" \
@@ -619,50 +518,34 @@ pub fn title_svg(words: &str, w: i32, h: i32) -> String {
     )
 }
 
-// --- S5: volume ----------------------------------------------------------------------------------------------------
-
-/// One volume cue in the clip's own seconds.
 #[derive(Debug, Clone, PartialEq)]
-/// §9 (`A volume SHOULD carry `lane`: "" the whole bed (today), or one lane's name, gained
-/// before the mix`): a cue's reach and its place in the graph, as ONE pair read off what the
-/// record holds. A naming cue acts on one recording, so it must run while that recording is
-/// still apart from the others; an unnamed one is the bed and rides after the mix. The render
-/// (`render_fx::all_gain_cues`) and the preview (`cut_hear::mix_at`) take their halves from
-/// here, so a duck cannot run on one side of the mix and not the other.
+/// §9 (`A volume SHOULD carry `lane`: "" the whole bed (today), or one lane's name, gained before the mix`): a cue's reach and graph place as ONE pair. A naming cue acts on one recording before the mix; an unnamed one is the bed, after it. The render (`render_fx::all_gain_cues`) and preview (`cut_hear::mix_at`) both take their halves from here.
 pub struct Cue {
     pub from: f64,
     pub to: f64,
     pub gain: f64,
     pub fin: f64,
     pub fout: f64,
-    /// The lane a naming cue acts on, empty for the whole bed.
     pub lane: String,
 }
 
 impl Cue {
-    /// [`crate::effect_overlap::gained_before_the_mix`] for this cue's reach: a cue naming
-    /// one lane runs before the lanes are summed, so the sum can still be taken apart.
+    /// [`crate::effect_overlap::gained_before_the_mix`]: a cue naming one lane runs before the lanes are summed.
     pub fn before_the_mix(&self) -> bool {
         crate::effect_overlap::gained_before_the_mix(&self.as_effect())
     }
 
-    /// [`crate::effect_overlap::gain_reaches`]: does this cue touch the lane named `lane`?
-    /// The plan asks it per clip, so a duck naming a lane nobody hears in that scene is not
-    /// counted as work the encode has to do.
+    /// [`crate::effect_overlap::gain_reaches`]: does this cue touch the lane named `lane`? Asked per clip, so a duck on a lane nobody hears is not work.
     pub fn reaches(&self, lane: &str) -> bool {
         crate::effect_overlap::gain_reaches(&self.as_effect(), lane)
     }
 
-    /// [`crate::effect_overlap::gain_reaches_the_clip`] for this cue: whether it acts on a clip that hears exactly
-    /// `heard`. The plan asks this per clip so a card's own sound is gained (a whole-bed cue needs no heard lane)
-    /// while a duck naming a lane the scene does not hear is still not counted as work the encode must do.
+    /// [`crate::effect_overlap::gain_reaches_the_clip`]: whether it acts on a clip hearing exactly `heard`; a card's own sound is gained (a whole-bed cue needs no heard lane).
     pub fn reaches_the_clip(&self, heard: &[String]) -> bool {
         crate::effect_overlap::gain_reaches_the_clip(&self.as_effect(), heard)
     }
 
-    /// The cue read back as the record it came from, so §9's two reach predicates stay the
-    /// ONE wording in both the plan and the encode. A volume carries only kind, seconds,
-    /// gain and lane; nothing else here is consulted by either rule.
+    /// The cue as the record it came from, so §9's reach predicates have one wording in plan and encode.
     pub fn as_effect(&self) -> Fx {
         Fx {
             kind: "volume".to_string(),
@@ -675,9 +558,7 @@ impl Cue {
     }
 }
 
-/// S5 (`one volume=<expr>:eval=frame per cue`): the cut's volume effects mapped onto one clip — same session-to-clip
-/// arithmetic a title uses, so a caption and a gain at the same second come and go together, and a gain under a speed
-/// effect stretches with its sound. A cue shorter than a frame is skipped rather than clamped: it cannot be heard.
+/// S5 (`one volume=<expr>:eval=frame per cue`): the cut's volume effects mapped onto one clip with the same session-to-clip arithmetic as a title, so a gain under a speed effect stretches with its sound. A cue shorter than a frame is skipped.
 pub fn gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
     all_gain_cues(fx, sess_s, rate, length)
         .into_iter()
@@ -685,9 +566,7 @@ pub fn gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
         .collect()
 }
 
-/// Every volume cue, including the ones naming a lane. [`gain_cues`] hands back the bed's
-/// half; a caller that builds the whole audio graph splits the two sides through
-/// [`Cue::before_the_mix`].
+/// Every volume cue, including lane-naming ones; [`gain_cues`] is the bed's half, split via [`Cue::before_the_mix`].
 pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
     if length <= 0.0 || rate <= 0.0 {
         return Vec::new();
@@ -703,7 +582,6 @@ pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue>
         if to - from < 1.0 / ZOOM_GRID_FPS {
             continue;
         }
-        // As `cut_hear::envelope` reads a band; a fade belongs to the clip holding that end of it.
         let fin = if start >= 0.0 {
             (effect.trans.max(0.0) / rate).min(to - from)
         } else {
@@ -725,9 +603,7 @@ pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue>
     out
 }
 
-/// S5: one cue as an expression in the clip's own seconds — the gain across the band, 1 elsewhere, a straight ramp
-/// over each fade. `volume` re-reads its expression per frame anyway, so one expression covers the whole clip. The
-/// multiplier carries an explicit sign (`1-0.5000*…`, never `1+-0.5000*…`).
+/// S5: one cue as an expression in the clip's seconds: the gain across the band, 1 elsewhere, a ramp over each fade. The multiplier carries an explicit sign (`1-0.5000*…`, never `1+-0.5000*…`).
 pub fn gain_expr(cue: &Cue) -> String {
     let g = cue.gain.clamp(0.0, fx_record::gain_ceiling());
     let mut ramps = Vec::new();
@@ -745,31 +621,23 @@ pub fn gain_expr(cue: &Cue) -> String {
     format!("if(between(t,{:.3},{:.3}),{},1)", cue.from, cue.to, value)
 }
 
-/// S5 (`per cue, in turn`): every cue applied one after another, so two that overlap multiply, which is exactly what
-/// the preview's mix says they do.
+/// S5 (`per cue, in turn`): cues applied one after another, so overlapping ones multiply, as in the preview's mix.
 pub fn gain_filters(cues: &[Cue]) -> Vec<String> {
     cues.iter()
         .map(|cue| format!("volume=volume='{}':eval=frame", gain_expr(cue)))
         .collect()
 }
 
-/// S5 (`after the lane mix, before the narration`): where the volume cues sit in the audio graph. The lanes are
-/// already summed by the time a cue runs, so a duck under the narration multiplies with them instead of replacing
-/// one lane's level.
+/// S5 (`after the lane mix, before the narration`): where the cues sit in the graph; lanes are already summed, so a duck multiplies with them.
 pub fn audio_order() -> Vec<&'static str> {
     vec!["lane mix", "volume cues", "narration"]
 }
 
-// --- S6: the label -------------------------------------------------------------------------------------------------
-
-/// §4 (`Label: nothing`): a label marks a moment for the narration brief and is never drawn, so it contributes no
-/// filter to any clip. It is kept in the record because F3.7's whole point is that the mark survives; the render's
-/// answer to it is an empty string.
+/// §4 (`Label: nothing`): a label marks a moment for the narration brief and is never drawn; its filter is an empty string.
 pub fn is_rendered(kind: &str) -> bool {
     if kind == "label" {
         return false;
     }
-    // The kinds §4 gives a filter to. Written out rather than asked of `EffectKind::parse`, which would also answer
-    // true for a label and needs no new public surface for this one question.
+    // The kinds §4 gives a filter to, written out rather than via `EffectKind::parse` (which would accept a label).
     matches!(kind, "zoom" | "speed" | "stop" | "text" | "svg" | "volume")
 }

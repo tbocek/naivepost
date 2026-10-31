@@ -1,18 +1,8 @@
-//! Describe's request leg: the vision job that turns one chunk of frames into EVENT lines and a
-//! running STATE, over HTTP. §02-services.md §2 names the row — LLM with vision, thinking OFF, one
-//! EVENT per frame plus a STATE, four frames a call.
+//! Describe's request leg: the vision job turning one chunk of frames into EVENT lines and a running STATE (§02-services.md §2).
+//! [`crate::describe`] holds the F1.7 rules and makes no call; this gathers their inputs, builds the body via [`crate::llm_request`],
+//! sends it through [`crate::llm_retry_leg`], hands the answer to [`crate::describe::apply_tool`] and writes rows via [`crate::describe::write_chunk`].
 //!
-//! [`crate::describe`] holds every rule of F1.7 and deliberately makes no call (“the model call is
-//! not made here at all”). This is the other half: it gathers what those rules read from disk, builds
-//! the body through [`crate::llm_request`] so the sampling five and the thinking switch come from the
-//! one place every chat request is built, sends it through [`crate::llm_retry_leg`] (which writes the
-//! timed `requests.tsv` row and rides §09 §3's patience), and hands the answer back to
-//! [`crate::describe::apply_tool`] — so the §3.2 tool surface, not a copy of it, decides what an EVENT
-//! is. Then the chunk's rows go to disk through [`crate::describe::write_chunk`].
-//!
-//! The seam a test drives this through is the Settings address, as every other live job uses: point
-//! `LLM_SERVER` at a local fake and the same endpoint resolution a typed address goes through reaches
-//! it. Nothing here takes a canned reply.
+//! Tests drive it through the Settings address: point `LLM_SERVER` at a local fake.
 
 use crate::describe::{self, Speech, Stamp};
 use crate::describe_scale;
@@ -28,24 +18,16 @@ use crate::tool_reads;
 use crate::tools::describe::{Batch, MissingReason};
 use crate::tools::Tool;
 
-/// The step name this job's cache entries and timed rows carry: the same word `describe::STEP` uses,
-/// so a `requests.tsv` row and the event log folder name the stage in §04 S6's order.
+/// The step name for cache entries and timed rows, same as `describe::STEP`.
 pub const STEP: &str = describe::STEP;
 
-/// How many times one chunk may be asked before the row gives up on it. §3.2 gives describe no retry
-/// budget of its own, so this takes the same count the fixer's blocks get (`P.machine.fixTries`): a
-/// chunk whose frames the model would not answer is re-asked a couple of times and then reported,
-/// which is cheaper than a rule no section wrote.
+/// Asks allowed per chunk: §3.2 gives describe no budget, so this takes the fixer's (`P.machine.fixTries`).
 fn attempts() -> u32 {
     crate::fix_transcripts::attempts()
 }
 
 /// The describe stage of the Prepare walk: one row per footage source.
-///
-/// A dial (`program: VISION_TASK`), not a spawn — the work is a chat request. The frames have to be
-/// on disk first, which is what the frames stage does, so this stage comes after it in
-/// [`crate::run_stages::plan`] and a source with nothing extracted is left out here rather than
-/// failing the run: §F1.7's own refusal is about exactly that case.
+/// A dial (`program: VISION_TASK`), not a spawn. Comes after the frames stage in [`crate::run_stages::plan`]; a source with nothing extracted is left out (§F1.7).
 pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
     let tasks = project
         .sources
@@ -73,10 +55,8 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
     }
 }
 
-/// The stage's work for one footage source, from a tree and settings folder the caller resolved:
-/// choose the frames F1.6 extracted, chunk them at four, and ask once per chunk. [`run_task`] is the
-/// walk's door, which resolves those two from the environment and hands them here — the same split
-/// `run_stages::dial_task` makes, so a test can drive the real stage without owning the process's cwd.
+/// The stage's work for one footage source: choose the frames F1.6 extracted, chunk them at four, ask once per chunk.
+/// [`run_task`] resolves the tree and settings folder from the environment and hands them here, so tests avoid the process cwd.
 pub fn stage_chunk(
     tree: &Tree,
     paths: &Paths,
@@ -88,8 +68,7 @@ pub fn stage_chunk(
     stage_chunk_reached(tree, paths, conf, lane, source_index, log, &mut |_, _| {})
 }
 
-/// How many requests describing the row `task` names takes, read off the session's disk the way
-/// [`run_task`] finds it: what the walk counts the stage's total from before the first row runs.
+/// How many requests describing the row `task` takes; the walk counts the stage's total from it.
 pub fn planned_requests(task: &crate::run_stages::Task) -> usize {
     let Some(source) = task.args.first() else {
         return 0;
@@ -100,10 +79,7 @@ pub fn planned_requests(task: &crate::run_stages::Task) -> usize {
     }
 }
 
-/// [`stage_chunk`], saying where it is as it goes: `reached` gets this source's chunks answered and its
-/// chunks in all, at the start and after every answer. §03-shell §2: a task that asks a model for minutes
-/// says where it is, and an hour-long recording is a hundred chunks; the first rewrite said nothing until the
-/// source was done.
+/// [`stage_chunk`], reporting progress: `reached` gets chunks answered and chunks in all, at the start and after every answer (§03-shell §2).
 pub fn stage_chunk_reached(
     tree: &Tree,
     paths: &Paths,
@@ -114,18 +90,14 @@ pub fn stage_chunk_reached(
     reached: &mut dyn FnMut(usize, usize),
 ) -> Result<usize, String> {
     let frames_on_disk = describe::frames_on_disk(&tree.frames_dir(lane));
-    // S0: an every-frame extraction stops this source here, before a request is paid for frames whose
-    // spacing nothing chose. Local, not fatal: the run carries on with the sources that can be
-    // described (§Failure-is-specific), which is why this answers Ok(0) rather than Err.
+    // S0: an every-frame extraction stops this source here, before paying for frames nothing spaced. Local, not fatal: Ok(0) (§Failure-is-specific).
     if describe::is_every_frame(&frames_on_disk, describe::GRID) {
         log(&describe::every_frame_refusal(lane));
         return Ok(0);
     }
     let changes = describe::read_changes(tree, lane);
     let project = crate::project::load(tree.dir()).ok();
-    // F1.6 S6: a frame goes per scene change and one every heartbeat between them: what is on screen did not
-    // change in between, and a closer step would describe the same slide anew. The changes are the text gate's
-    // when it ran, else the pixel pass's.
+    // F1.6 S6: a frame per scene change plus one per heartbeat; the changes are the text gate's when it ran, else the pixel pass's.
     let freq = crate::text_gate::HEARTBEAT_S;
     if crate::text_gate::changes_for_describe(tree, lane).is_some() {
         log(&format!(
@@ -133,16 +105,13 @@ pub fn stage_chunk_reached(
             changes.len(),
         ));
     }
-    // Where this source's stored frames sit on the session clock: the index `stage` put on the row, so
-    // the offset comes from the same placement every other stage reads.
+    // The offset comes from the placement `stage` put on the row.
     let index = source_index.unwrap_or(0);
-    // S1: each recording heard alongside the video, named with its offset, said before any work --
-    // the words are what the descriptions will be built from.
+    // S1: recordings heard alongside the video, with offsets, said before any work.
     for (audio, offset) in describe_scale::alongside(project.as_ref(), index) {
         log(&describe::hearing_log(lane, &audio, offset));
     }
-    // S1: the copies that get sent are made here, by ffmpeg, once each. The frames on disk stay at the
-    // video's own size; only these 896-wide copies go on the wire.
+    // S1: the sent copies (896 wide) are made once by ffmpeg; frames on disk stay at the video's size.
     let start = describe_scale::clock_start(project.as_ref(), index);
     describe_scale::ensure(tree, conf, lane, start, &frames_on_disk, log)
         .map_err(|why| format!("{lane}: {why}"))?;
@@ -155,14 +124,9 @@ pub fn stage_chunk_reached(
     }
     let mut answered = 0usize;
     let mut from_cache = 0usize;
-    // §02 §1: one request at a time per server, so the chunks go one after another. The rounds below still
-    // decide one thing (§09 §10): whether the retry loop can find a chunk's own stored reply on its second
-    // pass, which it files as a hit.
+    // §02 §1: one request at a time per server; the rounds still let the retry loop find a chunk's stored reply and file a hit (§09 §10).
     let at_once = crate::llm_liveness::in_flight(true, 1);
-    // The two files stay the main thread's alone — `events.tsv` is appended per chunk and is the
-    // resume marker, and `state.txt` holds "the state after the last chunk", so BOTH must go down
-    // in chunk order however the asks overlapped. Workers therefore only ask; the round's answers
-    // are applied here, oldest chunk first.
+    // `events.tsv` (the resume marker) and `state.txt` must go down in chunk order, so workers only ask and answers are applied here, oldest first.
     let context = user_context(tree);
     let plan = describe::chunk_plan(&picked, describe::FRAMES_PER_REQ);
     reached(0, plan.len());
@@ -171,15 +135,13 @@ pub fn stage_chunk_reached(
             let mut handles = Vec::with_capacity(round.len());
             for start in round {
                 let batch = &picked[*start..picked.len().min(*start + describe::FRAMES_PER_REQ)];
-                // The chunk's own span, exactly as `describe::message` is told it: last frame plus
-                // one grid step, so the rows it writes end where the request said its frames covered.
+                // The chunk's span as `describe::message` is told it: last frame plus one grid step.
                 let start_second = picked[*start];
                 let end = batch.last().copied().unwrap_or(start_second) + freq;
                 let batch = batch.to_vec();
                 let context = context.clone();
                 handles.push(scope.spawn(move || {
-                    // `log` is `&mut impl FnMut` and lives on this thread, so a worker buffers what
-                    // it would have said; the main loop prints the buffers in chunk order below.
+                    // Workers buffer their log lines (`log` lives on this thread); the main loop prints them in chunk order.
                     let mut said: Vec<String> = Vec::new();
                     let answer = run_chunk(
                         tree,
@@ -195,9 +157,7 @@ pub fn stage_chunk_reached(
                     (said, answer)
                 }));
             }
-            // A worker that died is one chunk's failure, not the run's: name what failed and carry
-            // on with the chunks that answered (§Failure-is-specific). `scope` joins every worker
-            // here, so nothing is still asking when the main thread writes the files.
+            // A dead worker is one chunk's failure (§Failure-is-specific); `scope` joins all before the files are written.
             handles
                 .into_iter()
                 .map(|handle| {
@@ -228,9 +188,6 @@ pub fn stage_chunk_reached(
 }
 
 /// The row [`crate::run_stages::drive_walk`] hands here: describe one footage source end to end.
-///
-/// Frame choice, scaling and the interval are read by [`stage_chunk`]; this only resolves the two
-/// environment pieces the walk's rows do not carry.
 pub fn run_task(
     task: &crate::run_stages::Task,
     log: &mut impl FnMut(&str),
@@ -261,27 +218,20 @@ pub fn run_task(
     Ok(())
 }
 
-/// Where the User Context comes from: the session's own notes, which §F1.7 S3 puts at the head of the
-/// message. Read from `naivepost.json`; absent means no context rather than a made-up one, because an
-/// invented context is a claim about the recording no person wrote.
+/// The session's own notes (§F1.7 S3), from `naivepost.json`; absent means no context, never an invented one.
 fn user_context(tree: &Tree) -> String {
     crate::project::load(tree.dir())
         .map(|project| project.context.clone())
         .unwrap_or_default()
 }
 
-/// The session folder the walk works in — the working folder's own, resolved the way every other dial
-/// resolves it (§1's re-read-per-request seams all start here). Named for what it returns rather than
-/// for a settings folder: `run_task` needs the SESSION to open the tree in, and only then the paths.
+/// The working folder's session, resolved like every other dial (§1).
 fn session_dir() -> std::path::PathBuf {
     crate::startup::open_dir()
 }
 
-/// The row a chunk served from the cache hands [`crate::request_timing::record_cached`]. Its `started`
-/// is left empty on purpose: the door stamps the moment the answer was read, which is the only time a
-/// hit has. `kind` and `job` are the spellings [`ask`] uses for this step's wire rows, so a cache line
-/// and the request it replaced differ in the outcome column and nowhere else. §6 keys a describe slot
-/// on the model id, so the model a hit came from is this row's own column, not a guess.
+/// The row a cache-served chunk hands [`crate::request_timing::record_cached`]. `started` is empty on purpose: the door stamps the read time.
+/// `kind` and `job` match [`ask`]'s spellings; §6 keys the slot on the model id, so the model is this row's column.
 fn cache_row(model: &str) -> crate::requests::Request {
     crate::requests::Request {
         started: String::new(),
@@ -295,9 +245,7 @@ fn cache_row(model: &str) -> crate::requests::Request {
     }
 }
 
-/// Where one chunk's answer would be found in `cache/llm/describe/`: the digest of its request and the
-/// model that spelled it. Carried as one argument because both belong to the same fact — §6 keys the
-/// slot on the model id, so a reply is only ever read back under the model that wrote it.
+/// Where one chunk's answer sits in `cache/llm/describe/`: request digest plus model (§6 keys the slot on the model id).
 struct StoredChunk<'a> {
     key: &'a str,
     model: &'a str,
@@ -305,11 +253,7 @@ struct StoredChunk<'a> {
 
 /// A chunk's replayed answer: what was stored under `stored`, if anything, applied to the batch.
 ///
-/// The read is [`describe::cached_reply`] and §10's `cache` line is filed in the same breath, because
-/// this step reaches its cache through `read_at` rather than the `llm_cache::read` every other ask
-/// records from — without this call a describe re-run would leave no trace of what it saved. The row
-/// goes down before the answer is applied, so a chunk whose write then fails still leaves its line
-/// behind, exactly as a wire request does.
+/// Files §10's `cache` line too, since [`describe::cached_reply`] bypasses `llm_cache::read`; the row goes down before the answer is applied.
 fn replayed_chunk(
     tree: &Tree,
     stored: &StoredChunk<'_>,
@@ -328,16 +272,11 @@ fn replayed_chunk(
     )
 }
 
-/// A chunk already answered by an earlier run costs no request: §F1.7 S2's resume rule, read through
-/// [`describe::starts_already_logged`] so the rule stays the one F1.7 wrote (the chunk's START second
-/// is the row whose presence proves the whole chunk was answered). Returns `None` when it is still to
-/// ask, and the answer without a wire call when it is not.
+/// A chunk already answered by an earlier run costs no request (§F1.7 S2): [`describe::starts_already_logged`] reads the chunk's START row.
+/// `None` when it is still to ask.
 ///
-/// The two ways a chunk is answered here are not the same fact, and only one of them is §10's cache
-/// hit: the resume rule fires on the EVENTS row alone, so a chunk whose events survive but whose
-/// `cache/llm/describe/` slot is gone (an older build, a cleared cache) is still owed no request —
-/// nothing was served from the cache then, and [`replayed_chunk`] files a line only for the text it
-/// actually read back.
+/// Only a stored-text read is §10's cache hit: a chunk whose events survive but whose cache slot is gone is still owed no request,
+/// and [`replayed_chunk`] files a line only for text it read back.
 fn resume_answer(
     tree: &Tree,
     lane: &str,
@@ -353,8 +292,7 @@ fn resume_answer(
     Some(
         match replayed_chunk(tree, stored, lane, batch, interval, history) {
             Some(answered) => answered,
-            // Nothing is re-asked: the work is on disk, and paying a request to reproduce it would be the
-            // resume rule failing in the other direction.
+            // Nothing is re-asked: the work is on disk.
             None => Ok(ChunkAnswer {
                 cached: true,
                 missing: 0,
@@ -371,17 +309,9 @@ pub struct ChunkAnswer {
     pub missing: usize,
 }
 
-/// One chunk of frames through the vision job: message, cache, dial, tool answers, and the two files
-/// written for exactly what was answered.
+/// One chunk of frames through the vision job: message, cache, dial, tool answers, and the two files written.
 ///
-/// Retried up to [`attempts`] times when `finish` reports frames still unanswered — the refusal text
-/// goes into the next attempt's message, the same way the fixer re-asks, because the identical
-/// question earns the identical answer.
-/// One chunk's frames through the vision job: choose, cache, dial, answer through the §3.2 surface,
-/// write the two files.
-///
-/// `stage_chunk` walks this once per chunk of four frames; each retry below is one more pass over the
-/// same batch (a chunk the model left incomplete is re-asked with the refusal in front of it).
+/// Retried up to [`attempts`] times while `finish` reports unanswered frames; the refusal goes into the next message.
 #[allow(clippy::too_many_arguments)]
 fn run_chunk(
     tree: &Tree,
@@ -404,9 +334,7 @@ fn run_chunk(
     let mut stamps: Vec<Stamp> = Vec::new();
     let mut previous: Option<f64> = None;
     for at in batch {
-        // `previous` walks the batch rather than staying `None`: `is_new_scene` answers "is a scene
-        // change between this frame and the one before it", and asking with no previous for every
-        // frame would mark the whole batch NEW SCENE.
+        // `previous` walks the batch: with none, `is_new_scene` would mark every frame NEW SCENE.
         stamps.push(Stamp {
             at: *at,
             new_scene: describe::is_new_scene(*at, previous, &changes),
@@ -416,8 +344,7 @@ fn run_chunk(
     let message = describe::message(user_context, &state, start, end, &history, &speech, &stamps);
     let images = match read_images(tree, lane, batch) {
         Ok(images) => images,
-        // A frame that was never scaled is not a describe failure to retry: the ingest step owes it,
-        // and saying which picture is missing is the honest answer (§Failure-is-specific).
+        // An unscaled frame is the ingest step's debt, not a describe failure to retry (§Failure-is-specific).
         Err(reason) => return Err(format!("{lane}: {reason}")),
     };
     let key = describe::cache_key(
@@ -426,18 +353,13 @@ fn run_chunk(
         &images,
         &conf.model,
     );
-    // §F1.7 S2's resume rule read through [`describe::starts_already_logged`], and one rung past it:
-    // a chunk whose START is already in the event log is answered without a request, whether the text
-    // comes back from `cache/llm/describe/` or only from what is on disk. Answers `None` when the
-    // chunk is still to ask.
+    // §F1.7 S2's resume rule via [`describe::starts_already_logged`], one rung further: a chunk whose START is in the event log needs no request.
     let stored = StoredChunk {
         key: &key,
         model: &conf.model,
     };
     if let Some(answer) = resume_answer(tree, lane, &rows, batch, interval, &history, &stored) {
-        // Said for both shapes of a no-wire answer (see [`resume_answer`]): the words count the chunk,
-        // which is what the line has always said, while §10's `cache` row is filed only where the
-        // stored text was really read back.
+        // Said for both no-wire shapes (see [`resume_answer`]); §10's `cache` row is filed only where stored text was read back.
         log(&describe::cached_note(1));
         return answer;
     }
@@ -463,8 +385,7 @@ fn run_chunk(
         ) {
             Ok(body) => body,
             Err(reason) => {
-                // A wire failure is not a refusal: asking a server that is not there again answers the
-                // same way and spends an attempt on nothing (§Failure-is-specific).
+                // A wire failure is not a refusal: asking a missing server again spends an attempt on nothing.
                 return Err(format!("{lane}: describe: {reason}"));
             }
         };
@@ -477,10 +398,8 @@ fn run_chunk(
             }
         };
         let calls = tool_calls_of(&reply);
-        // §3.2's shape is tool calls; a prose reply means the model answered around the surface, and the prose
-        // floor ([`describe::prose_calls`]) is what reads it. A reply whose calls record nothing (a bare
-        // `finish`, the shipped prompt's text beside it) is prose too: read for its calls alone it has no
-        // event for any frame, and was refused until the run failed (08-dex, 3 of 3 replays the same shape).
+        // §3.2's shape is tool calls; prose is read by the floor ([`describe::prose_calls`]). A reply whose calls record nothing (a bare
+        // `finish`) is prose too: read for its calls alone it has no event for any frame (08-dex, 3 of 3 replays).
         let records = calls
             .iter()
             .any(|(name, _)| name == "record_event" || name == "set_state");
@@ -497,26 +416,18 @@ fn run_chunk(
             .chain(calls)
             .collect();
         let mut held = batch_of(batch, interval, &history);
-        // The answer the leg gave to a read this round asked for, if it asked for one. `run_chunk` keeps its
-        // reply as the CALL list rather than the raw envelope, so the answer is written back into that list
-        // before it is stored -- which is also what makes a cached chunk replay the same reads it did live.
+        // The leg's answer to a read this round asked for. It is written into the CALL list before storing, so a cached chunk replays the same reads.
         let mut answered: Vec<(String, String)> = Vec::new();
         for (name, args) in &calls {
-            // §3.2's Reads row offers this job four things its own tool surface does not answer. Answering
-            // them is what makes a read round possible: without it the model asks for its events or its
-            // frames and gets silence, and the retry below then tells it about frames it was never given the
-            // chance to use. Each answer is recorded beside the call it answers (below, in the cached reply)
-            // and pushed to THIS stage's log, so the run and the exchange page both show what was handed back.
+            // §3.2's Reads row: four tools the job's own surface does not answer; without these the model gets silence and the retry blames it.
+            // Answers are recorded beside the call and pushed to this stage's log.
             if let Some(answer) = read_answer(tree, lane, user_context, &rows, batch, name, args) {
                 log(&format!(">>> {name} answered: {answer}"));
                 answered.push((name.clone(), answer));
             }
             describe::apply_tool(&mut held, name, args);
         }
-        // `finish` names the cold batch's first frame to the model (§02-services: it must be told the
-        // opening second says nothing), but that frame is NOT a reason to fail the chunk: §04 §6 has the
-        // app force-write `Calm; same view.` there, so it is one the program can fill itself. Counting it
-        // here would spend every attempt re-asking for a line we are about to write, then error.
+        // `finish` names the cold batch's first frame, but it is not a reason to fail: §04 §6 force-writes `Calm; same view.` there.
         let missing = held
             .finish()
             .iter()
@@ -546,10 +457,7 @@ fn run_chunk(
 /// The system message §8 asks for: the house rules cut to this job's sections, the `describe` wording,
 /// and the precedence rule when there is a User Context to outrank anything.
 ///
-/// Describe used to send no system message at all — one user message with the frames — so none of §8's
-/// per-job table reached it. Note this does NOT change describe's §6 cache slot: [`describe::cache_key`]
-/// keys on the user message plus the frame bytes (see its comment), which is §6's own decision for this
-/// job and stays as item #6 pinned it.
+/// This does NOT change describe's §6 cache slot: [`describe::cache_key`] keys on the user message plus the frame bytes.
 pub fn system_message(paths: &Paths, context: &str) -> String {
     crate::prompt_assembly::system_message(
         &wording(paths, "system"),
@@ -585,7 +493,6 @@ fn ask(
     for image in images {
         parts.push(Part::Image(llm_request::data_url(image, "image/jpeg")));
     }
-    // §8's system half first, then the frames and their stamps as the user turn.
     let messages = vec![
         Message {
             role: "system".to_string(),
@@ -597,8 +504,7 @@ fn ask(
         },
     ];
     let offered: Vec<Tool> = crate::tools::offered(Job::Describe);
-    // §4 gives describe thinking OFF; the switch is read from the prompt table
-    // ([`crate::prompts::mode_of`]) so this cannot drift from the catalogue.
+    // §4: thinking OFF, read from [`crate::prompts::mode_of`] so it cannot drift from the catalogue.
     let body = llm_request::body(
         STEP,
         model,
@@ -610,9 +516,7 @@ fn ask(
     .to_string();
     let endpoint = services::llm_endpoint(&settings::read(paths).unwrap_or_default());
     let base = crate::server_leg::base_row(Server::Llm, model, "POST", "", STEP, "describe");
-    // §03-shell §7 wants the exchange page even when §F1.7 S4 later finds the reply in its own cache.
-    // `chat` takes the tree by value, so the stage hands its own clone to the leg; the page for this
-    // chunk is filed under the run's stamp, which the leg owns.
+    // §03-shell §7 wants the exchange page even when §F1.7 S4 later finds the reply in its cache; `chat` takes the tree by value.
     let reply = crate::llm_retry_leg::chat(
         STEP,
         tree,
@@ -625,8 +529,7 @@ fn ask(
     Ok((reply.content_type, reply.body))
 }
 
-/// Read the scaled copies to send. A missing copy is a hard error naming the frame: sending three of
-/// four pictures and stamping four would misdate every event after the gap.
+/// Read the scaled copies to send. A missing copy is a hard error: sending three of four pictures would misdate every later event.
 fn read_images(tree: &Tree, lane: &str, batch: &[f64]) -> Result<Vec<Vec<u8>>, String> {
     let dir = tree.llm_frames_dir(lane);
     let base = crate::describe_scale::name_base(tree, lane);
@@ -647,10 +550,8 @@ fn read_images(tree: &Tree, lane: &str, batch: &[f64]) -> Result<Vec<Vec<u8>>, S
 
 /// The three speech sections for the chunk's span, off `words.aligned.json` when there is one.
 ///
-/// The windows are the §3.2 ones ([`crate::tools::describe::CTX_WINDOW_SECONDS`] either side,
-/// [`crate::tools::describe::CTX_SEGS`] per side) and `during` is uncapped: the model is told which
-/// words its frames sit on top of and what led up to them. §3.2 says all three sections are always
-/// present, with `(none)` where a side is empty, and `describe::message`/`speech_block` do that.
+/// §3.2 windows ([`crate::tools::describe::CTX_WINDOW_SECONDS`] either side, [`crate::tools::describe::CTX_SEGS`] per side); `during` is uncapped.
+/// All three sections are always present, `(none)` where empty; `describe::message`/`speech_block` do that.
 fn speech_in(tree: &Tree, lane: &str, from: f64, to: f64) -> Speech {
     let words = crate::requests::read_words(tree, lane)
         .ok()
@@ -668,8 +569,7 @@ fn speech_in(tree: &Tree, lane: &str, from: f64, to: f64) -> Speech {
         })
         .collect();
     let window = crate::tools::describe::CTX_WINDOW_SECONDS;
-    // The batch here is only a window calculator: `speech_around` is §3.2's rule for which words a span
-    // hears, and re-deriving that span here would be a second copy of it.
+    // Only a window calculator: `speech_around` is §3.2's rule for which words a span hears.
     let batch = Batch::new(from, (to - from).max(0.01), 2);
     let text_of = |line: &crate::tools::describe::Spoken| line.text.clone();
     let during: Vec<String> = batch
@@ -699,18 +599,12 @@ fn speech_in(tree: &Tree, lane: &str, from: f64, to: f64) -> Speech {
 }
 
 /// The batch the answer is recorded against: the frames THIS chunk holds, at their real seconds.
-///
-/// [`Batch::new`] computes its own evenly-spaced seconds because a caller that only knows “n frames
-/// from t, d apart” is what §3.2's tool surface was written against. A real batch is not always that:
-/// a chunk may be short at the end of the take, and its frames are the picked grid, whose spacing is
-/// uneven wherever a scene change moved a step. So the seconds the stamps were built from are what the
-/// batch is asked about, and this rebuilds the interval that makes `start + i * interval` land on each
-/// of them — the value `record_event` names in its answer.
+/// [`Batch::new`] spaces frames evenly, but a chunk may be short at the end of a take and the picked grid is uneven after a scene change;
+/// this rebuilds the interval that makes `start + i * interval` land on each (the value `record_event` names).
 fn batch_of(batch: &[f64], interval: f64, history: &[String]) -> Batch {
     let start = batch.first().copied().unwrap_or(0.0);
     let count = batch.len().max(1);
-    // Over the whole batch rather than the first step: a short final chunk is one frame, and a
-    // one-frame batch's span is what the request said it covered (`to` - `from`), not zero.
+    // Over the whole batch: a one-frame final chunk spans `to` - `from`, not zero.
     let spread = batch.last().copied().unwrap_or(start) - start;
     let step = if count > 1 {
         spread / (count - 1) as f64
@@ -725,15 +619,10 @@ fn batch_of(batch: &[f64], interval: f64, history: &[String]) -> Batch {
     }
 }
 
-/// The §3.2 answer's tool calls, as the message that carries them and as the pair this module stores
-/// in the cache.
+/// The §3.2 answer's tool calls, as the message that carries them and as the pair this module stores in the cache.
 ///
-/// A chat reply already arrives as structured `tool_calls` (no XML, no fence), so no parsing of prose
-/// is needed to get them; what is NOT in the chat protocol is anywhere to put per-call tool RESULTS,
-/// so a multi-call answer cannot be fed back as a second round the way §3's loop describes one, and
-/// the retry instead re-asks the batch with the refusal in the user message — which is what
-/// `finish`'s answer ("these frames have no EVENT") is for. Storing the pair rather than the raw
-/// reply is what lets a cached answer go through the same `apply_tool` path as a fresh one.
+/// The chat protocol has nowhere for per-call tool RESULTS, so a multi-call answer is re-asked with the refusal rather than fed back as a round (§3).
+/// Storing the pair lets a cached answer take the same `apply_tool` path as a fresh one.
 fn tool_calls_of(reply: &llm_request::Reply) -> Vec<(String, serde_json::Value)> {
     reply
         .tool_calls
@@ -749,10 +638,8 @@ fn tool_calls_of(reply: &llm_request::Reply) -> Vec<(String, serde_json::Value)>
 
 /// Answer one of §3.2's four reads, or `None` when the call belongs to `describe::apply_tool`.
 ///
-/// `get_events`, `get_frames` and `get_context` come from [`tool_reads::dispatch`] with THIS chunk's own
-/// event rows and frame seconds — never a fresh copy of the session, because a read must describe the
-/// batch the pictures are from. `speech_around` is answered here rather than in the shared layer because
-/// every-source speech is this leg's to gather.
+/// `get_events`, `get_frames` and `get_context` come from [`tool_reads::dispatch`] with THIS chunk's rows and frame seconds, never a fresh session copy.
+/// `speech_around` is answered here: every-source speech is this leg's to gather.
 fn read_answer(
     tree: &Tree,
     lane: &str,
@@ -765,8 +652,7 @@ fn read_answer(
     if name == "speech_around" {
         return Some(speech_answer(tree, lane, args));
     }
-    // `EventRow` is describe's resume shape (`at` + text, no end: §6's middle field is a read-side fold).
-    // A read has to say how long a reading held, which is the next row's start.
+    // `EventRow` has no end (§6's middle field is a read-side fold); a read needs the next row's start as the end.
     let events: Vec<FrameEvent> = rows
         .iter()
         .enumerate()
@@ -792,8 +678,7 @@ fn read_answer(
     tool_reads::dispatch(&ctx, &asked)
 }
 
-/// The live leg's read answer, reached from a test without a session on disk: the same `read_answer` the
-/// chunk loop calls, with the caller's own event rows and frame seconds.
+/// The live leg's `read_answer`, reachable from a test without a session on disk.
 pub fn read_answer_for_test(
     tree: &Tree,
     lane: &str,
@@ -806,9 +691,7 @@ pub fn read_answer_for_test(
     read_answer(tree, lane, user_context, rows, batch, name, args)
 }
 
-/// The calls as the chunk's cached reply stores them, each with the answer it was given. `apply_and_write`
-/// reads the pair at `0`/`1` and skips anything else, so the third field costs a replay nothing and leaves a
-/// readable record of what the model was handed.
+/// The calls as the cached reply stores them, each with its answer; `apply_and_write` reads only `0`/`1`, so the extra field costs a replay nothing.
 fn with_results(
     calls: &[(String, serde_json::Value)],
     answered: &[(String, String)],
@@ -825,11 +708,8 @@ fn with_results(
         .collect()
 }
 
-/// `speech_around` (§3.2): every line spoken in that stretch, from EVERY recording — not the two-per-side
-/// extract the request's own brief carries (capped by `describe::CTX_SEGS`, quoting only what the message
-/// builder picked). So this gathers from every source the project lists: a describe runs before the fix
-/// stage merges `session.tsv`, so reading that file alone would answer "nothing" during the very walk
-/// whose brief is short.
+/// `speech_around` (§3.2): every line spoken in that stretch from EVERY recording, not the request brief's capped extract. A describe runs before
+/// the fix stage merges `session.tsv`, so reading that file alone would answer "nothing".
 fn speech_answer(tree: &Tree, lane: &str, args: &serde_json::Value) -> String {
     let number = |key: &str| -> Option<f64> {
         match args.get(key)? {
@@ -881,9 +761,6 @@ fn speech_answer(tree: &Tree, lane: &str, args: &serde_json::Value) -> String {
 
 /// Feed one reply through the §3.2 tool surface and write what it answered. Returns the frames still
 /// missing (0 when the answer was complete).
-///
-/// A cached reply is stored in the tool-call spelling `run_chunk` writes it in, so a hit and a fresh
-/// answer take the one path through `apply_tool` rather than two.
 fn apply_and_write(
     tree: &Tree,
     lane: &str,
@@ -892,8 +769,7 @@ fn apply_and_write(
     history: &[String],
     reply: &str,
 ) -> Result<usize, String> {
-    // A stored reply is the call list the tool path filed, or the prose a prose reply was; a reply that is
-    // not a call list is prose, read by §3.2's floor against the frames as the request stamped them.
+    // A stored reply is a call list or prose; prose is read by §3.2's floor against the frames as stamped.
     let calls: Vec<(String, serde_json::Value)> =
         match serde_json::from_str::<Vec<serde_json::Value>>(reply) {
             Ok(stored) => stored.iter().filter_map(stored_call).collect(),
@@ -906,9 +782,7 @@ fn apply_and_write(
     Ok(write_batch(tree, lane, batch, interval, history, &held))
 }
 
-/// One call of a stored reply: `{"0": name, "1": args, "result": …}` as [`with_results`] files it, or a bare
-/// `[name, args]` pair. The first rewrite read the list as pairs only, so every reply the tool path had filed
-/// came back as no call at all, and a replayed chunk was written "same" frame after frame.
+/// One call of a stored reply: `{"0": name, "1": args, "result": …}` as [`with_results`] files it, or a bare `[name, args]` pair.
 fn stored_call(entry: &serde_json::Value) -> Option<(String, serde_json::Value)> {
     let (name, args) = match entry {
         serde_json::Value::Array(pair) => (pair.first()?, pair.get(1)?),
@@ -920,11 +794,8 @@ fn stored_call(entry: &serde_json::Value) -> Option<(String, serde_json::Value)>
 
 /// §F1.7 S6: this chunk's rows appended and `state.txt` rewritten, after EVERY chunk.
 ///
-/// Writing happens once the tool loop is satisfied that every frame of the chunk was answered, so an
-/// unmentioned frame reaches the file as the word `same` — true only when a row precedes it. A cold
-/// batch's first frame is the case where it is not, and `describe::events_rows` writes §6's
-/// `Calm; same view.` line there instead, so this function always gets one row per frame now. The
-/// count below is therefore a sanity bound on that precondition, not a branch of its own.
+/// An unmentioned frame reaches the file as `same`, true only after a row; a cold batch's first frame gets §6's `Calm; same view.` from
+/// `describe::events_rows`, so the count below is a sanity bound on one row per frame.
 fn write_batch(
     tree: &Tree,
     lane: &str,
@@ -941,8 +812,7 @@ fn write_batch(
     );
     let missing = batch.len().saturating_sub(rows.len());
     if missing > 0 {
-        // An incomplete answer leaves both files alone: a half-written `events.tsv` would read back as
-        // a chunk that was answered, which is the resume rule failing silently.
+        // An incomplete answer leaves both files alone: a half-written `events.tsv` would read as a resumed chunk.
         return missing;
     }
     // The STATE goes with the rows: a cleared state is itself an answer (§S6).

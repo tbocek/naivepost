@@ -1,8 +1,4 @@
 //! F2.2's page half for ▶✂: the two states the spec puts ON the button, and the clock's own tooltip.
-//!
-//! The rules live in [`crate::cut_play`] (what counts as no clips, what a press means) and
-//! [`crate::cut_play_leg`] (the tick). This file only reads the page and paints — no rule is decided here,
-//! per spec/00-principles.md §5. Split out of `window.rs`, which is past its size budget.
 
 use adw::prelude::*;
 
@@ -16,11 +12,6 @@ pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_CUT;
 pub const PAUSE_LABEL: &str = "\u{23f8}\u{2702}";
 
 /// Paint the button from the page's state: S1's grey and the ⏸ face, both read rather than remembered.
-///
-/// S1 says "greyed with no clips", so the button itself tells the truth before any press. The press-time
-/// refusal stays as the belt for the ways in that cannot switch the preview ([`crate::cut_play::EMPTY_CUT_REFUSAL`],
-/// S2's sentence) — a greyed button and a named refusal are two different answers to two different moments,
-/// and the spec asks for both.
 pub fn paint(window: &adw::ApplicationWindow) {
     let Some(button) = ui::play_cut_button(window) else {
         return;
@@ -55,15 +46,6 @@ pub fn paint_both_skipping_buttons(window: &adw::ApplicationWindow) {
 }
 
 /// Preroll the spare at `at`.
-///
-/// S5's page doors, as a group: each hands a number to [`crate::cut_play_back`], which owns the processes,
-/// and nothing here decides anything (spec/00-principles.md §5). They live in this file rather than in
-/// `window.rs`'s `CutPreviewSlot` impl because that file is past its size budget — the impl forwards. The
-/// page names the footage (only it can reach the session's source list — F2.1's `files_for`), the leg owns
-/// the process; a refusal is logged where the press's other lines go and answers false, leaving the tick's
-/// arithmetic untouched, because no spare means every join is a reload, as it was. `freeze`/`release_spare`
-/// take no window: the leg's slots are process-wide, for `play_back`'s reason — a child outlives the call
-/// that started it.
 pub fn preroll_spare(window: &adw::ApplicationWindow, at: f64) -> bool {
     // The built-in player seeks within its pipeline instead of holding a second process at the join.
     if crate::play_built_in::in_use() {
@@ -118,37 +100,16 @@ pub fn hand_rate(window: &adw::ApplicationWindow, rate: f64, at: f64) -> bool {
     crate::cut_play_back::set_rate(&files, rate, at, &|line| log_line(line))
 }
 
-/// S5 "volume effects apply": the player's own loudness for these seconds. `window::set_preview_volume` is
-/// the slider's door and would move the SLIDER, which owns the room's loudness — `cut_play_leg::route`
-/// already multiplied it in, so writing a gain back as a percent would move the slider out from under the
-/// hand that set it. This writes the player's own `volume` property instead (the muted-by-property shape F2.5
-/// S6 established) and leaves the scale alone.
-///
-/// F3.6 S5: and it carries the number to the process that makes sound. [`crate::play_back::set_volume`] asks
-/// playbin's volume PROPERTY at `at_secs` — a seek, never a stop — which is what lets a gain follow an effect
-/// without tearing the stream down; when nothing is running or the answer has not changed it does nothing.
 pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64, at_secs: f64) {
     if let Some(player) = live_player(window) {
         player.borrow_mut().volume = Some(gain);
     }
-    // Only a RUNNING process may be asked, and only one THIS leg started: `play_back::cue` is ▶'s door (F2.1 —
-    // the press is what starts this process), so a gain arriving while nothing plays must not cue a player nobody
-    // asked for. It would also re-cue at the second the gain was named in rather than at the second ▶ chose,
-    // which is how a parked line once moved the red line's `-s` by a tenth of a second.
     if crate::play_back::running() {
         crate::play_back::set_volume(gain, at_secs);
     }
 }
 
 /// Start (or resume) the cut preview's RUNNING player at `at`, replacing whatever was playing.
-///
-/// The press is the only door that starts this process: [`crate::cut_play_back::preroll`] makes the SPARE and
-/// [`crate::cut_play_back::set_rate`] only ever replaces a player that already exists, so without this call ▶✂
-/// runs its clock arithmetic and arms a spare while nothing plays the first clip. It cues at the session second
-/// the press landed on — the snapped line `cut_play::pressed` just wrote — for the same reason `set_rate`
-/// re-cues at the head: a player left sitting on an earlier stretch would make sound from seconds the cut took
-/// out. A player that will not start is logged and answered `false`; the tick's arithmetic and every other
-/// preview rule are unaffected, which is the "carry on elsewhere" half of §0 (F2.1's cue door says the same).
 pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
     let cued = if crate::play_built_in::in_use() {
         // The built-in player: the scene's recording at `at`, in the preview's own picture.

@@ -1,6 +1,3 @@
-//! The shell's project/session reads, split out of [`crate::ui::window`] because that file is at its
-//! size budget. Nothing here changed: the three functions are what `window.rs` used to hold verbatim.
-
 use adw::prelude::*;
 use gtk4 as gtk;
 
@@ -38,12 +35,6 @@ pub(crate) fn start_shell(page: &str) -> Shell {
 }
 
 /// The folder this window is working on, with its cut and narration read from it.
-///
-/// Read fresh every time rather than remembered: which project is open is the window's business, and
-/// `session_dir` is the same stand-in Rescan, New and Save use, so the flows agree on what "this
-/// project" means. A folder that is not a project leaves `tree` None — §1 wants the page to show
-/// what it has rather than fail to open, so nothing here errors out. Both the tab switch (S3-S5) and
-/// the first paint call this, so the row cannot disagree with itself between them.
 pub(crate) fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
     let dir = startup::open_dir();
     let tree = if dir.join(crate::project::PROJECT_FILE).is_file() {

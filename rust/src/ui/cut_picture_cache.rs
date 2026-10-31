@@ -1,15 +1,8 @@
-//! §05-cut §1 (Pictures) under §03-shell §1, "The window thread never waits": the preview's picture and the band's
-//! film rows are painted from what workers already read. A line move, a playback tick and a band paint stat a
-//! folder or a file at most; listing a frame folder (thousands of files), decoding a frame and rendering a card's
-//! frames all happen on a worker, and the page repaints when the answer lands. The first rewrite listed the folder
-//! twice and decoded up to three full-size JPEGs on every line move, ten times a second during playback, and the
-//! band listed every recording's folder on every paint.
-//!
-//! Three caches, each keyed so a changed file is read again rather than shown stale:
-//! - a frame folder's listing, by the folder's change time ([`frames_of`]);
-//! - a decoded frame, by the file's size and change time ([`picture`]), one decode at a time, the newest wanted
-//!   frame next, so playback never queues up frames it has already passed;
-//! - a card's rendered frames, by its frame folder ([`card_frames`]).
+//! §05-cut §1 (Pictures) under §03-shell §1 "The window thread never waits": the preview picture and band film rows are painted from what workers already read; a paint stats at most a folder or file, and the page repaints when a worker lands.
+//! Three caches, each keyed so a changed file is read again:
+//! - a frame folder's listing, by change time ([`frames_of`]);
+//! - a decoded frame, by size and change time ([`picture`]), one decode at a time, newest wanted next;
+//! - a card's rendered frames, by frame folder ([`card_frames`]).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -20,7 +13,6 @@ use gtk4::prelude::*;
 
 use crate::layout;
 
-/// A file or folder as a cache knows it: size and change time.
 type Stamp = (u64, Option<SystemTime>);
 
 fn stamp_of(path: &Path) -> Option<Stamp> {
@@ -28,7 +20,6 @@ fn stamp_of(path: &Path) -> Option<Stamp> {
     Some((meta.len(), meta.modified().ok()))
 }
 
-/// A decoded frame: the texture the picture shows, and its shape.
 #[derive(Clone)]
 pub struct Picture {
     pub texture: gtk::gdk::Texture,
@@ -36,12 +27,9 @@ pub struct Picture {
     pub high: i32,
 }
 
-/// What [`picture`] answers.
 pub enum Decoded {
     Ready(Picture),
-    /// A worker is decoding it (or will next); the caller keeps what is up.
     Coming,
-    /// No such file, or it does not decode.
     Missing,
 }
 
@@ -51,17 +39,13 @@ thread_local! {
     static LISTING: std::cell::RefCell<HashSet<PathBuf>> = std::cell::RefCell::new(HashSet::new());
     static PICTURES: std::cell::RefCell<HashMap<PathBuf, (Stamp, Option<Picture>)>> =
         std::cell::RefCell::new(HashMap::new());
-    /// The frame a worker is decoding now, and the newest one wanted after it.
     static DECODING: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static NEXT: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static RENDERING: std::cell::RefCell<HashSet<PathBuf>> = std::cell::RefCell::new(HashSet::new());
-    /// Called when anything lands: the page repaints its picture and its band.
     static ON_LANDED: std::cell::Cell<Option<fn()>> = const { std::cell::Cell::new(None) };
-    /// How many folder listings this thread has run itself, for the test that proves a paint runs none.
     static LISTED_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// The page's repaint, installed by the window: called whenever a listing, a decode or a card render lands.
 pub fn on_landed(repaint: fn()) {
     ON_LANDED.with(|slot| slot.set(Some(repaint)));
 }
@@ -75,14 +59,11 @@ fn landed() {
     crate::ui::narrate_picture::repaint_landed();
 }
 
-/// One recording's extracted frames, oldest first, for a paint or a line move: the listing held for this
-/// version of the folder, else the one held before (empty the first time) while a worker lists it again. A
-/// missing folder is no frames, at once.
+/// One recording's extracted frames, oldest first: the listing held for this folder version, else the previous one while a worker relists. A missing folder is no frames.
 pub fn frames_of(tree: &layout::Tree, base: &str) -> Vec<PathBuf> {
     frames_or_coming(tree, base).unwrap_or_default()
 }
 
-/// [`frames_of`], telling "nothing listed yet, a worker is on it" (`None`) apart from "no frames" (empty).
 pub fn frames_or_coming(tree: &layout::Tree, base: &str) -> Option<Vec<PathBuf>> {
     let dir = tree.frames_dir(base);
     let Some(stamp) = stamp_of(&dir) else {
@@ -109,9 +90,7 @@ pub fn frames_or_coming(tree: &layout::Tree, base: &str) -> Option<Vec<PathBuf>>
     held.map(|(_, paths)| paths)
 }
 
-/// The frame at `path`, decoded, if a worker has decoded this version of it; otherwise it is asked for (one
-/// decode at a time, the newest ask next) and [`Decoded::Coming`] answers. Reading the file's size and time is
-/// the only disk work this does.
+/// The decoded frame at `path` if a worker has decoded this version; otherwise asks for it and answers [`Decoded::Coming`].
 pub fn picture(path: &Path) -> Decoded {
     let Some(stamp) = stamp_of(path) else {
         return Decoded::Missing;
@@ -135,7 +114,6 @@ pub fn picture(path: &Path) -> Decoded {
     Decoded::Coming
 }
 
-/// Hand one frame to a worker; when it lands, the next wanted one (if any) goes.
 fn decode(path: PathBuf, stamp: Stamp) {
     DECODING.with(|decoding| *decoding.borrow_mut() = Some(path.clone()));
     let file = path.clone();
@@ -161,7 +139,6 @@ fn decode(path: PathBuf, stamp: Stamp) {
             });
             PICTURES.with(|pictures| {
                 let mut pictures = pictures.borrow_mut();
-                // A playback walks thousands of frames; keep the newest few hundred, not every one.
                 if pictures.len() > KEPT_PICTURES {
                     pictures.clear();
                 }
@@ -178,10 +155,8 @@ fn decode(path: PathBuf, stamp: Stamp) {
     );
 }
 
-/// How many decoded frames are held before the cache starts over: a few hundred full frames at most.
 const KEPT_PICTURES: usize = 240;
 
-/// A decoded frame's shape when it is held, without decoding anything.
 pub fn held_shape(path: &Path) -> Option<(i32, i32)> {
     PICTURES.with(|pictures| {
         pictures
@@ -191,17 +166,13 @@ pub fn held_shape(path: &Path) -> Option<(i32, i32)> {
     })
 }
 
-/// What [`card_frames`] answers.
 pub enum Card {
     Ready(Vec<PathBuf>),
-    /// A worker is rendering them.
     Coming,
-    /// The render failed: the panel stays on the footage.
     Failed,
 }
 
-/// A card's rendered frames in `dir`: listed when they are there, else rendered on a worker by `render`, the
-/// page repainting when they land. The render is `cut_card_preview::render_card`, unchanged.
+/// A card's rendered frames in `dir`: listed if there, else rendered on a worker by `render`; the page repaints when they land.
 pub fn card_frames(
     dir: &Path,
     render: impl FnOnce() -> Result<Vec<PathBuf>, String> + Send + 'static,
@@ -228,23 +199,19 @@ pub fn card_frames(
     Card::Coming
 }
 
-/// Forget a card's frames: the card file changed, so its frames are rendered again.
 pub fn forget_card(dir: &Path) {
     LISTS.with(|lists| lists.borrow_mut().remove(dir));
 }
 
-/// For a test: count this thread's own folder listings. A paint or a line move must add none.
 pub fn note_listed_here() {
     LISTED_HERE.with(|count| count.set(count.get() + 1));
 }
 
-/// For a test: how many folder listings ran on this thread (the window's) so far.
 pub fn listed_here_for_test() -> usize {
     LISTED_HERE.with(|count| count.get())
 }
 
-/// For a test: whether this version of the frame at `path` is decoded and held. A line move never decodes, so a
-/// frame the line just moved onto answers `false` until its worker lands.
+/// For a test: whether this version of the frame at `path` is decoded and held.
 pub fn picture_held_for_test(path: &Path) -> bool {
     let Some(stamp) = stamp_of(path) else {
         return false;

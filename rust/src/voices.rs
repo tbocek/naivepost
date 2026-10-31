@@ -1,19 +1,10 @@
 //! §07-narrate#1-screen, number **9**: the voices folder's own arithmetic.
-//!
-//! "Add file…" copies a recording INTO this folder and the picker then lists it ("every `.wav` in the
-//! voices folder"), so two questions have to be answered the same way by whoever asks: which name a
-//! copied recording takes, and what is already in there. Both live here as plain string work; the
-//! folder itself is [`crate::settings::voices_folder`]'s answer (Settings' `AUDIOCPP_VOICES`, else the
-//! legacy models root's `voices/`, else the platform's), never a path spelled out in a widget.
 
 use std::path::Path;
 
 /// The suffix every listed voice carries (§A.6: "every .wav in the voices folder").
 pub const VOICE_SUFFIX: &str = ".wav";
 
-/// The name a copied recording takes inside the folder: its base name with everything that is not a
-/// letter, a digit, `-` or `_` folded to `-`, runs of them collapsed, and no leading dot (a dotted name
-/// would vanish from a listing and re-appear as hidden). §S1's "under a sanitised base name".
 pub fn sanitised_base(path: &Path) -> String {
     let raw = path
         .file_stem()
@@ -28,21 +19,12 @@ pub fn sanitised_base(path: &Path) -> String {
         }
     }
     let trimmed = out.trim_matches('-').to_string();
-    // An all-punctuation name ("!!!.wav") sanitises to nothing; a folder cannot hold "" and a voice
-    // called "-" is worse than one called `voice`.
     if trimmed.is_empty() || trimmed.starts_with('.') {
         return "voice".to_string();
     }
     trimmed
 }
 
-/// The name that does NOT overwrite anything already in the folder: `base`, else `base-2`, `base-3`, …
-/// (§S1's "never overwriting (`name-2`, …)"). Comparison is on the bare base, since every candidate
-/// gets the same suffix.
-/// The name that does NOT overwrite anything already in the folder: `base`, else `base-2`, `base-3` …
-/// (§S1's "never overwriting (`name-2`, …)"). Comparison is on the bare base, since every listing entry
-/// gets the same suffix. §6's sequence is owned by [`crate::narrate_details::added_file_name`], so this
-/// delegates: two places deciding when an index appears is how a copied voice ends up re-keyed.
 pub fn unique_name(taken: &[String], base: &str) -> String {
     let held: Vec<String> = taken
         .iter()
@@ -51,9 +33,6 @@ pub fn unique_name(taken: &[String], base: &str) -> String {
     crate::narrate_details::added_file_name(base, &held)
 }
 
-/// The folder's `.wav` names, sorted — the order the picker lists them in, and the list a copy is
-/// checked against so a second add of the same recording lands as `name-2.wav`. A missing or
-/// unreadable folder answers empty rather than failing: an empty folder is a real state.
 pub fn list_wavs(dir: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();

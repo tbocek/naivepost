@@ -1,52 +1,20 @@
 //! Diarization's two-pass anchored scan (spec/04-prepare.md F1.3 S5, confirmed by §6).
-//!
-//! One request per window answers *who spoke when inside what it heard*, and that answer is only
-//! meaningful within the window: a server told about two windows in a row has no reason to call the
-//! same person `SPEAKER_01` twice. So the scan buys one shared reference — an **anchor**, a short
-//! file holding a little of each voice — and asks pass 2 to place its own slots against it. Pass 1's
-//! only job is to find out which voices those are, which is why it can stride over the recording
-//! instead of reading it twice.
-//!
-//! Everything here is arithmetic on seconds: window spans, whose speech counts, how much audio each
-//! voice contributes, and which slot belongs to which anchor block. The requests, the cuts and the
-//! `turns.json` stay with the caller, the way [`crate::asr`] leaves ffmpeg outside and takes its
-//! durations as arguments (spec/00-principles.md §5).
 
 use crate::requests::Turn;
 use crate::roles::{ANCHOR_PER_SECONDS, DIAR_HOP_SHARE, DIAR_WINDOWS_SECONDS};
 use crate::transcribe::SAMPLE_RATE;
 
-/// Speech that makes a slot count as a voice: a two-second flicker is a mislabel, four seconds is a
-/// person. `P.eng.anchorMinSeconds`
 pub const ANCHOR_MIN_SECONDS: f64 = 4.0;
 
-/// Shortest stretch of one voice worth cutting into the anchor — anything shorter adds a seam to the
-/// anchor file for no identification to gain. `P.eng.anchorCutSeconds`
 pub const ANCHOR_CUT_SECONDS: f64 = 0.3;
 
 /// Anchor-block overlap that claims a slot. Below it two voices merely happen to be near each other.
-/// `P.eng.minAnchorOverlap`
-///
-/// The bound is INCLUSIVE (`>=`), as spec/04-prepare.md words it: "matches slots to anchor blocks
-/// one-to-one by overlap >= 0.5 s". `match_slots` reads it twice, and both readings matter — once to
-/// let a claim take an unclaimed block, and once to let a slot that lost the contest for a block still
-/// be *named* after that voice. So a thin overlap never claims anything, while a real match that lost
-/// to a stronger claim is still recognised rather than counted as a new speaker.
-/// Prototype `minAnchorOv`, go/pipeline.go.
 pub const MIN_ANCHOR_OVERLAP: f64 = 0.5;
 
-/// The window pass 1 never shrinks below, however short the recording: a window under this holds too
-/// little of a sentence for the server to separate two voices in it at all.
 pub const WINDOW_MIN_SECONDS: f64 = 10.0;
 
-/// A pass-2 window is shortened by one second beyond the anchor so the anchor and the window cannot
-/// run into each other mid-word: the seam between them is what tells the server where the reference
-/// stops and the audio to place begins.
 pub const WINDOW_SLACK_SECONDS: f64 = 1.0;
 
-/// Less new audio than this per pass-2 window and there is nothing left to identify — the anchor has
-/// eaten the window, so every answer would be about audio already answered. Hence an error rather
-/// than a shorter window.
 pub const NEW_AUDIO_MIN_SECONDS: f64 = 15.0;
 
 /// A voice's slot in the anchor, and where its piece of the anchor file lands.
@@ -58,8 +26,6 @@ pub struct Slot {
     pub speech: f64,
     /// Where its cut starts on the recording's clock.
     pub from: f64,
-    /// `from` plus what was actually cut — which is not where its last turn ended, since a voice heard
-    /// in several stretches contributes several pieces.
     pub to: f64,
     /// Its offset inside the anchor file, which is what a pass-2 overlap is measured against.
     pub anchor_from: f64,
@@ -90,9 +56,10 @@ impl Anchor {
 pub enum Scan {
     /// Nothing in any window was a voice long enough to anchor on: no turns, and that is the answer.
     NoVoice,
-    /// The anchor left too little of each window to place: the run's diarization model is being asked
-    /// for more reference than the window can hold, so the ladder moves on or the step fails.
-    AnchorTooLong { anchor: f64, window: f64 },
+    AnchorTooLong {
+        anchor: f64,
+        window: f64,
+    },
     /// The windows pass 1 read, the anchor it built, and the spans pass 2 is sent.
     Planned {
         scan: Vec<(f64, f64)>,
@@ -101,11 +68,6 @@ pub enum Scan {
     },
 }
 
-/// Pass 1's windows over a recording of `duration` seconds: [`DIAR_HOP_SHARE`] of the window as the
-/// stride, each window no shorter than [`WINDOW_MIN_SECONDS`]. A recording shorter than the window
-/// still gets exactly one, from zero — there is nothing to stride past. The last window ends at the
-/// end of the recording rather than being padded out to the full width: padding would send the server
-/// silence and call it a window.
 pub fn scan_windows(duration: f64, window: f64) -> Vec<(f64, f64)> {
     let window = window.max(WINDOW_MIN_SECONDS);
     let hop = (window * DIAR_HOP_SHARE.0 as f64 / DIAR_HOP_SHARE.1 as f64).max(1.0);
@@ -131,15 +93,10 @@ pub fn scan_windows(duration: f64, window: f64) -> Vec<(f64, f64)> {
     windows
 }
 
-/// Seconds each voice contributes to an anchor built on a window this wide: the 90 s rung takes
-/// [`ANCHOR_PER_SECONDS`], a lower rung takes a quarter of its own window — 12 s is most of a 25 s
-/// window, and an anchor that big leaves nothing to place.
 pub fn anchor_per(window: f64) -> f64 {
     ANCHOR_PER_SECONDS.min(window / 4.0)
 }
 
-/// How many voices a window holds: the slots with [`ANCHOR_MIN_SECONDS`] of speech or more, counted
-/// once each however many turns they were split into.
 pub fn voices(window_turns: &[Turn]) -> usize {
     let mut voices: Vec<(u32, f64)> = Vec::new();
     for turn in window_turns {
@@ -155,9 +112,6 @@ pub fn voices(window_turns: &[Turn]) -> usize {
     voices.len()
 }
 
-/// The anchor window: the one holding most voices. A tie goes to the window whose least-represented
-/// voice has the most of it — where two windows hold the same crowd, the one that heard every one of
-/// them longest is the one with material left over after each voice takes its share of the anchor.
 pub fn pick_window(windows: &[&[Turn]]) -> Option<usize> {
     let mut best: Option<(usize, usize, f64)> = None;
     for (index, turns) in windows.iter().enumerate() {
@@ -190,12 +144,6 @@ pub fn pick_window(windows: &[&[Turn]]) -> Option<usize> {
     best.map(|(index, _, _)| index)
 }
 
-/// The anchor itself: each voice's longest stretch cut to [`anchor_per`] seconds and padded out with
-/// its next-longest ones while they reach [`ANCHOR_CUT_SECONDS`], the voices in order of how much they
-/// spoke, their pieces laid end to end in the anchor file. Only audio **inside** the chosen window is
-/// cut: the server was sent that window and nothing else, so an answer about it cannot be matched
-/// against a voice heard outside it. No voice reaching [`ANCHOR_MIN_SECONDS`] anywhere is
-/// [`Scan::NoVoice`] — there is nothing to identify against.
 pub fn plan(duration: f64, window: f64, windows: &[(f64, f64)], per_window: &[Vec<Turn>]) -> Scan {
     let borrowed: Vec<&[Turn]> = per_window.iter().map(Vec::as_slice).collect();
     let Some(chosen) = pick_window(&borrowed) else {
@@ -335,8 +283,6 @@ pub fn plan(duration: f64, window: f64, windows: &[(f64, f64)], per_window: &[Ve
     }
 }
 
-/// The log pass 1's progress line and the anchor line share a shape with: `>>> [base] anchor: N
-/// voice(s) in X s of a Y s window -- Z s of new audio each`.
 pub fn anchor_log(base: &str, anchor: &Anchor, window: f64, per_window: f64) -> String {
     format!(
         ">>> [{base}] anchor: {} voice(s) in {} s of a {} s window -- {} s of new audio each",
@@ -347,20 +293,14 @@ pub fn anchor_log(base: &str, anchor: &Anchor, window: f64, per_window: f64) -> 
     )
 }
 
-/// Pass 1's progress line: `>>> [base] finding voices i/n`. The count is of windows, not of requests —
-/// a window that was skipped because its audio was already scanned is not in it.
 pub fn scan_log(base: &str, index: usize, total: usize) -> String {
     format!(">>> [{base}] finding voices {}/{}", index + 1, total)
 }
 
-/// Pass 2's progress line: `>>> [base] placing speakers i/n`. Same count of windows; the anchor is not
-/// one of them, since it was answered by pass 1.
 pub fn placement_log(base: &str, index: usize, total: usize) -> String {
     format!(">>> [{base}] placing speakers {}/{}", index + 1, total)
 }
 
-/// `>>> [base] diarization: no voice long enough to anchor -- no turns` — what Prepare logs when the
-/// scan returns no turns, so an empty `turns.json` is never mistaken for a run that did not happen.
 pub fn no_voice_log(base: &str) -> String {
     format!(">>> [{base}] diarization: no voice long enough to anchor -- no turns")
 }
@@ -387,16 +327,6 @@ impl Placement {
     }
 }
 
-/// Which slot of an answer overlapping the anchor is whose voice: one-to-one, the strongest claim
-/// first, and only at [`MIN_ANCHOR_OVERLAP`] seconds or more of it. A slot nothing claims keeps `None`
-/// and gets a session id of its own — an unidentified voice is not a reason to call it somebody else's.
-///
-/// A claim is `(slot, from, to)` **in the anchor file's own seconds**: the span of the anchor that the
-/// caller measured this slot's voice overlapping. The caller can say that in those units because
-/// [`Anchor::slots`] carries each block's `anchor_from`/`anchor_to`, and it holds both files — so no
-/// shift between the two clocks is needed here, and none can be got wrong. The strongest claim on a
-/// block takes it, so a block is never two slots' voice: that is what stops one person's anchor being
-/// read as the whole room.
 pub fn match_slots(claims: &[(u32, f64, f64)], anchor: &Anchor) -> Vec<(u32, Option<usize>)> {
     // Strongest claim first, over all blocks: a tie keeps the order the answer came in, so the result
     // does not depend on how the sort broke it. The owner is recorded per slot, not per rank — see the
@@ -430,11 +360,6 @@ pub fn match_slots(claims: &[(u32, f64, f64)], anchor: &Anchor) -> Vec<(u32, Opt
             winners.push((slot, block));
         }
     }
-    // Every slot is answered: the block it won, the block that was taken ahead of it but which is still
-    // the voice it matched, or `None` when it reached no anchor voice at all. A slot that lost its contest
-    // to a stronger claim knows which voice it is — the block simply went to the better match — so two
-    // slots of one anchor voice are never read as two people. `None`, and only `None`, earns a fresh
-    // session id: that is the slot the anchor has nothing to say about.
     let owners: Vec<(u32, Option<usize>)> = claims
         .iter()
         .map(|(slot, from, to)| {
@@ -469,15 +394,10 @@ fn overlap(claim: (u32, f64, f64), block: &Slot) -> f64 {
     (claim.2.min(block.anchor_to) - claim.1.max(block.anchor_from)).max(0.0)
 }
 
-/// How much of the anchor a claim reaches in total — what "strongest" is measured by. Summed, not maxed:
-/// a slot heard across two anchor voices claims both of them, and its strength is the whole of that. The
-/// winner still takes only the one block it overlaps most, which is what keeps the match one-to-one.
 fn strength(claim: (u32, f64, f64), anchor: &Anchor) -> f64 {
     anchor.slots.iter().map(|block| overlap(claim, block)).sum()
 }
 
-/// A turn's own length in seconds, clamped: a server that answers with an end before its start has
-/// said nothing usable, and a negative figure would otherwise win a tie for quietest.
 fn speech(turn: &Turn) -> f64 {
     let start = turn.start_sample as f64 / SAMPLE_RATE as f64;
     let end = turn.end_sample as f64 / SAMPLE_RATE as f64;
@@ -496,8 +416,6 @@ fn seconds(value: f64) -> String {
     text.trim_end_matches('.').to_string()
 }
 
-/// The window ladder, biggest first — the caller walks it and the first rung whose plan is not
-/// [`Scan::AnchorTooLong`] serves the run.
 pub fn ladder() -> &'static [f64] {
     &DIAR_WINDOWS_SECONDS
 }

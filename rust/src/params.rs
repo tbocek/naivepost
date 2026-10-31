@@ -1,11 +1,5 @@
-//! §04-prepare#4-parameters-used — the one place that names every parameter Prepare may be tuned by and
-//! says where its value comes from.
-//!
-//! §4 lists what a reader has to know to judge a run: the retake and seam family, describe's context
-//! sizes, the fix block, `P.audio`'s chunk/silence/diarization/merge numbers, and the engineering choices
-//! around frames. It is a list of *ids*, not of numbers — so this module holds no numbers either. Every
-//! entry is built from the constant the code already uses, which makes a stale catalogue impossible: move
-//! a rule's bound in its own module and the entry here moves with it.
+//! §04-prepare#4-parameters-used — every parameter Prepare may be tuned by, and where its value comes from.
+//! Entries are built from the constants the code already uses, so the catalogue holds no numbers of its own.
 
 use crate::align;
 use crate::asr;
@@ -62,26 +56,20 @@ use crate::watchdog;
 use crate::wave;
 use crate::word_list;
 
-/// One row of §10's table as Prepare uses it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
-    /// §10's full id, `P.machine.retakePauseSeconds`.
     pub id: &'static str,
-    /// §10's own spelling of the value — `90, 45, 25`, `2/3`, `-35`, `on` — so a reader comparing this
-    /// list against the spec is comparing strings that already match.
+    /// §10's spelling of the value: `90, 45, 25`, `2/3`, `-35`, `on`.
     pub spelled: String,
     /// The constant the value is built from, `module::CONST`.
     pub from: &'static str,
 }
 
-/// Which of §10's homes an id belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     /// Set per project by the User Context.
     Policy,
-    /// §3's fourth home: the project's own tab controls. §10 spells `P.` for one row
-    /// only (`P.project.frameInterval`); the rest of that section's values carry a bare
-    /// `project.` prefix and land in [`Family::Other`], as every unrowed id here does.
+    /// §3's fourth home. §10 spells `P.` for one row only (`P.project.frameInterval`); the rest land in [`Family::Other`].
     Project,
     /// The Settings dialog / `llm.conf`.
     Machine,
@@ -103,7 +91,6 @@ pub(crate) fn num(value: f64) -> String {
     text.trim_end_matches('.').to_string()
 }
 
-/// A list of seconds, §10-style: `90, 45, 25`.
 pub(crate) fn secs(values: &[f64]) -> String {
     values
         .iter()
@@ -117,8 +104,7 @@ pub(crate) fn param(id: &'static str, spelled: String, from: &'static str) -> Pa
     Param { id, spelled, from }
 }
 
-/// One of §6's colours, spelled as three components (`0.2 0.8 0.3`) so a reader can compare it with the tuple in
-/// `spec/inventory/cut.md` §D without decoding a hex string.
+/// One of §6's colours as three components (`0.2 0.8 0.3`), as in `spec/inventory/cut.md` §D.
 pub(crate) fn colour(
     id: &'static str,
     rgb: crate::ui::cut_colours::Rgb,
@@ -127,11 +113,9 @@ pub(crate) fn colour(
     param(id, crate::ui::cut_colours::spell(rgb), from)
 }
 
-/// Every parameter Prepare reads, in §4's order: the eighteen it names by hand, then `P.audio`'s chunk,
-/// silence, diarization and merge numbers, then the engineering ones around frames.
+/// Every parameter Prepare reads, in §4's order.
 pub fn prepare() -> Vec<Param> {
     let mut params = vec![
-        // --- §4's own list -----------------------------------------------------------------------
         param(
             "P.policy.minTakeSeconds",
             num(requests::MIN_TAKE_SECONDS),
@@ -228,9 +212,7 @@ pub fn prepare() -> Vec<Param> {
             cut_captions::BATCH.to_string(),
             "cut_captions::BATCH",
         ),
-        // F0.5's two clocks. §10 lists them only inside its prose line ("progress pulse 150 ms;
-        // checkpoint poll 200 ms") and gives neither a `P.` id, so they take the bare `machine.`
-        // prefix — the same choice `machine.jpegQuality` made over inventing ids §10 does not carry.
+        // F0.5's two clocks: no `P.` id in §10, so they take the bare `machine.` prefix.
         param(
             "machine.checkpointPollMs",
             format!("{} ms", runqueue::CHECKPOINT_POLL.as_millis()),
@@ -241,8 +223,7 @@ pub fn prepare() -> Vec<Param> {
             format!("{} ms", runqueue::PROGRESS_PULSE.as_millis()),
             "runqueue::PROGRESS_PULSE",
         ),
-        // §1's hang watchdog, the third pair of numbers in that same prose row ("hang watchdog 200 ms /
-        // 3 s"): the GUI thread's beat and how much of its silence counts as a hang.
+        // §1's hang watchdog: the GUI thread's beat and how much of its silence counts as a hang.
         param(
             "machine.hangWatchdogBeatMs",
             format!("{} ms", watchdog::HEARTBEAT.as_millis()),
@@ -259,7 +240,6 @@ pub fn prepare() -> Vec<Param> {
     params
 }
 
-/// `P.audio`: chunk sizes, the silence threshold, diarization windows and anchor sizes, merge gap/length.
 fn audio() -> Vec<Param> {
     vec![
         param(
@@ -292,8 +272,7 @@ fn audio() -> Vec<Param> {
             num(separate::CHUNK_MAX_SECONDS),
             "separate::CHUNK_MAX_SECONDS",
         ),
-        // The silencedetect pair, spelled twice over: the same two numbers live in asr's own names for
-        // the ffmpeg filter and in degraded's, which is where silence is measured off an envelope.
+        // The silencedetect pair, also spelled in degraded's names, where silence is measured off an envelope.
         param(
             "P.machine.silenceThresholdDB",
             num(asr::QUIET_DB),
@@ -319,9 +298,6 @@ fn audio() -> Vec<Param> {
             num(roles::ANCHOR_PER_SECONDS),
             "roles::ANCHOR_PER_SECONDS",
         ),
-        // §10's row for how far a slot's voice must reach into an anchor block to claim it: one
-        // constant answers both this row and `diarize::match_slots`' two bound checks, so the
-        // catalogue cannot drift from the rule that reads it.
         param(
             "P.eng.minAnchorOverlap",
             num(diarize::MIN_ANCHOR_OVERLAP),
@@ -347,9 +323,6 @@ fn audio() -> Vec<Param> {
             num(transcribe::MERGE_NEAR),
             "transcribe::MERGE_NEAR",
         ),
-        // §10's row for the gap that ends a turn: one constant answers both this row and
-        // `transcribe::glue_turns`' comparison, so the catalogue cannot drift from the rule that
-        // reads it.
         param(
             "P.eng.turnGapSeconds",
             num(transcribe::TURN_GLUE),
@@ -365,41 +338,29 @@ fn audio() -> Vec<Param> {
             num(asr::SEEK_MAX),
             "asr::SEEK_MAX",
         ),
-        // §10's row for the alignment cut's own reach: one constant answers both this row and
-        // `align::pieces`' call into the shared cutter, so the catalogue cannot drift from the rule.
         param(
             "P.eng.alignCutSeekSeconds",
             num(align::CUT_SEEK),
             "align::CUT_SEEK",
         ),
-        // §10's row for the sound kept on each side of an alignment piece: one constant answers both
-        // this row and `trim()`/`bare_voiced()`, so the catalogue cannot drift from the rule.
         param("P.eng.alignSoundPadSeconds", num(align::PAD), "align::PAD"),
-        // §10's row for the sanity ceiling on a returned "second": one constant answers both this row
-        // and `time()`'s bare-key branch, so the catalogue cannot drift from the rule. A bare number
-        // past it was a sample count that did not say so.
+        // A bare number past this ceiling was a sample count that did not say so.
         param(
             "P.eng.alignClipMaxSeconds",
             num(align::PLAIN_AS_SAMPLES),
             "align::PLAIN_AS_SAMPLES",
         ),
-        // §10's row for the absolute floor under the bare-audio warning: one constant answers both this
-        // row and `bare_warns()`, so the catalogue cannot drift from the rule.
         param(
             "P.eng.alignBareWarnSeconds",
             num(align::BARE_WARN),
             "align::BARE_WARN",
         ),
-        // §10's row for the relative half of the same warning: `bare_warns()` reads this alongside
-        // `align::BARE_WARN`, so one constant each keeps the catalogue from drifting from the rule.
         param(
             "P.eng.alignBareShare",
             num(align::BARE_SHARE),
             "align::BARE_SHARE",
         ),
-        // §10's row for the lop-sided split note: one constant answers both this row and
-        // `lopsided()`, so the catalogue cannot drift from the rule. The note is what lets the user
-        // drop the empty half by hand; the app never discards a stem on its own.
+        // The note lets the user drop the empty half by hand; the app never discards a stem itself.
         param(
             "P.eng.sepLopsidedDB",
             num(separate::LOPSIDED_DB),
@@ -408,8 +369,7 @@ fn audio() -> Vec<Param> {
     ]
 }
 
-/// Engineering: frame workers, quality, scratch handling. The scratch folders are §1's layout rather than
-/// a number, so they appear as paths (`Tree::asr_scratch` and friends) instead of rows here.
+/// Engineering: frame workers, quality, scratch handling (scratch folders appear as `Tree` paths, not rows).
 fn engineering() -> Vec<Param> {
     vec![
         param(
@@ -447,8 +407,7 @@ fn engineering() -> Vec<Param> {
             frames::LLM_FRAME_WIDTH.to_string(),
             "frames::LLM_FRAME_WIDTH",
         ),
-        // §10 gives the JPEG quality of the frames a project keeps no id of its own (its frame-width row
-        // covers the copies sent), so it is spelled after that row rather than as an invented `P.` id.
+        // §10 gives the kept frames' JPEG quality no id (its frame-width row covers the copies sent), so it is spelled after that row.
         param(
             "machine.jpegQuality",
             frames::STORED_FRAME_JPEG_QUALITY.to_string(),
@@ -459,78 +418,52 @@ fn engineering() -> Vec<Param> {
             hand_edit::KEEP_REACH.to_string(),
             "hand_edit::KEEP_REACH",
         ),
-        // §10's row for how many kept words either side of a join are compared for a doubled saying.
-        // One constant answers both this row and `textedit::dedupe_joins`' cap, so the catalogue
-        // cannot drift from the rule that reads it.
         param(
             "P.eng.joinReachWords",
             textedit::JOIN_REACH_WORDS.to_string(),
             "tools::textedit::JOIN_REACH_WORDS",
         ),
-        // §10's row for the fuzzy repeat matcher's step-over: how many words of the later take may be skipped
-        // while looking for the next tail word. One constant answers both this row and `run_from`'s loop, so the
-        // catalogue cannot drift from the rule that reads it.
+        // How many words of the later take may be skipped while looking for the next tail word.
         param(
             "P.eng.repeatSkip",
             prepare_decisions::TAIL_SKIP_MAX.to_string(),
             "prepare_decisions::TAIL_SKIP_MAX",
         ),
-        // §10's row for the share of the marked tail that has to turn up again. One constant answers both this
-        // row and `suffix_match`'s share test, so the catalogue cannot drift from the rule that reads it.
         param(
             "P.eng.repeatShare",
             num(prepare_decisions::TAIL_MATCH_MIN),
             "prepare_decisions::TAIL_MATCH_MIN",
         ),
-        // §10's row for the room a cut leaves a word. One constant answers both this row and every pad in
-        // `edges` — `place_edges`, `end_after`/`start_before` and the word a stamp names — so the catalogue
-        // cannot drift from the rule that reads it.
         param(
             "P.eng.wordPadSeconds",
             num(edges::WORD_PAD),
             "edges::WORD_PAD",
         ),
-        // §10's row for the reach of the envelope-only edge walk: how far off its stamp an edge may be
-        // moved when there are no word times to fence it. One constant answers both this row and
-        // `Edges::end_before`/`start_at`, so the catalogue cannot drift from the rule that reads it.
         param(
             "P.eng.edgeReachSeconds",
             num(edges::EDGE_REACH),
             "edges::EDGE_REACH",
         ),
-        // §10's row for how late a stamp may be behind its sound: one constant answers both this row
-        // and `Edges::start_at`, so the catalogue cannot drift from the rule that reads it.
         param(
             "P.eng.lateStampSeconds",
             num(edges::LATE_STAMP),
             "edges::LATE_STAMP",
         ),
-        // §10's row for the window the room is measured over: one constant answers both this row and
-        // `Edges::floor`, so the catalogue cannot drift from the rule that reads it.
         param(
             "P.eng.envelopeWindowSeconds",
             num(edges::ENVELOPE_WINDOW),
             "edges::ENVELOPE_WINDOW",
         ),
-        // §10's row for how far below a word's own peak its tail still counts as the word: one
-        // constant answers both this row and `Edges::tail_level`, so the catalogue cannot drift from
-        // the rule that reads it.
         param(
             "P.eng.edgeTailDB",
             num(edges::EDGE_TAIL_DB),
             "edges::EDGE_TAIL_DB",
         ),
-        // §10's row for how long a word's tail is followed at most: one constant answers both this row
-        // and `Edges::end_after`/`start_before`, so the catalogue cannot drift from the rule that
-        // reads it.
         param(
             "P.eng.edgeTailMaxSeconds",
             num(edges::EDGE_TAIL_MAX),
             "edges::EDGE_TAIL_MAX",
         ),
-        // §10's row for how far past the word's tail the quietest moment is looked for: one constant
-        // answers both this row and `Edges::end_after`/`start_before`, so the catalogue cannot drift
-        // from the rule that reads it.
         param(
             "P.eng.troughReachSeconds",
             num(edges::TROUGH_REACH),
@@ -563,15 +496,13 @@ fn engineering() -> Vec<Param> {
             num(fx_record::gain_ceiling()),
             "fx_record::gain_ceiling",
         ),
-        // §10's own row for the rejoin dip, catalogued from the module that fades it: the lane draws it and the render
-        // plans its read head around the same number.
+        // The lane draws the rejoin dip and the render plans its read head around the same number.
         param(
             "P.eng.soundDipSeconds",
             num(fx_lane::SOUND_DIP_SECONDS),
             "fx_lane::SOUND_DIP_SECONDS",
         ),
-        // F3.12: how much of an effect band has to survive the final cut for it to be worth keeping. Read by the clamp
-        // pass, which runs after snapping, dead-air and mark removal, and coalescing.
+        // F3.12: how much of an effect band has to survive the final cut to be kept.
         param(
             "P.eng.effectMinSurvivingSeconds",
             cut_clamp::MIN_SURVIVING_SECONDS.to_string(),
@@ -595,9 +526,8 @@ fn engineering() -> Vec<Param> {
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
         ),
-        // §09 §3's two patiences. §10 lists them only in its by-area line ("backoff 5 s–4 min"), with no `P.`
-        // row of their own, so they carry the bare `llm.` prefix. The ladder is one string because it is one
-        // decision — five waits that together outlast a container restart and a weight load.
+        // §09 §3's patiences: bare `llm.` prefix, no `P.` row in §10.
+        // The ladder is one string: five waits that together outlast a container restart and a weight load.
         param(
             "llm.backoffSeconds",
             llm_retry::BACKOFF_SECONDS
@@ -612,8 +542,7 @@ fn engineering() -> Vec<Param> {
             llm_retry::RETRY_SECONDS.to_string(),
             "llm_retry::RETRY_SECONDS",
         ),
-        // §09 §4's liveness bounds. These two DO have rows of their own in §10, so they carry real `P.` ids
-        // (unlike the two above).
+        // §09 §4's liveness bounds; these have §10 rows, so real `P.` ids.
         param(
             "P.eng.llmStallMinutes",
             llm_liveness::STALL_MINUTES.to_string(),
@@ -624,8 +553,7 @@ fn engineering() -> Vec<Param> {
             llm_liveness::WHOLE_MINUTES.to_string(),
             "llm_liveness::WHOLE_MINUTES",
         ),
-        // §09 §5: the most one request may carry. Spelled plain (no thousands separator), the way
-        // P.eng.thumbnailJPEGMax spells its 2 MiB cap.
+        // §09 §5: the most one request may carry, spelled plain (no thousands separator).
         param(
             "P.machine.promptMaxChars",
             llm_budget::PROMPT_MAX_CHARS.to_string(),
@@ -634,29 +562,12 @@ fn engineering() -> Vec<Param> {
     ]
 }
 
-/// §05-cut#6-parameters-used — every parameter the Cut page may be tuned by, in `spec/05-cut.md` §6's own
-/// order, built from the constant each rule already reads.
-///
-/// §6 is a list of ids, not of numbers, so this holds none either: move a bound in its module and this row
-/// moves with it. The rows split as §6 splits them — what bounds an edit, what the suggest pass and the target
-/// arithmetic compute on, what the preview does, then the engineering choices around pixels and formats.
-///
-/// Deliberately absent, because no rule in this tree reads them yet: nothing does now — `P.eng.talkPadSeconds`,
-/// §D's `rateSeekGap` 250 ms and thumbnail batch 6 all gained a reader and a row below.
-/// The dead-air pair (`deadAirMaxSeconds`,
-/// `deadAirKeepSeconds`) and `P.eng.seamMaxSeconds` are no longer among them: F2.14 S2a and S3 read all
-/// three from `src/suggest.rs`, so each has a row below. (`P.eng.preloadLeadSeconds` is no longer one of them:
-/// `preview::PRELOAD_LEAD_SECONDS` reads it, so its row is in `cut()`.)
-/// A number nothing reads has no module to live in, which is the rule this catalogue exists to keep — each of
-/// those appears here the round its rule is written. §6's colours are catalogued at the foot of this list from
-/// `ui::cut_colours`, the one module that spells them. §6 also groups the preview numbers under a heading, and
-/// §10 has no such family (they are listed in `spec/inventory/cut.md` §D), so those rows take a `preview.`
-/// prefix rather than inventing ids §10 does not carry — the same choice `machine.jpegQuality` made.
+/// §05-cut#6-parameters-used — every parameter the Cut page may be tuned by, in `spec/05-cut.md` §6's order.
+/// Preview numbers take a `preview.` prefix (§10 has no such family); colours come from `ui::cut_colours`.
 pub fn cut() -> Vec<Param> {
     vec![
         // --- what bounds an edit -----------------------------------------------------------------
-        // Also catalogued for Prepare, which keeps a scene by the same bound: one constant, two sections
-        // naming it, so neither list can drift from the rule in cut_select.
+        // Also catalogued for Prepare, which keeps a scene by the same bound.
         param(
             "P.policy.minSceneSeconds",
             num(cut_select::MIN_SCENE_SECONDS),
@@ -717,9 +628,7 @@ pub fn cut() -> Vec<Param> {
             num(cut_speed_pass::GAP_SECONDS),
             "cut_speed_pass::GAP_SECONDS",
         ),
-        // F3.10 S3/S4: the two numbers that decide whether a proposed rate says anything and what its ramps cost. §10
-        // gives them no `P.` row, so both take the bare prefix of the rule that reads them — as F3.9's and F3.6's rows
-        // above do.
+        // F3.10 S3/S4: whether a proposed rate says anything and what its ramps cost; no `P.` row, so the bare prefix.
         param(
             "effects.proposedRampSeconds",
             num(cut_speed_pass::PROPOSED_RAMP_SECONDS),
@@ -730,9 +639,7 @@ pub fn cut() -> Vec<Param> {
             num(cut_speed_pass::NEUTRAL_TOLERANCE),
             "cut_speed_pass::NEUTRAL_TOLERANCE",
         ),
-        // F3.11 S4: the two numbers §F3.11 gives a proposed decoration that §10 leaves unrowed — how tall a model's zoom
-        // is, and how soft a model's stop lands. Both read from this pass; the glide and the volume ramp are already
-        // catalogued above as P.policy.effectDefaultFades' zoom value and F3.10's proposed-ramp row.
+        // F3.11 S4: how tall a model's zoom is and how soft its stop lands; no §10 row.
         param(
             "effects.proposedZoomHeight",
             num(cut_effects_pass::ZOOM_HEIGHT),
@@ -766,9 +673,7 @@ pub fn cut() -> Vec<Param> {
             num(cut_insert::DEFAULT_SECONDS),
             "cut_insert::DEFAULT_SECONDS",
         ),
-        // F2.9 S2's floor on the sound-over path: a piece of laid-over sound shorter than this is not worth a
-        // segment of its own, so `cut_copy::sound_piece_overlap` lays none and `lay_over` splits nothing. §10
-        // rows it as an engineering constant; the rule that reads it lives in cut_copy.
+        // F2.9 S2: laid-over sound shorter than this gets no segment of its own (`cut_copy`).
         param(
             "P.eng.soundMinPieceSeconds",
             num(cut_copy::MIN_SOUND_PIECE_SECONDS),
@@ -781,11 +686,7 @@ pub fn cut() -> Vec<Param> {
             num(fx_aspect::HOLD_SECONDS),
             "fx_aspect::HOLD_SECONDS",
         ),
-        // §10's own row for that same second: "length of the staying zoom an aspect change places". One
-        // constant answers both ids — `fx_aspect::choose` reads HOLD_SECONDS once when it builds the zoom a
-        // shape brings — so the two spellings cannot be tuned apart, which is why this row points at the same
-        // place rather than holding a second copy of 1.0. (Same shape as `P.policy.suggestedZoomHeight` /
-        // `effects.proposedZoomHeight` and `P.eng.effectMinSelectionSeconds` / `effects.markedBandMinSeconds`.)
+        // §10's own row for that same second; one constant answers both ids.
         param(
             "P.eng.aspectStaySeconds",
             num(fx_aspect::HOLD_SECONDS),
@@ -797,15 +698,13 @@ pub fn cut() -> Vec<Param> {
             num(cut_speed::DEFAULT_RATE),
             "cut_speed::DEFAULT_RATE",
         ),
-        // F3.5's preview raster: §10 lists 512 as an implicit constant (`svgPreviewPx`) with no `P.` row, so the id
-        // takes the bare prefix of the rule that reads it — the same treatment as the two rows above.
+        // F3.5's preview raster: `svgPreviewPx` has no `P.` row, so the bare prefix.
         param(
             "effects.previewRasterPx",
             num(fx_svg::PREVIEW_RASTER_PX),
             "fx_svg::PREVIEW_RASTER_PX",
         ),
-        // --- F3.6's own defaults: §F's "gain 2" and its `fxMinDur 0.1` for volume have no `P.` row, so both take the
-        // bare prefix of the rule that reads them — the same treatment as the three rows above.
+        // --- F3.6's defaults (gain 2, `fxMinDur 0.1` for volume): no `P.` row, bare prefix ---
         param(
             "effects.defaultGain",
             num(fx_volume::DEFAULT_GAIN),
@@ -816,8 +715,7 @@ pub fn cut() -> Vec<Param> {
             num(fx_volume::MIN_SECONDS),
             "fx_volume::MIN_SECONDS",
         ),
-        // §06-effects#4's three render numbers. §10 names them in prose ("Engineering: ... bake fps") but gives no `P.`
-        // id, so each takes the bare prefix of the rule that reads it, like the two rows above.
+        // §06-effects#4's render numbers: no `P.` id, bare prefix.
         param(
             "effects.renderZoomFps",
             num(render_fx::ZOOM_GRID_FPS),
@@ -833,8 +731,7 @@ pub fn cut() -> Vec<Param> {
             render_fx::TIER_SHORT_SIDE.to_string(),
             "render_fx::TIER_SHORT_SIDE",
         ),
-        // §06-effects#5's card numbers. §10 writes them in prose ("card canvas 1920×1080 and timings, bake 25 fps")
-        // without `P.` ids, so they take the bare `card.` prefix of the rules that read them.
+        // §06-effects#5's card numbers: no `P.` ids, bare `card.` prefix.
         param(
             "card.stillnessSeconds",
             num(cut_cards::STILLNESS_SECONDS),
@@ -859,9 +756,7 @@ pub fn cut() -> Vec<Param> {
             "preview::PRELOAD_LEAD_SECONDS",
         ),
         param("preview.cardFps", num(cut_insert::PREVIEW_FPS), "cut_insert::PREVIEW_FPS"),
-        // §6's preview group in full: the two numbers §D names that had no reader when this list was first
-        // written. The rate-seek floor is read by `cut_play_back::set_rate` before it replaces a player;
-        // the thumbnail batch bounds how far one band pass looks into a row's frame list.
+        // §6's preview group: the rate-seek floor (read by `cut_play_back::set_rate`) and the thumbnail batch.
         param(
             "P.eng.talkPadSeconds",
             num(suggest::TALK_PAD_SECONDS),
@@ -873,9 +768,7 @@ pub fn cut() -> Vec<Param> {
             "cut_play_back::RATE_SEEK_GAP_MS",
         ),
         param("preview.thumbBatch", ui::cut_tracks::THUMB_BATCH.to_string(), "ui::cut_tracks::THUMB_BATCH"),
-        // §1's two Cut-page dividers (inventory §A's `paned 660/380`). §10 gives them no `P.` id, so each
-        // takes a bare prefix the way `preview.thumbBatch` above does; both are what the page opens at,
-        // not what it must stay at — either divider is draggable.
+        // §1's two Cut-page dividers: where the page opens; no `P.` id, bare prefix.
         param(
             "cut.panedTopPx",
             ui::cut_page_layout::SELF_SPLIT_TOP_PX.to_string(),
@@ -887,11 +780,9 @@ pub fn cut() -> Vec<Param> {
             "ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX",
         ),
         // --- engineering: pixel reaches, band heights, zoom, undo, the wave cache ------------------
-        // §6 lists these as a family and §10 gives them no `P.` ids of their own (§I's implicit constants),
-        // so each is spelled after §D's name for it — as `machine.jpegQuality` does for the JPEG quality.
+        // §10 gives these no `P.` ids (§I's implicit constants), so each is spelled after §D's name for it.
         param("layout.edgeGrabPx", num(cut_trim::EDGE_GRAB_PX), "cut_trim::EDGE_GRAB_PX"),
-        // §6's third reach: grabbing a selection END on a picture row reaches further than in the band
-        // (`// layout.picGripPx` at `cut_select::PIC_GRIP_PX`), read by `cut_select::grip_px` for every press.
+        // §6's third reach: grabbing a selection END on a picture row (`cut_select::grip_px`).
         param("layout.picGripPx", num(cut_select::PIC_GRIP_PX), "cut_select::PIC_GRIP_PX"),
         param("layout.snapPx", num(cut_select::SNAP_PX), "cut_select::SNAP_PX"),
         param("layout.lineReachPx", num(cut_line::EDGE_REACH_PX), "cut_line::EDGE_REACH_PX"),
@@ -904,14 +795,10 @@ pub fn cut() -> Vec<Param> {
         param("layout.zoomMaxPps", num(cut_screen::ZOOM_MAX), "cut_screen::ZOOM_MAX"),
         param("layout.zoomStep", num(cut_screen::ZOOM_STEP), "cut_screen::ZOOM_STEP"),
         param("layout.undoDepth", cut::UNDO_DEPTH.to_string(), "cut::UNDO_DEPTH"),
-        // The waveform cache's format is its magic: a file that does not start with these four bytes is read
-        // again rather than trusted, which is the whole reason it was renamed AWV2 → AWV3 → AWV4.
+        // A cache file that does not start with these four bytes is read again rather than trusted.
         param("layout.waveCacheMagic", String::from_utf8_lossy(wave::MAGIC).to_string(), "wave::MAGIC"),
         // --- §6's "colours" ------------------------------------------------------------------------
-        // §10 counts the Cut page's tints among its engineering values (line 133's "timeline: … colours") but
-        // gives none a `P.` id, so each takes the bare `cut.colour.` prefix the way `machine.` and `preview.`
-        // rows do. Each is read by the painter that puts it on screen — `ui::cut_colours` is the only place one
-        // is spelled, so moving a row here moves the ink.
+        // §10 gives the Cut page's tints no `P.` id, so each takes the bare `cut.colour.` prefix; `ui::cut_colours` spells each.
         colour("cut.colour.keptTint", ui::cut_colours::KEPT_TINT, "ui::cut_colours::KEPT_TINT"),
         colour(
             "cut.colour.keptBorder",
@@ -1001,38 +888,20 @@ pub fn cut() -> Vec<Param> {
     ]
 }
 
-/// §06-effects#6-parameters-used — every parameter an effect may be tuned by, in `spec/06-effects.md` §6's own
-/// order, built from the constant each rule already reads.
-///
-/// A list of ids, not of numbers, so this holds none: move a bound in its module and the row moves with it. The
-/// ids §05 §6 names as well — `P.eng.maxGain`, `P.policy.speedGapSeconds`, `P.machine.captionBatch`,
-/// `P.policy.captionMinSeconds`, `P.eng.effectMinSurvivingSeconds`, and this flow's own defaults
-/// (`effects.defaultGain`, `effects.defaultRate`, `effects.volumeMinSeconds`, `effects.proposedZoomHeight`) and
-/// drawing numbers (`layout.effectRowPx`, `layout.snapPx`, `effects.previewRasterPx`, the `card.*` rows) — keep
-/// their single row in [`cut`]: one row, one home, so this list is the rest of §06's rather than a copy of it.
-///
-/// Two of §06's items have no row and are absent on purpose. The label form's typed floor (0.4) belongs to §F3.7,
-/// whose form has no constant in this tree yet — a number nothing reads has no module to live in. §I's `killMin` 32,
-/// `fxMinBand` 30 and `fxGrab` 9 are absent for the same reason — no constant here holds them. Note that §I's
-/// `fxMinBand` (30) is the PIXEL width from which a bar's ends become handles at all, and stays unowned;
-/// `P.eng.effectMinSeconds`, the SECONDS floor a drag may shrink a band down to, is owned by [`fx_lane::MIN_BAND_SECONDS`] and has its row
-/// below. The prototype's two similarly-named constants (`fxMinBand`, `fxMinDur`) are different rules, not one —
-/// and its third, `fxMinSel` (0.2), is likewise a SECONDS floor rather than a pixel width: it is
-/// `P.eng.effectMinSelectionSeconds`, held by [`cut_speed::MIN_MARKED_SECONDS`] and rowed twice on purpose
-/// under that id and §06's own `effects.markedBandMinSeconds`.
+/// §06-effects#6-parameters-used — every parameter an effect may be tuned by, in `spec/06-effects.md` §6's order.
+/// Ids §05 §6 names as well keep their single row in [`cut`].
+/// §I's `killMin`, `fxMinBand` and `fxGrab` have no constant here and are absent; `fxMinBand` is a pixel
+/// width, unlike the seconds floor `P.eng.effectMinSeconds`.
 pub fn effects() -> Vec<Param> {
     vec![
         // --- what a speed or volume effect may be asked to do --------------------------------------
         param("P.eng.minRate", num(cut_speed::MIN_RATE), "cut_speed::MIN_RATE"),
         param("P.eng.maxRate", num(cut_speed::MAX_RATE), "cut_speed::MAX_RATE"),
-        // §10's own cell says this is "also the speed clamp floor", and `cut_speed::apply` reads it as exactly
-        // that: the 0.5 a stop's Length must reach is the 0.5 the render will not go under, so one row serves both
-        // of §6's mentions and the two cannot be tuned apart.
+        // §10: also the speed clamp floor; `cut_speed::apply` reads it as exactly that, so one row serves both.
         param("P.eng.minClipSeconds", num(cutpass::MIN_CLIP_SECONDS), "tools::cutpass::MIN_CLIP_SECONDS"),
         param("P.eng.rampStepSeconds", num(cut_speed::RAMP_STEP_SECONDS), "cut_speed::RAMP_STEP_SECONDS"),
         // --- the lengths and fades an effect placed by hand starts with ------------------------------
-        // §10 gives one row to a family of kinds, so the row spells the whole cell and names every constant behind
-        // it: the only way a reader can see that the "2" is three rules' default rather than one.
+        // One row for a family of kinds: the cell is spelled whole and names every constant behind it.
         param(
             "P.policy.effectDefaultSeconds",
             format!(
@@ -1053,28 +922,21 @@ pub fn effects() -> Vec<Param> {
             ),
             "fx_zoom::GLIDE_SECONDS + fx_text::FADE_SECONDS + fx_volume::FADE_SECONDS + cut_speed::STOP_FADE_SECONDS",
         ),
-        // The height a proposed zoom is given, spelled twice on purpose: §10 has this row and §F3.11 names the same
-        // number under `effects.proposedZoomHeight`, which [`cut`] already carries. Both rows read one constant, so
-        // the two spellings cannot disagree about what 0.6 is.
+        // Proposed zoom height, spelled twice on purpose (§10 and `effects.proposedZoomHeight` in [`cut`]); one constant.
         param(
             "P.policy.suggestedZoomHeight",
             num(cut_effects_pass::ZOOM_HEIGHT),
             "cut_effects_pass::ZOOM_HEIGHT",
         ),
-        // How many decorations an edit is expected to carry. §10 gives this a row ("three or four per five
-        // minutes", home `fxRules`), so it is catalogued -- and its value is WORDING, the clause the shipped
-        // effects prompt states, not a number anything is multiplied by. The guide's own constants are
-        // `DENSITY_GUIDE` / `DENSITY_PER_FIVE_MINUTES`; what refuses a runaway reply is
-        // `P.machine.maxProposedEffects` below, never this.
+        // Decorations per edit: the value is WORDING, the clause the effects prompt states.
+        // What refuses a runaway reply is `P.machine.maxProposedEffects`, never this.
         param(
             "P.policy.decorationDensity",
             "\"three or four per five minutes\"".to_string(),
             "cut_effects_pass::DENSITY_GUIDE",
         ),
-        // The cap on effects per cut reply. §10 spells its own qualification into the row — "effectively
-        // none: the prompt decides" — and that is what the constant says too: this bounds a runaway
-        // answer, it does not curate the edit. Counted through `counts_against_effect_cap`, which
-        // exempts a whole-segment rate per 05-cut#8.
+        // Cap on effects per cut reply: bounds a runaway answer, does not curate the edit.
+        // Counted through `counts_against_effect_cap`, which exempts a whole-segment rate per 05-cut#8.
         param(
             "P.machine.maxProposedEffects",
             cut_effects_pass::MAX_PROPOSED_EFFECTS.to_string(),
@@ -1087,9 +949,7 @@ pub fn effects() -> Vec<Param> {
         // stretch"): below it a drag is a slipped click, and ⏩ Speed falls through to the line.
         param("effects.markedBandMinSeconds", num(cut_speed::MIN_MARKED_SECONDS), "cut_speed::MIN_MARKED_SECONDS"),
         // --- F3.8: the lane's own thresholds (§A.9) -----------------------------------------------
-        // §10 gives these no `P.` rows, so each takes the bare prefix of the rule that reads it
-        // (`fx_band`), exactly as `effects.labelMinSeconds` does for F3.7. The numbers live in `fx_band`;
-        // these rows only catalogue them.
+        // No `P.` rows, so each takes the bare prefix of the rule that reads it (`fx_band`).
         param(
             "effects.gripMinPx",
             num(fx_band::GRIP_MIN_PX),
@@ -1115,45 +975,33 @@ pub fn effects() -> Vec<Param> {
             num(fx_band::HOLD_RELEASE_SECONDS),
             "fx_band::HOLD_RELEASE_SECONDS",
         ),
-        // §10's own row for that same 0.2 s, spelled with its `P.` id: "timeline needed under the band before ⏩
-        // Speed treats it as a chosen stretch". One constant answers both ids — `cut_speed::press` reads
-        // MIN_MARKED_SECONDS once — so the two spellings cannot be tuned apart, which is why this row points at
-        // the same place rather than holding a second copy of 0.2. (Same shape as the
-        // `P.policy.suggestedZoomHeight` / `effects.proposedZoomHeight` pair above.)
+        // §10's own row for that same 0.2 s; one constant answers both ids.
         param(
             "P.eng.effectMinSelectionSeconds",
             num(cut_speed::MIN_MARKED_SECONDS),
             "cut_speed::MIN_MARKED_SECONDS",
         ),
-        // The lane's own drag floor: however hard the hand shrinks a band from either end, `fx_lane::drag_end` will
-        // not return less than this. §10 files it as an engineering constant; the rule that reads it is here.
+        // The lane's drag floor: `fx_lane::drag_end` never returns less than this.
         param("P.eng.effectMinSeconds", num(fx_lane::MIN_BAND_SECONDS), "fx_lane::MIN_BAND_SECONDS"),
         // --- what the lane and the picture are drawn with ---------------------------------------------
-        // §6's "grip/kill widths" is one pair here and not two: only the grip has a constant in this tree, and the
-        // kill width is part of §I's implicit list that nothing reads. The "snap 8/10 px" pair is split across the
-        // two lists for the same reason as its name — 8 px pulls a lane band onto a word edge ([`cut`]'s
-        // `layout.snapPx`) and 10 px drags a text box over a picture.
+        // Only the grip has a constant here; "snap 8/10 px" is split: 8 px is `layout.snapPx` in [`cut`], 10 px drags a text box over a picture.
         param("layout.gripPx", num(cut_select::GRIP_PX), "cut_select::GRIP_PX"),
         param("effects.snapPx", num(fx_text::SNAP_PX), "fx_text::SNAP_PX"),
-        // The fitting rule's own arithmetic: a caption is measured in em, so these three are what decide whether
-        // the words fit the box the hand drew.
+        // The fitting rule's arithmetic: a caption is measured in em, which decides whether the words fit the drawn box.
         param("effects.textAdvance", num(fx_text::CHAR_ADVANCE_EM), "fx_text::CHAR_ADVANCE_EM"),
         param("effects.textLineHeight", num(fx_text::LINE_HEIGHT_EM), "fx_text::LINE_HEIGHT_EM"),
         param("effects.textAscent", num(fx_text::ASCENT_EM), "fx_text::ASCENT_EM"),
         param("effects.textMinPoints", num(fx_text::MIN_POINTS), "fx_text::MIN_POINTS"),
         param("effects.textMaxLines", fx_text::MAX_LINES.to_string(), "fx_text::MAX_LINES"),
-        // §6's "edge dilation" is the radius; how dark and in how many directions it is drawn are the same rule's
-        // shape rather than a tuning value, so they stay uncatalogued.
+        // §6's "edge dilation" is the radius; darkness and directions are shape, not tuning, so uncatalogued.
         param("effects.edgeRadius", num(fx_text::EDGE_RADIUS_EM), "fx_text::EDGE_RADIUS_EM"),
-        // F3.9's cleaning rule as the captions prompt states it ("the swearing kept"): a policy the
-        // model reads as wording, not a number the app applies. Read from the project's own default.
+        // F3.9's cleaning rule as the captions prompt states it: wording, not a number. Read from the project's default.
         param(
             "P.policy.keepSwearing",
             project::Policy::default().keep_swearing.value.to_string(),
             "project::Policy::default — keep_swearing",
         ),
-        // The language the recordings are spoken in: the speech recogniser's and the voice's. F0.7 reads it from
-        // the User Context; English when the context does not say.
+        // The recordings' language (recogniser and voice), from the User Context; English by default.
         param(
             "P.policy.language",
             project::Policy::default().language.value,
@@ -1162,16 +1010,12 @@ pub fn effects() -> Vec<Param> {
     ]
 }
 
-/// Every number the Narrate page draws or waits with, in §1's order. The rows live in
-/// [`crate::params_narrate`] — this file is at its size budget, and moving the section changed neither
-/// its ids, its spellings, nor their order.
+/// Rows live in [`crate::params_narrate`].
 pub fn narrate() -> Vec<Param> {
     crate::params_narrate::rows()
 }
 
-/// §08 Produce's own rows (§10): the five numbers that build a cue and the size of one translation request.
-/// They live in `produce_subtitles`, which is the module whose rules read them, so this only catalogues them
-/// — the same split as every other section here.
+/// §08 Produce's rows (§10): the five numbers that build a cue and the size of one translation request.
 pub fn produce() -> Vec<Param> {
     vec![
         // --- cue building (§10's four `sub*` rows) ------------------------------------------------------
@@ -1233,8 +1077,7 @@ pub fn produce() -> Vec<Param> {
             limiter_spelled(),
             "produce_render::LIMITER",
         ),
-        // §10 spells this row as a whole rule, `0.02·height, min 4`, so both constants `blur_sigma`
-        // reads go into the spelling; a change to either shows up in the catalogue without a hand edit.
+        // Spelled as a whole rule, `0.02·height, min 4`, from both constants `blur_sigma` reads.
         param(
             "P.eng.blurSigma",
             blur_sigma_spelled(),
@@ -1265,8 +1108,7 @@ pub fn produce() -> Vec<Param> {
             produce_upload::BRIEF_MAX_CHARS.to_string(),
             "produce_upload::BRIEF_MAX_CHARS",
         ),
-        // --- §4's engineering sentence: values §10 keeps in prose, so each takes the bare `produce.` prefix
-        // and spells itself out of the constant or function its rule reads (`params_produce` builds the spelling).
+        // §4's engineering sentence: §10 keeps these in prose, so each takes the bare `produce.` prefix (`params_produce` builds the spelling).
         param(
             "produce.exportLadder",
             crate::params_produce::export_ladder(),
@@ -1295,9 +1137,6 @@ pub fn produce() -> Vec<Param> {
     ]
 }
 
-/// §10 spells `P.eng.loudness` as `I -14, TP -1.5, LRA 11`, which is the filter string read backwards: the
-/// three numbers are taken out of [`produce_render::LOUDNORM`] so the row cannot disagree with what ffmpeg
-/// is actually sent, and only their spelling lives here.
 /// §10's spelling of a `loudnorm` target: the three numbers taken out of the filter string the
 /// renderer is actually sent, so a row cannot disagree with the command line.
 pub(crate) fn loudnorm_spelled(filter: &str) -> String {
@@ -1309,9 +1148,7 @@ pub(crate) fn loudnorm_spelled(filter: &str) -> String {
         .join(", ")
 }
 
-/// §10 spells `P.eng.clipLimiter` as `−1 dBFS (0.891)`: the decibels are what a person reads, the amplitude
-/// is what `alimiter` takes. Both come out of [`produce_render::LIMITER`] — −1 dBFS is the amplitude 0.891,
-/// so spelling one from the other keeps them one fact.
+/// §10 spells `P.eng.clipLimiter` as `−1 dBFS (0.891)`, both taken from [`produce_render::LIMITER`] so they stay one fact.
 fn limiter_spelled() -> String {
     let amplitude = produce_render::LIMITER
         .split("limit=")
@@ -1326,8 +1163,7 @@ fn limiter_spelled() -> String {
     format!("{db} dBFS ({amplitude})")
 }
 
-/// §10's `P.eng.titleBand` spelling, `{0.5, 0.25, 1, 0.4}` — the same four numbers [`project::TitleBox`]
-/// holds, printed without trailing zeros so the row reads as the spec writes it.
+/// §10's `P.eng.titleBand` spelling, `{0.5, 0.25, 1, 0.4}`, from [`project::TitleBox`].
 fn title_band_spelled() -> String {
     let band = project::TitleBox::default();
     format!(
@@ -1339,10 +1175,7 @@ fn title_band_spelled() -> String {
     )
 }
 
-/// §10 spells `P.eng.blurSigma` as `0.02·height, min 4`: a rule with two halves, so both constants
-/// [`produce_render::blur_sigma`] reads land in the spelling rather than only the fraction. The floor is
-/// what keeps a small frame blurred at all, and a row that hid it would show a number the render does not
-/// obey. `·` is U+00B7, the character §10 writes.
+/// §10's `0.02·height, min 4`: both constants [`produce_render::blur_sigma`] reads land in the spelling, the floor included.
 fn blur_sigma_spelled() -> String {
     format!(
         "{}\u{b7}height, min {}",
@@ -1351,13 +1184,11 @@ fn blur_sigma_spelled() -> String {
     )
 }
 
-/// One parameter by its §10 id.
 pub fn find(id: &str) -> Option<Param> {
     prepare().into_iter().find(|param| param.id == id)
 }
 
-/// Which home an id's prefix names — including for ids Prepare does not use, since the question is about
-/// §10's table rather than this module's rows.
+/// Which home an id's prefix names, including ids Prepare does not use.
 pub fn family(id: &str) -> Family {
     if id.starts_with("P.policy.") {
         Family::Policy
@@ -1372,8 +1203,7 @@ pub fn family(id: &str) -> Family {
     }
 }
 
-/// The silence pair as §10 spells it, from the module that measures an envelope: both spellings of the
-/// same two numbers are here so a caller never has to know which one a given module reached for.
+/// The silence pair as §10 spells it, from the module that measures an envelope.
 pub fn silence() -> (f64, f64) {
     (
         degraded::SILENCE_THRESHOLD_DB,

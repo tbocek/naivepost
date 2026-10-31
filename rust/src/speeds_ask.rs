@@ -1,24 +1,4 @@
 //! F3.10 S1's live half: the speed ask itself.
-//!
-//! [`crate::cut_speed_pass`] owns every rule that settles with no server — the brief's layout, membership,
-//! the caption refusal, rate ≈ 1, the ramps, the gap merge and the two log lines. What it never did was
-//! *telephone*: `run_speeds_pass` in the shell handed its own rules an empty list, so pressing ⏩ Speeds
-//! could only ever report "no usable answer" while a server sat there willing to name rates. This module is
-//! that leg. It builds the two messages §F3.10 spells, dials the LLM over HTTP through
-//! [`crate::llm_retry_leg`] (so each ask writes its timed `requests.tsv` row and rides §3's patience), reads
-//! the SPEEDS reply back into [`cut_speed_pass::Call`]s, and hands those to
-//! `crate::ui::cut_speeds_pass`, which lets §3.7's `set_clip_speed` tool — not a copy of it — decide
-//! what may land.
-//!
-//! The seam a test drives this through is the settings address: point `LLM_SERVER` at a local fake and the
-//! very same endpoint resolution a typed address goes through reaches it. Nothing here takes a canned reply,
-//! and a server that is down answers `Err` naming it (§00-principles: failure is specific and local).
-//!
-//! Why it is a module of its own rather than more lines in `cut_speed_pass` or in `ui/window.rs`: the pass is
-//! judgement and answers to no socket, and the window is a page. `captions_ask` and `join_ask` set the shape
-//! — two messages, the cache honoured, one dial, the reply read — and this copies it with the three things
-//! that differ spelled out below: the offer is `set_clip_speed` + `finish` only, thinking is OFF (§4 lists
-//! speed among the prompts that do not think), and the answer is a `{"speeds":[…]}` document.
 
 use crate::cut_speed_pass::{self, Call, GAP_SECONDS};
 use crate::exchanges::{Message, Part};
@@ -32,14 +12,10 @@ use crate::settings::{self, Conf, Paths};
 use crate::tools::Tool;
 use std::path::PathBuf;
 
-/// The step name this job's cache entries and timed rows carry. §3.7 is one section for the three per-clip
-/// passes, but the cache must tell a speed answer from a caption answer apart, so each gets its own step
-/// string rather than sharing `"effects"`.
+/// The step name this job's cache entries and timed rows carry.
 pub const STEP: &str = "speed";
 
 /// The answer shape §`spec/prompts/system.md`'s `speed` row spells, with the two rules that row states.
-/// Only a fallback: the wording that actually goes out is `spec/prompts/speed.md` and the machine's own edit
-/// of it, read through `wording` below into [`speeds_system`].
 pub const SPEEDS_SYSTEM: &str = concat!(
     "Answer in JSON only: {\"speeds\":[{\"clip\":<n>,\"rate\":<x>}]} \u{2014} clip is the clip number from \
      the list, rate > 1. A clip that already has a caption cannot be sped up; leave it out.\n",
@@ -47,8 +23,7 @@ pub const SPEEDS_SYSTEM: &str = concat!(
 );
 
 /// The SYSTEM for a speed call: the house rules cut to this job's section, the speed wording, and the
-/// precedence rule only when there is a User Context to outrank anything (§09 §8 puts it last). Same
-/// assembly [`crate::captions_ask`] builds, because §8 assembles every job's system message the one way.
+/// precedence rule only when there is a User Context to outrank anything (§09 §8 puts it last).
 pub fn speeds_system(context: &str) -> String {
     let paths = current_paths();
     crate::prompt_assembly::system_message(
@@ -61,9 +36,7 @@ pub fn speeds_system(context: &str) -> String {
     )
 }
 
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With no
-/// settings folder at all, the shipped wording is what goes out, and with no shipped wording either the
-/// prompt's own one-line shape ([`SPEEDS_SYSTEM`]).
+/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
 fn wording(paths: Option<&Paths>, key: &str) -> String {
     let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
     match paths {
@@ -78,10 +51,7 @@ fn current_paths() -> Option<Paths> {
     settings::from_environment()
 }
 
-/// The gap two same-rate stretches may come before they are one run. Read from §10's catalogue where this
-/// section's rows live (`params::cut`, §05 §6 — `params::find` searches Prepare's list only), so the ask
-/// quotes the number and [`crate::cut_speed_pass`]'s merge applies it: one value, said and enforced in
-/// step. With no row to read the constant itself is the answer, never a second guess at it.
+/// The gap two same-rate stretches may come before they are one run.
 fn gap_seconds() -> f64 {
     crate::params::cut()
         .into_iter()
@@ -93,12 +63,6 @@ fn gap_seconds() -> f64 {
 
 /// F3.10 S1: the user message — every clip with its own seconds, which of them already carry captions, the
 /// footage the cut comes to, and the rules a rate has to respect.
-///
-/// `clips` is `(number, length)` in play order, numbered from 1, exactly the list
-/// [`crate::ui::cut_speeds_pass`] builds from the kept segments. The seconds are always the clip's OWN:
-/// a model shown a session second would have to compute one, which is the standing rule's first
-/// prohibition, and a captioned clip is marked in its own line so the refusal in S2 is a rule the model was
-/// told before it broke it rather than a surprise it gets afterwards.
 pub fn user_message(
     clips: &[(u32, f64)],
     captioned: &[(u32, usize)],
@@ -155,14 +119,6 @@ pub fn user_message_over(
 
 /// The chat body: thinking OFF (§4 does not list `speed` among the four prompts that think), and this job's
 /// two tools offered — `set_clip_speed` for the work and `finish` to close the reply.
-///
-/// Offering them is not decoration: §1 asks that a tool conversation sends the offer when the job has tools,
-/// and a model that is not told `set_clip_speed` exists answers in prose about dullness instead of asking for
-/// a rate. `Job::ClipRules` is §3.7's job row (captions, speed and decorations share one state), so the names
-/// come from the catalogue and the two this item names are then asserted present rather than assumed.
-///
-/// Only the name travels, as every chat ask sends it: §1 keeps each tool's parameter schema in §3, and a copy
-/// written here would be a second answer to §3.7's question about `clip` and `rate`.
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let messages = two_messages(system, user);
     let tools: Vec<Tool> = this_pass_tools();
@@ -177,7 +133,6 @@ pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String
     .to_string())
 }
 
-/// The two messages every speed ask carries: the SYSTEM rules and the USER clips/rows.
 fn two_messages(system: &str, user: &str) -> Vec<Message> {
     vec![
         Message {
@@ -192,15 +147,7 @@ fn two_messages(system: &str, user: &str) -> Vec<Message> {
 }
 
 /// This pass's own two tools, from §3.7's job row: a call of another kind (a caption, a decoration) is not
-/// offered because this ask cannot place it (§2 S4). One list, used for the body AND for the loop, so the wire
-/// and the loop can never disagree about what was on offer.
-/// The speed pass's tools: this pass's own write, `finish`, and §3.7's read.
-///
-/// §3 says every job names its read tools as well as its write tools, and `get_frames` is the read §3.7
-/// offers "so a zoom can be aimed" — the same batch and the same `answer` door already serve it, so
-/// nothing here needs a second implementation. `get_context`, `get_lines` and `get_events` stay out
-/// deliberately: this ask carries the clip list and no transcript, so it could not answer them, and a
-/// tool that can only refuse is a promise the caller cannot keep.
+/// offered because this ask cannot place it (§2 S4).
 fn this_pass_tools() -> Vec<Tool> {
     crate::tools::offered(Job::ClipRules)
         .into_iter()
@@ -213,18 +160,7 @@ fn this_pass_tools() -> Vec<Tool> {
 // field, and `llm_request::body` is the one place a chat request is built (§09 §5), so inventing a key here
 // would be a field no server in §1 documents and no other ask sends.
 
-/// Read a SPEEDS reply into the calls this pass places. Two spellings are accepted, because a model offered
-/// tools answers with tools and one told to answer JSON answers with JSON, and both mean the same rate:
-///
-/// - a `set_clip_speed(clip, rate)` tool call, in the order it came;
-/// - else the content's `{"speeds":[{"clip":<n>,"rate":<x>}]}` document (§`system.md`'s `speed` row).
-///
-/// An entry with no clip number, no rate, or a rate that is not a number is SKIPPED rather than losing the
-/// whole reply: unlike F3.9, §F3.10 makes only a clip number outside the batch cost the round, and that is
-/// [`cut_speed_pass::place`]'s judgement to make on the calls that did arrive. `{"speeds":[]}` is an empty
-/// list and a whole answer — a cut with nothing dull in it is not a failed run.
-/// A `set_clip_speed` call's arguments read as a rate: the same `{clip, rate}` pair the prose document's entries
-/// carry, so one rule decides both spellings.
+/// Read a SPEEDS reply into the calls this pass places.
 pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
     call_of(args)
 }
@@ -234,8 +170,7 @@ pub fn parse_speeds(reply: &str) -> Vec<Call> {
         return Vec::new();
     };
     // A whole chat envelope is what comes off the wire; a bare SPEEDS document (or the same document under a
-    // `content` key) is what sits in the cache, because §6 keeps the answer text and not the framing. Both
-    // shapes parse here so the wire reader and the cache reader are one rule that cannot disagree.
+    // `content` key) is what sits in the cache, because §6 keeps the answer text and not the framing.
     let answer = match value.get("choices") {
         Some(_) => llm_request::parse_reply(&value),
         None => llm_request::Reply {
@@ -259,10 +194,6 @@ pub fn parse_speeds(reply: &str) -> Vec<Call> {
     if !calls.is_empty() {
         return calls;
     }
-    // No tool call: read the content as the SPEEDS document. The slot's envelope is read by its `tool_calls`
-    // above, so prose here is either a tools-refused server's document or an unreadable answer -- and anything
-    // unreadable is no calls, which the pass reads as "the model proposed nothing", the same ending a
-    // `{"speeds":[]}` answer has.
     let Ok(content) = serde_json::from_str::<serde_json::Value>(answer.content.trim()) else {
         return Vec::new();
     };
@@ -273,7 +204,6 @@ pub fn parse_speeds(reply: &str) -> Vec<Call> {
         .unwrap_or_default()
 }
 
-/// One `{clip, rate}` pair, from either spelling. A missing or non-finite number is no call.
 fn call_of(value: &serde_json::Value) -> Option<Call> {
     let clip = value
         .get("clip")
@@ -295,23 +225,16 @@ fn call_of(value: &serde_json::Value) -> Option<Call> {
 /// What one speed ask came to.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Asked {
-    /// Every rate the model asked for, in the order it asked. Membership, the caption refusal and rate ≈ 1
-    /// are NOT applied here — that is [`cut_speed_pass::place`]'s job, so one route decides and this one
-    /// only reports.
+    /// Every rate the model asked for, in the order it asked.
     pub calls: Vec<Call>,
     /// The ask failed at the wire, so the caller should say why rather than treat the empty list as "the
-    /// model wanted nothing sped up". An empty SPEEDS document is NOT a failure.
+    /// model wanted nothing sped up".
     pub failed: bool,
-    /// The reason, naming the model and the fault. Empty when nothing failed.
+    /// The reason, naming the model and the fault.
     pub reason: String,
 }
 
-/// One live speed ask: build the two messages, honour the cache, dial, read the reply. Settings are read
-/// HERE, per call, so an address changed while a run is going is honoured by the next ask (§02-services#1).
-///
-/// `captioned` names which clips already carry captions — the ask must say so (S1), and §3.7's tool refuses
-/// a fast rate over them (S2) — while `clips` stays `(number, length)` pairs because a speed is asked for
-/// over a whole clip and has no offsets to line up.
+/// One live speed ask: build the two messages, honour the cache, dial, read the reply.
 pub fn ask(
     tree: &Tree,
     context: &str,
@@ -338,13 +261,11 @@ pub fn ask_named(
 ) -> Asked {
     let conf = match current_paths().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
-        // An unreadable settings file is reported the way a down server is: the pass keeps the stumble and
-        // says why, rather than dialling a guessed address.
         Some(Err(reason)) => return failed(format!("settings could not be read: {reason}")),
         None => Conf::default(),
     };
     // No LLM address at all: name it, because "no usable answer" would blame the model for a server nobody
-    // typed in. §02-services#1: an empty box means the loopback default, which is what `llm_endpoint` answers.
+    // typed in.
     if services::server_url(&conf.server).is_none() {
         return failed("no LLM address is set \u{2014} nothing was asked".to_string());
     }
@@ -390,7 +311,6 @@ pub fn ask_at_over(
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
     if clips.is_empty() {
-        // Nothing to ask about is not a failure and not worth a request.
         return Asked {
             calls: Vec::new(),
             failed: false,
@@ -402,7 +322,7 @@ pub fn ask_at_over(
     let system = speeds_system(context);
     let user = user_message_over(clips, captioned, total, rows, lanes);
     // A retry asks with the same two messages, so it needs its own cache slot: without one the second round
-    // would be served the reply that was just refused (§6). The fault itself travels in the conversation.
+    // would be served the reply that was just refused (§6).
     let parts = cache_parts(&system, &user, &model, attempt);
     if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
         // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
@@ -418,7 +338,7 @@ pub fn ask_at_over(
     let endpoint = services::llm_endpoint(conf);
     let offered = this_pass_tools();
     // How to build the body for one offer; `None` means no `tools` key, which is what §2 S5 resends to a server
-    // that refused the field. The cache slot and the timed row belong to whichever body goes out first.
+    // that refused the field.
     let build = |offer: Option<&[Tool]>| {
         Ok(llm_request::body(
             STEP,
@@ -432,8 +352,7 @@ pub fn ask_at_over(
         )?
         .to_string())
     };
-    // One live ask is ONE request on the wire. This dial IS §2's first round and honours S5 itself: a refusal of
-    // the `tools` FIELD gets the identical body again without it, said once, remembered so no later ask re-offers.
+    // One live ask is ONE request on the wire.
     let sent = match crate::llm_tool_refusal_leg::dial_honouring_refusal(
         STEP,
         &endpoint.url,
@@ -453,8 +372,7 @@ pub fn ask_at_over(
         &crate::ui::window::log_line,
     ) {
         Ok(sent) => sent,
-        // The ask itself failed. §F3.10's two rounds count refusals of ANSWERS, so a wire failure spends none of
-        // them: a server that is not there answers the same way however often it is called.
+        // The ask itself failed.
         Err(reason) => return failed(reason),
     };
     let reply = match llm_request::reply_from(&sent.content_type, &sent.body) {
@@ -482,8 +400,7 @@ pub fn ask_at_over(
             };
         }
         // §3's answered question on this item: the tools ARE on the wire, and a reply carrying a JSON document
-        // instead of calling `set_clip_speed` has not answered. Ask again, once, with the correction in the
-        // conversation (§3's repair); a second prose answer is this pass's failure, said by name.
+        // instead of calling `set_clip_speed` has not answered.
         let went_out = std::time::Instant::now();
         let dial = |body: &str| {
             crate::llm_retry_leg::chat(
@@ -546,16 +463,11 @@ pub fn ask_at_over(
             reason: String::new(),
         };
     }
-    // The refusal a captioned clip earns comes back as the tool's own sentence, so it has to be REACHED. The batch
-    // the loop answers its own calls from is filled with the captions here, so every rate the model asked for is
-    // tried against them and each refusal is said in this step's log (§F3.10 S2). Every rate still travels in
-    // `Asked`, because `cut_speed_pass::place` keeps making the placement judgement on the calls that arrived.
+    // The refusal a captioned clip earns comes back as the tool's own sentence, so it has to be REACHED.
     let mut batch = crate::clip_rules_tools_leg::batch_of(clips);
     // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
     // grid, and a default 1 s spread would name pictures this session never extracted.
     for (clip, count) in captioned {
-        // One placeholder line per caption the caller reported: `set_clip_speed` refuses any rate above 1 over a
-        // clip that carries one, whatever the words are, and this pass is not shown the texts.
         for index in 0..*count {
             batch.add_caption(*clip, 0.0, 0.5, &format!("caption {index}"));
         }
@@ -571,15 +483,12 @@ pub fn ask_at_over(
             call_of_args(&args)
         })
         .collect();
-    // §2's loop from here, over the batch that already knows which clips carry captions. The calls above are
-    // RUN first — results produced and said — before another request goes out: a rate over a captioned clip is
-    // answered with the tool's own refusal sentence (§F3.10 S2), and one such call is an ending, not a round.
+    // §2's loop from here, over the batch that already knows which clips carry captions.
     for line in crate::clip_rules_tools_leg::answer_calls(&reply.tool_calls, &mut batch) {
         crate::ui::window::log_line(&line);
     }
     // §6: the ANSWERING round's envelope is what is kept, so an unchanged batch costs no socket when the cut is
-    // asked again. The repair path above stores this same shape; a first reply that already called the tool must
-    // too, or the cache is only half a cache and the next identical ask dials the model a second time.
+    // asked again.
     if crate::clip_rules_tools_leg::asks_for_anything(&reply) {
         llm_cache::store(
             tree,
@@ -598,11 +507,7 @@ pub fn ask_at_over(
 }
 
 /// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
-/// the answering round's envelope (see [`crate::clip_rules_tools_leg::answering_envelope`]). [`parse_speeds`]
-/// still reads a bare document back -- that is the cache reader's and a tools-refused server's shape.
-///
-/// One ask's two messages, so the file its answer is cached in (`cache_file_for_test`) is named from the very
-/// texts the request is made of.
+/// the answering round's envelope (see [`crate::clip_rules_tools_leg::answering_envelope`]).
 fn messages(context: &str, clips: &[(u32, f64)], captioned: &[(u32, usize)]) -> (String, String) {
     let total: f64 = clips.iter().map(|(_, length)| length).sum();
     (
@@ -612,9 +517,7 @@ fn messages(context: &str, clips: &[(u32, f64)], captioned: &[(u32, usize)]) -> 
 }
 
 /// The file one ask's answer is cached in — `Tree::cache_llm`'s layout and `llm_cache`'s key, reached through
-/// `cache_parts`, the ONE key recipe the pass itself stores by, so the two cannot drift apart. Named
-/// `_for_test` because only a proof names the file: the pass never asks for a path, it just stores and reads.
-/// A second hash recipe inside a test would be a rule able to disagree with the code.
+/// `cache_parts`, the ONE key recipe the pass itself stores by, so the two cannot drift apart.
 pub fn cache_file_for_test(
     tree: &Tree,
     context: &str,
@@ -629,8 +532,7 @@ pub fn cache_file_for_test(
     tree.cache_llm(STEP, &key)
 }
 
-/// The deciding parts for one speed ask. The retry's slot rides in `state` — the texts, model and thinking
-/// flag are otherwise identical, and the slot is what keeps the two asks apart (§6).
+/// The deciding parts for one speed ask.
 fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
     let state = ask_slot(system, attempt);
     let request = llm_cache::Request {
@@ -647,9 +549,6 @@ fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde
     llm_cache::parts(&request)
 }
 
-/// A distinct cache slot per attempt of the same cut. The first ask uses the plain hash of the system text;
-/// each retry appends its number, so a retry keys elsewhere than the refusal it is retrying rather than
-/// reading that reply back out of the cache.
 fn ask_slot(system: &str, attempt: u32) -> String {
     if attempt <= 1 {
         return system.to_string();
@@ -657,7 +556,6 @@ fn ask_slot(system: &str, attempt: u32) -> String {
     format!("{system}\u{21bb}{attempt}")
 }
 
-/// A `Request` carrying what only the caller knows, for the timed row `server_leg::call` writes.
 fn base_row(model: &str) -> Request {
     Request {
         started: String::new(),
@@ -671,7 +569,6 @@ fn base_row(model: &str) -> Request {
     }
 }
 
-/// One failure answer, with the reason kept beside it for the log.
 fn failed(reason: String) -> Asked {
     Asked {
         calls: Vec::new(),

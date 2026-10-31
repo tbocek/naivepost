@@ -1,12 +1,7 @@
 //! Which job asks which server, spec/02-services.md §2.
 //!
-//! The table of fourteen jobs: who answers each one, whether the model is asked to think first,
-//! whether it gets the web, and what its answer is allowed to change. Everything here is a
-//! lookup or a small rule — the calls themselves belong to §6's client and the prompts to §3, so
-//! this module holds only the decisions a request is built from, in one place a test can pin.
-//!
-//! Nothing here reads a socket or a file: [`Job`] plus the settings read by
-//! [`crate::services::endpoint_for`] is enough for a caller to build a request.
+//! The table of fourteen jobs: who answers each, whether the model thinks first, whether it gets the web, and what its answer may change. Lookups and small rules;
+//! no socket or file is read here (calls belong to §6's client, prompts to §3).
 
 use crate::project::{CutMode, MarkingPass};
 use crate::services::{AudioTask, Server};
@@ -17,9 +12,7 @@ pub const ASR_CHUNK_QWEN_SECONDS: f64 = 60.0;
 /// ASR chunk for every other model. P.machine.asrChunkMaxSeconds
 pub const ASR_CHUNK_MAX_SECONDS: f64 = 300.0;
 
-/// Shortest ASR chunk: an out-of-memory answer halves the chunk down to here and no further.
-/// Halving from 300 reaches it (300 → 150 → 75 → 37.5 → 20), so the floor is a real chunk size
-/// rather than a guard against an infinite loop. P.machine.asrChunkMinSeconds
+/// Shortest ASR chunk: an out-of-memory answer halves the chunk down to here (300 → 150 → 75 → 37.5 → 20). P.machine.asrChunkMinSeconds
 pub const ASR_CHUNK_MIN_SECONDS: f64 = 20.0;
 
 /// The diarization window ladder, biggest first (measured: 90 passes, 150 fails).
@@ -29,8 +22,7 @@ pub const DIAR_WINDOWS_SECONDS: [f64; 3] = [90.0, 45.0, 25.0];
 /// Frames per vision request — "four frames a call". P.machine.describeFramesPerReq
 pub const VISION_FRAMES_PER_CALL: u32 = 4;
 
-/// Pass 1's stride as a share of the diarization window: each voice need only be seen once, so the
-/// windows overlap by a third rather than not at all. P.machine.diarHopShare
+/// Pass 1's stride as a share of the diarization window: windows overlap by a third. P.machine.diarHopShare
 pub const DIAR_HOP_SHARE: (u32, u32) = (2, 3);
 
 /// Seconds of each voice in the anchor at the biggest window; the lower rungs of
@@ -84,8 +76,7 @@ pub enum Job {
 }
 
 impl Job {
-    /// The fourteen jobs, in the spec's order — so a fifteenth row has to be added here and the
-    /// table test fails until it is described there too.
+    /// The fourteen jobs in the spec's order; a fifteenth row must be added here and described in the table test.
     pub fn all() -> [Job; 14] {
         [
             Job::Asr,
@@ -106,8 +97,7 @@ impl Job {
     }
 }
 
-/// Which of the four servers answers this job (§1's three plus sd.cpp; ffmpeg is a subprocess and
-/// asks nobody).
+/// Which of the four servers answers this job (ffmpeg is a subprocess and asks nobody).
 pub fn server(job: Job) -> Server {
     match job {
         Job::Asr | Job::Align | Job::Diarize | Job::Separate => Server::Audio,
@@ -118,10 +108,7 @@ pub fn server(job: Job) -> Server {
 
 /// Whether this job asks the model to think first.
 ///
-/// The four audio jobs and the thumbnail carry `–` in §2's thinking column rather than `off`.
-/// Read as "the question does not apply": an audio.cpp task call and an sd.cpp job have no
-/// thinking token to set, so this returns false for them — a caller that sent one anyway would be
-/// inventing a field the server never reads.
+/// The four audio jobs and the thumbnail carry `–` in §2's thinking column: not applicable (no thinking token to set), so false.
 pub fn thinking(job: Job) -> bool {
     match job {
         // P.machine.textEditThinking: joins are the measured case where reasoning pays.
@@ -136,8 +123,7 @@ pub fn web_tools(job: Job) -> bool {
     matches!(job, Job::ModelCut | Job::Narrate | Job::UploadText)
 }
 
-/// Which audio model answers, when the job is one of the four that asks for one. The rest are a
-/// server-side LLM or sd.cpp call with no audio model id to send.
+/// Which audio model answers, for the four jobs that ask for one.
 pub fn audio_task(job: Job) -> Option<AudioTask> {
     match job {
         Job::Asr => Some(AudioTask::Asr),
@@ -150,46 +136,36 @@ pub fn audio_task(job: Job) -> Option<AudioTask> {
 
 /// Whether this job's answer is spoken after the model gives it (§2's `→ TTS` arrow).
 ///
-/// Narrate is the only row with that arrow. The thumbnail is the only job whose whole answer is
-/// an image, and it is asked only under [`thumbnail_wanted`] — but sd.cpp draws it, so nothing
-/// follows it.
+/// Narrate is the only row with the arrow. The thumbnail is an image drawn by sd.cpp, so nothing follows it.
 pub fn answers_after_tts(job: Job) -> bool {
     matches!(job, Job::Narrate)
 }
 
-/// The family string that means the short ASR chunk: the qwen3 family caps a chunk at 60 s where
-/// everything else may run to 300. Matched case-insensitively as a substring because the value is
-/// whatever the server declared in its own model list (§1's `AudioModel::family`), so a build that
-/// names it `Qwen3-ASR` or `qwen3-asr-1.7b` still gets the short chunk.
+/// The family string that means the short ASR chunk (qwen3: 60 s, else 300). Matched case-insensitively as a substring, since it is whatever the server declared (§1's `AudioModel::family`).
 pub fn asr_chunk_is_qwen_family(family: &str) -> bool {
     family.to_ascii_lowercase().contains("qwen3")
 }
 
 /// How long an ASR chunk may be after `oom_retries` out-of-memory answers.
 ///
-/// Each one halves the chunk and the floor is 20 s: a server that cannot answer at 20 s has no
-/// chunk size left to be told about, and cutting further would produce chunks shorter than a
-/// sentence, which transcribe worse than they would have failed.
+/// Each halves the chunk down to the 20 s floor: shorter than a sentence transcribes worse than it would have failed.
 pub fn asr_chunk_seconds(family: &str, oom_retries: u32) -> f64 {
     let start = if asr_chunk_is_qwen_family(family) {
         ASR_CHUNK_QWEN_SECONDS
     } else {
         ASR_CHUNK_MAX_SECONDS
     };
-    // Halved by repeated doubling of the divisor rather than a loop: same result, and no way to
-    // spin on a huge retry count.
+    // Halved by doubling the divisor, not a loop: no way to spin on a huge retry count.
     (start / (1u32 << oom_retries.min(16)) as f64).max(ASR_CHUNK_MIN_SECONDS)
 }
 
-/// The diarization windows, biggest first.
 pub fn diar_ladder() -> [f64; 3] {
     DIAR_WINDOWS_SECONDS
 }
 
 /// The window for attempt `attempt`, counting from 0.
 ///
-/// Past the end of the ladder the smallest window repeats: the window only ever shrinks, so a
-/// fourth attempt re-tries the one that fits rather than inventing a size nobody measured.
+/// Past the end of the ladder the smallest window repeats: the window only shrinks.
 pub fn diar_window(attempt: usize) -> f64 {
     DIAR_WINDOWS_SECONDS
         .get(attempt)
@@ -200,17 +176,13 @@ pub fn diar_window(attempt: usize) -> f64 {
 /// How many vision calls `frames` frames take: four a call.
 pub fn vision_batches(frames: usize) -> usize {
     let per_call = VISION_FRAMES_PER_CALL as usize;
-    // Integer ceil without the +per-1 trick reading like an off-by-one at a glance.
     frames / per_call + usize::from(!frames.is_multiple_of(per_call))
 }
 
 /// Whether this job runs under this project's policy (§5, `P.policy.markingPass` and
 /// `P.policy.cutMode`).
 ///
-/// Three jobs are one pass or mode: joins only runs when the marking pass is joins, retakes only
-/// when it is retakes, and the model cut only when the mode is model — under words the timeline
-/// comes from the words alone and nobody is asked. `MarkingPass::None` therefore asks for neither
-/// marking job, which is what "no marking pass" has to mean.
+/// joins only runs under the joins marking pass, retakes under retakes, the model cut under the model mode; `MarkingPass::None` asks for neither marking job.
 pub fn job_applies(job: Job, marking_pass: MarkingPass, cut_mode: CutMode) -> bool {
     match job {
         Job::Joins => marking_pass == MarkingPass::Joins,
@@ -220,7 +192,6 @@ pub fn job_applies(job: Job, marking_pass: MarkingPass, cut_mode: CutMode) -> bo
     }
 }
 
-/// One attempt at the model cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CutAttempt {
     /// 1, 2 or 3 — §2's "three attempts".
@@ -233,25 +204,20 @@ pub struct CutAttempt {
 
 /// Whether thinking stays on for the next cut attempt.
 ///
-/// A model that filled the reasoning block and produced no answer is not going to do better by
-/// reasoning again into the same void — it is stuck producing thinking with no content, so the
-/// retry asks for the answer alone. Any other failure (bad seconds, a rejected segment) keeps
-/// thinking on: that answer was written, it was just wrong.
+/// A model that filled the reasoning block and produced no answer will not do better reasoning again, so the retry asks for the answer alone.
+/// Any other failure keeps thinking on: that answer was written, it was just wrong.
 pub fn cut_retry_thinking(previous_reasoned: bool, previous_answer_empty: bool) -> bool {
     !(previous_reasoned && previous_answer_empty)
 }
 
 /// How the model-cut attempt number `attempt` (counting from 1) is sent.
 ///
-/// Web tools are withdrawn after the first rejected one — they cost a round each and the second
-/// attempt is asked to copy segments off the timeline it was already given, not to go looking.
+/// Web tools are withdrawn after the first rejected attempt: they cost a round each, and later attempts copy segments off the timeline already given.
 pub fn cut_attempt(attempt: u32) -> CutAttempt {
     CutAttempt {
         attempt,
         web_tools: attempt == 1,
-        // Attempt 1 always thinks; a later one only if the last answer was not an empty one with
-        // reasoning attached — which is what `cut_attempt` cannot see, so callers pass that to
-        // `cut_retry_thinking` and set this from it.
+        // Attempt 1 always thinks; a later one follows `cut_retry_thinking`, which callers set this from.
         thinking: true,
     }
 }
@@ -268,19 +234,14 @@ pub fn retake_runs_pooled() -> u32 {
 
 /// Calls needed for `calls` distinct stretches.
 ///
-/// Pooling is about repeats, not volume: three identical calls become one, and N different ones
-/// stay N. So the count of calls this layer has to make equals the count of distinct stretches —
-/// which is what a caller deduplicates against before it reaches here.
+/// Pooling is about repeats, not volume: three identical calls become one, N different stay N, so this equals the count of distinct stretches.
 pub fn retake_batches(calls: usize) -> usize {
     calls
 }
 
 /// Whether sd.cpp is asked for a thumbnail.
 ///
-/// §2: "only when an instruction exists and no frame was named". A named frame needs no server —
-/// it is cut out of the source — so an instruction beside a frame is an instruction nobody needs,
-/// and drawing one would spend a model call to produce something the user already rejected by
-/// naming a frame instead.
+/// §2: "only when an instruction exists and no frame was named": a named frame is cut out of the source and needs no server.
 pub fn thumbnail_wanted(instruction: &str, frame_named: bool) -> bool {
     !instruction.trim().is_empty() && !frame_named
 }
@@ -295,8 +256,7 @@ pub struct Language {
 }
 
 impl Language {
-    /// What the translation call is asked for. The name, because that is what a prompt reads as a
-    /// language; the code and tag are for filenames (`<stem>.de.srt`, 08 §7).
+    /// What the translation call is asked for: the name (what a prompt reads as a language); code and tag are for filenames (`<stem>.de.srt`, 08 §7).
     pub fn ask_for(&self) -> &str {
         &self.name
     }
@@ -304,11 +264,8 @@ impl Language {
 
 /// The settings list of subtitle languages, in the order written.
 ///
-/// Entries are separated by commas and their fields by colons — the shape §3 of 03-shell.md gives
-/// `SUBTITLE_LANGUAGES` ("code:tag:name list"). A field is trimmed, a shorter entry fills what it
-/// left out from the code (a bare `de` names German nowhere, so the code stands in rather than the
-/// call asking for ""), and an entry with no code at all is dropped: there would be nothing to
-/// name the file or the language by.
+/// Entries are comma-separated, fields colon-separated (03-shell.md §3, "code:tag:name list"). A field is trimmed, a shorter entry fills what it
+/// left out from the code, and an entry with no code is dropped.
 pub fn subtitle_languages(raw: &str) -> Vec<Language> {
     let mut out = Vec::new();
     for entry in raw.split(',') {
@@ -333,16 +290,14 @@ pub fn subtitle_languages(raw: &str) -> Vec<Language> {
     out
 }
 
-/// The languages the app knows with no `SUBTITLE_LANGUAGES` written: the prototype's own three (`subLangs`), each
-/// with its ISO-639-1 code, the ISO-639-2 tag a container wants and the name a person (and a prompt) reads.
+/// The languages known with no `SUBTITLE_LANGUAGES`: the prototype's three (`subLangs`) as ISO-639-1 code, ISO-639-2 tag and name.
 pub const BUILT_IN_LANGUAGES: [(&str, &str, &str); 3] = [
     ("en", "eng", "English"),
     ("de", "deu", "German"),
     ("fr", "fra", "French"),
 ];
 
-/// The settings list, or the built-in three when it names none: an empty `SUBTITLE_LANGUAGES` is a file nobody
-/// filled in, not a wish for untagged tracks (the first rewrite tagged every track `und`, named by its code).
+/// The settings list, or the built-in three when it names none: an empty `SUBTITLE_LANGUAGES` is an unfilled file, not a wish for untagged tracks.
 pub fn languages_or_built_in(raw: &str) -> Vec<Language> {
     let listed = subtitle_languages(raw);
     if !listed.is_empty() {
@@ -358,9 +313,7 @@ pub fn languages_or_built_in(raw: &str) -> Vec<Language> {
         .collect()
 }
 
-/// The code a language goes by, given its code or its name (`German` and `de` both answer `de`): the Produce
-/// page ticks languages by name and the policy holds the session's by code, and a file is named by the code.
-/// A language the app does not know keeps what it was given.
+/// The code a language goes by, given its code or name (`German` and `de` both answer `de`): the page ticks by name, the policy holds codes; an unknown language is kept as given.
 pub fn language_code(given: &str) -> String {
     let given = given.trim();
     BUILT_IN_LANGUAGES
@@ -371,8 +324,7 @@ pub fn language_code(given: &str) -> String {
         .map_or_else(|| given.to_string(), |(code, _, _)| code.to_string())
 }
 
-/// The name a language is asked for and said by (`de` answers `German`); one the app does not know keeps its
-/// code.
+/// The name a language is asked for and said by (`de` answers `German`); an unknown one keeps its code.
 pub fn language_name(code: &str) -> String {
     BUILT_IN_LANGUAGES
         .iter()
@@ -387,11 +339,8 @@ pub fn subtitle_calls(languages: &[&str]) -> usize {
 
 /// The respelled transcript, with the times and speakers of the original.
 ///
-/// §2: "the same lines respelled; times and speakers unchanged, enforced". Enforced means this
-/// function never reads a time or a speaker out of `respelled`, so a reply that renumbered or
-/// shifted them cannot get through. It also refuses a reply whose line count differs — a
-/// respelling that dropped a line or invented one would otherwise have its words paired with the
-/// times of different lines, which is worse than no cleanup at all because it reads like a success.
+/// §2: "times and speakers unchanged, enforced": this never reads a time or speaker out of `respelled`. It also refuses a reply whose line count differs,
+/// since pairing words with other lines' times reads like a success.
 pub fn clean_transcript<T: Clone>(
     originals: &[(f64, f64, String, T)],
     respelled: &[String],

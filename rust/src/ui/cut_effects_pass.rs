@@ -1,27 +1,10 @@
 //! F3.11 S1–S5 (`✨ Decorations`) — the pass's own half of the shell: read the page, telephone, write back.
-//!
-//! Split out of `crate::ui::window`, which is past its size budget. No rule lives here: every decision —
-//! membership, the per-call skips, the app's defaults for an undersized decoration and both log lines —
-//! belongs to [`crate::cut_effects_pass`], and the wire leg to [`crate::effects_ask`]. What this module owns
-//! is the seam between them and the page: which clips the batch is made of, which captions and rates are
-//! already on them, how many rounds §S4 allows, and where an answer is written so one ↶ takes it back.
-//!
-//! The two public doors differ by ONE thing: [`run_effects_pass`] dials for real, while
-//! [`run_effects_pass_with_reply`] hands the same calls back each round so a test can exercise §S2's
-//! whole-reply rejection and §S3's skips without a socket. Both run through the one private body, so they
-//! cannot drift apart.
 
 use crate::policy;
 use crate::tools::clips::Clips;
 use crate::ui::window;
 
-/// F3.11 S1–S5: run the decorations pass over this window's newest cut and say what happened.
-///
-/// Rule-free like [`window::run_captions_pass`] and [`crate::ui::cut_speeds_pass::run_speeds_pass`]: every
-/// decision lives in [`crate::cut_effects_pass`]. This seam reads the page, hands the rules their inputs (the
-/// kept clips AND the captions and rates already on them, because S1's brief names both), and writes back what
-/// they answer. Each round TELEPHONES through `ask_effects` below — §F3.11's second round is a fresh ask, not the
-/// same rejected reply handed to the rules twice.
+/// F3.11 S1–S5.
 pub fn run_effects_pass(window: &adw::ApplicationWindow) -> String {
     let inputs = window::pass_inputs(window);
     let cut_ = window::newest_review_cut();
@@ -37,9 +20,6 @@ pub fn walk_effects(inputs: &window::PassInputs, cut_: &crate::cut::Cut) -> wind
     })
 }
 
-/// F3.11 S2/S3/S5 with a scripted reply: the same route the pass takes, minus the telephone. A test feeds the
-/// `add_effect` calls here and asserts placement against real page state, exactly as
-/// `run_speeds_pass_with_reply` does.
 pub fn run_effects_pass_with_reply(
     window: &adw::ApplicationWindow,
     calls: &[crate::cut_effects_pass::Call],
@@ -52,9 +32,6 @@ pub fn run_effects_pass_with_reply(
     out.said
 }
 
-/// F3.11 S1's leg: the ask over the batch this pass just built, for this round of it. Returns no calls when
-/// there is nothing to ask about or nowhere to ask it — the shape `cut_speeds_pass::ask_speeds` keeps, so a
-/// missing project folder is said in the log rather than thrown.
 fn ask_effects(
     inputs: &window::PassInputs,
     cut_: &crate::cut::Cut,
@@ -96,9 +73,6 @@ fn ask_effects(
     asked.calls
 }
 
-/// `ask` is the telephone: called once per round with the batch as it stands, so a retry asks again rather than
-/// re-reading an answer that was just rejected. The scripted door passes a closure that hands back the same
-/// calls every time, which is what lets a test exercise the two-round rule without a socket.
 fn walk_effects_with(
     inputs: &window::PassInputs,
     cut_: &crate::cut::Cut,
@@ -136,9 +110,6 @@ fn walk_effects_with(
             }
         }
         if reply.usable() {
-            // P.machine.maxProposedEffects is compared HERE, against what this reply would add:
-            // a runaway answer is unusable in the same way a bad clip number is, so it costs a
-            // round and its reason reaches the log. The density guide says; only this cap refuses.
             let verdict = crate::cut_effects_pass::effect_cap_allows_reply(&reply.effects);
             if !verdict.allowed {
                 window::log_line(&crate::cut_effects_pass::rejected(&verdict.reason));
@@ -177,9 +148,6 @@ fn walk_effects_with(
         window::log_line(&reason);
     }
     // §06-effects#6's "decorations density (prompt)", reported against what this pass actually placed.
-    // REPORTED, never trimmed: the User Context outranks the default ("Asked for more, write more",
-    // `spec/prompts/effects.md`) and the hard bound is `P.machine.maxProposedEffects`, which was already
-    // applied above. A reply inside the guide says nothing extra -- the row keeps its own news.
     if let Some(count) = placed_count {
         // The finished length is the cut's own total, through the same door the page's "Cut" readout uses
         // (`cut_screen::cut_seconds`), so the seconds the guide is quoted against are the seconds the screen shows.
@@ -201,12 +169,6 @@ fn walk_effects_with(
     }
 }
 
-/// F3.11 S1: the clips the decorations pass asks about — the VISIBLE SEGMENTS of the cut, numbered from 1 in
-/// play order, each carrying its own session start, with the captions already on the cut clamped onto them.
-/// Same reasoning as in `cut_speeds_pass`, restated because a reader of this pass should not have to open the
-/// other one to know why: NOT `cut_play::kept_runs`, which MERGES touching segments for preloading, so a cut
-/// of three adjoining segments would be one clip to the model and every clip number above 1 the model named
-/// would fall outside the batch.
 fn decoration_batch(cut_: &crate::cut::Cut) -> Clips {
     let mut segs: Vec<(f64, f64)> = cut_
         .segs
@@ -242,10 +204,6 @@ fn decoration_batch(cut_: &crate::cut::Cut) -> Clips {
     batch
 }
 
-/// F3.11 S1 (`told the captions and speeds`): the rate each clip already plays at, read off the speed effects
-/// the F3.10 pass (or a hand-placed ⏩) put on the cut. A clip with no speed effect is absent rather than
-/// listed at 1: [`crate::cut_effects_pass::brief`] says nothing about a picture that is not moving, and a
-/// stop (rate 0) IS worth saying, so only "no effect" and "rate 1" are left out.
 fn clip_rates(batch: &Clips) -> Vec<(u32, f64)> {
     let mut rates: Vec<(u32, f64)> = Vec::new();
     for clip in batch.clips() {

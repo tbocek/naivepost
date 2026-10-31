@@ -1,17 +1,13 @@
 //! F5.6 S4: the three frames that fill the image row when nothing was chosen and no frame was picked.
 //!
-//! §F5.6 says "3 frames evenly spread over the kept footage". Only the caller holds the live cut, so this
-//! module works in moments on the PRODUCED clock and the page turns a moment into whatever it has on disk;
-//! [`crate::produce_upload::walk`] just puts what it is given into the row.
+//! §F5.6 says "3 frames evenly spread over the kept footage". Only the caller holds the live cut, so this works in moments on the PRODUCED clock and the page turns a moment into what it has on disk; [`crate::produce_upload::walk`] just puts them in the row.
 
 use crate::cut::Seg;
 
 /// How many frames the empty row is filled with — the number §F5.6's log line names.
 pub const SPREAD_COUNT: usize = 3;
 
-/// A segment's length in OUTPUT seconds: rate applied once (`narration::output_seconds`' own rule), with
-/// the splice's explicit `dur` winning over the footage span when it has one. Same arithmetic the Produce
-/// page uses for clip starts, so a moment here and a moment there mean the same instant.
+/// A segment's length in OUTPUT seconds: rate applied once (`narration::output_seconds`' rule), the splice's explicit `dur` winning over the footage span; same arithmetic as the Produce page's clip starts.
 fn output_length(seg: &Seg) -> f64 {
     let raw = if seg.dur > 0.0 {
         seg.dur
@@ -21,10 +17,7 @@ fn output_length(seg: &Seg) -> f64 {
     crate::narration::output_seconds(raw, seg.rate)
 }
 
-/// The `SPREAD_COUNT` moments evenly spread over the kept footage: the middles of three equal bands over the
-/// whole kept span, which is what "evenly spread" means for a video whose clips have different lengths —
-/// three per clip would show the start of the video three times over on a session that keeps one long take.
-/// Empty when nothing was kept, which is the caller's signal to draw from words alone.
+/// The `SPREAD_COUNT` moments evenly spread over the kept footage: the middles of equal bands over the whole kept span (three per clip would show the start three times on one long take). Empty when nothing was kept.
 pub fn spread_moments(segs: &[Seg]) -> Vec<f64> {
     let kept: Vec<(&Seg, f64)> = segs
         .iter()
@@ -53,19 +46,13 @@ pub fn spread_moments(segs: &[Seg]) -> Vec<f64> {
     out
 }
 
-/// The nearest extracted moment to `at`, reusing the ONE nearest rule (§3.9/decision 32) so a spread frame
-/// and a picked frame resolve the same way.
+/// The nearest extracted moment to `at`, by the ONE nearest rule (§3.9/decision 32), so a spread frame and a picked frame resolve alike.
 pub fn frame_at(moments: &[f64], at: f64) -> Option<f64> {
     crate::produce_upload::nearest(moments, at)
 }
 
-/// §3.9's `get_frames(clip, at?)`: the candidate frames inside one clip, so the picture is chosen by
-/// LOOKING rather than by position (the prototype showed the writer none and picked band middles itself).
-/// With `at` given the answer narrows to a window around that moment, and the window is the PROJECT's
-/// `P.project.frameInterval` (`interval`, passed in by the caller) — that is how far apart two frames
-/// ever are, so a window of one interval always holds a neighbour. A fixed stop here would name frames
-/// wider or nearer than the ones this session actually extracted.
-/// An unknown span answers everything rather than nothing: showing no frames would read as an empty video.
+/// §3.9's `get_frames(clip, at?)`: the candidate frames inside one clip, so the picture is chosen by LOOKING. With `at` the answer narrows to a window of the PROJECT's `P.project.frameInterval` (`interval`, from the caller),
+/// which always holds a neighbour; a fixed stop would name frames wider or nearer than the session extracted. An unknown span answers everything: no frames would read as an empty video.
 pub fn get_frames(moments: &[f64], from: f64, to: f64, at: Option<f64>, interval: f64) -> Vec<f64> {
     let inside = moments
         .iter()
@@ -90,9 +77,7 @@ pub fn get_frames(moments: &[f64], from: f64, to: f64, at: Option<f64>, interval
     window
 }
 
-/// The row entry a moment becomes in `publish.frames`. The `frame:` spelling is the one the model's own
-/// `THUMBNAIL: frame: clip n +s` line and `produce_details` use, so a spread frame looks like any other row
-/// entry to everything downstream.
+/// The row entry a moment becomes in `publish.frames`: the `frame:` spelling the model's `THUMBNAIL: frame: clip n +s` line and `produce_details` use.
 pub fn row_entry(at: f64) -> String {
     format!("frame:{at:.1}")
 }

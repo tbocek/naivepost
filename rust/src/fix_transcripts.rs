@@ -1,17 +1,5 @@
 //! Fix the transcripts (spec/04-prepare.md F1.8): what happens between a source's ASR rows and the
 //! one timeline the cut model reads.
-//!
-//! Every source is placed on the session clock, its transcript goes out to the fixer in blocks of
-//! [`prepare::FIX_BLOCK_LINES`] lines with five seconds of every other recording around them as
-//! grounding, the answers are written back per source, and everything is merged into `session.tsv`
-//! and `session.txt`. As in [`crate::asr`], [`crate::align`] and [`crate::frames`], no process is
-//! spawned and no socket opened: the fixer's reply arrives through [`run`]'s closure and so does the
-//! marking pass's, because a step that decided inside a server call could never be tested
-//! (spec/00-principles.md §5).
-//!
-//! The tool surface itself is [`crate::tools::fix`] — this module *calls* it rather than copying it,
-//! which is the whole difference from the prototype: a bad row there was a discarded block of 25 lines
-//! and a silent re-ask, and here it is one refusal naming the row.
 
 use std::path::PathBuf;
 
@@ -25,31 +13,19 @@ use crate::tools::fix::{Block, FIX_CONTEXT_SECONDS};
 /// The cache/step key for these replies, so a re-run reads its own answers back.
 pub const FIX_STEP: &str = "fix";
 
-/// Tries per block before the ASR original is kept. `P.machine.fixTries` (default 2), the count the
-/// prototype wrote as `try < 2`. F1.8 keeps those two — the difference is not the count but that the
-/// second try is told what was wrong, because [`Block::fix_line`] refuses by name rather than voiding
-/// the block.
-///
-/// §10's row for this id is deliberately absent from [`crate::params::prepare`]: §04#4 does not name
-/// it among the parameters it lists, and `rust/tests/suite/prepare_parameters.rs` pins that list by ORDER,
-/// so a row inserted here would break that assertion. The number lives with the rule that reads it, as
-/// every `P.*` value must; [`crate::params::family`] still answers `Family::Machine` from the prefix.
+/// Tries per block before the ASR original is kept.
 pub const BLOCK_TRIES: u32 = 2;
 
-/// How many asks one block gets in all — the first plus the retries. `P.machine.fixTries`
+/// How many asks one block gets in all — the first plus the retries.
 pub fn attempts() -> u32 {
     BLOCK_TRIES
 }
 
-/// Whether another ask is still owed after `asked` have been made. This is the prototype's
-/// `try < 2` condition lifted out of the loop so the bound can be read and tested on its own.
 pub fn more_tries_left(asked: u32) -> bool {
     asked < BLOCK_TRIES
 }
 
-/// What a block that ran out of tries says. Naming the refusal is the point: a reader who sees only
-/// "failed" looks for a crash, and there was none — the answer would not validate twice, so this
-/// block keeps the ASR's own lines and every other block still gets fixed.
+/// What a block that ran out of tries says.
 pub fn give_up_log(base: &str, index: usize, total: usize) -> String {
     format!(
         "!!! {} block {}/{} kept its ASR text -- the fixer's answer was refused \
@@ -83,19 +59,11 @@ impl Source {
 }
 
 /// S1: every source's first second on the session clock.
-///
-/// [`clock::clock`] makes the earliest stamped name second nought, so this has to be handed the WHOLE
-/// session: leaving one file out moves zero and slides every other file to a different second, which
-/// is why it takes names rather than a source at a time. An unstamped name is placed at the start, as
-/// §8 spells it.
 pub fn placement(names: &[&str]) -> Vec<f64> {
     let clock = clock::clock(names);
     (0..names.len()).map(|index| clock.offset(index)).collect()
 }
 
-/// S1: `offsets.tsv`'s rows — each video against each audio recording, and how far apart their starts
-/// are. The prototype pairs them this way because the offset is what lines a separate microphone up
-/// with the camera it was recording beside; an all-audio session has nothing to pair.
 pub fn offsets_rows(sources: &[Source]) -> Vec<(String, String, f64)> {
     let mut rows = Vec::new();
     for video in sources.iter().filter(|source| source.is_video) {
@@ -132,7 +100,7 @@ fn fix_seconds(value: f64) -> String {
     text.trim_end_matches('.').to_string()
 }
 
-/// S1: write `offsets.tsv`. Rows go out with two decimals like every other time in §6.
+/// S1: write `offsets.tsv`.
 pub fn write_offsets(tree: &Tree, sources: &[Source]) -> Result<usize, String> {
     let rows = offsets_rows(sources);
     let mut out = String::new();
@@ -143,20 +111,18 @@ pub fn write_offsets(tree: &Tree, sources: &[Source]) -> Result<usize, String> {
     Ok(rows.len())
 }
 
-/// S1: a source's own transcript, as its folder holds it. Absent means nothing was heard in it, which
-/// is a recording with no speech rather than an error.
+/// S1: a source's own transcript, as its folder holds it.
 pub fn load_transcript(tree: &Tree, source: &str) -> Result<Vec<Line>, String> {
     textfmt::read_lines(&tree.transcript_tsv(source))
 }
 
 /// S1: a footage source's event log — what happened on screen, which is context for the words beside
-/// it. A source with no frames has none, and that is normal.
+/// it.
 pub fn load_events(tree: &Tree, source: &str) -> Vec<FrameEvent> {
     textfmt::read_events(&tree.events_tsv(source)).unwrap_or_default()
 }
 
-/// Is this a tool refusal? [`crate::tools::error`] serialises `{"error": …}`, so that is the test —
-/// and a refusal is an answer the model can use, not the end of the flow.
+/// Is this a tool refusal?
 pub(crate) fn refused(answer: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(answer)
         .ok()
@@ -169,7 +135,6 @@ pub(crate) fn refused(answer: &str) -> bool {
         .is_some()
 }
 
-/// The reason a refusal gave, for putting in front of the model on the next try.
 fn refusal_reason(answer: &str) -> String {
     serde_json::from_str::<serde_json::Value>(answer)
         .ok()
@@ -182,9 +147,7 @@ fn refusal_reason(answer: &str) -> String {
         .unwrap_or_else(|| answer.to_string())
 }
 
-/// S2: the blocks one transcript goes out in. `P.machine.fixBlockLines` lines each; a short last block
-/// stays short, because the model is asked for exactly its own count and padding it with lines from
-/// nowhere would be asking for fixes to lines that do not exist.
+/// S2: the blocks one transcript goes out in.
 pub fn blocks(lines: &[Line]) -> Vec<Vec<Line>> {
     lines
         .chunks(FIX_BLOCK_LINES)
@@ -198,13 +161,6 @@ pub fn context_window(start: f64, end: f64) -> (f64, f64) {
 }
 
 /// S2: which blocks a source's rows go out in.
-///
-/// The prototype walked the transcript once per source with no window at all, so every ask carried only
-/// its own 25 lines; here each block is asked *with* the seconds around it, and §1 of this spec item
-/// says what those seconds are — five either side ([`FIX_CONTEXT_SECONDS`]), from every other recording
-/// and from this source's own events. A block whose first row begins within five seconds of the
-/// session's start simply has less on one side: the window is clipped at the timeline, not padded with
-/// silence.
 pub fn asks_for(blocks: &[Vec<Line>], from: f64, to: f64) -> Vec<(usize, f64, f64)> {
     blocks
         .iter()
@@ -220,12 +176,6 @@ pub fn asks_for(blocks: &[Vec<Line>], from: f64, to: f64) -> Vec<(usize, f64, f6
 }
 
 /// S2: the grounding itself.
-///
-/// Every *other* source's lines and events overlapping the window go in, plus this source's own
-/// events: its own transcript lines are what is being cleaned, so showing them as context would be
-/// showing the model the thing it is meant to judge. An empty string is normal — a solo recording has
-/// nothing beside it — and the prompt says so, because a model that reads silence as a problem starts
-/// inventing context.
 pub fn context_text(
     from: f64,
     to: f64,
@@ -247,8 +197,6 @@ pub fn context_text(
         out.push_str(&format!(
             "{} ({base}): {}\n",
             label(base, &line.speaker, ""),
-            // One line per row: the block underneath is already a wall of lines and a wrapped row
-            // reads as two.
             line.text.split_whitespace().collect::<Vec<_>>().join(" ")
         ));
     }
@@ -256,16 +204,14 @@ pub fn context_text(
         if event.end <= from || event.start >= to {
             continue;
         }
-        // Own events included: a slide changing is why the words suddenly do not make sense. The
-        // source list stays in the signature so rows are handed over placed on one clock.
+        // Own events included: a slide changing is why the words suddenly do not make sense.
         debug_assert!(sources.iter().any(|source| source.base == *base) || sources.is_empty());
         out.push_str(&format!("EVENT ({base}): {}\n", event.text));
     }
     out
 }
 
-/// One line of the ask: numbered as the model will send it back, with its times and speaker. The text
-/// keeps its own tabs — §6's rows are split on the first three, so a tab inside a word is part of it.
+/// One line of the ask: numbered as the model will send it back, with its times and speaker.
 pub fn ask_text(context: &str, lines: &[Line]) -> String {
     let mut rows = String::new();
     for line in lines {
@@ -293,10 +239,6 @@ pub struct AnsweredRow {
     pub text: String,
 }
 
-/// The answer's rows, read the way the prototype read them: every line with at least four tab-separated fields
-/// is a row (start, end, speaker, then the text, whose own tabs are joined back with spaces); anything else (a
-/// fence, a blank line, a sentence around the answer) is not a row. Whether the rows ARE the block is
-/// [`rows_to_fixes`]'s question.
 pub fn answered_rows(answer: &str) -> Vec<AnsweredRow> {
     answer
         .lines()
@@ -315,9 +257,6 @@ pub fn answered_rows(answer: &str) -> Vec<AnsweredRow> {
         .collect()
 }
 
-/// The prototype's strict check of an answer against its block: exactly as many rows, each with the block's own
-/// start, end and speaker, and none emptied. A row that passes is a fix of that line; anything else refuses the
-/// whole answer with the reason the model is shown on its next try.
 pub fn rows_to_fixes(lines: &[Line], rows: &[AnsweredRow]) -> Result<Vec<Reply>, String> {
     if rows.len() != lines.len() {
         return Err(format!(
@@ -353,7 +292,7 @@ pub fn rows_to_fixes(lines: &[Line], rows: &[AnsweredRow]) -> Result<Vec<Reply>,
     Ok(fixes)
 }
 
-/// S2: the checkpoint before a block goes out. Recorded rather than drawn — F0.5 owns the bar.
+/// S2: the checkpoint before a block goes out.
 pub fn checkpoint(block: usize, blocks: usize, source: &str) -> String {
     format!(">>> fixing {source}: block {block}/{blocks}")
 }
@@ -364,8 +303,7 @@ pub struct BlockOutcome {
     /// The block with the fixes applied: every time and speaker is the one that was there.
     pub lines: Vec<Line>,
     pub fixed: usize,
-    /// What `flag_line` recorded — a wrong speaker, or a row nobody can make out. Not this step's call:
-    /// the fixer raises these through its own tool, and they are what S6 is handed.
+    /// What `flag_line` recorded — a wrong speaker, or a row nobody can make out.
     pub flags: Vec<(u32, String)>,
     /// False only when the tries ran out, in which case the caller keeps the ASR original.
     pub valid: bool,
@@ -373,16 +311,14 @@ pub struct BlockOutcome {
     pub attempt: u32,
 }
 
-/// A row the fixer could not read. `flag_line`'s reasons name what it saw, so this is a type and not an
-/// enum: the reason is for a person, and §3 says a flag never decides anything on its own.
+/// A row the fixer could not read.
 pub const GARBAGE: &str = "cannot be made out";
 
 /// What a model is told when its answer held no rows.
 pub const NO_LINES: &str =
     "the answer held no lines -- answer with the lines asked, start, end, speaker and text separated by tabs";
 
-/// A one-line block answered with the sentence alone: the time and speaker can only be its own. It must still read as
-/// that line, sharing at least half its words, or a remark about the line would become the line.
+/// A one-line block answered with the sentence alone: the time and speaker can only be its own.
 fn bare_row(lines: &[Line], reply: &[Reply]) -> Option<AnsweredRow> {
     let [line] = lines else { return None };
     let [Reply::Bare(text)] = reply else {
@@ -405,13 +341,6 @@ fn bare_row(lines: &[Line], reply: &[Reply]) -> Option<AnsweredRow> {
 }
 
 /// S3: one block through the fixer's tools.
-///
-/// `ask` is handed [`ask_text`]'s message — with the previous refusal appended when there was one —
-/// and answers with the [`Reply`] calls the model made: `fix_line`, `flag_line`, a `get_lines` read-back,
-/// `finish`. Every one goes through [`apply_reply`], so a number outside the block or a text carrying a
-/// tab comes back as an error naming that line and is put in front of the model on the next try; the
-/// other calls of the reply still land, which is what the prototype's all-or-nothing discard could not
-/// do. A block whose tries run out is `valid: false`, and its original stands.
 pub fn fix_block<F>(lines: &[Line], context: &str, mut ask: F) -> Result<BlockOutcome, String>
 where
     F: FnMut(&str) -> Result<Vec<Reply>, String>,
@@ -471,9 +400,6 @@ where
                 }
             }
         }
-        // Every call of the reply goes through the tool surface, and every answer comes back — a
-        // `flag_line` note or a `get_lines` read-back is an answer, not a refusal. The first refusal is
-        // what ends this try, since that is the one thing the model has to hear about.
         let answers = apply_reply(&mut block, &reply);
         match answers.iter().find(|answer| refused(answer)) {
             Some(answer) => refusals.push(refusal_reason(answer)),
@@ -499,7 +425,6 @@ where
     })
 }
 
-/// The block's lines with the fixes applied, back in `textfmt`'s shape.
 fn apply(block: &Block, lines: &[Line]) -> Vec<Line> {
     block
         .apply()
@@ -514,9 +439,7 @@ fn apply(block: &Block, lines: &[Line]) -> Vec<Line> {
         .collect()
 }
 
-/// S4: what a block that ran out of tries says. The originals standing is the outcome worth logging —
-/// a reader who sees only "failed" looks for a crash, and there was none: the answer would not validate
-/// twice, so this block keeps the ASR's own lines and every other block still gets fixed.
+/// S4: what a block that ran out of tries says.
 pub fn block_failed_log(base: &str, index: usize, total: usize) -> String {
     format!(
         ">>> [{base}] block {}/{total} failed validation, keeping original lines",
@@ -525,22 +448,12 @@ pub fn block_failed_log(base: &str, index: usize, total: usize) -> String {
 }
 
 /// S3: how many of this source's blocks were read back from `cache/llm/fix` rather than asked again.
-/// Worth the line because a re-run that asks everything twice looks, from the outside, like a run that
-/// had forgotten it had already answered.
 pub fn cached_blocks_log(base: &str, cached: usize) -> String {
     format!(">>> [{base}] {cached} block(s) answered from the cache")
 }
 
 /// S3: the cache key for a block — §6's digest over its own rows, times and text included, and over `prompt`,
-/// the wording and User Context the block is asked under ([`crate::fix_call::cache_prompt`]). Two runs of the
-/// same transcript under the same prompt ask the identical question, so they read the same answer; one
-/// changed line, or a changed prompt or context, asks a different one. The first rewrite keyed on the rows
-/// alone, so a rule added to the profile's `## fix` section never reached a block already answered.
-///
-/// The part list is `llm_cache`'s, so this file names its entries the same sha256 hex every other
-/// caching job does rather than a hash of its own. The `user` part is the block spelled exactly as
-/// [`ask_text`] spells it when there is no surrounding context — the rows are what decide the answer,
-/// and the grounding window only repeats them with their neighbours.
+/// the wording and User Context the block is asked under ([`crate::fix_call::cache_prompt`]).
 pub fn block_key(prompt: &str, lines: &[Line]) -> String {
     let request = crate::llm_cache::Request {
         system: prompt,
@@ -552,20 +465,18 @@ pub fn block_key(prompt: &str, lines: &[Line]) -> String {
         run_index: None,
         // The fixer's ask goes to whatever model Settings names, but the caller here has no settings in
         // hand: the block's rows decide the respelling, and the model that spelled it is unknown at this
-        // height. Spelled empty rather than guessed at, so it cannot collide with a real model id.
+        // height.
         model: "",
         thinking: false,
     };
     crate::llm_cache::key(&crate::llm_cache::parts(&request)).expect("a block of rows always keys")
 }
 
-/// S3: a block's stored reply, if it has one. Only valid blocks are written here, so a re-run re-asks
-/// a block that failed rather than replaying its failure.
+/// S3: a block's stored reply, if it has one.
 pub fn cached_block(tree: &Tree, prompt: &str, lines: &[Line]) -> Option<Vec<Reply>> {
     let text = crate::llm_cache::read_at(tree, FIX_STEP, &block_key(prompt, lines))?;
     // §09 §10: the block's stored reply writes its own `cache` line, with no time on the wire, so the
-    // file shows what the re-run saved. The model column stays empty for the same reason `block_key`
-    // leaves it empty: at this height nothing knows which model spelled the answer.
+    // file shows what the re-run saved.
     crate::request_timing::record_cached(
         tree,
         crate::server_leg::base_row(
@@ -578,8 +489,6 @@ pub fn cached_block(tree: &Tree, prompt: &str, lines: &[Line]) -> Option<Vec<Rep
         ),
     );
     let mut out = Vec::new();
-    // The rows kept are the ones whose text differs from what the ASR heard — exactly the set of
-    // `fix_line` calls to replay.
     for (index, (stored, original)) in text.lines().zip(lines).enumerate() {
         if stored != original.text {
             out.push(Reply::Fix {
@@ -588,17 +497,11 @@ pub fn cached_block(tree: &Tree, prompt: &str, lines: &[Line]) -> Option<Vec<Rep
             });
         }
     }
-    // An answer that changed nothing is still an answer: a re-run of a clean transcript reads it back
-    // rather than asking about the same rows again.
     Some(out)
 }
 
 /// S3: store a block's outcome, one line per row in the block's own order, under the block's input: the
-/// fixed lines whichever try earned them, or the ASR lines when every try was refused. The same input reads it
-/// back and asks nothing, and it is validated again on every replay as a live answer is ([`cached_block`] goes
-/// through [`fix_block`]). The first rewrite filed only a first-try answer (§6's old "second irregularity"),
-/// so a block answered right only on its retry, or refused on every try, was asked again on every run although
-/// nothing about it had changed (08-dex 18-41-59: a text-only first answer, then one speaker label miscopied).
+/// fixed lines whichever try earned them, or the ASR lines when every try was refused.
 pub fn store_block(
     tree: &Tree,
     prompt: &str,
@@ -618,17 +521,11 @@ pub fn store_block(
 }
 
 /// S3: the tool calls one ask is allowed to make.
-///
-/// A reply is a list of `fix_line(n, text)` calls and nothing else — §3's rule that the model never
-/// rewrites the block wholesale. So an answer arriving as anything but a fix (`flag_line`'s note, or
-/// `finish`) goes back through [`Block`] and comes back as its own answer; only a fix changes a row.
 pub fn apply_reply(block: &mut Block, reply: &[Reply]) -> Vec<String> {
     reply
         .iter()
         .map(|call| match call {
             Reply::Fix { n, text } => block.fix_line(*n, text),
-            // `flag_line` records a note and `get_lines`/`finish` answer questions: neither is refused,
-            // and neither ends the flow.
             Reply::Flag { n, why } => block.flag_line(*n, why),
             Reply::Done => crate::tools::ok(&serde_json::json!({ "finished": true })),
             // Rows are turned into fixes by `fix_block` before a reply is applied; one reaching here says so.
@@ -644,7 +541,6 @@ pub fn apply_reply(block: &mut Block, reply: &[Reply]) -> Vec<String> {
 /// One call in a reply, as §3's tool surface spells it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reply {
-    /// An answer with no rows: one line of plain text, which only a one-line block can read.
     Bare(String),
     Fix {
         n: u32,
@@ -657,14 +553,10 @@ pub enum Reply {
     Done,
     /// One row of a wire answer, held against the block by [`fix_block`] before it becomes a fix.
     Row(AnsweredRow),
-    /// An answer with no rows in it at all: refused, with the reason the model hears next.
     Unreadable(String),
 }
 
-/// S4: the source's own fixed files. A recorder writes `commentary.fixed.tsv` because its words are
-/// the narration rather than content, and only a video gets `subtitles.srt` — there is nothing to
-/// caption over an audio file. The subtitles show the *fixed* text: they are for watching, not for
-/// auditing what the ASR heard.
+/// S4: the source's own fixed files.
 pub fn write_fixed(
     tree: &Tree,
     source: &str,
@@ -692,9 +584,7 @@ pub fn write_fixed(
 }
 
 /// S5: everything on one timeline — each source's fixed rows plus the things that happened on screen,
-/// which are rows too because the cut has to know where the slide changed. Sorted by start with a
-/// stable sort, so two rows in the same second keep the order they were handed over in rather than
-/// shuffling between runs.
+/// which are rows too because the cut has to know where the slide changed.
 pub fn merge_session(
     lines_by_source: &[(String, Vec<Line>)],
     events_by_source: &[(String, Vec<FrameEvent>)],
@@ -730,14 +620,12 @@ pub fn merge_session(
     rows
 }
 
-/// S5: what the merge says. Sources are counted once each, events included, so a screen recording with
-/// no speech at all still shows up in the total.
+/// S5: what the merge says.
 pub fn timeline_log(rows: usize, sources: usize) -> String {
     format!(">>> session timeline: {rows} rows across {sources} source(s)")
 }
 
-/// A stretch the marking pass marked — an abandoned take, or a join to read straight past. F1.9 and
-/// F1.10 own what produces one; this step only folds them into the text the cut reads.
+/// A stretch the marking pass marked — an abandoned take, or a join to read straight past.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mark {
     pub start: f64,
@@ -747,12 +635,7 @@ pub struct Mark {
 }
 
 /// S6: run the marking pass `P.policy.markingPass` names — retakes ([`crate::tools`]' F1.9 pass) or
-/// joins (F1.10's). F1.9 and F1.10 own what produces a mark; this step only calls for one and folds the
-/// answer in.
-///
-/// `MarkingPass::None` asks for nothing — that is a policy, not an omission. A failure is not this
-/// step's failure either: the timeline is written and usable, so the caller logs [`marking_log`] and
-/// continues unmarked rather than losing the fixes it just paid for.
+/// joins (F1.10's).
 pub fn marks_for<F>(pass: MarkingPass, mut mark: F) -> Result<Vec<Mark>, String>
 where
     F: FnMut() -> Result<Vec<Mark>, String>,
@@ -764,13 +647,7 @@ where
 }
 
 /// S6/S7: fold the marks into the timeline's text, one line apiece.
-///
-/// It says ALREADY REMOVED in plain words because that is what the cut does with them, on the word:
-/// told only that a stretch was "not kept", a model ends its segment in front of the mark instead — and
-/// its own boundary is coarser than the mark, so every marker would cost a word off the sentence before
-/// it. Rows inside a mark contribute nothing of their own, however many there are.
 pub fn fold_marks(rows: &[SessionLine], marks: &[Mark]) -> String {
-    // No narrator here: this is the shape of the fold, and a caller that has one calls [`labelled`].
     labelled(rows, "", marks)
 }
 
@@ -778,7 +655,6 @@ pub fn fold_marks(rows: &[SessionLine], marks: &[Mark]) -> String {
 /// the same text, which is why `session.txt` is written from here rather than rendered later.
 pub fn labelled(rows: &[SessionLine], narrator: &str, marks: &[Mark]) -> String {
     let mut out = String::new();
-    // One line per mark, however many rows fall inside it.
     let mut folded: Vec<bool> = vec![false; marks.len()];
     for row in rows {
         match marks.iter().position(|mark| covers(mark, row)) {
@@ -812,8 +688,7 @@ pub fn labelled(rows: &[SessionLine], narrator: &str, marks: &[Mark]) -> String 
     out
 }
 
-/// S6: what a marking pass that could not run says. Named for the pass, because "retakes" and "joins"
-/// are different things to go looking for.
+/// S6: what a marking pass that could not run says.
 pub fn marking_log(err: &str, pass: MarkingPass) -> String {
     let name = match pass {
         MarkingPass::Joins => "joins",
@@ -822,9 +697,7 @@ pub fn marking_log(err: &str, pass: MarkingPass) -> String {
     format!("!!! {name}: {err} -- the timeline stands unmarked")
 }
 
-/// S7: who a row is shown as. The narrator's own microphone is labelled by its role rather than by a
-/// diariser that has never heard anyone else, an empty speaker says what it means, and an event is not
-/// a person at all.
+/// S7: who a row is shown as.
 pub fn label(source_base: &str, speaker: &str, narrator: &str) -> String {
     if speaker == "EVENT" {
         return "EVENT".to_string();
@@ -838,16 +711,12 @@ pub fn label(source_base: &str, speaker: &str, narrator: &str) -> String {
     speaker.to_string()
 }
 
-/// S7: a moment on the session clock, as the cut model is shown it. `mm:ss` because a bare second count
-/// has to be divided by hand before it can be compared with anything ([`crate::tools::mm_ss`]).
+/// S7: a moment on the session clock, as the cut model is shown it.
 pub fn stamp(seconds: f64) -> String {
     crate::tools::mm_ss(seconds)
 }
 
 /// S7: a stretch, `mm:ss-mm:ss`.
-/// S7: one line of `session.txt` — `[<start>s-<end>s | mm:ss] LABEL: text`. The seconds are on the
-/// left because the model that reads this file answers in them (every cut point it proposes is a number
-/// of seconds); the `mm:ss` beside them is what a person scanning the same line for a moment recognises.
 pub fn stamp_span(start: f64, end: f64) -> String {
     format!("{}-{}", stamp(start), stamp(end))
 }
@@ -864,7 +733,6 @@ pub fn session_line(start: f64, end: f64, label: &str, text: &str) -> String {
     )
 }
 
-/// A second as `session.txt` spells it: whole numbers lose the `.0`, fractions keep what they need.
 fn stamp_seconds(value: f64) -> String {
     if value == value.trunc() {
         return format!("{}", value as i64);
@@ -876,8 +744,6 @@ fn stamp_seconds(value: f64) -> String {
     text.trim_end_matches('.').to_string()
 }
 
-/// The text of one row on one line: the block underneath this list is already a wall of lines, and a
-/// wrapped row reads as two rows.
 fn flatten(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -895,8 +761,6 @@ pub fn session_text(rows: &[SessionLine], narrator: &str, marks: &[Mark]) -> Str
     labelled(rows, narrator, marks)
 }
 
-/// Does this mark cover this row? A row starting exactly on a mark's end is outside it — that is where
-/// the take that replaced the abandoned one begins.
 fn covers(mark: &Mark, row: &SessionLine) -> bool {
     row.start >= mark.start && row.start < mark.end
 }
@@ -906,8 +770,7 @@ pub fn write_session_text(tree: &Tree, text: &str) -> Result<(), String> {
     textfmt::write_rows_or_none(&tree.session_txt(), text)
 }
 
-/// What the whole step produced. `marked` is false when the policy said none or the pass failed — in
-/// which case the timeline still stands, unmarked.
+/// What the whole step produced.
 #[derive(Debug, Clone, Default)]
 pub struct Outcome {
     pub logs: Vec<String>,
@@ -922,13 +785,7 @@ pub struct Outcome {
     pub files: Vec<PathBuf>,
 }
 
-/// Does this source still owe the fixer anything? Its fixed file is what the per-source fix rows leave
-/// behind, so a source that has one was walked by them this run and owes nothing more; a source without one
-/// (a resumed run, a fix row that failed or was skipped) still owes its blocks.
-///
-/// Counted on the FILE rather than on `cache/llm/fix` on purpose: an incomplete answer is deliberately not
-/// cached (§S3, so a failed block is re-asked next run), and a source whose blocks all failed is exactly
-/// the case the session walk exists to try again with every recording's grounding around it.
+/// Does this source still owe the fixer anything?
 pub fn owes_the_fixer(tree: &Tree, source: &Source) -> bool {
     let path = match source.is_commentary {
         true => tree.commentary_fixed_tsv(&source.base),
@@ -938,12 +795,6 @@ pub fn owes_the_fixer(tree: &Tree, source: &Source) -> bool {
 }
 
 /// S1-S7 for one session.
-///
-/// `ask` is the fixer: handed [`ask_text`]'s message, it answers with the `fix_line` calls the model
-/// made for that block. `mark` is F1.9's or F1.10's pass, called once and only when
-/// [`MarkingPass`] asks for it. Times arrive on the session clock: a source's `start` is where its own
-/// second nought sits, and rows are placed by adding it — the same rule [`crate::clock`] keeps
-/// everywhere else, which is what lets a lane, a transcript and a cut agree.
 pub fn run<F, M>(
     tree: &Tree,
     sources: &[Source],
@@ -977,7 +828,6 @@ where
         .collect();
     write_offsets(tree, &placed)?;
 
-    // S1: load everything, so a block's context can name another source's rows without re-reading.
     let mut lines_by_source: Vec<(String, Vec<Line>)> = Vec::new();
     let mut events_by_source: Vec<(String, Vec<FrameEvent>)> = Vec::new();
     for source in &placed {
@@ -996,7 +846,6 @@ where
         events_by_source.push((source.base.clone(), events));
     }
 
-    // S2-S4: block by block, source by source.
     let mut fixed_by_source: Vec<(String, Vec<Line>)> = Vec::new();
     for source in &placed {
         let own = lines_by_source
@@ -1027,9 +876,6 @@ where
                 block.last().map(|line| line.end).unwrap_or(0.0),
             );
             let context = context_text(from, to, &source.base, &placed, &every_line, &every_event);
-            // S3: the cache is keyed on the block's own rows, so a re-run of an unchanged transcript
-            // reads its answer back instead of paying for the same question twice. `fix_block` builds
-            // the message it asks with: [`ask_text`] over the grounding from `context_text`.
             let cached = cached_block(tree, prompt, &block);
             let from_cache = cached.is_some();
             let outcome = match cached {
@@ -1046,11 +892,7 @@ where
                 out.logs.push(give_up_log(&source.base, index, total));
             }
             if !from_cache {
-                // [`store_block`]'s rule: the outcome is filed under the block's input, whichever try earned it
-                // and also when every try was refused (the ASR lines kept), and an answer just read back is not
-                // written again.
                 if let Err(err) = store_block(tree, prompt, &block, &outcome.lines) {
-                    // A cache that will not write is not a reason to lose the fix.
                     out.logs.push(format!("!!! could not keep the fix: {err}"));
                 }
             }
@@ -1066,7 +908,6 @@ where
         fixed_by_source.push((source.base.clone(), fixed_lines));
     }
 
-    // S5: the merged timeline.
     let rows = merge_session(&fixed_by_source, &events_by_source);
     textfmt::write_session(&rows, &tree.session_tsv())?;
     out.rows = rows.len();
@@ -1078,7 +919,6 @@ where
         .len();
     out.logs.push(timeline_log(out.rows, out.sources));
 
-    // S6: the marking pass. Its failure is a log line, not this step's end.
     let marks = match marks_for(pass, &mut mark) {
         Ok(marks) => {
             out.marked = !marks.is_empty() && pass != MarkingPass::None;
@@ -1091,7 +931,6 @@ where
     };
     out.marks = marks.len();
 
-    // S7: the text the cut reads, which is also the text the user opens.
     let text = session_text(&rows, narrator, &marks);
     write_session_text(tree, &text)?;
     if tree.session_txt().exists() {

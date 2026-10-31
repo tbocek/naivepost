@@ -1,25 +1,10 @@
 //! F6.1 — `spec/09-llm-and-tools.md` §2's web tools: `web_search` and `web_read`.
 //!
-//! The protocol around them is [`crate::tool_loop`]'s; this module holds what the two tools themselves promise,
-//! which is everything in §2's "Web tools (where offered…)" paragraph except the browser. Fetching stays a
-//! closure the caller passes — the same shape [`tool_loop::run`] uses for `ask` and `call` — so the ladder rule,
-//! the hit cap, the page caps and the descriptions are testable with no network and no firefox, in a container
-//! that has neither.
+//! The protocol is [`crate::tool_loop`]'s; this module holds what the two tools promise (§2's "Web tools" paragraph) except the browser. Fetching is a closure the caller passes (as in [`tool_loop::run`]),
+//! so the ladder rule, caps and descriptions are testable with no network and no firefox.
 //!
-//! # The engine is not here
-//!
-//! §2 says `web_search(broad, medium, narrow)` drives headless Firefox over WebDriver BiDi against DuckDuckGo's
-//! result page, deduping by URL; the prototype does exactly that ([`go/websearch.go`](../../go/websearch.go)'s
-//! `ddgExtract` script and its BiDi client), launching and killing one browser per call on a port each browser chooses itself.
-//! That is a wire protocol, not a rule about what the model sees, so it lives behind the [`Query`] / [`ReadPage`]
-//! closures: what this module decides is which query is asked, in what order, and what comes back when the web
-//! answers, errors or blocks.
-//!
-//! # Ids used
-//!
-//! `P.eng.searchHits` — the hit cap, held as [`tools::WEB_SEARCH_MAX_HITS`] (8). The read cap (§3's row: page
-//! text ≤ 6000 bytes) and the 45 s per call have no `P.` id in §10, so they are [`tools::WEB_READ_MAX_BYTES`]
-//! and [`tools::WEB_CALL_SECONDS`], named once there and re-exported here rather than repeated as numbers.
+//! The engine (headless Firefox over WebDriver BiDi against DuckDuckGo, deduped by URL; the prototype's [`go/websearch.go`](../../go/websearch.go)) lives behind the [`Query`] / [`ReadPage`] closures.
+//! `P.eng.searchHits` is [`tools::WEB_SEARCH_MAX_HITS`] (8); the read cap and 45 s per call have no `P.` id and are [`tools::WEB_READ_MAX_BYTES`] and [`tools::WEB_CALL_SECONDS`].
 
 use serde::Deserialize;
 
@@ -41,8 +26,7 @@ impl Hit {
     }
 }
 
-/// One query of the ladder. `Err` is what the web said — a timeout, a refused navigation; §2's "an erroring
-/// query is skipped" turns that into a step to the next rung rather than an answer to the model.
+/// One query of the ladder. `Err` is what the web said (a timeout, a refused navigation); §2's "an erroring query is skipped" steps to the next rung.
 pub type Query = dyn Fn(&str) -> Result<Vec<Hit>, String>;
 
 /// One page's text. `Err` follows the same rule: the reason comes back as a sentence, never as a failed job.
@@ -50,9 +34,7 @@ pub type ReadPage = dyn Fn(&str) -> Result<String, String>;
 
 // ---- S1: the descriptions, verbatim -----------------------------------------------------
 
-/// §2: "descriptions verbatim in prompts/tools.md". `prompts/tools.md` is explicit that these *are* the
-/// instructions — the only place the model is told when to reach for a tool — so this copies them rather than
-/// paraphrasing, and its tests compare against the spec file itself.
+/// §2: "descriptions verbatim in prompts/tools.md": the only place the model is told when to reach for a tool, so copied, and tests compare against the spec file.
 pub const WEB_SEARCH_DESCRIPTION: &str = "Look up a fact you are about to write into the video and would \
 otherwise guess: what a named thing is, does or costs, a name's spelling, a number. Only for something the \
 material does not contain, and only when the user context asks for a detail you do not have -- not to \
@@ -60,8 +42,7 @@ understand the session, not to check what you have already been told. Give three
 narrow -- the game, the game and the thing, the thing's exact name -- and you get the narrowest one that found \
 anything.";
 
-/// The three argument lines of prompts/tools.md, kept as the schema says them: `required` is all three because
-/// the prompt tells the model to give three queries at once.
+/// The three argument lines of prompts/tools.md; `required` is all three because the prompt asks for three queries at once.
 pub const WEB_SEARCH_ARGUMENTS: [(&str, &str); 3] = [
     ("broad", "the general subject, e.g. the game"),
     ("medium", "the subject and the thing"),
@@ -76,9 +57,7 @@ pub const WEB_READ_DESCRIPTION: &str =
     "Read one page from a web_search result, by its URL, when the snippet did \
 not say enough. Returns the page's text, shortened.";
 
-/// The description that ships with the tool (§2 S1). Only these two have one yet: every other row of §3's
-/// catalogue is to "be described by the same rule", and until that wording exists a name-only offer beats an
-/// instruction this module invented.
+/// The description that ships with the tool (§2 S1). Only these two have one yet; a name-only offer beats an invented instruction.
 pub fn description(tool: &Tool) -> Option<&'static str> {
     match tool {
         Tool::WebSearch => Some(WEB_SEARCH_DESCRIPTION),
@@ -87,16 +66,14 @@ pub fn description(tool: &Tool) -> Option<&'static str> {
     }
 }
 
-/// The job's tools as the wire wants them, with these two descriptions in place. This is [`tool_loop::schemas`]
-/// with §2's hook wired — the call site §1's `tools` array should use.
+/// The job's tools as the wire wants them, with these two descriptions in place ([`tool_loop::schemas`] with §2's hook wired).
 pub fn schemas(offered: &[Tool]) -> Vec<serde_json::Value> {
     tool_loop::schemas(offered, &description)
 }
 
 // ---- S1/S6: the arguments ---------------------------------------------------------------
 
-/// What `web_search` takes. Missing rungs are tolerated rather than refused: a model that only knows the game's
-/// name asked a legitimate question, and answering one query costs less than re-asking for three.
+/// What `web_search` takes. Missing rungs are tolerated: a model that only knows the game's name asked a legitimate question.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SearchArgs {
     #[serde(default)]
@@ -108,11 +85,9 @@ pub struct SearchArgs {
 }
 
 impl SearchArgs {
-    /// Parse the model's argument JSON. A failure comes back as [`tools::error`]'s shape naming what is wrong —
-    /// S6's rule that a problem is an answer the model can act on, not a failed job.
+    /// Parse the model's argument JSON. A failure comes back as [`tools::error`]'s shape naming what is wrong (S6: an answer, not a failed job).
     pub fn from_json(args: &str) -> Result<Self, String> {
-        // The reason is the parse error itself: a model that wrote `"queries": [...]` needs to see that `broad`
-        // is what it left out, and one sentence naming only "bad arguments" would send it guessing.
+        // The reason is the parse error itself: the model needs to see which field it left out.
         serde_json::from_str(args).map_err(|problem| {
             tools::error(&format!(
                 "web_search: could not read the arguments: {problem}"
@@ -142,8 +117,7 @@ pub fn read_url(args: &str) -> Result<String, String> {
 
 // ---- The ladder -----------------------------------------------------------------------
 
-/// The rungs in the order they are asked: broad, medium, narrow, blank ones gone. Trimming happens here so a
-/// rung of spaces is treated as not given rather than searched for.
+/// The rungs in the order asked: broad, medium, narrow, trimmed, blank ones gone.
 pub fn queries<'a>(broad: &'a str, medium: &'a str, narrow: &'a str) -> Vec<&'a str> {
     [broad, medium, narrow]
         .into_iter()
@@ -155,19 +129,14 @@ pub fn queries<'a>(broad: &'a str, medium: &'a str, narrow: &'a str) -> Vec<&'a 
 /// The ladder's answer: which rung produced hits, and those hits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ladder {
-    /// The query the hits came from — logged as `<used>`, because "no results for `narrow`" and "no results for
-    /// anything" are different news to whoever reads the log.
+    /// The query the hits came from, logged as `<used>`: "no results for `narrow`" differs from "no results for anything".
     pub used: String,
     pub hits: Vec<Hit>,
 }
 
-/// Ask the ladder broad → medium → narrow, stopping at the first rung that found nothing after one had already
-/// answered (§2's "the ladder climbs while the web answers"). `ask` is the browser; a query that errors is
-/// skipped and remembered.
+/// Ask the ladder broad → medium → narrow, stopping at the first rung that found nothing after one had answered (§2). `ask` is the browser; an erroring query is skipped and remembered.
 ///
-/// Three endings, each with its own line in §2: a rung answered → those hits; every rung errored → the last
-/// error, so a broken network reads as a failure rather than as an empty web; nothing found anywhere → `Ok`
-/// with no hits, which [`format_hits`] turns into the one sentence that says so.
+/// Endings: a rung answered → those hits; every rung errored → the last error (a broken network is not an empty web); nothing found → `Ok` with no hits ([`format_hits`] says so).
 pub fn climb(ask: &Query, broad: &str, medium: &str, narrow: &str) -> Result<Ladder, String> {
     let mut best: Option<Ladder> = None;
     let mut last_error: Option<String> = None;
@@ -203,9 +172,7 @@ pub fn climb(ask: &Query, broad: &str, medium: &str, narrow: &str) -> Result<Lad
     }
 }
 
-/// Dedupe by URL and cap at [`tools::WEB_SEARCH_MAX_HITS`] (`P.eng.searchHits`). A search engine repeats itself
-/// constantly — the same docs page under two tracking URLs — and a hit list that spends its eight rows on one
-/// page has no room left for the fact.
+/// Dedupe by URL and cap at [`tools::WEB_SEARCH_MAX_HITS`] (`P.eng.searchHits`): one docs page under two tracking URLs must not use up the rows.
 pub fn dedupe(hits: impl IntoIterator<Item = Hit>) -> Vec<Hit> {
     let mut seen: Vec<String> = Vec::new();
     let mut kept = Vec::new();
@@ -222,9 +189,7 @@ pub fn dedupe(hits: impl IntoIterator<Item = Hit>) -> Vec<Hit> {
     kept
 }
 
-/// What the model reads back: a header naming the query that answered, then hits numbered from 1 with the URL
-/// on its own line so a `web_read` can quote it exactly. No hits at all is one sentence, not an empty list —
-/// an empty reply reads to a model as "the tool broke" and it stops using it.
+/// What the model reads back: a header naming the query that answered, then hits numbered from 1 with the URL on its own line. No hits is one sentence, not an empty list (an empty reply reads as "the tool broke").
 pub fn format_hits(ladder: &Ladder) -> String {
     if ladder.hits.is_empty() {
         return "No results for any of the three queries.".to_string();
@@ -241,9 +206,7 @@ pub fn format_hits(ladder: &Ladder) -> String {
 
 // ---- The page -------------------------------------------------------------------------
 
-/// Phrases that mean the page is a wall rather than an article. A captcha handed to the model as "the page's
-/// text" makes it write "verify you are human" into a narration, so each is refused by name and the model is
-/// told which one it hit — enough to pick a different result.
+/// Phrases that mean the page is a wall rather than an article; each is refused by name so the model can pick a different result.
 pub const BOT_WALLS: [&str; 11] = [
     "just a moment",
     "checking your browser",
@@ -259,9 +222,7 @@ pub const BOT_WALLS: [&str; 11] = [
     "too many requests",
 ];
 
-/// Why this text is not readable, in one clause — or nothing when it is. Checked on lowercased text because
-/// walls shout ("ACCESS DENIED") and the comparison should not care. A wall's clause names the phrase that
-/// matched ([`bot_wall_issue`] wraps it); the other two reasons stand alone.
+/// Why this text is not readable, in one clause, or nothing. Checked on lowercased text; a wall's clause names the phrase ([`bot_wall_issue`]).
 pub fn page_issue(text: &str) -> Option<String> {
     let lowered = text.trim().to_lowercase();
     if lowered.is_empty() {
@@ -270,8 +231,7 @@ pub fn page_issue(text: &str) -> Option<String> {
     if let Some(wall) = BOT_WALLS.iter().find(|wall| lowered.contains(*wall)) {
         return Some(bot_wall_issue(wall));
     }
-    // Under this the page is a shell: a bot check that names itself differently, or a render that never
-    // finished. Either way there is no fact in it, and 200 characters of navigation is not a page.
+    // Under this the page is a shell (an unnamed bot check or a render that never finished): no fact in it.
     if lowered.chars().count() < MIN_PAGE_CHARS {
         return Some("the page had almost no text (blocked, or not loaded)".to_string());
     }
@@ -286,9 +246,7 @@ pub fn bot_wall_issue(wall: &str) -> String {
     format!("the page is behind a bot wall ({wall})")
 }
 
-/// Cut page text to [`tools::WEB_READ_MAX_BYTES`] (§3's row), back off to a UTF-8 character boundary so the
-/// result is valid text, and mark that something was removed. A page under the cap comes back untouched — an
-/// ellipsis after a whole page would tell the model the fact it needs might be in what it cannot see.
+/// Cut page text to [`tools::WEB_READ_MAX_BYTES`] (§3's row) on a UTF-8 boundary and mark the cut; a page under the cap comes back untouched.
 pub fn clip_page(text: &str) -> String {
     if text.len() <= tools::WEB_READ_MAX_BYTES {
         return text.to_string();
@@ -297,13 +255,11 @@ pub fn clip_page(text: &str) -> String {
     while cut > 0 && !text.is_char_boundary(cut) {
         cut -= 1;
     }
-    // The marker is not counted against the cap: an ellipsis inside the 6000 would push out real page text to
-    // make room for itself, and every byte of page text in the result should be text the page had.
+    // The marker is not counted against the cap, so every byte of page text in the result is text the page had.
     format!("{} …", &text[..cut])
 }
 
-/// One page as the model sees it: read, checked for a wall, clipped. Every problem is `web_read failed: <reason>`
-/// (§2's wording) — S6 again, an answer rather than a failure, because the model has other results to try.
+/// One page as the model sees it: read, checked for a wall, clipped. Every problem is `web_read failed: <reason>` (§2), an answer not a failure (S6).
 pub fn read(url: &str, fetch: &ReadPage) -> String {
     match fetch(url) {
         Err(problem) => format!("web_read failed: {problem}"),
@@ -322,14 +278,10 @@ pub fn offered(firefox: &str, flatpak: bool) -> bool {
     degraded::web_available(firefox, flatpak)
 }
 
-/// The reason a step got no web tools, once, as §2 logs it — `None` when the step does get them. Flatpak first:
-/// it is the fact that decides before anyone looks at a setting, and naming firefox inside a sandbox would send
-/// someone hunting a binary the sandbox cannot reach anyway.
+/// The reason a step got no web tools, once, as §2 logs it; `None` when it does. Flatpak first: it decides before any setting, and naming firefox inside a sandbox sends someone hunting a binary it cannot reach.
 ///
-/// Three reasons, three lines, because they want different fixes: `off` is somebody having turned the web away;
-/// nothing set at all means no browser was ever named; and a name that is not a binary quotes the filesystem's
-/// reason — §2's `firefox: <stat error>` — which only the caller can supply. That last one is why `found` is an
-/// argument: `/opt/firefox` is unavailable only once the filesystem has said so, and this module reads no disk.
+/// Three reasons, three lines: `off` is somebody turning the web away; nothing set means no browser was named; a name that is not a binary quotes the filesystem's reason (§2's
+/// `firefox: <stat error>`), which only the caller can supply, so `found` is an argument (this module reads no disk).
 pub fn unavailable_log(
     step: &str,
     firefox: &str,
@@ -359,10 +311,7 @@ pub fn unavailable_log(
     Some(format!(">>> {step}: no web search (firefox: {reason})"))
 }
 
-/// A job's catalogue with the web gone when it is unavailable. `tools::offered`'s order is kept so a catalogue
-/// reads the same with and without a browser apart from the two missing rows; [`degraded::offered_offline`] is
-/// the same rule read straight from the settings string, and this is the form for a caller that has already
-/// decided.
+/// A job's catalogue with the web gone when unavailable, in `tools::offered`'s order; [`degraded::offered_offline`] is the same rule read from the settings string.
 pub fn filter(tools: &[Tool], available: bool) -> Vec<Tool> {
     if available {
         return tools.to_vec();
@@ -374,8 +323,7 @@ pub fn filter(tools: &[Tool], available: bool) -> Vec<Tool> {
         .collect()
 }
 
-/// A search as §2 logs it: the three rungs as asked, how many came back, and which one they came from — the
-/// last of those is what tells a reader the narrow query was useless.
+/// A search as §2 logs it: the three rungs as asked, how many came back, and which rung they came from.
 pub fn searched_log(
     step: &str,
     broad: &str,
@@ -389,16 +337,14 @@ pub fn searched_log(
     )
 }
 
-/// A read as §2 logs it. The count is in characters, not bytes: a person judging a page counts words, and the
-/// cap that follows is about how much text the model has to read through.
+/// A read as §2 logs it, counting characters, not bytes.
 pub fn read_log(step: &str, url: &str, characters: usize) -> String {
     format!(">>> {step}: read {url} ({characters} characters)")
 }
 
 // ---- One call -------------------------------------------------------------------------
 
-/// `web_search` as the loop calls it: parse, climb, log, answer. The ladder's line is built here because it is
-/// this function that knows which rung answered; a caller appends it to the run's log.
+/// `web_search` as the loop calls it: parse, climb, log, answer. The ladder's line is built here, which knows which rung answered; a caller appends it to the run's log.
 pub fn search(step: &str, args: &str, ask: &Query) -> (String, Option<String>) {
     let args = match SearchArgs::from_json(args) {
         Ok(args) => args,
@@ -421,8 +367,7 @@ pub fn search(step: &str, args: &str, ask: &Query) -> (String, Option<String>) {
     }
 }
 
-/// `web_read` as the loop calls it: parse the URL, fetch, check, clip. The line counts characters of what the
-/// model is handed back, clipped — that is the cost a reader of the log is being told about.
+/// `web_read` as the loop calls it: parse the URL, fetch, check, clip. The line counts characters of what the model is handed back.
 pub fn read_call(step: &str, args: &str, fetch: &ReadPage) -> (String, Option<String>) {
     let url = match read_url(args) {
         Ok(url) => url,

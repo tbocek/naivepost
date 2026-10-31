@@ -1,14 +1,5 @@
-//! §08-produce#1-screen, the encoder settings: "laid out as label + control pairs in this order, left to
-//! right and then down, as many pairs to a line as the picture shows: three on each of the first two lines,
-//! two on each line after them; each label sits directly left of its own control, and no label or control
-//! overlaps another." Split out because `produce_page.rs` is at its size budget.
-//!
-//! Two grids, because the picture has two: the dropdown lines hold three pairs, and the lines after them two,
-//! whose second labels sit at their own x rather than under Codec's. Every pair owns a label column and a
-//! control column of its own; an earlier layout started each later label one cell back, inside the previous
-//! pair's control column, and GTK drew Codec's label over Container's dropdown and Translate's over the
-//! Subtitles dropdown. One size group gives every first label the same width, so the two grids' first
-//! columns line up as the picture's do.
+//! §08-produce#1-screen encoder settings: label + control pairs, three per line on the first two lines and two on each after, each label directly left of its control.
+//! Two grids because the picture has two; every pair owns its own label and control columns (else GTK drew a label over the previous dropdown), and one size group aligns the first labels.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -16,11 +7,7 @@ use gtk4 as gtk;
 use crate::produce_screen as screen;
 use crate::ui::produce_page::{read_state, row_widget, ProduceState};
 
-/// The picture's lines, by §1's items: **11** the two dropdown lines, **12** Subtitles · Translate, **13**
-/// and **14** Quality beside Frame timing, then Channels and Frame edges. Item 12's "(· Game audio with
-/// narration on)" gets a line of its own under Subtitles: beside a Subtitles dropdown as wide as "none in the
-/// video" and the Translate menu, a slider ran past the column. A row the page does not show (Game audio with
-/// narration off) leaves its line out.
+/// The picture's lines by §1 item: **11** two dropdown lines, **12** Subtitles · Translate, **13**/**14** Quality beside Frame timing, then Channels and Frame edges. Game audio gets its own line (a slider ran past the column); it is left out when narration is off.
 const LINES: [&[&str]; 6] = [
     &["Container", "Codec", "Preset"],
     &["Resolution", "Frame rate", "Audio"],
@@ -30,21 +17,15 @@ const LINES: [&[&str]; 6] = [
     &["Channels", "Frame edges"],
 ];
 
-/// How many of [`LINES`] the first grid holds: the two dropdown lines.
 const DROPDOWN_LINES: usize = 2;
 
-/// Build the settings into `settings` with the values the page currently holds already IN them. Doing it
-/// here, at creation, is what lets `refresh` rebuild the rows whole without a repaint ever landing on a
-/// control that shows a default instead of the state, and it needs no guard, because nothing is wired yet.
-/// The rows come from `settings_rows_shown`, so the Game-audio row is ABSENT when narration is off
-/// (§F4.8), each control named by `row_widget`.
+/// Build the settings into `settings` with the page's current values already in them, so `refresh` can rebuild rows without a repaint landing on a default. Rows come from `settings_rows_shown` (Game audio is absent when narration is off, §F4.8).
 pub(crate) fn build_settings(settings: &gtk::Box) {
     let s = read_state();
     build_settings_from(settings, &s, &screen::settings_rows_shown());
 }
 
-/// The same rows, seeded from `s`, showing the rows in `shown`: the page's own grid, and the Profiles window's
-/// (§03-shell F0.14 S9), which shows every row and reads its values back with [`rows_from`].
+/// The same rows seeded from `s`, showing `shown`: the page's grid and the Profiles window's (§03-shell F0.14 S9), which shows every row and reads back with [`rows_from`].
 pub(crate) fn build_settings_from(settings: &gtk::Box, s: &ProduceState, shown: &[&str]) {
     let first_labels = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
     let (dropdowns, rest) = LINES.split_at(DROPDOWN_LINES);
@@ -52,7 +33,6 @@ pub(crate) fn build_settings_from(settings: &gtk::Box, s: &ProduceState, shown: 
         let grid = gtk::Grid::new();
         grid.set_row_spacing(6);
         grid.set_column_spacing(8);
-        // Numbered over the lines that hold a row, so a line the page does not show leaves no gap.
         let lines = lines
             .iter()
             .map(|rows| rows.iter().filter(|row| shown.iter().any(|r| r == *row)));
@@ -66,8 +46,6 @@ pub(crate) fn build_settings_from(settings: &gtk::Box, s: &ProduceState, shown: 
                 if pair == 0 {
                     first_labels.add_widget(&label);
                 }
-                // The gap between one pair and the next label is the label's own margin, so a control never
-                // ends where the next label's text begins.
                 if pair > 0 {
                     label.set_margin_start(12);
                 }
@@ -79,7 +57,6 @@ pub(crate) fn build_settings_from(settings: &gtk::Box, s: &ProduceState, shown: 
     }
 }
 
-/// One row's control, named by `row_widget` and seeded from the held state.
 fn control(s: &ProduceState, name: &str) -> gtk::Widget {
     match name {
         "Game audio" | "Quality (CRF)" => {
@@ -98,7 +75,6 @@ fn control(s: &ProduceState, name: &str) -> gtk::Widget {
             scale.upcast()
         }
         "Frame timing" | "Channels" | "Frame edges" => {
-            // Three tick rows: the tick carries §A's own word, not the row's name.
             let (tick_label, widget, on) = match name {
                 "Frame timing" => (screen::VFR_TICK, "tick-peak-rate-vfr", s.vfr),
                 "Channels" => (screen::MONO_TICK, "tick-mono", s.mono),
@@ -114,7 +90,6 @@ fn control(s: &ProduceState, name: &str) -> gtk::Widget {
         _ => {
             let picker = gtk::DropDown::from_strings(screen::options(name).unwrap_or(&[]));
             picker.set_widget_name(&row_widget(name));
-            // At its own size, as the picture draws the dropdowns: one that expands takes the line's slack.
             picker.set_halign(gtk::Align::Start);
             if let Some(at) = screen::options(name)
                 .and_then(|list| list.iter().position(|v| *v == held_choice(s, name)))
@@ -127,9 +102,7 @@ fn control(s: &ProduceState, name: &str) -> gtk::Widget {
     }
 }
 
-/// §A's Translate: "menu of ticks", the picture's `Translate: English ⌄`. The button names the ticked
-/// languages, or "none"; its popover holds one `translate-tick-<language>` per offered language, built from
-/// `translate_options` so the session's own language is never offered.
+/// §A's Translate: "menu of ticks". The button names the ticked languages or "none"; the popover holds one `translate-tick-<language>` per offered language.
 fn translate_menu(s: &ProduceState) -> gtk::MenuButton {
     let menu = gtk::MenuButton::new();
     menu.set_widget_name(&row_widget("Translate"));
@@ -150,10 +123,7 @@ fn translate_menu(s: &ProduceState) -> gtk::MenuButton {
     menu
 }
 
-/// What the Translate button reads: the ticked languages in order, or "none".
-///
-/// The language the video is spoken in is never translated into, whatever a profile ticked (§F5.4 S3 drops it by
-/// code), so it is not named here either: a German video with English and German ticked reads "English".
+/// What the Translate button reads: the ticked languages in order, or "none". The video's own spoken language is never named (§F5.4 S3 drops it).
 pub fn translate_label(ticked: &[String], spoken: &str) -> String {
     let own = crate::roles::language_code(spoken);
     let shown: Vec<&str> = ticked
@@ -168,7 +138,6 @@ pub fn translate_label(ticked: &[String], spoken: &str) -> String {
     }
 }
 
-/// The value the page holds for one dropdown row, so [`build_settings`] can seed the picker.
 fn held_choice<'a>(s: &'a ProduceState, row: &str) -> &'a str {
     match row {
         "Container" => s.container.as_str(),
@@ -189,8 +158,7 @@ fn setting_label(text: &str) -> gtk::Label {
     label
 }
 
-/// The rows as a grid built by [`build_settings_from`] holds them now, in §A's order and spelled as a profile's
-/// `## produce` section spells them: what the Profiles window saves.
+/// The rows as a built grid holds them, spelled as a profile's `## produce` section: what the Profiles window saves.
 pub(crate) fn rows_from(settings: &gtk::Widget) -> Vec<(String, String)> {
     let find = |name: &str| find_in(settings, name);
     screen::defaults()
@@ -207,7 +175,6 @@ pub(crate) fn rows_from(settings: &gtk::Widget) -> Vec<(String, String)> {
                     (if on { "on" } else { "off" }).to_string()
                 }
                 "Translate" => {
-                    // Only a grid that holds the Translate menu answers for it (the Narrate form has none).
                     find(&row_widget(row))?;
                     let ticked: Vec<&str> = screen::TRANSLATE_LANGUAGES
                         .into_iter()
@@ -268,9 +235,7 @@ fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
         .and_then(|popover| find_in(popover.upcast_ref(), name))
 }
 
-/// The same rows as flowing pairs, for the Profiles window (§03-shell F0.14 S9): each label with its control is
-/// one item, as many to a line as the width holds and stacking as it narrows, every item as wide as the widest
-/// so they line up in columns. The Produce page keeps its picture's fixed lines ([`build_settings_from`]).
+/// The same rows as flowing pairs for the Profiles window (§03-shell F0.14 S9), every item as wide as the widest. The Produce page keeps its fixed lines ([`build_settings_from`]).
 pub(crate) fn build_settings_flow(settings: &gtk::Box, s: &ProduceState, shown: &[&str]) {
     let flow = gtk::FlowBox::new();
     flow.set_widget_name("produce-flow");
@@ -290,7 +255,6 @@ pub(crate) fn build_settings_flow(settings: &gtk::Box, s: &ProduceState, shown: 
         pair.append(&control(s, name));
         flow.insert(&pair, -1);
     }
-    // A pair is a form row, not something to select or activate.
     let mut child = flow.first_child();
     while let Some(current) = child {
         current.set_focusable(false);

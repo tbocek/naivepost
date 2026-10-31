@@ -1,13 +1,7 @@
 //! Fix's session halves: §F1.8 S1's placement row and S5–S7's merge, marking and text.
 //!
-//! [`crate::fix_transcripts`] holds every rule of F1.8 and spawns nothing; [`crate::fix_call`] is the
-//! request leg that respells ONE source's transcript block by block. What neither did was the SESSION
-//! half — `offsets.tsv` before any block goes out, the merged `session.tsv`, the marking pass the policy
-//! names, and the `session.txt` the cut model reads. Those are one row at each end of the fix stage, so
-//! the order the flowchart draws is the order the walk runs them in.
-//!
-//! Both rows are DIALS like the vision and frames rows (`program:` markers the walk calls instead of
-//! forks), because their work is file arithmetic over the whole session rather than one command per row.
+//! [`crate::fix_transcripts`] holds the F1.8 rules and spawns nothing; [`crate::fix_call`] respells ONE source's transcript. This is the SESSION half: `offsets.tsv` before any block goes out, the merged `session.tsv`, the policy's marking pass and `session.txt`.
+//! Both rows are DIALS (`program:` markers the walk calls instead of forks): their work is file arithmetic over the whole session.
 
 use crate::layout::Tree;
 use crate::project::{MarkingPass, Project};
@@ -19,8 +13,7 @@ pub const PLACEMENT_TASK: &str = "naivepost:fix-placement";
 /// The marker for the trailing row: merge, mark, and write `session.tsv` + `session.txt`.
 pub const SESSION_TASK: &str = "naivepost:fix-session";
 
-/// The placement row, but only when the session has sources to place — an empty session has no clock to
-/// place, and writing an empty `session.tsv` would claim a run happened when nothing could have.
+/// The placement row, only when the session has sources: an empty `session.tsv` would claim a run happened.
 pub fn placement_rows(project: &Project) -> Vec<run_stages::Task> {
     (!project.sources.is_empty())
         .then(placement_row)
@@ -71,12 +64,8 @@ pub fn run_placement(
 
 /// The walk's door for the merge row: S5, S6 and S7.
 ///
-/// The session fix step (§F1.8 S1-S4 over every recording) is what runs FIRST here — [`session_fix`],
-/// i.e. [`crate::fix_transcripts::run`] asking through the same leg the per-source fix rows use — and only
-/// if it found no answers on disk: every block that read its reply back from `cache/llm/fix` costs no ask,
-/// which is §S3's resume rule, and a run that already fixed this session re-asks nothing. A session with
-/// no settings folder (nothing to dial: no server, no model) skips the step and keeps the honest timeline
-/// out of whatever transcripts are on disk.
+/// The session fix step (§F1.8 S1-S4 over every recording, [`session_fix`] via [`crate::fix_transcripts::run`]) runs FIRST, and only if some source has no answers on disk: blocks read back from `cache/llm/fix` cost no ask (§S3's resume rule).
+/// A session with no settings folder skips the step and merges whatever transcripts are on disk.
 pub fn run_session(
     _task: &crate::run_stages::Task,
     log: &mut impl FnMut(&str),
@@ -84,10 +73,7 @@ pub fn run_session(
 ) -> Result<(), String> {
     let tree = session_tree()?;
     let project = crate::project::load(tree.dir()).unwrap_or_default();
-    // §S3's resume rule decides whether anything is left to ask. A source whose FIXED file is already on
-    // disk was walked by the per-source fix rows of this run — nothing is owed for it. Anything else (a
-    // resumed run, a fix row that failed or was skipped) still owes the fixer its blocks, and a session with
-    // any such source gets the whole-session walk, over EVERY recording at once.
+    // §S3's resume rule: a source whose FIXED file is on disk was walked by this run's per-source rows. Any other (resumed run, failed or skipped fix row) still owes blocks, and gets the whole-session walk over EVERY recording.
     let placed = placed_sources(&project);
     if placed
         .iter()
@@ -98,10 +84,7 @@ pub fn run_session(
     merge_mark_write(&tree, &project, log, reached)
 }
 
-/// §F1.8 S1–S4 for the whole session in one walk: place, block by block over EVERY recording, write the
-/// fixed files. Its `ask` is [`crate::fix_call::ask_block`], the one door the clean-transcript job dials
-/// through, so §3.1's `get_lines`/`get_events` reads stay answerable and §09 §5's bound is applied by
-/// `llm_request::body` to each block. S5–S7 are [`merge_mark_write`]'s, on the files this walk wrote.
+/// §F1.8 S1–S4 for the whole session in one walk: place, block by block over EVERY recording, write the fixed files. `ask` is [`crate::fix_call::ask_block`], the clean-transcript job's door (§3.1 reads stay answerable, §09 §5's bound is applied by `llm_request::body`).
 pub fn session_fix(
     tree: &Tree,
     project: &Project,
@@ -109,8 +92,7 @@ pub fn session_fix(
     reached: &mut dyn FnMut(f64, &str),
 ) -> Result<(), String> {
     let Some(paths) = crate::settings::from_environment() else {
-        // No settings folder means nothing to dial. The merge still owes a timeline from whatever
-        // transcripts are on disk, so this is a silent skip rather than a failure.
+        // No settings folder means nothing to dial; the merge still owes a timeline, so a silent skip.
         return Ok(());
     };
     let conf = crate::settings::read(&paths).unwrap_or_default();
@@ -137,15 +119,7 @@ fn session_tree() -> Result<Tree, String> {
         .map_err(|_| format!("{}: not a project folder to fix into", session.display()))
 }
 
-/// Every source as this step sees it: its lane, its stamped name, and which kind of recording it is.
-///
-/// `is_video` follows `footage` and `is_commentary` follows `narrator == 1`, exactly as
-/// [`crate::fix_call::stage`] spells both onto its rows, so the two halves of the stage cannot disagree
-/// about whether a source owes `subtitles.srt` or `commentary.fixed.tsv`.
-/// The project's rows in session-clock order: by the start the timestamp in each file name places it at
-/// ([`placed_sources`]), stable, so rows with no timestamp keep the order they were added in. The rows' own
-/// order is how they were added, which for 07-news was newest first: the session word list followed it, so
-/// every join asked about the wrong side of the wrong pair.
+/// The project's rows in session-clock order: by the start each file name's timestamp places it at ([`placed_sources`]); stable, so unstamped rows keep their added order.
 pub fn in_clock_order(project: &Project) -> Vec<&crate::project::Source> {
     let placed = placed_sources(project);
     let mut order: Vec<usize> = (0..project.sources.len()).collect();
@@ -186,8 +160,7 @@ pub fn placed_sources(project: &Project) -> Vec<fix_transcripts::Source> {
         .collect()
 }
 
-/// The lane a project row files its transcripts under: the stem of its file name, the same rule
-/// [`crate::audio_task::source_lane`] and [`crate::fix_call`] use.
+/// The lane a project row files its transcripts under: the stem of its file name (as [`crate::audio_task::source_lane`] and [`crate::fix_call`]).
 fn lane_of(source: &crate::project::Source) -> String {
     let name = source.path.rsplit('/').next().unwrap_or(&source.path);
     match name.split_once('.') {
@@ -198,8 +171,7 @@ fn lane_of(source: &crate::project::Source) -> String {
 
 /// S1: place every source and write `offsets.tsv`, saying each pairing out loud.
 ///
-/// Returns the placed list so a caller that needs the seconds (the merge below) reads them from here
-/// rather than computing the clock a second time.
+/// Returns the placed list so the merge reads the seconds from here, not a second clock computation.
 pub fn place_and_write(
     tree: &Tree,
     project: &Project,
@@ -220,15 +192,13 @@ pub fn merge_mark_write(
     log: &mut impl FnMut(&str),
     reached: &mut dyn FnMut(f64, &str),
 ) -> Result<(), String> {
-    // S1 again, cheaply: the merge places rows on the session clock, and a run that reached this row
-    // without the placement row (a resumed run, a hand-made plan) still gets the same seconds.
+    // S1 again, cheaply: a run that reached this row without the placement row still gets the same seconds.
     let placed = place_and_write(tree, project, &mut |_| {})?;
     let mut lines_by_source: Vec<(String, Vec<Line>)> = Vec::new();
     let mut events_by_source: Vec<(String, Vec<FrameEvent>)> = Vec::new();
     for source in &placed {
         let at = source.start;
-        // The FIXED rows if the fix rows wrote them, the ASR rows if they did not: the timeline is owed
-        // every word either way, and a source whose fixer refused still belongs on it.
+        // The FIXED rows if the fix rows wrote them, else the ASR rows: a source whose fixer refused still belongs on the timeline.
         let mut lines = read_fixed(tree, source);
         for line in lines.iter_mut() {
             line.start += at;
@@ -256,8 +226,7 @@ pub fn merge_mark_write(
         .len();
     log(&fix_transcripts::timeline_log(rows.len(), sources));
 
-    // S6: the pass P.policy.markingPass names. Its failure is a sentence, not this row's end: the
-    // timeline on disk is usable, and losing the fixes to a marking refusal would be the worse error.
+    // S6: the pass P.policy.markingPass names. Its failure is a sentence, not this row's end: losing the fixes to a marking refusal would be worse.
     let pass = crate::policy::marking_pass_of(&project.policy);
     let marks = match fix_transcripts::marks_for(pass, || {
         run_marking_pass(tree, project, pass, log, reached)
@@ -295,9 +264,7 @@ fn fallback_transcript(tree: &Tree, source: &fix_transcripts::Source) -> Vec<Lin
     fix_transcripts::load_transcript(tree, &source.base).unwrap_or_default()
 }
 
-/// The narrator's lane: the row ticked as the narrator, since §4 labels that microphone by role rather
-/// than by a diariser. Empty when nobody was named — an unlabelled speaker is honest, an invented one is
-/// a claim about a person no recording identified.
+/// The narrator's lane: the row ticked as the narrator (§4 labels that microphone by role, not by diariser). Empty when nobody was named: no invented speaker.
 pub fn narrator_of(project: &Project) -> String {
     project
         .sources
@@ -307,9 +274,7 @@ pub fn narrator_of(project: &Project) -> String {
         .unwrap_or_default()
 }
 
-/// S6: run whichever marking pass the policy names, through the doors those items own, and read back the
-/// stretches they wrote. A pass that produced nothing but ran is NOT an error: an empty mark list is a
-/// real answer, and the timeline simply goes unmarked.
+/// S6: run whichever marking pass the policy names and read back the stretches they wrote. A pass that ran and produced nothing is not an error.
 pub fn run_marking_pass(
     tree: &Tree,
     project: &Project,
@@ -337,8 +302,7 @@ pub fn run_marking_pass(
     Ok(marks_to_fix(&stored))
 }
 
-/// A stored mark as this step folds it: `to` is where the removal ends (wider than `e` when everything up
-/// to the abandoned words goes with them), and `again == 0.0` means "no later take to read instead".
+/// A stored mark as this step folds it: `to` is where the removal ends (wider than `e` when the abandoned words go with everything up to them), `again == 0.0` means no later take.
 pub fn marks_to_fix(stored: &[Retake]) -> Vec<fix_transcripts::Mark> {
     stored
         .iter()

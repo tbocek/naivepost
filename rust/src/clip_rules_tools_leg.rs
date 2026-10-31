@@ -1,20 +1,4 @@
 //! §2's tool loop for the three per-clip jobs of §3.7 — captions, speed and decorations.
-//!
-//! All three offer their tools (`tools::offered(Job::ClipRules)` carries `add_caption`, `set_clip_speed`,
-//! `add_effect`, `get_frames` and `finish`) yet until this round each ask site made ONE chat call and read
-//! `tool_calls` off the single reply. Two of §2's promises were therefore unkept for these steps: a model that
-//! asked `get_frames` — which §3.7 offers "so a zoom can be aimed" — got silence, and the round lines
-//! `>>> captions: round 1 of 8 — the model asked for add_effect{…}` could never print, because there was no
-//! round to number.
-//!
-//! [`run_over_batch`] is that loop: the same [`crate::tool_loop::run`] every other tool flow uses, with the CLIP
-//! BATCH as the state the tools write into. A call is answered by the very object §3.7's rules live in
-//! ([`Clips::add_caption`], [`Clips::set_clip_speed`], [`Clips::add_effect`]), so a call and a prose answer are
-//! decided through ONE route and cannot disagree — the same reason `join_ask` answers `drop_words` on its `Join`.
-//!
-//! The prose path stays alive on purpose: a server that answers `{"fx": […]}` / `{"clips": […]}` /
-//! `{"speeds": […]}` in content rather than calling a tool still gets the F3.9/F3.10/F3.11 treatment, because
-//! those passes' tests pin that shape. [`Run::job_calls` / `Run::prose`] is where a caller reads the answer back.
 
 use crate::exchanges::{Message, Part, ToolCall};
 use crate::tool_loop;
@@ -22,17 +6,6 @@ use crate::tools::clips::Clips;
 use crate::tools::Tool;
 
 /// Run one §3.7 ask as a tool conversation.
-///
-/// * `offered` — the job's tools; the loop refuses to run anything it cannot deliver (§2 S4).
-/// * `ask` — one round: the caller dials and answers with the round's calls plus whether `finish` was called.
-/// * `batch` — the clips the tools write into; what survives it IS the answer, exactly as the prose path's
-///   parser reads the prose answer.
-///
-/// Returns the loop's log lines (§2's round/call notes, §4's exhaustion line) and its outcome. The caller
-/// decides what the outcome means for its own pass, because the three passes disagree on purpose: one bad clip
-/// number loses a whole captions batch (§F3.9) while a refused rate costs one clip of a speed batch (§F3.10).
-/// How one §3.7 round is asked: the caller dials and answers with the round's calls plus whether `finish` was
-/// called. Named because clippy is right that the inline type is hard to read, and both entry points write it.
 type Ask<'a> = &'a mut (dyn FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String> + 'a);
 
 pub fn run_over_batch(
@@ -60,8 +33,6 @@ pub struct Round {
 }
 
 /// [`run_over_batch`] with the FIRST round's answer already in hand — which is how all three cut passes work:
-/// their first request went out before the loop existed (§2 S5's plain-call shape), so feeding that turn back is
-/// what keeps a live ask at one request when the model answers in prose, and at two when it asked for something.
 pub fn run_over_batch_from(
     step: &str,
     first: &tool_loop::Turn,
@@ -70,7 +41,6 @@ pub fn run_over_batch_from(
     batch: &mut Clips,
     ask: Ask<'_>,
 ) -> Run {
-    // A job with no tools in the catalogue has nothing to loop over; the caller keeps its own plain call.
     if offered.is_empty() {
         return Run {
             run: tool_loop::Run {
@@ -85,23 +55,13 @@ pub fn run_over_batch_from(
             rounds: Vec::new(),
         };
     }
-    // Every call the model made, in the order it made them. The assistant turns in `tool_loop::Run::messages`
-    // keep only the model's TEXT (§7 puts the calls on the exchange page as notes, not in the turn), so a caller
-    // that needs the calls — and all three passes do, because their `Asked`/`Parsed` shapes ARE call lists —
-    // could not read them back afterwards. Holding them here is the honest place: the loop asked, this saw the
-    // answer, so the list is the program's own and not a test's guess.
+    // Every call the model made, in the order it made them.
     let mut asked: Vec<ToolCall> = Vec::new();
-    // Every round as it ran: the conversation at that moment plus the answered calls. §7 files one section per
-    // request, so a step that asked three times owes three sections, and each one can only be drawn from the state
-    // THIS round had — reading it back off the finished conversation would show every round the last one's messages.
+    // Every round as it ran: the conversation at that moment plus the answered calls.
     let mut rounds: Vec<Round> = Vec::new();
-    // Whether the round now being asked is the one whose answer the caller already dialled. An EMPTY first turn is
-    // no turn at all: a pass that dials its first round inside the loop (`captions_ask` before any tool call) has
-    // nothing to hand back, and feeding an empty turn would end the run before the wire was ever tried.
+    // Whether the round now being asked is the one whose answer the caller already dialled.
     let mut owed = !first.calls.is_empty() || !first.content.trim().is_empty();
     let mut probe = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
-        // The caller's first turn is handed straight back: it is already on the wire and in `requests.tsv`, and
-        // asking for it again would double the request every pass is counted by.
         let mut turn = if owed {
             owed = false;
             first.clone()
@@ -109,19 +69,14 @@ pub fn run_over_batch_from(
             ask(conversation, tools)?
         };
         asked.extend(turn.calls.iter().cloned());
-        // Remember what this round was SHOWN and what it ANSWERED. §7 files one section per request, and only the
-        // round itself can say which conversation it was looking at: reading it back off the finished conversation
-        // would show every round the last one's messages. The calls travel unanswered because the loop answers
-        // them next, through [`answer`]; writing their results back afterwards (see below) is what keeps a call's
-        // verdict identical everywhere it is read — the log line, the next request's `tool` message, and the page.
+        // Remember what this round was SHOWN and what it ANSWERED.
         rounds.push(Round {
             messages: conversation.to_vec(),
             turn: turn.clone(),
         });
         // `finish` is this job's own end signal (§2 S3) and the loop reads it off the Turn, so set it here, at
         // the one place that sees the real calls: a round that called `finish` beside its work tool (exactly how
-        // a model closes an `add_caption` answer) ENDED the job. Leaving it false would make the loop treat a
-        // closed answer as an open one and keep asking for what it was already given.
+        // a model closes an `add_caption` answer) ENDED the job.
         turn.finish = turn.finish
             || turn
                 .calls
@@ -132,18 +87,7 @@ pub fn run_over_batch_from(
     let run = tool_loop::run(step, messages, offered, &mut probe, |call| {
         answer(call, batch)
     });
-    // Write each round's ANSWERED calls back into the round that made them. This happens after the loop rather
-    // than inside the ask because answering there would need the batch twice over at once (the loop answers the
-    // same calls itself), and re-running `answer` afterwards could report a different verdict for a call whose
-    // effect the first run already consumed — e.g. a stretch merged or a clip count that moved. So the results
-    // are taken from the conversation the loop grew: §2 S2 put one `tool` message per call there, in ask order,
-    // which is exactly where the wire carries them too.
-    //
-    // The rounds are matched to their turns by what each was SHOWN rather than by counting assistant turns: the
-    // loop sometimes inserts a user turn of its own (§2's `finish` nudge) and a quiet round adds no assistant
-    // turn at all, so position-in-the-list is not a reliable identity. What IS reliable is that the loop grows
-    // the conversation strictly, so the messages recorded for round k+1 always contain everything round k was
-    // shown, plus that round's answer.
+    // Write each round's ANSWERED calls back into the round that made them.
     let assistants: Vec<usize> = run
         .messages
         .iter()
@@ -186,8 +130,6 @@ pub fn run_over_batch_from(
                 call.result = result;
             }
         }
-        // Whatever the loop decided about this round, `finish` was the model's own word: keep it set on the round
-        // that said it, so a caller reading its rounds back sees the same end signal the loop saw.
         round.turn.finish = round
             .turn
             .calls
@@ -203,15 +145,12 @@ pub fn run_over_batch_from(
 }
 
 /// Answer a whole round's calls against the batch and return the §7 notes for them, in order — the lines a step
-/// logs so a refusal (a rate over a captioned clip, §F3.10 S2) is SAID rather than quietly dropped. Same door the
-/// loop uses for its own rounds; a caller that dialled its first round outside the loop needs it to reach the same
-/// sentence.
+/// logs so a refusal (a rate over a captioned clip, §F3.10 S2) is SAID rather than quietly dropped.
 pub fn answer_calls(calls: &[ToolCall], batch: &mut Clips) -> Vec<String> {
     calls.iter().map(|call| call_note_of(call, batch)).collect()
 }
 
-/// One answered call as §7 shows it. [`tool_loop::call_note`] is the log's wording — a bare
-/// `[tool call name(args)]`, which is right in a scrolling log and says nothing about the outcome there.
+/// One answered call as §7 shows it.
 fn call_note_of(call: &ToolCall, batch: &mut Clips) -> String {
     let mut done = call.clone();
     done.result = answer(call, batch);
@@ -224,13 +163,13 @@ pub struct Run {
     /// Every call the model made, reads included, in the order it made them.
     pub calls: Vec<ToolCall>,
     /// One entry per request the loop made, each holding the conversation that round was shown and its ANSWERED
-    /// calls. This is what lets a step file §7's page honestly: one section per round, results and all.
+    /// calls.
     pub rounds: Vec<Round>,
 }
 
 impl Run {
     /// The model's last spoken text — the prose answer of a round that made no calls, the shape F3.9, F3.10 and
-    /// F3.11 were written against. `None` when every round answered by calling a tool.
+    /// F3.11 were written against.
     pub fn prose(&self) -> Option<String> {
         self.run
             .messages
@@ -264,10 +203,6 @@ impl Run {
 }
 
 /// Answer one §3.7 call against the batch: the read first, then this job's three tools, then `finish`.
-///
-/// A problem comes back as [`crate::tools::error`]'s `{"error": …}` sentence, which §2 S6 sends to the model as
-/// text and never treats as a failed job — so a call for a clip outside the batch or an unknown effect kind is an
-/// answer the model can correct itself from, not an ending.
 pub fn answer(call: &ToolCall, batch: &mut Clips) -> String {
     let args: serde_json::Value =
         serde_json::from_str(&call.args).unwrap_or_else(|_| serde_json::json!({}));
@@ -279,7 +214,7 @@ pub fn answer(call: &ToolCall, batch: &mut Clips) -> String {
         })
     };
     match call.name.as_str() {
-        // §3.7's read: the clip's frames, so a zoom can be aimed. `at` selects the nearest stamped frame.
+        // §3.7's read: the clip's frames, so a zoom can be aimed.
         "get_frames" => frames_of(batch, number("clip").map(|n| n as u32), number("at")),
         "add_caption" => match (
             number("clip").map(|n| n as u32),
@@ -317,10 +252,6 @@ pub fn answer(call: &ToolCall, batch: &mut Clips) -> String {
 }
 
 /// `get_frames` over a clip batch: the stamped offsets of one clip, or of every clip when none is named.
-///
-/// §3.7 offers this "so a zoom can be aimed", so the answer must name the offsets the model can then copy into
-/// `add_effect(start/end)` — clip-relative seconds, the space every other number in this request is in. A clip
-/// outside the batch is the §3.1 error, not an empty list.
 fn frames_of(batch: &Clips, clip: Option<u32>, at: Option<f64>) -> String {
     let wanted: Vec<u32> = match clip {
         Some(clip) => vec![clip],
@@ -342,44 +273,22 @@ fn frames_of(batch: &Clips, clip: Option<u32>, at: Option<f64>) -> String {
 }
 
 /// §3's reading of these three calls, as answered in `spec/QUESTIONS.md`: the tools ARE on the wire, and
-/// "a reply that only carries a JSON document instead of tool calls [is] unreadable, asking again".
-///
-/// These three doors are the wording and the one-more-dial that decision needs, shared by all three passes for
-/// the same reason `cut_captions::clip_outside` is: one judgement, phrased once, so captions, speed and
-/// decorations cannot disagree about what an answer-without-a-call means.
-///
-/// The correction sent back into the conversation: what the model wrote instead of calling.
-///
-/// This is the sentence `llm_repair_leg::ask_repair_after` puts in the retry turn (`retryTurn`) and the one its
-/// log quotes, so a person reading the log sees the model's own mistake, not a parse error it never made.
+/// "a reply that only carries a JSON document instead of tool calls `is` unreadable, asking again".
 pub fn no_calls_problem(tool_name: &str) -> String {
     format!("the answer is a JSON document, not a tool call -- call `{tool_name}` (or `finish`) instead")
 }
 
-/// The failure a person reads when even the retry answered in prose. `step` is the pass's own step string, and
-/// the callers wrap this unchanged (`!!! captions: {reason}`), so the sentence is final here.
+/// The failure a person reads when even the retry answered in prose.
 pub fn no_calls_reason(step: &str, tool_name: &str) -> String {
     format!("{step}: no tool call in the answer -- asked again and got a JSON document instead of `{tool_name}`")
 }
 
-/// The log sink `ask_repair_after` will take. Its `log` argument must be a `&dyn Fn(&str)` of SOME concrete
-/// type, and a `&dyn Fn` passed straight in is a `&dyn Fn` — a double indirection it cannot name — so the
-/// caller's sink is wrapped in a small locally-typed closure. The wording it prints is
-/// [`llm_repair_leg::repair_log`]'s, one call to it, so the two cannot drift.
+/// The log sink `ask_repair_after` will take.
 fn log_through<'a>(log: &'a (dyn Fn(&str) + 'a)) -> Box<dyn Fn(&str) + 'a> {
     Box::new(move |line: &str| log(line))
 }
 
-/// Ask once more, and only once, for a tool call. §3's repair leg does the mechanics (the correction rides in
-/// the conversation, one extra request, never two); this decides what counts as answered: a call, not prose.
-///
-/// * `Ok(reply)` — the second round called at least one tool, so the caller reads ITS calls as the answer.
-/// * `Err(reason)` — it answered in prose again ([`no_calls_reason`]), or the extra dial itself failed.
-///
-/// The repair leg is [`crate::llm_repair_leg::ask_repair_after`] reached through its own dial/build closures, not
-/// its own body: everything about the retry except the correction (§1's request contract, this step's `Mode`,
-/// the offer the first round carried) belongs to the calling pass, which hands those two closures below.
-/// `ask_repair_after` writes §3's `>>> <step>: the answer could not be used (…) -- asked again` line itself.
+/// Ask once more, and only once, for a tool call.
 #[allow(clippy::too_many_arguments)] // three closures, each owned by the caller's own wire shape
 #[allow(clippy::type_complexity)] // the two closures ARE the caller's wire shape; naming them elsewhere helps nothing
 pub fn ask_again_for_calls(
@@ -393,9 +302,6 @@ pub fn ask_again_for_calls(
 ) -> Result<crate::llm_request::Reply, String> {
     // `retry_turn`'s `tools_active` is false on purpose: the model made NO call, so it is not mid-round and the
     // correction arrives as a `user` turn, which is what a model that answered with a document expects.
-    // `thinking` is false for the same kind of reason one level up: all three clip-rule prompts are thinking-OFF
-    // (`prompts::mode_of` over §4's table picks `Mode::Execute` for `captions`/`speed`/`effects`), so §3's
-    // `thinkAgain` has nothing left to turn off and cannot change the retry.
     let verdict = |again: &crate::llm_request::Reply| {
         again
             .tool_calls
@@ -420,11 +326,7 @@ pub fn ask_again_for_calls(
     Ok(reply)
 }
 
-/// The chat envelope a round answered with, rebuilt for the cache. §6 keeps what the pass READ, and what these
-/// three passes read out of a tool round is its CALLS, so the stored bytes carry them the same way the wire did
-/// (which is also the shape `parse_speeds`/`parse_effects` already read back). `content` holds only what the
-/// model SAID beside its calls, spelled out: a document in the content is not the answer (§3's answer on this
-/// item: a call is), and a reader would otherwise prefer it over the calls.
+/// The chat envelope a round answered with, rebuilt for the cache.
 pub fn answering_envelope(reply: &crate::llm_request::Reply) -> serde_json::Value {
     let said: Vec<String> = reply
         .tool_calls
@@ -441,9 +343,7 @@ pub fn answering_envelope(reply: &crate::llm_request::Reply) -> serde_json::Valu
     })
 }
 
-/// Whether an answer carries any work call at all -- `finish` and a read (`get_frames`) aside. A round that
-/// asked for none is a whole answer (§F3.9's `{clips:[]}` in tool shape), so nothing is cached for it: §6 will
-/// not store a `nothing`, because a step that could still be answered later never would be.
+/// Whether an answer carries any work call at all -- `finish` and a read (`get_frames`) aside.
 pub fn asks_for_anything(reply: &crate::llm_request::Reply) -> bool {
     reply
         .tool_calls
@@ -455,9 +355,7 @@ pub fn asks_for_anything(reply: &crate::llm_request::Reply) -> bool {
 /// door -- which is exactly the ask-again round: the repair leg owns how the retry is built and dialled, so it
 /// cannot also go through the patience ladder, and §09 §10 still wants the request on the record ("every request
 /// to any of them is timed and written to the project's `requests.tsv`"; a refused answer is still a request the
-/// run paid for). `base` carries the identity fields of the ask that made it; the timings are the round's own
-/// elapsed time on the same clock every other row is stamped on. `llm_retry_leg::chat` files a row only for what
-/// IT dials, so a repair that had to wait leaves its wait rows there and this one on top: one line per request.
+/// run paid for).
 pub fn record_repair_row(
     tree: &crate::layout::Tree,
     mut base: crate::requests::Request,
@@ -473,10 +371,6 @@ pub fn record_repair_row(
 }
 
 /// The batch a §3.7 ask was built about, in the shape [`Clips`] wants.
-///
-/// The captions and speeds passes carry `(number, length)` pairs, and a clip's captions are OFFSETS inside that
-/// clip (§F3.9), so every clip starts at zero in that space. A wrong `start` would make the tool clamp into the
-/// wrong clip — the very mistake §3.7's tool exists to prevent.
 pub fn batch_of(clips: &[(u32, f64)]) -> Clips {
     Clips::new(
         &clips

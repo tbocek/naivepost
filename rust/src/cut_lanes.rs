@@ -1,26 +1,13 @@
 //! §05-cut#2 — cut lanes built from a source's own metadata. `spec/05-cut.md` §B: "Cut lanes: {name, src,
 //! at, off, dur} windows of a file on a row of its own; **built from the source's metadata or probed**; name,
 //! name-2 …".
-//!
-//! The Copy verb already made a lane because a copy carries its own length. A footage file that was never
-//! copied carries none, so before this module ⇲ Lane could only place a lane someone had already handed over
-//! — the model's lane windows existed only when a test wrote them. This module asks ffprobe, which is what §B
-//! says to do, and refuses with the reason when the answer does not come.
-//!
-//! Split out of `window.rs`, which is past its size budget.
 
 use crate::cut::Lane;
 
-/// §B's naming rule: the base name first, then `-2`, `-3` … past whatever rows are taken. The ladder itself
-/// is `cut_copy::lane_name`'s — one answer to "what does a second row of this file get called" — called here
-/// with the FILE's own stem instead of the Copy verb's word "Copied".
 pub fn lane_name(taken: &[String], src: &str) -> String {
     crate::cut_copy::lane_name(src, taken)
 }
 
-/// The window §B describes: `src` is the file, `at` the session second the row starts at, `off` 0 because a
-/// whole file lands at its own beginning (the Copy verb passes the FILE second it took from instead), and
-/// `dur` the length the probe answered.
 pub fn lane_from(source_path: &str, at: f64, duration_seconds: f64, taken: &[String]) -> Lane {
     let stem = std::path::Path::new(source_path)
         .file_stem()
@@ -36,12 +23,6 @@ pub fn lane_from(source_path: &str, at: f64, duration_seconds: f64, taken: &[Str
     }
 }
 
-/// Ask ffprobe how long a file is — §B's "or probed", through the one runner the program already has
-/// ([`crate::run_stages::probe_duration`], which logs its command like every other subprocess). `None` plus
-/// the reason when there is no answer: no ffprobe, an unreadable file, or output that is not a number.
-///
-/// Returns `Result` rather than `Option` so the caller can say WHY (§00-principles: failure is specific and
-/// local), and the caller decides whether the sentence is a refusal or a log line.
 pub fn probe_duration(
     configured_ffmpeg: &str,
     path: &str,
@@ -50,20 +31,10 @@ pub fn probe_duration(
     crate::run_stages::probe_duration(configured_ffmpeg, std::path::Path::new(path), log)
 }
 
-/// The status line when the length cannot be had: names the file and the reason, per §00-principles'
-/// "name the model and the reason where it failed".
 pub fn no_probe_status(path: &str, reason: &str) -> String {
     format!("{path}: no length from ffprobe \u{2014} {reason}")
 }
 
-/// §05-cut F2.5 badge **2** — the lane's name plate says WHICH CHANNELS that row is.
-///
-/// Wording taken from the prototype the spec was written from (`go/cut_audio.go`'s `laneName`,
-/// spelled again in `go/cut.go`'s Inputs tooltip): a one-channel file says `mono` rather than
-/// `L`, which would imply a missing right; a two-channel file drawn on ONE lane says `L=R`,
-/// because it is not a mono file but a stereo file carrying one signal in both channels, and a
-/// lane calling itself `mono` would look like the page had lost a channel; a two-channel file
-/// drawn on TWO lanes says `L` then `R`, in lane order.
 pub fn channel_layout(
     chans: u8,
     lanes_on_this_file: usize,
@@ -78,9 +49,6 @@ pub fn channel_layout(
     "mono"
 }
 
-/// The plate badge 2 asks for: the lane's own name plus its layout, e.g. the spec picture's
-/// `2026-09-16 17-26-20 mono`. No layout answers the bare name (§0: a probe that cannot answer is
-/// said on the log, never guessed at).
 pub fn plate(name: &str, layout: Option<&str>) -> String {
     match layout {
         Some(layout) => format!("{name} {layout}"),
@@ -88,8 +56,6 @@ pub fn plate(name: &str, layout: Option<&str>) -> String {
     }
 }
 
-/// The ffprobe question for ONE stream's channel count: the first audio stream only, and
-/// `nk=1` drops the `channels=` key name so [`parse_channels`] sees a bare `2`.
 pub fn channels_args(path: &std::path::Path) -> Vec<String> {
     vec![
         "-v".to_string(),
@@ -104,9 +70,6 @@ pub fn channels_args(path: &std::path::Path) -> Vec<String> {
     ]
 }
 
-/// Parse what ffprobe prints for `stream=channels`: `"2\n"` → 2, `"1"` → 1. Empty output (no
-/// audio stream, an unreadable file) or anything whose leading digits are not a positive count
-/// answers `None`; the caller says so rather than inventing a shape.
 pub fn parse_channels(answer: &str) -> Option<u8> {
     let text = answer.trim();
     if text.is_empty() {
@@ -117,9 +80,6 @@ pub fn parse_channels(answer: &str) -> Option<u8> {
     (chans > 0).then_some(chans)
 }
 
-/// Ask the tool. `run` is the leg that starts it — the program passes
-/// [`crate::source_probe::run_ffprobe`], a test passes its stub — so this module never dials a
-/// binary by itself. Same split as [`crate::cut_fps::probe`].
 pub fn probe_channels(
     ffprobe: &str,
     path: &std::path::Path,
@@ -131,20 +91,7 @@ pub fn probe_channels(
     parse_channels(&answer)
 }
 
-/// One file's channel count, probed once and remembered: the band rebuilds its scene on every
-/// refresh (`cut_view::band_scene_for`), so an un-cached plate would cost a subprocess per paint.
-/// A miss is cached too, as `cut_fps` caches a failed rate, so a file with no audio is not
-/// re-asked on every repaint either.
 fn channels_of(lane_src: &str) -> Option<u8> {
-    // Resolved the one way a lane's file is resolved anywhere else: `lane_hear::lane_file`
-    // hands `layout::resolve` the app root and the session folder as the project. The root is
-    // the one the window already works from — `layout::Tree::new(&session_dir)` is how
-    // `ui::window` and `open_apply` take theirs on, so the parent of that folder is the root —
-    // and with no window (a unit test, a bare probe) there is nothing to resolve against and
-    // the stored string is taken as it stands.
-    // Resolving matters because a lane's stored src is `project:sources/x.wav`: probed raw,
-    // ffprobe is asked for `<cwd>/project:sources/x.wav`, answers nothing, and the plate loses
-    // its layout for a file that is sitting in the project.
     let root: Option<std::path::PathBuf> = crate::ui::window::narrate_session_tree()
         .and_then(|tree| tree.dir().parent().map(|root| root.to_path_buf()))
         .or_else(|| std::env::current_dir().ok());
@@ -179,10 +126,6 @@ fn channels_of(lane_src: &str) -> Option<u8> {
     found
 }
 
-/// The plates for every cut lane, in `Scene.lanes`' order: each lane's name with the layout of
-/// the file it windows, counted against how many lanes share that file (two lanes of a stereo
-/// file are L and R; one lane of it is L=R). This is what the band paints, so the rule lives here
-/// and the painter only draws.
 pub fn plates(lanes: &[Lane]) -> Vec<String> {
     let mut per_file: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for lane in lanes {

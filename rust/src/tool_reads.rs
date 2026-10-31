@@ -1,17 +1,9 @@
 //! The §3.1 SHARED reading tools, answered: `get_context`, `get_lines`, `get_events` and `get_frames`.
 //!
-//! These are offered to most jobs — `tools::offered(Job::CleanTranscript)` carries all four reads,
-//! `Job::Describe` carries three of them — but nothing in `src` used to answer one. A model that asked
-//! for the lines around a block got silence, which is worse than a refusal: §3's rule is that a problem
-//! comes back as `{"error": …}` and the flow continues, so an unanswered read reads to the model as a
-//! tool that does not exist and it stops trying.
+//! Offered to most jobs (`tools::offered(Job::CleanTranscript)` carries all four reads), and an unanswered read reads to the model as a tool that does not exist; §3 says a problem comes back as `{"error": …}` and the flow continues.
 //!
-//! [`dispatch`] answers from what the CALLING leg already has in hand ([`Context`]) rather than opening
-//! files of its own: the same seconds the request was built from are the seconds a read must return, or
-//! the model is handed a different timeline than the one it is answering about. No globals, no re-read.
-//!
-//! Returns `None` for a name this module does not own — which includes `finish`, whose check list belongs
-//! to each job — so a caller tries its own job's tools first (or after) and one call site can serve both.
+//! [`dispatch`] answers from what the CALLING leg has in hand ([`Context`]), not files of its own: a read must return the same seconds the request was built from. No globals, no re-read.
+//! Returns `None` for a name this module does not own (including `finish`, whose check list belongs to each job).
 
 use serde_json::json;
 
@@ -20,16 +12,13 @@ use crate::roles::Job;
 use crate::textfmt::{FrameEvent, Line};
 use crate::tools;
 
-/// What the leg asking has on hand. Borrowed, because every caller already owns these vectors and a read
-/// must describe THAT batch, not a fresh copy of the session.
+/// What the leg asking has on hand, borrowed: a read must describe THAT batch, not a fresh copy of the session.
 pub struct Context<'a> {
     /// The User Context, which `get_context` hands back verbatim (§3.1).
     pub user_context: &'a str,
     /// Which job is asking: `get_context` answers with the policy fields THAT job reads, not all of them.
     pub job: Job,
-    /// The policy fields worth telling this job about, as `(name, value)` pairs already spelled the way
-    /// `naivepost.json` spells them (`markingPass`, `minSceneSeconds`, …). The caller picks them because
-    /// only the caller knows which section of §10 its job reads.
+    /// The policy fields worth telling this job about, as `(name, value)` pairs spelled as `naivepost.json` spells them; the caller picks them (it knows which §10 section its job reads).
     pub policy: &'a [(&'a str, String)],
     /// The transcript rows, in the order the request numbered them — `get_lines` counts from 1 over THESE.
     pub lines: &'a [Line],
@@ -41,9 +30,7 @@ pub struct Context<'a> {
 
 /// Answer one shared read, or `None` when the call belongs to the caller's own job tools.
 ///
-/// Every bad argument is a [`tools::error`] sentence naming what the model should send instead — never a
-/// panic, never an empty string, and never a silent drop (§3: problems come back as `{"error": …}` and do
-/// not end the flow).
+/// Every bad argument is a [`tools::error`] sentence naming what the model should send instead (§3), never a panic or silent drop.
 pub fn dispatch(ctx: &Context, call: &ToolCall) -> Option<String> {
     let args: serde_json::Value = serde_json::from_str(&call.args).unwrap_or_else(|_| json!({}));
     match call.name.as_str() {
@@ -51,17 +38,12 @@ pub fn dispatch(ctx: &Context, call: &ToolCall) -> Option<String> {
         "get_lines" => Some(lines_of(ctx, &args)),
         "get_events" => Some(events_of(ctx, &args)),
         "get_frames" => Some(frames_of(ctx, &args)),
-        // `finish` is deliberately NOT answered here even though §3.1 lists it as shared: every job ends
-        // with ITS OWN check list (§3.2's frames still without an event, §3.8's clips with no line,
-        // §3.6's segments and footage), and one anonymous `{"finished":true}` would pre-empt all of them.
-        // The caller's job tools answer it; returning None is what lets them.
+        // `finish` is NOT answered here although §3.1 lists it as shared: every job ends with ITS OWN check list, and one anonymous `{"finished":true}` would pre-empt them.
         _ => None,
     }
 }
 
-/// `get_context`: the User Context plus the fields this job's rules read. Empty context answers with an
-/// empty field rather than an error — "there is no User Context" is information the model needs, since
-/// several prompts tell it to prefer that text over its own guesses.
+/// `get_context`: the User Context plus the fields this job's rules read. An empty context answers with an empty field, not an error: "no User Context" is information the model needs.
 fn context_of(ctx: &Context) -> String {
     let mut fields = serde_json::Map::new();
     for (name, value) in ctx.policy {
@@ -77,9 +59,7 @@ fn context_of(ctx: &Context) -> String {
     }))
 }
 
-/// The job spelled the way §2's table spells it. `roles::Job` carries no display name of its own and
-/// adding one here would be a second catalogue, so this maps only what `get_context` can ever be asked
-/// by -- the jobs that get shared reads offered.
+/// The job spelled as §2's table spells it; maps only the jobs that get shared reads (`roles::Job` has no display name and a second catalogue would drift).
 fn job_name(job: Job) -> &'static str {
     match job {
         Job::Describe => "what is on screen",
@@ -99,8 +79,7 @@ fn job_name(job: Job) -> &'static str {
     }
 }
 
-/// `get_lines(from, to)`: 1-based over the rows the request numbered, stamped the way the request stamps
-/// them so a number the model reads back means the second it was shown.
+/// `get_lines(from, to)`: 1-based over the rows the request numbered, stamped as the request stamps them.
 fn lines_of(ctx: &Context, args: &serde_json::Value) -> String {
     let (Some(from), Some(to)) = (number(args, "from"), number(args, "to")) else {
         return tools::error("get_lines needs \"from\" and \"to\" line numbers");
@@ -135,9 +114,7 @@ fn lines_of(ctx: &Context, args: &serde_json::Value) -> String {
     tools::ok(&json!({"from": first, "to": last, "lines": rows}))
 }
 
-/// `get_events(from, to)`: the EVENT lines whose span touches those session seconds. Overlap, not
-/// containment — an event that started before the window still reads as the same picture inside it,
-/// which is the same rule `fix_transcripts::context_text` applies to the grounding it sends unasked.
+/// `get_events(from, to)`: the EVENT lines whose span touches those session seconds (overlap, not containment; as `fix_transcripts::context_text`).
 fn events_of(ctx: &Context, args: &serde_json::Value) -> String {
     let (Some(from), Some(to)) = (number(args, "from"), number(args, "to")) else {
         return tools::error("get_events needs \"from\" and \"to\" session seconds");
@@ -160,10 +137,7 @@ fn events_of(ctx: &Context, args: &serde_json::Value) -> String {
 
 /// `get_frames`: name the frames this request covers.
 ///
-/// The pictures themselves travel with the request (the vision leg puts them in the message as data
-/// URLs), so re-encoding them here would double the bytes for nothing — what the model lacks is which
-/// FRAME NUMBER each stamp belongs to, which is exactly what this answers. `clip` is accepted and
-/// echoed because §3.7's per-clip passes ask by clip; the range form is `from`/`to` seconds.
+/// The pictures travel with the request as data URLs; what the model lacks is which FRAME NUMBER each stamp belongs to. `clip` is accepted and echoed because §3.7's per-clip passes ask by clip; the range form is `from`/`to` seconds.
 fn frames_of(ctx: &Context, args: &serde_json::Value) -> String {
     if ctx.frames.is_empty() {
         return tools::error("this request carried no frames to read");
@@ -197,8 +171,7 @@ fn frames_of(ctx: &Context, args: &serde_json::Value) -> String {
     tools::ok(&json!({"frames": frames, "already_sent": true}))
 }
 
-/// A JSON number read as f64, accepting a quoted number: servers have been seen to quote them, and
-/// refusing a `"4"` would turn a spelling into a failed read.
+/// A JSON number read as f64, accepting a quoted number (servers quote them).
 fn number(args: &serde_json::Value, key: &str) -> Option<f64> {
     match args.get(key)? {
         serde_json::Value::Number(number) => number.as_f64(),

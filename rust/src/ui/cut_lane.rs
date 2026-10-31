@@ -1,19 +1,10 @@
 //! §05-cut#2 §B — ⇲ Lane with **nothing in hand**: put a footage FILE on a row of its own.
-//!
-//! §B spells a lane as "a window of a file on a row of its own; built from the source's metadata or
-//! probed". With a copy in hand the seconds come along with it (that half stays in [`crate::cut_copy`] and
-//! `window::press_lane`); with nothing copied there is no hand to read, so the page asks ffprobe how long
-//! the session's footage file is and files that as the row. A probe that cannot answer is refused by name
-//! rather than filed as an empty row (§00-principles: failure is specific and local).
-//!
-//! Split out of `window.rs`, which is past its size budget; every rule about WHICH second and WHICH file
-//! stays with the doors that hold them (`paste_line_opt`, `footage_file`, `newest_review_cut`).
 
 use crate::cut_copy;
 use crate::ui::window;
 
 /// ⇲ Lane with nothing copied: the row starts at the red line, windows the session's footage file, and runs
-/// for what ffprobe says that file is. Returns the sentence for the status line either way.
+/// for what ffprobe says that file is.
 pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
     let Some(at) = paste_line_opt(window) else {
         return cut_copy::NO_LANE_LINE_YET.to_string();
@@ -80,9 +71,7 @@ fn file_lane(
     cut_copy::lane_status(seconds, 0.0, &name, at)
 }
 
-/// Is a line placed at all? `None` (never placed) and `Some(false)` both mean there is nothing to start a
-/// row at — the page has exactly one notion of this, set by `note_place` / `set_line_position`, and every
-/// sibling module reads that same cell (`cut_svg`, `cut_speed_hand`, …).
+/// Is a line placed at all?
 fn line_is_placed() -> bool {
     window::INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
 }
@@ -93,15 +82,6 @@ pub(crate) fn paste_line_opt(window: &adw::ApplicationWindow) -> Option<f64> {
 }
 
 /// The line the copy lands on — where the eye is looking, which is what "paste at the red line" asks for.
-///
-/// A transport that is actually PLAYING answers with its own playhead: while the preview runs, the picture on
-/// screen is at that second and the click that placed the stored line is already behind it. A player that
-/// exists but is NOT playing does not answer at all — its `playhead` is whatever a past seek or pause left
-/// there, and a paste aimed by that stale number would land somewhere the person is not looking (the earlier
-/// version assumed "both are the same number while nothing plays", which a parked preview refutes: pausing
-/// leaves the playhead where the pause happened and the line elsewhere). So a parked player falls through to
-/// the stored line, which every press on the band and the strip writes through `place_line_press` →
-/// `move_line_and_save`.
 pub fn paste_line(window: &adw::ApplicationWindow) -> f64 {
     window::live_player(window)
         .filter(|player| player.borrow().transport.playing)
@@ -129,7 +109,7 @@ pub(crate) fn footage_source_path(window: &adw::ApplicationWindow) -> Option<Str
 }
 
 /// Ask ffprobe for this file's length, through the configured ffmpeg's own ffprobe (§1's "ffprobe from the
-/// same folder"). `Err` carries the sentence to print: named file, named tool, stated reason.
+/// same folder").
 fn probe_file_seconds(file: &str) -> Result<f64, String> {
     // §1's "ffprobe from the same folder": the configured ffmpeg decides where ffprobe lives; `""` means
     // this machine has no settings home, which the probe reports as its own refusal reason.

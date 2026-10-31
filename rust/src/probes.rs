@@ -1,17 +1,14 @@
 //! Probing a file for the facts its header does not carry
 //! (§03-shell#8-details-confirmed-against-the-code-verification-pass).
 //!
-//! A recorder killed mid-write leaves a container whose header has no duration — the
-//! length is written when the file is closed. The only way to get one is to decode the
-//! file, which costs the whole of it, so it happens once and the answer is remembered per
-//! path + size + mtime exactly like every other probe here (`wave`'s header carries the
-//! same pair for the same reason). A file that changed is a different file: its old
-//! duration says nothing about it.
+//! A recorder killed mid-write leaves a container with no duration in its header. The only way to get one is
+//! to decode the file, so it happens once and is remembered per path + size + mtime (as `wave`'s header does);
+//! a changed file is a different file.
 
 use std::collections::HashMap;
 
-/// What identifies one measurement. `mtime` and `size` come from the file's own metadata,
-/// so a re-recorded or truncated file misses rather than answering with stale seconds.
+/// What identifies one measurement. `mtime` and `size` come from the file's metadata, so a re-recorded or
+/// truncated file misses rather than answering with stale seconds.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Key {
     pub path: String,
@@ -19,8 +16,7 @@ pub struct Key {
     pub mtime: i64,
 }
 
-/// A probe key. Named so a caller cannot pass the three fields in the wrong order — a
-/// swapped size and mtime still looks like a number.
+/// A probe key. Named so a caller cannot pass the three fields in the wrong order.
 pub fn key(path: &str, size: i64, mtime: i64) -> Key {
     Key {
         path: path.to_string(),
@@ -29,25 +25,21 @@ pub fn key(path: &str, size: i64, mtime: i64) -> Key {
     }
 }
 
-/// One probe line, tab-separated and complete, the way §6's other sidecars are written:
-/// a reader should not have to know how many columns this format has. Whole seconds — the
-/// decode answers in whole seconds, and a float would print differently on each side of
-/// the round-trip that `wave`'s header avoids by storing an integer.
+/// One probe line, tab-separated and complete, as §6's other sidecars are written. Whole seconds: a float
+/// would print differently on each side of the round-trip.
 pub fn render(key: &Key) -> String {
     format!("{}\t{}\t{}", key.path, key.size, key.mtime)
 }
 
-/// How a duration was arrived at, because the two costs are not comparable and a tool that
-/// decoded a 40-minute file should say so.
+/// How a duration was arrived at: the two costs are not comparable and a 40-minute decode should say so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Header,
     Decoded,
 }
 
-/// The header's answer wins; only a header that does not carry one pays for a decode.
-/// Neither present is an error naming the file — "no duration" is not a fact about the
-/// rest of the pipeline, and a message without the path cannot be acted on.
+/// The header's answer wins; only a header without one pays for a decode. Neither present is an error
+/// naming the file.
 pub fn duration(
     path: &str,
     header: Option<f64>,
@@ -64,9 +56,8 @@ pub fn duration(
     ))
 }
 
-/// Durations measured this launch, keyed by [`Key`]. In memory: a duration is cheap to
-/// re-measure compared with a transcript, and a cache file would outlive the recording it
-/// describes without saying so.
+/// Durations measured this launch, keyed by [`Key`]. In memory: re-measuring is cheap next to a transcript,
+/// and a cache file would outlive the recording it describes.
 #[derive(Debug, Default)]
 pub struct Cache {
     durations: HashMap<Key, f64>,
@@ -77,8 +68,7 @@ impl Cache {
         Self::default()
     }
 
-    /// The measurement for this exact file as it stands now. A different size or mtime is
-    /// a miss, not a stale answer.
+    /// The measurement for this exact file as it stands now; a different size or mtime is a miss.
     pub fn lookup(&self, key: &Key) -> Option<f64> {
         self.durations.get(key).copied()
     }

@@ -1,8 +1,5 @@
 //! §06-effects#1-record: the effect dropdown's record door. Split out of `window.rs`, which is past its
 //! size budget; the door is re-exported through `window` so every caller keeps the path it had.
-//!
-//! The body is unchanged from where it lived: six kinds arm a gesture or open a form in their own module,
-//! and only the rest lay down a fresh record here.
 
 use crate::cut::{self};
 use crate::fx_record;
@@ -16,17 +13,10 @@ use crate::ui::window::{
     paste_line, record_edit, refresh_effects_lane, review_cut_of, save_insert_cut,
 };
 
-/// §06-effects#1-record: record one effect of this kind on this window's cut.
-///
-/// One call to `fx_record::record_into` (which lays down a record carrying exactly the columns §1 gives
-/// the kind), then the same save path `save_insert_cut` uses, then `record_edit` so F2.13's Undo covers
-/// the addition — never `seed_review_cut`, which would publish without recording and leave the new bar
-/// un-undoable. Returns the sentence the status line shows.
 pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind) -> String {
     // F3.1 S1: a Zoom is NOT recorded here. The dropdown's ⊕ Zoom entry ARMS a drag — the box someone draws is
     // what becomes the zoom, through `press_zoom_item` and then `zoom_drag_ended`. Recording one on the click would
     // put a whole effect on the cut before anyone has said where, which is why this flow was unreachable from the UI.
-    // Every other kind still records straight through, unchanged.
     if kind == cut::EffectKind::Zoom {
         return press_zoom_item(window);
     }
@@ -51,19 +41,9 @@ pub fn press_effect_item(window: &adw::ApplicationWindow, kind: cut::EffectKind)
     if kind == cut::EffectKind::Svg {
         return press_svg_item(window);
     }
-    // F3.6 S1: Volume is NOT recorded here either. 🔊 Volume opens a FORM — the band's own seconds, or two
-    // from the line, with the percent still to be given. The generic path below lays down a record of
-    // `NEW_EFFECT_SECONDS` width at whatever gain the struct defaults to, which is why none of §F3.6's S2-S5
-    // (the 200 % default, the percent field, the 0.1 s floor, "heard even while paused") was reachable from
-    // the UI before this branch existed. A volume has no box and nothing to arm: it works on SECONDS.
     if kind == cut::EffectKind::Volume {
         return press_volume_item(window);
     }
-    // F3.7 S1: Label is NOT recorded here either. 🏷 Label opens a FORM — the band's own seconds, or two from
-    // the line, with the NAME still to be given. The generic path below lays down a `NEW_EFFECT_SECONDS` record
-    // with no name at all, and a label without a name is refused (§F3.7: "nothing is placed until then"), which
-    // is why none of §F3.7's S2-S5 (the empty-name refusal, the 0.4 s floor, the tag that is drawn but never
-    // rendered) was reachable from the UI before this branch existed.
     if kind == cut::EffectKind::Label {
         return press_label_item(window);
     }

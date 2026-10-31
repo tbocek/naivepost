@@ -1,13 +1,4 @@
 //! §07-narrate#1-screen (**6**) — the Narrate page's half of the ONE preview volume (F2.5 S6).
-//!
-//! The slider in §1's transport row is a second face of [`cut_hear::PreviewVolume`], not a second
-//! setting: `spec/inventory/narrate.md` §A describes it as "shared with every preview" and carries the
-//! Cut page's own tooltip, so a drag here has to move the same number the Cut page's slider moves and
-//! every preview reads back. Three doors, all thin: [`ensure_slot`] gives a window that builds this
-//! page a slot to hold the one number, [`wire`] hands a drag to `ui::set_preview_volume` and nothing
-//! else, [`mirror`] puts the shared number back on the widget after something else moved it.
-//!
-//! Split out of `narrate_page.rs`, which is at its size budget; the page re-exports what it calls.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -21,10 +12,6 @@ use crate::ui::window_doors::find_widget_by_name;
 pub(crate) const WIDGET: &str = "narrate-volume";
 
 thread_local! {
-    /// Whether THIS thread's newest volume slot was opened by the Narrate page rather than by the Cut
-    /// page. A slot is pushed per window and read as "the newest", so the page that pushed last owns it;
-    /// the guard below only ever pushes when the newest slot belongs to nobody or to this page, which is
-    /// how a window holding both sliders keeps exactly ONE slot (§A.4's one number needs one holder).
     static OPENED_BY_NARRATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -39,11 +26,6 @@ pub(crate) fn scale(window: &adw::ApplicationWindow) -> Option<gtk::Scale> {
 /// Give this window a slot for the one number. Called from `build_window` after `set_content`, beside
 /// the Cut page's own push: without a slot, `ui::set_preview_volume` finds none, mints a throwaway and
 /// the drag is silently lost — which is why the Narrate page needed this door at all.
-///
-/// The guard reads the SLOT stack rather than "does this window have both sliders": every window builds
-/// all five pages into one tree, so both sliders exist everywhere and the only thing that tells the two
-/// pushes apart is who pushed last. That is also how a window keeps exactly ONE slot (§A.4's one number
-/// needs one holder).
 pub(crate) fn ensure_slot(window: &adw::ApplicationWindow) {
     if scale(window).is_none() {
         return;
@@ -104,11 +86,6 @@ pub(crate) fn current_percent() -> f64 {
     })
 }
 
-/// Put the shared number on BOTH faces when either differs from it — at build, and again on every
-/// repaint. Writing a scale emits `value-changed`, so an equal value is left alone: a refresh that
-/// re-set what was already there would read as a phantom drag (the same reason
-/// [`crate::ui::narrate_picker::follow`] only replaces rows that differ). The shell builds all five pages
-/// into one tree, so one mirror keeps both faces showing the one number.
 pub(crate) fn mirror(window: &adw::ApplicationWindow) {
     let percent = current_percent();
     for slider in [scale(window), crate::ui::preview_volume_scale(window)]

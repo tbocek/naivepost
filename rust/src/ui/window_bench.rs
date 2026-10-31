@@ -1,8 +1,5 @@
 //! §1's bench, the tab buttons and the readouts they repaint — the shell's half of those rows. Split out
 //! of `window.rs`, which is past its size budget; its doors are re-exported through `window`.
-//!
-//! What is here draws: every number and sentence comes from [`crate::bench`], [`crate::layout`] or
-//! [`crate::shell`], so a label cannot disagree with the state it names.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -40,12 +37,6 @@ pub fn label(text: &str) -> gtk::Label {
 // §1's badges **2**-**5**: the bench's heading row and its one text box. Everything the row says —
 // title, mark, Reset's liveness — is asked of [`bench`]; the widgets only forward.
 thread_local! {
-    /// The row the prompt bench opens on, when a caller says which one. `ui::bench_box` reads this once,
-    /// before its first paint; nothing in the app ever sets it, so the ordinary state is `None` =
-    /// row 0, the User Context. It exists because `--snapshot 04-prompt-picker` has to show the
-    /// picker OPEN on a prompt row (that is what `spec/img/04-prompt-picker.png` pictures) and the
-    /// only other way would be to build a second bench for the snapshot — a copy of the page that
-    /// could drift from the real one.
     static BENCH_OPEN_ROW: std::cell::RefCell<Option<usize>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -56,9 +47,6 @@ pub fn set_bench_open_row(index: usize) {
     BENCH_OPEN_ROW.with(|slot| *slot.borrow_mut() = Some(index));
 }
 
-/// The row `ui::bench_box` should start on: the requested one if it names a real row, else 0. A row
-/// index off the end falls back rather than panicking, because a stale snapshot name must still draw
-/// something rather than kill the run.
 fn bench_open_row(count: usize) -> usize {
     BENCH_OPEN_ROW.with(|slot| {
         // Read ONCE and cleared: a second window built in the same process (a test round, or a second
@@ -75,13 +63,9 @@ pub(crate) fn bench_box(
     let mut bench_state = bench::Bench::new();
     // The snapshot seam above; `select` ignores an index off the end, so this is a no-op unless a
     // caller asked for a specific row.
-    // §03-shell §5b: the prompts are configured in profiles, so the bench is the User Context alone; a
-    // snapshot's ask for another row is spent and ignored.
     let _ = bench_open_row(bench::ROWS.len());
     bench_state.select(0);
     let row = Rc::new(RefCell::new(bench_state));
-    // Each handler below holds its own handle on the same answer to "where does this machine keep a
-    // prompt", which is why it travels as an `Rc` rather than as a borrow of the caller's.
     let paths = Rc::new(paths.clone());
 
     let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -115,10 +99,8 @@ pub(crate) fn bench_box(
     // "Describe prompt" beside a picker still showing "User Context". Set before `paint_bench` so
     // no notify fires against a half-built heading.
     picker.set_selected(u32::try_from(row.borrow().selected).unwrap_or(0));
-    // The prompt rows are gone from the page (a profile's per-step sections replace them): no picker to show.
     picker.set_visible(false);
 
-    // **4** Reset, live only while this machine holds an edit.
     let reset = gtk::Button::with_label("Reset");
     reset.set_widget_name("bench-reset");
     // §6's other tooltip: idle wording until something is edited; `bench_paint::paint_marks` swaps in
@@ -132,7 +114,6 @@ pub(crate) fn bench_box(
     heading.append(&picker);
     heading.append(&reset);
 
-    // **5** the prompt or the User Context.
     let editor = gtk::TextView::new();
     crate::ui::margins::text_box(&editor);
     editor.set_widget_name("bench-text");
@@ -142,22 +123,11 @@ pub(crate) fn bench_box(
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_child(Some(&editor));
     scroller.set_vexpand(true);
-    // The prompt's own height band. Left uncapped the text view reported its FULL document height as the
-    // page's minimum — the shipped prompts run to hundreds of lines, and that alone pinned the shell at
-    // ~970 px tall so the window could not be shrunk (`tests/suite/window_shrinks.rs`). Inside this scroller
-    // the editor scrolls between these bounds instead of stretching the page.
     scroller.set_min_content_height(BENCH_MIN_H);
-    // NO `max_content_height`: a ceiling here capped the box at 420 px however much room the column had, so
-    // in §1's 900 px window the bench stopped ~460 px down while the page band ran on below it — the shot
-    // showed the right column ending short above an empty area. A `ScrolledWindow` without a ceiling still
-    // reports only its MINIMUM as its own minimum height, so the text view's full document height cannot leak
-    // into the shell's floor (the failure this cap was written for); vexpand fills the column and the text
-    // scrolls inside it, which is §4's "one text box filling the rest of the column (it scrolls)".
 
     // The box's contents are set when the row changes, never from its own `changed` handler: typing
     // stores text and storing must not retype the buffer out from under the cursor.
     let guard = Rc::new(std::cell::Cell::new(false));
-    // F0.14: the profile row in the heading (User Context row only) and its form in the scroller's place.
     crate::ui::profile_form::attach(&heading, &mark, &scroller, &editor, session);
     paint_bench(
         &row, &title, &mark, &picker, &reset, &editor, &guard, session, &paths,
@@ -191,8 +161,6 @@ pub(crate) fn bench_box(
         );
     });
 
-    // Reset (**4**) puts the shipped wording back and forgets this machine's file; the buffer then
-    // shows what is stored, which is why it is repainted rather than trusted to the click.
     let session_for_reset = session.clone();
     let paths_for_reset = paths.clone();
     let title_for_reset = title.clone();
@@ -207,7 +175,6 @@ pub(crate) fn bench_box(
         let Some(paths) = paths_for_reset.as_ref() else {
             return;
         };
-        // User Context has no shipped wording to restore, and `bench::reset` says so with `None`.
         let reset_now = match bench::reset(paths, &current) {
             Ok(reset_now) => reset_now,
             Err(why) => {
@@ -251,21 +218,16 @@ pub(crate) fn bench_box(
         let current = *row_for_text.borrow().row();
         let mut held = session_for_text.borrow_mut();
         match paths_for_text.as_ref() {
-            Some(paths) => {
-                // Every keystroke stores, so a failing write is said once per run of failures, not per key.
-                match bench::store(paths, &mut held, &current, &text) {
-                    Ok(()) => failing.set(false),
-                    Err(why) => {
-                        if !failing.replace(true) {
-                            super::window_logs::say_failure(&format!(
-                                "!!! could not save the prompt -- {why}"
-                            ));
-                        }
+            Some(paths) => match bench::store(paths, &mut held, &current, &text) {
+                Ok(()) => failing.set(false),
+                Err(why) => {
+                    if !failing.replace(true) {
+                        super::window_logs::say_failure(&format!(
+                            "!!! could not save the prompt -- {why}"
+                        ));
                     }
                 }
-            }
-            // With no config folder a prompt has nowhere to go; the User Context still lands on the
-            // session, which is where it belongs.
+            },
             None if bench::is_context(&current) => {
                 held.context = text.clone();
             }
@@ -278,9 +240,6 @@ pub(crate) fn bench_box(
         mark_for_text.set_visible(bench::shows_mark(&current, edited));
         reset_for_text.set_visible(bench::shows_reset(&current, edited));
         reset_for_text.set_sensitive(bench::shows_reset(&current, edited));
-        // F0.7's first door: editing the User Context re-derives the policy — but debounced, so a
-        // paragraph typed costs one request rather than one per keystroke. Only the context row
-        // triggers it; every other bench row is prompt wording, which no policy depends on.
         if bench::is_context(&current) {
             if let Some(window) = ui::POLICY_WATCH_WINDOW.with(|w| w.borrow().clone()) {
                 ui::schedule_policy_derive(&window);
@@ -288,13 +247,6 @@ pub(crate) fn bench_box(
         }
     });
 
-    // The heading and the box are returned together; `page_box` stacks them in §1's order. What comes back as
-    // the "box" is the SCROLLER, not the text view: dropping this scroller with its child still inside (as this
-    // did) left the bare `gtk::TextView` in Prepare's column, and a text view reports its whole document as its
-    // minimum height -- measured 2536 px for the shipped prompt -- which climbed through `prepare-split`,
-    // Prepare's page box and `AdwViewStack` into `main-divider`'s start-half minimum, so every tab was laid out
-    // ~2731 px tall inside an 890 px window and each page's content was painted above the top of the window.
-    // The view keeps its own name inside the scroller, so every flow that finds `bench-text` still does.
     (heading, scroller)
 }
 
@@ -334,8 +286,6 @@ fn paint_bench(
     // fires `changed`, and a `changed` that stores would repaint the buffer again.
     guard.set(true);
     let buffer = editor.buffer();
-    // With no config folder there is nothing this machine could hold, so the box shows the shipped
-    // wording — which is what `bench::text` answers for a row nobody has touched.
     buffer.set_text(&bench::text(
         paths.as_ref().unwrap_or(&NO_SETTINGS),
         &session.borrow(),
@@ -346,18 +296,6 @@ fn paint_bench(
 }
 
 /// The mark and Reset, both live only while this machine holds the row's wording (§1).
-/// The tab row, drawn from [`Shell`].
-///
-/// A locked page's tab is greyed and carries the lock reason as its tooltip; an unlocked one carries
-/// its own description (§03-shell.md §1: "Locked tab: greyed, not disabled; tooltip = the reason").
-/// Nothing here decides which of those two applies — [`crate::shell::lock`] does.
-///
-/// `adw::ViewSwitcher` builds its buttons itself and offers no handle to them (its API is
-/// `stack`/`policy` alone), so they are found by walking the switcher's descendants for the label
-/// each button draws — the page word, which is unique to one tab. Reaching the button rather than
-/// the label matters: a tooltip on the label would vanish with the label when the bar narrows to
-/// icons, and greying only the text would leave the button looking live.
-/// Grey or brighten each tab for the project now open, on the newest window's own shell.
 pub(crate) fn paint_tabs_for(window: &adw::ApplicationWindow, project: &Project) {
     let (Some(switcher), Some(shell)) = (
         ui::find_switcher(window.upcast_ref()),
@@ -370,17 +308,8 @@ pub(crate) fn paint_tabs_for(window: &adw::ApplicationWindow, project: &Project)
 
 /// Repaint the idle-form readings that answer from the CUT — `Cut:`, `Cut at 1×:`, `Source:` and
 /// `Segments:` — from the cut this window holds NOW.
-///
-/// The rows are built once by `cut_form_column` from `idle_readouts` for an EMPTY cut and nothing has
-/// rewritten them since, so after any verb that changes the timeline — a suggest landing, a fold, a
-/// paste — the page still read `Segments: 0` / `Cut: 00:00` beside landed scenes. Each value comes from
-/// the same row list [`idle_readouts`] emits, so no second copy of a reading exists to drift. Everything
-/// else on that form keeps its own owner: Playhead belongs to the preview clock, Selection to
-/// [`refresh_selection_readout`] and Aspect ratio to `refresh_aspect_readout`.
 pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
     let cut_ = ui::newest_review_cut();
-    // The footage total: what the `Source:` row answers with — the session's merged filmed runs, the same
-    // spans the strip above paints, so the number matches the picture.
     let source: f64 = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings())
         .iter()
         .map(|(start, end)| end - start)
@@ -411,9 +340,6 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
     }
 }
 
-/// Redraw the visible tab's `Inputs:`/`Outputs:` row from the folder just switched TO, whose tree, cut
-/// and narration are read here — [`session_reads`] still points at the working copy beside the root. Same
-/// door a tab switch uses, so an Open, a Rescan and a staged test session all show through it.
 pub fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, dir: &Path) {
     let (Some(shell), Some(inputs), Some(folder), Some(outputs)) = (
         ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()),
@@ -423,7 +349,6 @@ pub fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, di
     ) else {
         return;
     };
-    // Same door a tab switch uses, so the opened project shows through `Shell::inputs`/`outputs`.
     let tree = layout::Tree::new(dir).ok();
     let cut = tree
         .as_ref()
@@ -514,13 +439,7 @@ fn descendants(root: &gtk::Widget) -> Vec<gtk::Widget> {
     out
 }
 
-/// S4's readout row, drawn from the shell. The two texts come from `Shell::inputs` and
-/// `Shell::outputs` alone — this function only prefixes and sets labels, so a sentence on that row
-/// always traces back to a rule in `shell.rs`. The folder button is insensitive while there is no
-/// project folder to open, which is the visible proof the row knows what it is counting.
 #[allow(clippy::too_many_arguments)]
-// the readout row paints inputs, outputs, their folder button and
-// the log expander from one shell read
 /// The four readings [`paint_readouts`] takes off a worker.
 struct Readings {
     inputs: String,
@@ -551,10 +470,6 @@ pub(crate) fn paint_readouts(
     outputs_folder: &gtk::Button,
     outputs_label: &gtk::Label,
 ) {
-    // The four readings count files in the page's folders, which can be thousands of frames: they are read
-    // on a worker and painted when they land (§03-shell §1, the window thread never waits). The last
-    // readout stays up meanwhile, and only the newest ask is painted, so quick tab switches cannot land
-    // out of order.
     let asked = READOUT_ASKS.with(|asks| {
         asks.set(asks.get() + 1);
         asks.get()
@@ -627,20 +542,11 @@ pub(crate) fn paint_readouts(
             shell.output_dir(tree).display()
         )));
     }
-    // S4's ⓘ sync: the header button describes the page `help_page` names, which a switch sets and
-    // a bounce leaves alone. Repainting it here is what makes "sync ⓘ" happen on the same tick as the
-    // readouts rather than in a second pass over the window.
     if let Some(info) = ui::INFO_BUTTON.with(|slots| slots.borrow().last().cloned()) {
         info.set_tooltip_text(Some(&shell.info_tip()));
     }
 }
 
-/// The run bar as it should be drawn right now: the icon and tooltip [`run::controls`] says, and
-/// nothing else. It decides nothing — ▶ is one button that becomes ⏸ rather than a second button
-/// beside it, and which of the two applies is F0.2's precedence, settled in run.rs.
-/// The run bar's icon and tooltip are the whole of what F0.2 puts on screen. `transport` is the
-/// visible page's preview, which only Cut and Narrate have — [`run::transport_for`] answers `None`
-/// for the other two, and that is why their ▶ runs the step while a preview plays.
 pub fn paint_run_bar(
     play: &gtk::Button,
     stop_: &gtk::Button,
@@ -651,8 +557,6 @@ pub fn paint_run_bar(
     let drawn = run::controls(&bar.running, run::transport_for(page, transport));
     play.set_icon_name(drawn.icon);
     play.set_tooltip_text(Some(drawn.tooltip));
-    // ⏹ is sensitive whenever there is something to end — a run, a playing preview, or one parked
-    // part way through. `controls` already decides that; this only draws it.
     stop_.set_sensitive(drawn.stop_sensitive);
     // F0.15: ↺ sits after ⏹, and a run's files are not to be taken from under it.
     if let Some(reset_) = stop_.next_sibling() {
@@ -660,10 +564,6 @@ pub fn paint_run_bar(
     }
 }
 
-/// Repaint the run bar's ▶ and ⏹ from `window`'s bar and its preview, for a change that came from outside the
-/// run bar: a Cut transport press starts or stops a preview, and ⏹ ("Stop the run or the playback", F0.3) must
-/// be live while one plays. The first rewrite painted ⏹ only from the run bar's own presses, so a preview
-/// started from ▶ / ▶✂ / ▶✂✂ left it grey and the playback could not be stopped from the bar.
 pub fn repaint_run_bar(window: &adw::ApplicationWindow) {
     let (Some(play), Some(stop_)) = (
         crate::ui::window::play_button(window),
@@ -674,7 +574,6 @@ pub fn repaint_run_bar(window: &adw::ApplicationWindow) {
     let Some(bar) = crate::ui::window::RUN_BARS.with(|bars| bars.borrow().last().cloned()) else {
         return;
     };
-    // A press painting while the bar is being changed elsewhere skips this paint; that change paints.
     let Ok(bar) = bar.try_borrow() else {
         return;
     };
@@ -697,9 +596,6 @@ pub(crate) const LOG_MIN_BODY_PX: i32 = 60;
 /// is the scroller's own (`editor_scroller`), so nothing here caps it twice.
 pub(crate) const BENCH_MIN_H: i32 = 160;
 
-/// Draw F0.5's two widgets from the bookkeeping state: the bar's fraction and tooltip come from the
-/// queue, the expander's openness from the run's `log_expanded`, and its body from the lines logged
-/// so far. No decisions here — [`runqueue`] decided them, this paints them.
 pub fn paint_progress(
     progress: &gtk::ProgressBar,
     log: &gtk::Expander,
@@ -718,7 +614,6 @@ pub fn paint_progress(
     crate::ui::shell_beats::status_from_queue(line.status, queue, line.owned);
     log.set_expanded(expanded);
     if expanded {
-        // The newest line is the one worth seeing while the person follows it (`log_paint::follow_end`).
         super::log_paint::repaint_lines(log_view, &ui::window_logs());
     }
 }

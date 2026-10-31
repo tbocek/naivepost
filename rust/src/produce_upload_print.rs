@@ -1,24 +1,12 @@
 //! F5.6 S7: printing the words onto the picture.
-//!
-//! The plain picture is what sd.cpp drew (or what a chosen frame gave); the finished `thumbnail.png` is that
-//! picture with the marked texts and then the title printed over it. The lettering is a LOCAL cairo draw —
-//! §F5.6 says a picked frame costs "no model, no GPU", and decision 34 makes reprinting a title a redraw of
-//! letters only, never a second image call. One lettering backs it, [`draw_text_box`] over the Cut page's fitter
-//! ([`crate::fx_text::fit`]), so a thumbnail's title and an effect's caption can never disagree about how big
-//! those letters get or how they look.
+//! The finished `thumbnail.png` is the plain picture with the marked texts and then the title, drawn locally with cairo (no model, no GPU; decision 34). [`draw_text_box`] over [`crate::fx_text::fit`] is shared with effect captions.
 
 use std::path::Path;
 
 use crate::project::{TextMark, TitleBox};
 
-/// Print the marked texts, each in its own box, and the title in its band over `png_in`, and write the result to
-/// `png_out` (the prototype's `drawPubTexts`): one pass from the plain picture, so the two kinds of words always
-/// land together and a reprint never prints over letters already there.
-///
-/// The base is read as PNG because that is what the drawing step stores (`output_format: png`, §F5.6 S6) and
-/// the only format cairo reads here. Every box is in fractions of the picture, exactly as the Cut page stores a
-/// text effect's box. The first rewrite squeezed the marked texts into slices of the TITLE band and drew white
-/// letters with a soft shadow; the prototype prints each text in its own box, in the Text effect's lettering.
+/// Print the marked texts, each in its own box, and the title band over `png_in`, writing `png_out` in one pass so a reprint never overprints.
+/// Base is PNG (`output_format: png`, §F5.6 S6); boxes are fractions of the picture, as for a text effect.
 pub fn print_words(
     png_in: &Path,
     png_out: &Path,
@@ -45,19 +33,13 @@ pub fn print_words(
     write_png(&surface, png_out)
 }
 
-/// A box stored as centre and size fractions, in the pixels of a `wide`×`high` picture.
 fn box_px(cx: f64, cy: f64, wf: f64, hf: f64, wide: f64, high: f64) -> (f64, f64, f64, f64) {
     crate::fx_text::Box_ { cx, cy, wf, hf }.to_px(wide, high)
 }
 
-/// THE lettering: a Text effect's words in their box, as the prototype's `drawFxText` draws them for the Cut
-/// preview, the thumbnail's title and its marked texts alike. Fitted by [`crate::fx_text::fit`] (the largest size
-/// where the lines fit the box), bold sans, every line centred on the box's middle; a dark edge round the letters,
-/// then the white letters. The edge is [`crate::fx_text::EDGE_STEPS`] copies of the words on a circle of
-/// [`crate::fx_text::edge_radius`], drawn opaque into ONE group that is composited once at
-/// [`crate::fx_text::EDGE_ALPHA`]: copies painted at that alpha each compound where they overlap and band into
-/// several edges round one letter. Both passes run over all the lines, edge then fill, so a descender never lands
-/// on the next line's edge.
+/// The lettering of a Text effect: fitted by [`crate::fx_text::fit`]; bold sans centred; a dark edge then white letters.
+/// The edge is [`crate::fx_text::EDGE_STEPS`] opaque copies on a circle of [`crate::fx_text::edge_radius`] in ONE group composited once at [`crate::fx_text::EDGE_ALPHA`], else overlaps compound and band.
+/// Edge then fill over all lines, so a descender never lands on the next line's edge.
 pub fn draw_text_box(cr: &cairo::Context, text: &str, x: f64, y: f64, w: f64, h: f64, alpha: f64) {
     let (size, lines) = crate::fx_text::fit(text, w, h);
     if size <= 0.0 || lines.is_empty() || alpha <= 0.01 {
@@ -98,14 +80,12 @@ pub fn draw_text_box(cr: &cairo::Context, text: &str, x: f64, y: f64, w: f64, h:
     }
 }
 
-/// Read one PNG into a surface cairo can draw on.
 fn read_png(path: &Path) -> Result<cairo::ImageSurface, String> {
     let file = std::fs::File::open(path).map_err(|why| format!("{}: {why}", path.display()))?;
     cairo::ImageSurface::create_from_png(&mut std::io::BufReader::new(file))
         .map_err(|why| format!("{}: {why}", path.display()))
 }
 
-/// Write a surface out as PNG, creating the folder if the render has not made it yet.
 fn write_png(surface: &cairo::ImageSurface, path: &Path) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
@@ -117,8 +97,7 @@ fn write_png(surface: &cairo::ImageSurface, path: &Path) -> Result<(), String> {
         .map_err(|why| format!("{}: {why}", path.display()))
 }
 
-/// Make a flat picture of the given size — what the drawing step leaves behind before any lettering. TEST
-/// seam only: it stands in for sd.cpp's answer, so its name says who calls it.
+/// Flat picture of the given size; test seam standing in for sd.cpp.
 pub fn flat_png_for_test(path: &Path, wide: u32, high: u32, shade: f64) -> Result<(), String> {
     let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide as i32, high as i32)
         .map_err(|why| format!("{why}"))?;
@@ -130,9 +109,7 @@ pub fn flat_png_for_test(path: &Path, wide: u32, high: u32, shade: f64) -> Resul
     write_png(&surface, path)
 }
 
-/// The shape a PNG on disk actually has, read back through the same decoder the print pass uses. A test that
-/// asks "did the crop land on the video's shape?" needs the file's own edges, not what was asked of ffmpeg.
-/// TEST seam only: every program path that needs a picture's shape goes through cairo or ffprobe itself.
+/// Shape a PNG on disk really has, via the print pass decoder; test seam.
 pub fn png_shape_for_test(path: &Path) -> Option<(u32, u32)> {
     let surface = read_png(path).ok()?;
     Some((

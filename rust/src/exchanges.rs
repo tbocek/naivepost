@@ -1,13 +1,4 @@
 //! The model exchange log (spec/03-shell.md §7).
-//!
-//! One HTML page per run under `llm/`, named after the first step that ran, so
-//! the file itself says which work produced it. Each call becomes a numbered
-//! section; the app log gets two lines per call plus, once per run, the line
-//! naming the page.
-//!
-//! Writing the page can never fail the call it records: every io problem comes
-//! back as an already-formatted log line instead of an error the step has to
-//! handle. Observability that can break the work is not observability.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,19 +11,14 @@ pub const LLM_DIR: &str = "llm";
 /// Appended to a came-back line when the model stopped mid-answer.
 pub const CUT_OFF: &str = "\u{2014} cut off at the model's token limit";
 
-/// A preview longer than this is truncated — it sits in a log header, not in
-/// the page, where the whole reply already is.
 const PREVIEW_CHARS: usize = 110;
 
 /// What the meta line says while the answer is still on its way (§7).
 pub const REPLY_PENDING: &str = "reply pending";
 
-/// The trimmed cut-off phrase as the PAGE shows it. [`CUT_OFF`] carries the em dash that belongs to
-/// the log sentence's prose; here the note stands on its own, so the dash would read as a stray.
 const CUT_OFF_PLAIN: &str = "cut off at the model's token limit";
 
 /// The stamp and first step name the page: `MMDD-HHMMSS-<first step>.html`.
-/// Later steps never rename it — the run keeps one page whoever started it.
 pub fn page_name(stamp: &str, first_step: &str) -> String {
     format!("{stamp}-{first_step}.html")
 }
@@ -99,8 +85,7 @@ pub struct Call {
     pub model: String,
     pub mode: Mode,
     pub took_secs: u64,
-    /// How much of `took_secs` went to reasoning rather than answering. `None` when
-    /// the model does not separate them — §8 prints the cost only when it is known.
+    /// How much of `took_secs` went to reasoning rather than answering.
     pub thinking_secs: Option<u64>,
     pub messages: Vec<Message>,
     pub reply: String,
@@ -111,8 +96,7 @@ pub struct Call {
 }
 
 impl Call {
-    /// Bytes of text and number of images sent. An image never counts as text:
-    /// "1.8 MB of text" would be a lie about a request carrying two frames.
+    /// Bytes of text and number of images sent.
     pub fn sent(&self) -> (usize, usize) {
         let text = self.messages.iter().map(Message::text_len).sum();
         let images = self
@@ -140,9 +124,7 @@ pub fn size_of(bytes: usize) -> String {
 }
 
 /// A byte count the way §5's size line wants it: ALWAYS kilobytes, one decimal, whatever the size — `0.8 kB`,
-/// `451.3 kB`, and even a megabyte of it as `1536.0 kB`. One unit for every call is what lets a log be summed
-/// or two runs compared without parsing three shapes; [`size_of`] stays for the human-sized "…came back in…"
-/// line, where "812 B" is the honest reading.
+/// `451.3 kB`, and even a megabyte of it as `1536.0 kB`.
 pub fn kb_of(bytes: usize) -> String {
     format!("{:.1} kB", bytes as f64 / 1024.0)
 }
@@ -159,9 +141,7 @@ pub fn duration_of(secs: u64) -> String {
     format!("{secs}s")
 }
 
-/// The first words of the answer itself. Everything up to the last `</think>`
-/// is the model talking to itself, and quoting that would make every preview
-/// open the same way; the whole of it is in the page.
+/// The first words of the answer itself.
 pub fn preview(reply: &str) -> String {
     let tail = match reply.rfind("</think>") {
         Some(end) => &reply[end + "</think>".len()..],
@@ -196,10 +176,6 @@ fn came_back(call: &Call) -> String {
 }
 
 /// The two lines one call puts in the app log, plus the reply preview.
-///
-/// The `>>> ` prefixes are kept because §7 quotes these lines literally; §2's
-/// rule that the level shows by colour is the log view's rendering job, not
-/// something the message text carries.
 pub fn log_lines(call: &Call) -> Vec<String> {
     let (text, images) = call.sent();
     let mut lines = vec![format!(
@@ -230,20 +206,12 @@ pub fn log_lines(call: &Call) -> Vec<String> {
     lines
 }
 
-/// The one line per run naming the page. Relative, so it still means the same
-/// thing after Save as (F0.10) moves the folder it points into.
+/// The one line per run naming the page.
 pub fn link_line(page_rel: &str) -> String {
     format!(">>>   this run's exchanges, images included: {page_rel}")
 }
 
 /// What a tool result says about itself.
-///
-/// [`crate::tools::error`] spells a refusal as `{"error":"…"}` and every successful answer is other JSON,
-/// so the page can name which of the two a result was from the text alone — no second record of the
-/// outcome, which is what §7 asks for ("tool results: the `tool` messages of the next round's request":
-/// the message carries the answer and nothing else). `None` is a plain answer; a body that is not JSON at
-/// all is a plain answer too, because inventing a failure the tool never reported would be worse than
-/// showing its words. Pure: the renderer decides how to show what comes back.
 pub fn result_outcome(result: &str) -> Option<&'static str> {
     if result.trim().is_empty() {
         return Some("answered nothing");
@@ -289,11 +257,6 @@ img{max-width:480px;display:block;margin:.3em 0}\
 
 /// The meta line under a section's heading: model, mode, and either the pending marker or the
 /// outcome (§7).
-///
-/// §7 lists "time" among the meta fields. [`Call`] carries no wall clock — only how long the call
-/// took — so the time this line can honestly show is the duration, and while the answer has not
-/// arrived there is no duration worth printing at all. That is why [`REPLY_PENDING`] stands in for
-/// the whole field rather than showing `0s` for a call that is still running.
 pub fn meta_line(call: &Call, answered: bool) -> String {
     let tail = if !answered {
         REPLY_PENDING.to_string()
@@ -315,12 +278,6 @@ pub fn meta_line(call: &Call, answered: bool) -> String {
 }
 
 /// The word the page puts in front of one tool block.
-///
-/// A call read off the REPLY knows its tool's name. A result arriving as the next round's `tool` message
-/// does not: §7 spells tool results as exactly those messages, and this app's request body serialises a
-/// message as `{role, content}` with no name field (`llm_request::body`), so the wire carries no name to
-/// show. Rather than invent one, the page numbers it — `result #2` reads as the second thing the model was
-/// answered, which is what the order actually says.
 fn tool_word(tool: &ToolCall, index: usize) -> String {
     if tool.name.is_empty() {
         return esc(&format!("result #{}", index + 1));
@@ -339,7 +296,7 @@ pub fn section_html_pending(seq: usize, call: &Call) -> String {
     section_in_state(seq, call, false)
 }
 
-/// The section renderer behind both forms. `answered` decides only what comes after the messages.
+/// The section renderer behind both forms.
 fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
     let mut html = format!(
         "<section><h1>{seq}. {step}</h1>\n<p class=\"meta\">{meta}</p>\n",
@@ -379,7 +336,7 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
             esc(&tool.args),
             esc(&tool.result),
             // §7's notes cover cut-off and empty answers; this is the same idea one level down, where a
-            // tool refused. A plain answer gets nothing extra, so today's page for good tools is unchanged.
+            // tool refused.
             match result_outcome(&tool.result) {
                 Some(outcome) => format!("<span class=\"note\">{outcome}</span>"),
                 None => String::new(),
@@ -398,16 +355,12 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
         html.push_str(&format!("<pre>{}</pre>\n", esc(&call.reply)));
     }
     // §7's wording for the page: each tool call is noted on the reply as `[tool call name(args)]`.
-    // The note comes from [`crate::tool_loop::call_note`] so the crate spells it one way; the blocks
-    // below are where the arguments and the result are readable, the result also travelling onward as
-    // the next round's `tool` message via `tool_loop::tool_message`.
     for tool in &call.tool_calls {
         // [tool name(args) → outcome] — the same verdict the block itself carries, so the two can never disagree.
         let line = crate::exchange_leg::call_line(tool);
         html.push_str(&format!("<p>{}</p>\n", esc(&line)));
     }
     if call.cut_off {
-        // The dash belongs to the log line's prose; here it reads as a note.
         html.push_str("<p class=\"note\">cut off at the model's token limit</p>\n");
     }
     html.push_str("</section>\n");
@@ -415,24 +368,18 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
 }
 
 /// One run's page: sections in call order, written when the request goes out, again
-/// as the reply streams, and whole at the end. Writing early is the point — a run
-/// killed mid-call still leaves the prompt it was stuck on.
+/// as the reply streams, and whole at the end.
 pub struct Page {
     name: String,
     dir: PathBuf,
     seq: usize,
     sections: Vec<String>,
-    /// The section of the call currently open, so `stream` can grow it in place.
     open: Option<usize>,
-    /// The open call's reply as RAW text, kept out of the escaped HTML so each chunk grows the reply
-    /// without escaping what is already there. Dropped when the call completes, since the finished
-    /// section holds the reply whole.
     streamed_raw: Option<String>,
 }
 
 impl Page {
-    /// Name the page for this run. Nothing is created yet — a run that never
-    /// asks the model anything leaves no empty page behind.
+    /// Name the page for this run.
     pub fn start(tree: &Tree, stamp: &str, first_step: &str) -> Page {
         Page {
             name: page_name(stamp, first_step),
@@ -466,8 +413,7 @@ impl Page {
     }
 
     /// The request half: filed as a section and on disk before the model has said a
-    /// word. Returns what went out, plus the page link — once per run, on this first
-    /// call of the run (§8).
+    /// word.
     pub fn begin(&mut self, call: &Call) -> Vec<String> {
         self.seq += 1;
         self.sections.push(section_html_pending(self.seq, call));
@@ -487,8 +433,7 @@ impl Page {
     }
 
     /// Part of the reply arrived: append it to the open section and put the page back
-    /// on disk. `None` once the call is complete, or with nothing to add — a recorder
-    /// that is not recording is valid and inert.
+    /// on disk.
     pub fn stream(&mut self, text: &str) -> Option<String> {
         let open = self.open?;
         if text.is_empty() {
@@ -496,9 +441,7 @@ impl Page {
         }
         let stored = std::mem::take(&mut self.sections[open]);
         // Everything up to the marker is the section as it was written; the reply itself is carried
-        // in `streamed_raw`, never read back out of the escaped HTML. Re-reading it and escaping
-        // again would double-escape every `&` with each chunk, which is why the running copy is kept
-        // beside the section instead of inside it.
+        // in `streamed_raw`, never read back out of the escaped HTML.
         let head = match stored.find(STREAM_MARK) {
             Some(at) => stored[..at].to_string(),
             None => stored.clone(),
@@ -525,7 +468,6 @@ impl Page {
     /// streamed fragment is replaced, not repeated — and return the verdict lines.
     pub fn complete(&mut self, call: &Call) -> Vec<String> {
         if let Some(open) = self.open.take() {
-            // The finished section holds the reply whole, so the running raw copy has nothing left to do.
             self.streamed_raw = None;
             self.sections[open] = section_html(open + 1, call);
             self.write();
@@ -533,9 +475,7 @@ impl Page {
         log_lines(call)
     }
 
-    /// Write the page. `None` when there is nothing to write or it worked;
-    /// `Some(line)` holding an already-worded failure when it did not, because
-    /// a failed exchange page must never fail the step that made it.
+    /// Write the page.
     pub fn flush(&mut self) -> Option<String> {
         if self.sections.is_empty() {
             return None;
@@ -543,20 +483,13 @@ impl Page {
         write_page(&self.dir, &self.name, &self.sections).err()
     }
 
-    /// Rewrite the page. A failure is dropped here on purpose: §8's "recording never
-    /// fails the call" means a half-written page is acceptable and an error handed to
-    /// the step is not. The final [`Page::flush`] is what reports it.
+    /// Rewrite the page.
     fn write(&mut self) {
         let _ = write_page(&self.dir, &self.name, &self.sections);
     }
 }
 
 /// Which page a call belongs to, and when that page ends.
-///
-/// §7's definition: a run is the calls between two queue resets, so one page holds them all; a
-/// call made while no run is open gets a page of its own rather than going unrecorded. The stamp
-/// and first step name it, and because the page is only named when the first call arrives, the step
-/// that happens to go first is the one the file is named after — which is what §7 asks for.
 #[derive(Default)]
 pub struct RunLog {
     page: Option<Page>,
@@ -573,14 +506,13 @@ impl RunLog {
         self.page.is_some()
     }
 
-    /// The open page's project-relative name — what the log line points at. `None` with no run open.
+    /// The open page's project-relative name — what the log line points at.
     pub fn page_rel(&self) -> Option<String> {
         self.page.as_ref().map(Page::rel)
     }
 
     /// File one call's REQUEST half before its answer exists, so a page opened mid-call shows the request
-    /// with `reply pending` and then grows. Returns the lines for the app log (the send line, plus the
-    /// once-per-run link on the run's first call) — the same first lines [`record`] hands out.
+    /// with `reply pending` and then grows.
     pub fn begin(&mut self, tree: &Tree, stamp: &str, step: &str, call: &Call) -> Vec<String> {
         if self.page.is_none() {
             self.page = Some(Page::start(tree, stamp, step));
@@ -588,15 +520,13 @@ impl RunLog {
         self.page.as_mut().expect("just opened above").begin(call)
     }
 
-    /// Part of the reply arrived: grow the open section and put the page back on disk. `None` when no
-    /// section is open, which is the ordinary answer for a call nobody began live.
+    /// Part of the reply arrived: grow the open section and put the page back on disk.
     pub fn stream(&mut self, text: &str) -> Option<String> {
         self.page.as_mut()?.stream(text)
     }
 
     /// The call is over: rewrite its open section whole from the finished call and hand back the verdict
-    /// lines. With nothing open this is exactly [`record`]'s ending — which is what lets the leg keep one
-    /// safety net for a reply that arrived in some shape nobody streamed.
+    /// lines.
     pub fn complete(&mut self, tree: &Tree, stamp: &str, step: &str, call: &Call) -> Vec<String> {
         if self.page.is_none() {
             self.page = Some(Page::start(tree, stamp, step));
@@ -607,8 +537,7 @@ impl RunLog {
             .complete(call)
     }
 
-    /// Record one call, opening the run's page under `stamp`/`step` if none is open. Returns the
-    /// lines for the app log, which carry the once-per-run link on the first call through.
+    /// Record one call, opening the run's page under `stamp`/`step` if none is open.
     pub fn record(&mut self, tree: &Tree, stamp: &str, step: &str, call: &Call) -> Vec<String> {
         if self.page.is_none() {
             self.page = Some(Page::start(tree, stamp, step));
@@ -625,30 +554,20 @@ impl RunLog {
 }
 
 /// Marks where a call's streamed reply begins inside its own section, so `stream` can
-/// grow it and `complete` replace it wholesale. An HTML comment: invisible in the page
-/// and never part of the model's text.
+/// grow it and `complete` replace it wholesale.
 const STREAM_MARK: &str = "<!--streamed:";
 
 /// What the streamed block opens with: the reply grows inside a `<pre>` of its own, so a reader
 /// watching the file during a call sees the words arriving in the shape they will end in (§7:
-/// "streamed reply appended into an open `pre`"), with [`STREAM_MARK`] just inside as the resume
-/// point.
 const STREAM_PRE: &str = "<pre><!--streamed:";
 
-/// What closes that `<pre>`. Built with `concat!` so the literal tag appears nowhere in this file's
-/// source text: the search for where an open block ends looks for exactly these bytes, and a stray
-/// copy here would be found before any real one.
+/// What closes that `<pre>`.
 const CLOSE_PRE: &str = concat!("</", "pre>");
 
-/// Swap a pending section's meta line for the growing-answer one. The two differ by exactly the marker
-/// [`REPLY_PENDING`] (see [`meta_line`]), so the swap is that one word — rewriting the whole section here
-/// would need the [`Call`] again, which is what `complete` already does properly.
 fn mark_answered(section: String) -> String {
     section.replace(REPLY_PENDING, "arriving")
 }
 
-/// The reply as it arrives is the model's words, not markup this app vouches for, so it is escaped
-/// on the way into the page. [`Call::reply`] can contain anything a server sent.
 fn esc_reply(text: &str) -> String {
     esc(text)
 }

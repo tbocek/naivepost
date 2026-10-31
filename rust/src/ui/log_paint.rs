@@ -1,19 +1,13 @@
 //! §7's exchange lines as they reach the shell's log, and the log's own text view.
 //!
-//! Split out of `window.rs`, which is past its size budget. Both doors are small but neither belongs in
-//! `log_link` (which owns only which line is clickable) nor in `exchanges` (which owns the page format and
-//! must stay free of widgets): this is the moment a recorded line becomes something on the screen.
+//! Neither door belongs in `log_link` (which owns which line is clickable) nor `exchanges` (the page format, free of widgets): this is where a recorded line becomes something on screen.
 
 use adw::prelude::*;
 use gtk4 as gtk;
 
 use super::window;
 
-/// The log's text view, for a reader that has the window but not the expander: an expander keeps its
-/// body behind an internal widget, so every caller reaches it this way and none should re-derive it.
-///
-/// The expander's child is the log's OWN scroller (the text view cannot be the direct child: uncapped,
-/// it reported the whole document's height as the window's minimum and the shell could not be shrunk —
+/// The log's text view, for a reader that has the window but not the expander. The expander's child is the log's OWN scroller (an uncapped text view as direct child reported the whole document as the window's minimum height;
 /// see `tests/suite/window_shrinks.rs`), so the walk goes expander → scroller → text view.
 pub fn log_view(window: &adw::ApplicationWindow) -> Option<gtk::TextView> {
     let child = window::log_expander(window)?.child()?;
@@ -27,13 +21,9 @@ pub fn log_view(window: &adw::ApplicationWindow) -> Option<gtk::TextView> {
         .ok()
 }
 
-/// A §7 exchange line written into the shell's log: the door §7's recorder writes its two per-call lines
-/// and its once-per-run link through. A line that reaches the log is not left invisible -- the expander
-/// opens and the body is repainted through [`window::paint_progress`], the only door that does both, so
-/// the link sits where §1 says it must be clickable while the run that wrote it is still going.
+/// A §7 exchange line written into the shell's log: the door §7's recorder writes its per-call lines and once-per-run link through. The expander opens and the body is repainted through [`window::paint_progress`], so the link is clickable while the run is going.
 ///
-/// With no window on this thread (a headless walk dialling a chat call) the line still goes to the sink
-/// and nothing is painted: recording never fails the thing that recorded.
+/// With no window on this thread the line still goes to the sink and nothing is painted: recording never fails the thing that recorded.
 pub fn note_exchange_line(line: &str) {
     window::log_line(line);
     let Some(window) = window::built_window() else {
@@ -61,14 +51,10 @@ pub fn note_exchange_line(line: &str) {
     );
 }
 
-/// How close to the end counts as "at the end": a line's worth, so a person who scrolled to the bottom by
-/// hand is following even if the wheel stopped a few pixels short.
+/// How close to the end counts as "at the end": a line's worth, so a hand-scrolled bottom still follows.
 const AT_END_SLACK_PX: f64 = 24.0;
 
-/// TEMPORARY diagnosis (2026-10-26): the open log sometimes stops following its newest line on the user's
-/// machine and never on the test display. With `NAIVEPOST_TRACE_LOG=1` every move of the log's scroll position
-/// and every decision of the follow rule goes to stderr as one `[log-follow]` line, so the moment it lets go
-/// is on record. Remove once the cause is found and fixed.
+/// TEMPORARY diagnosis: with `NAIVEPOST_TRACE_LOG=1` every move of the log's scroll position and follow decision goes to stderr as `[log-follow]`. Remove once the log's follow bug (it sometimes stops following on the user's machine, never on the test display) is fixed.
 fn trace(what: &str, adj: &gtk::Adjustment) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *ON.get_or_init(|| std::env::var_os("NAIVEPOST_TRACE_LOG").is_some()) {
@@ -92,11 +78,8 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// §1: the log follows its newest line while the person is at its end. Installed once on the log's scroller:
-/// while the view is pinned, every growth of the text (GTK measures wrapped lines a while after they arrive)
-/// puts the view back at the end; a wheel turn upwards unpins it at once, and each repaint pins it again only
-/// if the person is at the end then. The first rewrite scrolled to the end once, right after replacing the
-/// text and before anything was measured, so the view stayed where it was and the newest lines ran off.
+/// §1: the log follows its newest line while the person is at its end. Installed once on the log's scroller: while pinned, every growth of the text (GTK measures wrapped lines late) puts the view back at the end;
+/// a wheel turn upwards unpins it, and each repaint pins it again only if the person is then at the end.
 pub(crate) fn follow_end(scroller: &gtk::ScrolledWindow, view: &gtk::TextView) {
     let pinned = std::rc::Rc::new(std::cell::Cell::new(true));
     {
@@ -145,10 +128,7 @@ fn pin_of(view: &gtk::TextView) -> Option<std::rc::Rc<std::cell::Cell<bool>>> {
     })
 }
 
-/// §1: opening the log shows its newest line. A collapsed log is not repainted while a run writes to it, so its
-/// buffer is whatever it held when it was folded; opening it repaints it from `lines` and pins it to the end,
-/// because a person opening the log asks for what just happened (first rewrite: it opened on the old text,
-/// or on nothing, and the newest lines had to be scrolled to).
+/// §1: opening the log shows its newest line. A collapsed log is not repainted while a run writes, so opening repaints it from `lines` and pins it to the end.
 pub(crate) fn open_at_end(view: &gtk::TextView, lines: &[String]) {
     if let Some(pin) = pin_of(view) {
         pin.set(true);
@@ -220,10 +200,7 @@ pub(crate) fn repaint_lines(view: &gtk::TextView, lines: &[String]) {
         pin.set(following);
     }
     let buffer = view.buffer();
-    // Only the lines that are new are added when the log is the one already on screen plus more. Emptying and
-    // refilling the whole buffer at every repaint made the text view move itself back to near the top a moment
-    // after the follow had put it at the end, with nothing left to bring it back once the run's last repaint was
-    // done (traced on the user's machine 2026-10-26: 57 jumps, the log never unpinned).
+    // Only new lines are added when the log is the one already on screen plus more: emptying and refilling at every repaint made the view jump back near the top after the follow had put it at the end.
     match painted_before(view, lines) {
         Some(from) => super::log_link::paint_lines(&buffer, &lines[from..]),
         None => {

@@ -1,21 +1,4 @@
 //! F4.2 The narration call (`spec/07-narrate.md` F4.2) — what the one long call is *asked*.
-//!
-//! SYSTEM = house rules + the "narrate" prompt, plus the speech addendum when the clips play what people
-//! said out loud and the captions addendum for a captions-only voice. USER = User Context (+ the speech
-//! rule) + `THE CLIPS AND WHAT IS KNOWN ABOUT EACH:` + one block per clip: its bounds, how long it plays,
-//! how many words it affords, the transcript rows within ±[`CONTEXT_SECONDS`] of it, and the moments somebody
-//! marked. This module builds those two strings and answers the arithmetic around them; nothing here talks
-//! to a server or draws a widget.
-//!
-//! What this module does **not** own:
-//! - the record of what was written — [`crate::narration`] holds the entries, their keys and their files;
-//! - F4.3's fitting arithmetic (lead/gap/tail packing, growing the clip, sliding the schedule, speeding the
-//!   speech). [`crate::narrate_screen`]'s doc already points at the render for that; a tool answer here says
-//!   where a line lands and how many words it may have, and stops short of the packing numbers.
-//! - the tool list — [`crate::tools::offered`] with [`crate::roles::Job::Narrate`] already lists
-//!   `write_line`, `leave_silent`, `list_emotions`, `describe_insert` and `finish`;
-//! - the emotion *recipes*. The eight weights a named blend mixes are the TTS side's (the prototype keeps
-//!   them in `emoBlends`, `go/narrate_tts.go`); F4.2 only asks whether a word is in the vocabulary at all.
 
 use crate::cut::{Fx, Seg};
 use crate::cut_captions;
@@ -23,8 +6,7 @@ use crate::fix_transcripts;
 use crate::textfmt::SessionLine;
 
 /// P.machine.narrationContextSeconds (§10's Machine table): how far outside a clip its block reaches for
-/// transcript rows. A line just before the cut is the one the narration should answer to, and a line just
-/// after it is what the next clip will react to, so the window runs both ways.
+/// transcript rows.
 pub const CONTEXT_SECONDS: f64 = 4.0;
 
 /// P.policy.narrationMinWords (§10's policy table): even a five-second clip can take a short line.
@@ -42,13 +24,11 @@ pub const WORDS_PER_SECOND: f64 = 0.75;
 /// the line that separates what is known about a clip from what is being asked of the writer.
 pub const CLIPS_HEADER: &str = "THE CLIPS AND WHAT IS KNOWN ABOUT EACH:";
 
-/// F4.2 S2: what a clip with nothing over it says. Neutral on purpose — three passes read this brief, and
-/// "say something general" is an instruction to one of them.
+/// F4.2 S2: what a clip with nothing over it says.
 pub const NO_LINES: &str = "  (no lines over this clip: nothing said, nothing described)";
 
 /// The speech rule, which rides under the User Context for the two jobs that decide what is spoken ("cut"
-/// and "narrate") and nowhere else. Read the wrong way it is the worst answer this app gives — an aside to
-/// the editor captioned into the video, or the video thrown away as asides — so it is said once, verbatim.
+/// and "narrate") and nowhere else.
 pub const CTX_SPEECH: &str = "The speech is content unless the user context above says otherwise: the speakers are in the video, and what they say is why a moment is worth keeping. Where the user context calls it directions (\"this part is boring\", \"speed this up\"), do what a direction asks at the second it asks and keep its words out of the video -- never caption them, and never keep a stretch just because it was spoken over. An instruction about a kind of stretch -- speed the dull parts up and show them instead of cutting them, caption each thing as it is named -- holds wherever such a stretch occurs. It decides segments too: a stretch to be shown fast has to be in the cut, with a speed effect over it, or there is nothing left to speed up.";
 
 /// F4.2 (`+ the speech addendum, when the clips play what people said out loud`): the premise the prompt
@@ -56,18 +36,14 @@ pub const CTX_SPEECH: &str = "The speech is content unless the user context abov
 pub const SPEECH_ADDENDUM: &str = "THIS VIDEO PLAYS WHAT PEOPLE SAID OUT LOUD. The lines marked SPEAKER are heard by the viewer in the speakers' own voices, so never say one back: set it up before it lands, or react after it. The NARRATOR lines are still yours -- nobody hears those unless you use them -- and so is every clip the speakers left alone.";
 
 /// F4.2 (`+ the captions addendum, for a captions-only voice`): the same writer, writing lines nobody will
-/// ever speak. Appended rather than shipped as a style, so a user-edited narrate prompt keeps working.
+/// ever speak.
 pub const CAPTIONS_ADDENDUM: &str = "THIS VIDEO HAS NO VOICE-OVER. Nobody speaks your lines: they are burned into the picture as captions and the viewer READS them. Everything above still holds -- the taste, the timing, the restraint -- with these changes:\n- Write for the eye, not the ear. Shorter still: a caption is read in the corner of the attention, and a line the viewer has to study is a line over footage they are missing.\n- \"emotion\" means nothing with no voice. Leave it \"\".\n- Give every entry with text a \"pos\": where the caption sits on the picture. \"bottom\" is the default and almost always right; \"top\" when the action or the game's own UI lives at the bottom of the frame; \"center\" only for a line that IS the moment, like a title card.\nSo each entry is {\"start\":<sec>,\"end\":<sec>,\"at\":<sec>,\"text\":\"...\",\"emotion\":\"\",\"pos\":\"bottom|top|center\"}.";
 
-/// The heading of the User Context block: what it is, and how far it outranks the job's own rules. Only the
-/// mechanics of the answer are not its to change, which is why the sentence says so before the text does.
-/// outranks the rules of the job you were given wherever the two disagree; only the mechanics of the
-/// answer -- its shape, its clock, what may be invented -- are not its to change:
+/// The heading of the User Context block: what it is, and how far it outranks the job's own rules.
 pub const CTX_INTRO: &str = "USER CONTEXT -- written by the person who made this recording and is editing it. It outranks anything you infer from the material, and it outranks the rules of the job you were given wherever the two disagree; only the mechanics of the answer -- its shape, its clock, what may be invented -- are not its to change:";
 
 /// F4.2 (`at most W words`): how many words a clip is offered — [`WORDS_PER_SECOND`] per second of what the
-/// viewer watches, between the floor and the ceiling. The seconds are the on-screen ones, because that is
-/// how long the line has to be spoken in: a clip at 2x affords half as many words as its session length.
+/// viewer watches, between the floor and the ceiling.
 pub fn word_ceiling(length: f64) -> u32 {
     let some = (length * WORDS_PER_SECOND) as i64;
     some.clamp(MIN_WORDS as i64, MAX_WORDS as i64) as u32
@@ -86,10 +62,7 @@ pub fn on_screen(seg: &Seg) -> f64 {
 }
 
 /// F4.2 (`(X s of footage at Rx, Y s on screen)`): how long the clip is on screen and at what speed — the
-/// two facts every brief's heading needs, and only one of which is its length. A clip at 4 runs a quarter of
-/// the session seconds its lines are stamped in, so a line at `[+40s]` of it arrives ten seconds into what
-/// the viewer watches; the rate has to be said somewhere, and this is that somewhere. A rate of 1 is the
-/// footage's own clock and says nothing, so it is not mentioned.
+/// two facts every brief's heading needs, and only one of which is its length.
 pub fn plays(seg: &Seg) -> String {
     if seg.rate > 0.0 && seg.rate != 1.0 {
         let rate = if seg.rate == seg.rate.trunc() {
@@ -107,9 +80,6 @@ pub fn plays(seg: &Seg) -> String {
     format!("{:.0} s", on_screen(seg))
 }
 
-/// F4.2 (`CLIP n: a–b (…, at most W words -- fewer is better, none is fine)`): one clip's heading, with the
-/// dash between the bounds an en dash because that is what the prototype prints and what a reader of the log
-/// expects to see. The clip number is 1-based: it is what the model sends back as `clip`.
 pub fn clip_heading(n: u32, seg: &Seg) -> String {
     format!(
         "CLIP {n}: {:.1}\u{2013}{:.1} ({}, at most {} words -- fewer is better, none is fine)",
@@ -121,17 +91,12 @@ pub fn clip_heading(n: u32, seg: &Seg) -> String {
 }
 
 /// The asset's last path component, query kept: "tier.svg" says nothing about what is on the card and
-/// "tier.svg?S=Dust II,Mirage" says all of it, which is exactly what a narrator needs to read. A `project:`
-/// prefix is part of how a path is *stored*, not part of its name (§1's one path rule), so it goes too — the
-/// writer is shown a file name, never a scheme.
+/// "tier.svg?S=Dust II,Mirage" says all of it, which is exactly what a narrator needs to read.
 fn asset_name(ins: &str) -> &str {
     let name = ins.rsplit('/').next().unwrap_or(ins);
     name.strip_prefix("project:").unwrap_or(name)
 }
 
-/// #29: the card's own words in the brief, read through the same door `describe_insert` uses — the writer sees
-/// in the brief exactly what it would be told if it asked. The file is opened once per insert clip; a session
-/// has a handful of them and the brief is built once per call.
 fn insert_words(seg: &Seg) -> Vec<String> {
     let path = crate::cut_cards::split_path(&seg.ins);
     match std::fs::read_to_string(&path.file) {
@@ -144,18 +109,13 @@ fn insert_words(seg: &Seg) -> Vec<String> {
 }
 
 /// F4.2 S2 (`with its lines within ±P.machine.narrationContextSeconds as "[+Ns] LABEL: text"`), plus the
-/// moments somebody marked. Seconds are offsets from the clip's own start, so the narration can follow the
-/// clip instead of arriving at it; a line just outside the clip goes negative or past the end, which is
-/// exactly what it is. A label contributes its words and nothing else — it changes nothing in the video, it
-/// exists only to be read here: the editor's own word for a moment, which no transcript row can contain.
+/// moments somebody marked.
 pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> String {
     let mut out = String::new();
     for (i, seg) in segs.iter().enumerate() {
         out.push('\n');
         out.push_str(&clip_heading(i as u32 + 1, seg));
         out.push('\n');
-        // An insert has no footage under it and no transcript over it, so the lines around it would describe
-        // whatever it covered — the one thing the viewer will not be looking at. Say what it is instead.
         if seg.is_insert() {
             out.push_str(&format!(
                 "  (not footage: a graphic or clip inserted here, {:?}. Narrate what is ON it, or say \
@@ -164,8 +124,7 @@ pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> S
                 asset_name(&seg.ins)
             ));
             // §12 #28: the file name alone was the whole description, and a name like `tier.svg?S=Dust II`
-            // says nothing about what the viewer sees. The rendered words go under it, so the writer can
-            // speak to the card without spending a tool round to ask what is on it.
+            // says nothing about what the viewer sees.
             for said in insert_words(seg) {
                 out.push_str(&format!("  ON THE CARD: {said}\n"));
             }
@@ -193,8 +152,7 @@ pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> S
             if to <= seg.s || from >= seg.e {
                 continue;
             }
-            // \u00a712 #29: every kind is read here, not only a label and a caption. A zoom, a burned-in graphic
-            // or a mute are decisions about the picture the writer can speak to and cannot otherwise see.
+            // \u00a712 #29: every kind is read here, not only a label and a caption.
             let Some((tag, words)) = effect_tag(effect) else {
                 continue;
             };
@@ -204,12 +162,7 @@ pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> S
     out
 }
 
-/// F4.2's premise: does the finished video play anything anybody said? A spoken line survives when the scene
-/// covering it keeps its lane, and the narrator's own microphone never survives — that is the whole point of
-/// having one. `source` arrives as a `session.tsv` path or `project:`-relative source and `narrator` is that
-/// same spelling trimmed to the name the mic is known by, so both are compared on their last path component:
-/// an insert hears nothing either — it replaces the footage that carried the line. This is what decides
-/// whether [`SPEECH_ADDENDUM`] rides on the prompt.
+/// F4.2's premise: does the finished video play anything anybody said?
 pub fn speech_heard(segs: &[Seg], rows: &[SessionLine], narrator: &str) -> bool {
     for row in rows {
         let source = asset_name(&row.source);
@@ -227,8 +180,7 @@ pub fn speech_heard(segs: &[Seg], rows: &[SessionLine], narrator: &str) -> bool 
 
 /// F4.2 S1 (`SYSTEM house rules + the "narrate" prompt + …`): the two addenda ride on the end, each on its
 /// own, so a project that both plays speech and has no voice-over (a captions-only voice over clips that
-/// keep their lanes) says both. The prompt arrives as [`crate::settings::prompt_text`] answered it — this
-/// module does not read files, so the house rules and the "narrate" wording are the caller's to fetch.
+/// keep their lanes) says both.
 pub fn system(prompt: &str, speech: bool, captions_only: bool) -> String {
     let mut out = prompt.to_string();
     if speech {
@@ -243,8 +195,6 @@ pub fn system(prompt: &str, speech: bool, captions_only: bool) -> String {
 }
 
 /// F4.2 S2 (`USER User Context (+ the speech rule) + "THE CLIPS…" + per clip …`): the whole second message.
-/// An empty context adds nothing at all, not an empty block — a header over nothing would read as a note the
-/// writer should still obey — and the speech rule is only ever about a context that exists.
 pub fn user_message(
     context: &str,
     segs: &[Seg],
@@ -268,11 +218,6 @@ pub fn user_message(
 
 // --- What the tools answer (§02-services.md §3.8) ---------------------------------------------------------
 
-/// The eight bases with the words that mean one of them, in [`crate::narrate_screen::EMOTIONS`]' order (the
-/// prototype's `emoBases`, `go/narrate_tts.go`). The lists are deliberately generous: someone writing
-/// "furious" or "deadpan" means one of these eight, and refusing them would send the line down the slower
-/// path for a spelling. What lives here is only the *vocabulary* — the eight weights a word mixes stay with
-/// the TTS side, as do the named blends' recipes.
 pub const EMOTION_KIN: [(&str, &[&str]); 8] = [
     (
         "happy",
@@ -377,11 +322,6 @@ pub const EMOTION_KIN: [(&str, &[&str]); 8] = [
     ),
 ];
 
-/// `list_emotions(–)` (§3.8: "the eight bases with their kin words **and the named blends with recipes**
-/// \u{2014} the table the prototype keeps to itself"): the bases first, one line each, then every named blend
-/// spelled as its recipe over the base names. §12 #25's other half: a writer shown only the eight bases
-/// invents a blend word, the client resolves it to nothing, and the line goes to a different model. A blend
-/// that is published cannot be missed.
 pub fn list_emotions() -> String {
     let mut lines: Vec<String> = EMOTION_KIN
         .iter()
@@ -402,15 +342,9 @@ pub fn list_emotions() -> String {
     lines.join("\n")
 }
 
-/// The heading the blends section gets, so a reader knows the lines under it are recipes and not more kin.
 const BLENDS_HEAD: &str = "named blends, as their recipes over the eight bases:";
 
-/// §3.8's `pos?`: the three placements Produce can burn, normalised to what the record stores. `"bottom"` is
-/// the default and therefore stored as nothing at all — the same bytes a line with no placement gets. A word
-/// outside these five is refused rather than read as bottom: silently moving a caption the writer meant for
-/// the top of the frame is not something it can notice, and §3.8 says so in as many words ("error when …
-/// `pos` is not top/center/bottom"). No placement at all — the empty string — is `None` too, and its caller
-/// treats that as the default; only a word that names some other corner of the picture is worth answering.
+/// §3.8's `pos?`: the three placements Produce can burn, normalised to what the record stores.
 pub fn normalise_pos(pos: &str) -> Option<&'static str> {
     match pos.trim().to_lowercase().as_str() {
         "top" => Some("top"),
@@ -421,17 +355,12 @@ pub fn normalise_pos(pos: &str) -> Option<&'static str> {
 }
 
 /// §F4.2's `at` clamped inside the clip, never its last second: a line that starts at the final second has
-/// nowhere to be spoken, and a negative offset belongs to the clip before. The caller passes the clip's own
-/// on-screen length, since that — not the session seconds — is the clock the writer was shown.
+/// nowhere to be spoken, and a negative offset belongs to the clip before.
 pub fn at_offset(at: f64, length: f64) -> f64 {
     at.clamp(0.0, (length - 1.0).max(0.0))
 }
 
-/// §3.8's `emotion`: is every word of this tag in the vocabulary? Empty is known — a line with no emotion is
-/// what a captions-only project writes and what a plain reading asks for. Otherwise each comma-separated part
-/// must name a base or one of its kin, with an optional `=weight` whose value has to parse as a number (a
-/// weight that is not a number is not a weight). The named blends are the TTS side's business; here they are
-/// simply words, and refusing them is what tells the writer to ask for a base instead.
+/// §3.8's `emotion`: is every word of this tag in the vocabulary?
 pub fn emotion_known(emotion: &str) -> bool {
     if emotion.trim().is_empty() {
         return true;
@@ -463,13 +392,7 @@ pub fn emotion_known(emotion: &str) -> bool {
 
 /// `write_line(clip, at, text, emotion, pos?)` — §3.8's "ok with **the line as it will play** … and the
 /// emotion resolved into its eight weights; error when the clip is not one given, `pos` is not
-/// top/center/bottom, or the emotion is not in the vocabulary". Refusals come in that order because each is
-/// about a different argument, and the model gets one sentence per call.
-///
-/// What the answer does *not* carry is where the line ends up after packing: the lead, the gap behind the
-/// line above, whether the clip will be grown or the speech sped up. That arithmetic is F4.3's and belongs
-/// to the render; a tool answer says what this call decided (the clamped offset, the ceiling it must stay
-/// under) so a long line can be rewritten shorter instead of squeezed later.
+/// top/center/bottom, or the emotion is not in the vocabulary".
 pub fn write_line(
     clips: &[Seg],
     clip: u32,
@@ -498,10 +421,7 @@ pub fn write_line(
     let screen = on_screen(seg);
     let placed = at_offset(at, screen);
     // \u00a712 #23 / \u00a7 F4.2's flow box: the answer carries "whether it will be squeezed", in the render's
-    // own logged sentence, so a long line can be rewritten here instead of sped up silently later. The
-    // clip's other lines are unknown to one call (the writer may place them in any order, \u00a712 #27), so
-    // the note is about THIS line and the room it has \u{2014} `narrate_ask` measures the WHOLE run at
-    // `finish`, where every line of the clip is known.
+    // own logged sentence, so a long line can be rewritten here instead of sped up silently later.
     let mut body = serde_json::json!({
         "clip": clip,
         "at": placed,
@@ -509,16 +429,10 @@ pub fn write_line(
         "words": text.split_whitespace().count(),
         "at_most_words": word_ceiling(screen),
         "emotion": emotion.trim(),
-        // \u00a73.8: "the emotion resolved into its eight weights" \u{2014} the same string the engine is sent
-        // (``narrate_tts::weights_of``), so one intent makes one performance. A tag with no weights answers
-        // null: the judge reads those lines as words, and saying so beats printing eight floats nobody asked
-        // for.
         "weights": crate::narrate_tts::weights_of(emotion),
         "pos": place,
         "text": text.trim(),
     });
-    // \u00a712 #23 / \u00a7 F4.2's flow box: the answer carries "whether it will be squeezed", in the render's
-    // own logged sentence, so a long line can be rewritten here instead of sped up silently later.
     if let Some(squeeze) = pack_warning(screen, placed, text.trim().chars().count(), &[], clip) {
         body["squeeze"] = serde_json::json!(squeeze);
     }
@@ -528,9 +442,6 @@ pub fn write_line(
 /// The clip's whole run of lines packed, the lead and the gap behind the line above included: F4.3's
 /// arithmetic, kept short on purpose because the render's own copy is the real one (`produce_render::fit`,
 /// whose `MAX_TEMPO` is quoted below) and this is only what the TOOL can say before any render runs.
-/// `before` is the clip's other lines as `(at, characters)` in whatever order they arrived \u{2014} order is
-/// never a complaint (\u00a712 #27) \u{2014} and speech is the page's estimate, the only length there is
-/// before a take exists. `None` when the packed run lands inside the clip.
 pub fn pack_warning(
     screen: f64,
     at: f64,
@@ -566,8 +477,6 @@ pub fn pack_warning(
     if end + crate::produce_render::TAIL_SECONDS <= screen {
         return None;
     }
-    // The tempo the render would need, floored at 1 and held to the ceiling it may not pass: promising a
-    // remedy the render does not have is the mistake \u00a712 #23 was written about.
     let needed = (end + crate::produce_render::TAIL_SECONDS) / screen.max(f64::MIN_POSITIVE);
     let tempo = needed.clamp(1.0, crate::produce_render::MAX_TEMPO);
     Some(crate::produce_render::sped_up_log(
@@ -578,26 +487,16 @@ pub fn pack_warning(
     ))
 }
 
-/// `leave_silent(clip)` — ok, and nothing else. Silence has to be *said*: a clip with no entry at all is a
-/// reply the caller rejects, while this is a clip the writer looked at and left alone.
+/// `leave_silent(clip)` — ok, and nothing else.
 pub fn leave_silent(clip: u32) -> String {
     crate::tools::ok(&serde_json::json!({ "clip": clip, "silent": true }))
 }
 
-/// §3.8's `get_lines(from, to)`: how many rows one read may hand back. The spec gives no number; an
-/// unbounded read is refused for the same reason `tools::WEB_READ_MAX_BYTES` bounds a page — one result
-/// that grows with the session eventually outgrows the conversation it arrives in, and past that the model
-/// stops reading its own brief. 40 rows is several minutes of speech either side of a clip, well over what
-/// a narration question needs.
+/// §3.8's `get_lines(from, to)`: how many rows one read may hand back.
 pub const GET_LINES_MAX_ROWS: usize = 40;
 
 /// `get_lines(from, to)` — §3.8: "the transcript around a clip, beyond the brief's
-/// ±P.machine.narrationContextSeconds". The brief already carries everything inside
-/// [`CONTEXT_SECONDS`]; this is the tool for what lies outside it, so the writer can ask rather than guess
-/// what was said before the cut. Rows come back in the SAME shape the brief prints them (`[+Ns] LABEL:
-/// text`, seconds relative to `anchor`), because two spellings for one thing is the mistake class §12 #27
-/// calls out. Past [`GET_LINES_MAX_ROWS`] the tail is dropped and the answer says so, rather than silently
-/// answering less than it was asked.
+/// ±P.machine.narrationContextSeconds".
 pub fn get_lines(rows: &[SessionLine], anchor: f64, from: f64, to: f64, narrator: &str) -> String {
     let mut hits: Vec<&SessionLine> = rows
         .iter()
@@ -638,7 +537,7 @@ pub fn get_lines(rows: &[SessionLine], anchor: f64, from: f64, to: f64, narrator
 }
 
 /// `{}` on a whole f64 prints "2", which is what "at 2x" reads as; a trailing tail of decimals is not wanted
-/// in a brief line. The same spelling [`plays`] gives the clip heading.
+/// in a brief line.
 pub fn rate_words(rate: f64) -> String {
     if rate == rate.trunc() {
         format!("{}", rate as i64)
@@ -649,10 +548,7 @@ pub fn rate_words(rate: f64) -> String {
 
 /// \u00a712 #29: the narration brief passes EVERY effect kind \u{2014} "the narration brief carries only `label`
 /// and `text` effects: a zoom, an SVG burned over the picture, a volume mute \u{2014} all invisible to the
-/// writer \u{2192} pass every kind". A decoration is a decision about the picture, and a moment the writer
-/// cannot see is a moment it walks past. `MARKED` and `CAPTION` keep the words \u00a7 F4.2 spells for them;
-/// the others are named by what the writer would have to speak to (a stop is not a rate).
-/// `None` is the one case the old rule had right: a mark with no word in it says nothing about anything.
+/// writer \u{2192} pass every kind".
 pub fn effect_tag(effect: &Fx) -> Option<(&'static str, String)> {
     let text = effect.text.trim();
     match effect.kind.as_str() {
@@ -666,7 +562,6 @@ pub fn effect_tag(effect: &Fx) -> Option<(&'static str, String)> {
                 text.to_string()
             },
         )),
-        // A rate of nought is a stop, the same reading the cut and the render give it.
         "speed" | "stop" => Some(if effect.rate == 0.0 {
             ("STOP", "the picture holds here".to_string())
         } else {
@@ -690,8 +585,6 @@ pub fn effect_tag(effect: &Fx) -> Option<(&'static str, String)> {
                 text.to_string()
             },
         )),
-        // An unknown kind is still said rather than dropped, under its own word: not knowing what it does is
-        // not a reason to hide that it is there.
         other => Some((
             "EFFECT",
             format!(
@@ -707,13 +600,6 @@ pub fn effect_tag(effect: &Fx) -> Option<(&'static str, String)> {
 }
 
 /// `describe_insert(clip)` — §3.8: "what is actually on an inserted card: its text, parameters, length.
-/// The prototype passes only the **file name**, so `tier.svg?S=Dust II` is all the writer knows about a
-/// full-screen graphic". The app rendered the card and split its path already ([`crate::cut_cards`]), so
-/// the parameters are known by name and value (unescaped) and go in the answer as named pairs instead of as
-/// a suffix the writer has to decode. What is NOT claimed here is the card's drawn text: that lives in the
-/// SVG file on disk, which this call does not open — reading a file the writer cannot see would be a second
-/// source of truth, and headless there is no card to render. The spec asks for "its text"; answered as the
-/// card's own name plus the parameters the picture is made of.
 pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
     let Some(index) = (clip as usize).checked_sub(1) else {
         return crate::tools::error(&format!(
@@ -742,7 +628,7 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
         .map(|(key, value)| format!("{key}={value}"))
         .collect();
     // Where the app put it, in the two spellings the cut uses: an absolute seconds-from-clip-start `offset=`, or
-    // a named `at=` position. The model is told which, because #39 is about it knowing WHERE it went.
+    // a named `at=` position.
     let placed = match path.args.iter().find(|(key, _)| key == "offset") {
         Some((_, seconds)) => format!("{seconds}s from the clip's start"),
         None => match path.args.iter().find(|(key, _)| key == "at") {
@@ -752,9 +638,7 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
     };
     // §12 #28: the card's WORDS, read out of the document the app would draw — through the same door the
     // render goes (`produce_cards::draw`: a stamped card is redrawn from its arguments, an unstamped one has
-    // its holes filled), then the `<text>` elements picked out of the result. A file that cannot be read
-    // answers with what the cut knows (kind + length) rather than an empty string or a refusal: the writer is
-    // told what it can be told and nothing is invented.
+    // its holes filled), then the `<text>` elements picked out of the result.
     let words = match std::fs::read_to_string(&path.file) {
         Ok(raw) => {
             let card = crate::produce_cards::draw(&seg.ins, &raw);
@@ -762,9 +646,7 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
         }
         Err(_) => Vec::new(),
     };
-    // #38: a card is not footage. Whether this clip is a STILL (an insert, or a freeze) is what the writer of
-    // a description has to know, because "the screen shows the scoreboard" and "the player drives onto the
-    // field" are different sentences about the same clip.
+    // #38: a card is not footage.
     let still = crate::produce_cards::is_card(&path.file) || seg.dur > 0.0;
     crate::tools::ok(&serde_json::json!({
         "clip": clip,
@@ -778,16 +660,7 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
 }
 
 /// `finish` — §3.8: "names the clips with no answer and those whose lines will not fit, so they can be
-/// rewritten shorter instead of squeezed by the render". Both lists count the SAME set of clips — every
-/// clip the writer was asked about — and are measured elsewhere and handed in: `answered` holds a number for
-/// each clip it placed a line on or explicitly left silent, `unfitted` comes from the packing check
-/// ([`crate::produce_render::fit`], whose `MAX_TEMPO` 1.25 is the squeeze limit). F4.3 owns that
-/// arithmetic; this reports it. ok ONLY when both lists cover every clip 1..=N — a finish that waves
-/// through a clip nobody answered is how the prototype shipped silence.
-///
-/// Clip order is never a complaint here (§12 #27: the prototype rejected out-of-order entries while
-/// re-sorting them anyway). The numbers are sorted for the message alone so the sentence reads in clip
-/// order whatever order the answers arrived in.
+/// rewritten shorter instead of squeezed by the render".
 pub fn finish(answered: &[u32], unfitted: &[u32]) -> String {
     let total = answered
         .iter()
@@ -799,7 +672,6 @@ pub fn finish(answered: &[u32], unfitted: &[u32]) -> String {
     let mut bad: Vec<u32> = unfitted.to_vec();
     bad.sort_unstable();
     bad.dedup();
-    // A clip that got no answer at all is already named under that heading; don't also call it unfitted.
     missing.sort_unstable();
     bad.retain(|n| !missing.contains(n));
     if missing.is_empty() && bad.is_empty() {
@@ -859,8 +731,7 @@ pub fn progress(written: u32, total: u32) -> String {
     format!("writing {written}/{total} clips")
 }
 
-/// Only ever forward. A retry starts the count again, and a bar that fell back to 1/9 would read as work
-/// being undone rather than redone.
+/// Only ever forward.
 pub fn progress_forward(best: u32, seen: u32) -> u32 {
     best.max(seen)
 }

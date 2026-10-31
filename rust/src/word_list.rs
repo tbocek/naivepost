@@ -1,17 +1,5 @@
 //! F1.13 The session's word list (spec/04-prepare.md) — the one list retakes, joins, `final.txt` and
 //! subtitles all read.
-//!
-//! Aligner (or ASR) tokens come in, words go out: glued on the session clock, with a word the aligner
-//! put on almost no sound moved onto the end of the word before it, then dressed with the raw
-//! transcript's case and punctuation and re-dressed with the fix pass's spelling. **Times never change —
-//! only the written form**, which is what makes the list safe for every reader: a cut measured against it
-//! is unaffected by a respelling, and a caption shows what the transcript pass settled on rather than
-//! what one recogniser happened to hear.
-//!
-//! Two spellings per word, deliberately: `match_word` is what every pass matches against and never moves
-//! once glued, `written` is what a human or the join model is shown and the only field dressing rewrites.
-//! "Only .raw changes — the word used for MATCHING stays the recogniser's, because every pass that reads
-//! the words reads that one" (prototype `go/subwords.go`).
 
 use crate::tools::mm_ss;
 
@@ -23,16 +11,8 @@ pub const STRAY_RATIO: u32 = 10;
 /// speech, and so is a loud one after a pause. P.machine.strayWordGapSeconds
 pub const STRAY_GAP_SECONDS: f64 = 1.0;
 
-/// How far ahead in the transcript a word is looked for when dressing: the ASR may have heard a word the
-/// transcript has twice, or missed one, and eight fields covers both without walking into the next
-/// sentence. P.eng.dressReachWords
 pub const DRESS_REACH_WORDS: usize = 8;
 
-/// How far apart the two spellings of one stretch may be before the re-dressing walk gives up on it:
-/// "two hundred and sixty" against "RSA-260" is four words against one, and six covers every rewrite of a
-/// number, a name or a company seen so far. Past it the walk has lost its place, and dressing the rest of
-/// the line from the wrong offset would put the right words on the wrong seconds.
-/// P.eng.respellRunReachWords
 pub const RESPPELL_REACH_WORDS: usize = 6;
 
 /// One aligner (or ASR) token, already in session seconds. The caller converts samples with
@@ -85,14 +65,6 @@ pub fn bare(word: &str) -> String {
 }
 
 /// S1: glue tokens into words on the session clock.
-///
-/// A leading space anywhere means the server answered in pieces — " wa", "lle", "t" — and a token of
-/// nothing but space marks where a word begins; with no leading space anywhere every token is a word, and
-/// the same rule would otherwise weld a whole take into one word (the prototype measured "1 word" twice
-/// before it found this out). Punctuation carries no sound of its own, so it joins the word in front
-/// without moving that word's end: left in, a comma's stamp lands in the silence after the sentence and
-/// makes every last word of that sentence look a second longer than it is. A token with neither sound nor
-/// a word before it belongs to nothing and is dropped.
 pub fn glued(source: &str, tokens: &[Token]) -> Vec<Word> {
     let pieces = tokens.iter().any(|token| token.word.starts_with(' '));
     let mut out: Vec<Word> = Vec::with_capacity(tokens.len());
@@ -130,12 +102,6 @@ pub fn glued(source: &str, tokens: &[Token]) -> Vec<Word> {
 }
 
 /// S2: a word placed on almost no sound, well after the word before it, is timed at that word's end.
-///
-/// The aligner matches text to sound, and a last word said quickly after the one before can be matched to
-/// the next thing that makes any noise at all — on one lecture "Geld." landed on a breath 3.4 s late and
-/// the clip ending on it carried three seconds of silence. `peak` is the caller's envelope lookup
-/// (`None` = no envelope for this recording, in which case nothing can be called a stray); both the
-/// median and the gap are per recording. Returns one log line per retimed word.
 pub fn retimed(
     words: &mut [Word],
     mut peak: impl FnMut(&str, f64, f64) -> Option<i32>,
@@ -216,11 +182,6 @@ fn median(values: &[i32]) -> Option<i32> {
 }
 
 /// S3: the raw transcript's case and punctuation, put back on words the aligner answered bare.
-///
-/// The aligner hands back what it matched rather than what it was given, and a subtitle is read. Each
-/// recording walks its own part of the list with its own cursor, both in time order; a word the
-/// transcript has no counterpart for keeps what was heard, since a caption missing a capital is a smaller
-/// fault than one missing a word.
 pub fn dressed(words: &mut [Word], transcript: &str) {
     let fields: Vec<&str> = transcript.split_whitespace().collect();
     // One cursor per recording: the words and the transcript are both in time order, so each recording
@@ -240,13 +201,6 @@ pub fn dressed(words: &mut [Word], transcript: &str) {
 }
 
 /// S4: the fix pass's spelling over the same seconds — a re-dressing and never a rewrite.
-///
-/// `fixed` is one session line's words as the transcript pass wrote them. Where the two spell a stretch
-/// differently the whole fixed spelling goes on the FIRST word of the stretch and the rest are emptied:
-/// every word keeps its own seconds, so a cut through the middle of such a stretch loses the words rather
-/// than showing words the video does not play. Returns whether anything was touched — a line sharing no
-/// word with these is left alone entirely, because rewriting from a text that shares nothing with it puts
-/// the wrong words on these seconds.
 pub fn respelled(words: &mut [Word], fixed: &[&str]) -> bool {
     if words.is_empty() || fixed.is_empty() || !any_shared(words, fixed) {
         return false;
@@ -345,13 +299,6 @@ pub fn written(words: &[Word]) -> Vec<String> {
 }
 
 /// Whether the join pass's answer names this word.
-///
-/// [`crate::tools::textedit::Join`] is shown the `written` forms and matches what the model sends back
-/// against exactly these tokens: a word printed as two owns both pieces, so a piece survives if either
-/// half of it does — "RSA-260" against a heard "rsa" is one word said once. A word's own punctuation is
-/// dropped first (a comma the model did not repeat is no obstacle), but a hyphen or a space is kept as the
-/// seam between its pieces, so only a piece taken at that seam matches: an unrelated word never does, and
-/// neither does a fragment from the middle of one.
 pub fn joins_token(word: &str, printed: &str) -> bool {
     let (word, printed) = (named_forms(word), named_forms(printed));
     if word[0].is_empty() || printed[0].is_empty() {
@@ -390,18 +337,9 @@ pub fn owns(words: &[Word], printed: &str) -> Option<usize> {
 }
 
 /// The whole of F1.13 for one session: tokens in, the list and its log out.
-///
-/// `envelopes` is each recording's loudness lookup (S2), `transcripts` its raw transcript as the aligner
-/// was handed it (S3), and `fixed` the words of each fixed session line that covers these seconds (S4).
-/// The row [`crate::run_stages::drive_walk`] reads as “build the session's word list” rather than “spawn
-/// this”: §F1.13's work is a read of files Prepare already wrote, so it is a dial like fix's two session
-/// rows, and the row says which job by its program.
 pub const WORDS_TASK: &str = "naivepost:words";
 
 /// The walk's row for this step, or `None` when the policy asks for no marking pass at all.
-///
-/// Gating here rather than only inside [`press_word_list`] is what keeps an empty stage out of the plan:
-/// under `MarkingPass::None` nothing reads the list, so a row would cost the bar a task that does nothing.
 pub fn row(project: &crate::project::Project) -> Option<crate::run_stages::Task> {
     // No sources means no words to list, and the fix stage is not planned for them either — a row of its
     // own would be the only thing in an otherwise empty plan.
@@ -421,10 +359,6 @@ pub fn row(project: &crate::project::Project) -> Option<crate::run_stages::Task>
 }
 
 /// The row [`crate::run_stages::drive_walk`] hands here: build the list from the session on disk.
-///
-/// Only wiring — every rule stays in [`press_word_list`]. The session is the working folder's own, read
-/// off the environment exactly as `fix_call::run_task` and `fix_session::run_placement` read it, so a
-/// test that moves the process gets THIS session and not the launcher's.
 pub fn run_task(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let session = crate::startup::open_dir();
     let tree = crate::layout::Tree::new(&session).map_err(|_| {
@@ -444,11 +378,6 @@ pub fn run_task(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> 
     Ok(())
 }
 
-/// Who reads `session.tsv` is not this module's question — the caller passes the lines through
-/// [`crate::textfmt::read_session`], skipping EVENT rows and lines with no text, which say nothing about
-/// spelling. Lines are asked for per recording in time order and each gets its own cursor over the words,
-/// whose middle falls inside it. A line is asked for at most once, which is what stops a caller that
-/// answers from a clock rather than from its arguments from being looped over forever.
 pub fn list(
     sources: &[(String, Vec<Token>)],
     mut envelopes: impl FnMut(&str, f64, f64) -> Option<i32>,
@@ -487,11 +416,6 @@ pub fn list(
 
 /// The whole session list, built and saved. `list` composed with [`save`], so a caller that has the
 /// sources in hand makes one call and every later reader finds the same words.
-///
-/// Saving is what makes the list the fix pass's resume marker (spec/00-principles: a step's own output
-/// file is what says it ran): a later ▶ reads this instead of re-gluing, and an interrupted run resumes
-/// rather than restarting. Returns the log lines S2 produced — the stray sentences — which the caller
-/// prints; they are said once, here, at the moment the times were set.
 pub fn build_session(
     sources: &[(String, Vec<Token>)],
     envelopes: impl FnMut(&str, f64, f64) -> Option<i32>,
@@ -505,11 +429,6 @@ pub fn build_session(
 }
 
 /// Write the list to `prepare/word_list.json`.
-///
-/// A JSON array of the words themselves: nothing derived is stored, because the list IS the derived
-/// thing and every field of it is load-bearing for some reader (`match_word` matches, `written` shows,
-/// `stray` tells a cut what the aligner did not really hear there). 0644 through `Tree::write_file`,
-/// the same mode every project file gets.
 pub fn save(tree: &crate::layout::Tree, words: &[Word]) -> Result<(), String> {
     let text = serde_json::to_string(words).map_err(|err| format!("word list: {err}"))?;
     let path = tree.session_word_list_json();
@@ -535,23 +454,7 @@ pub fn load(tree: &crate::layout::Tree) -> Result<Option<Vec<Word>>, String> {
         .map_err(|err| format!("{}: {err}", path.display()))
 }
 
-// ---- the ▶ entry point ---------------------------------------------------
-
 /// The one call the ▶ handler makes so the session's word list exists before retakes and joins read it.
-///
-/// Gated on [`MarkingPass::None`] alone, not on `Retakes`: F1.13's title says this list is shared by
-/// retakes, joins, `final.txt` and subtitles, so a Joins pass needs it exactly as much as a Retakes
-/// pass does. Building twice is stopped by the RESUME rule instead of by the pass name — the saved file
-/// IS the evidence the step ran (spec/00-principles), so a list already on disk is reported and left
-/// alone rather than re-glued over.
-///
-/// No model is contacted: every field here comes off files Prepare already wrote. What the wave cache
-/// contributes is S2's stray test, and [`crate::wave_build::ensure`] writes that cache from Prepare's
-/// speech pass (§F1.11), so a live session has envelopes to measure against; a lane whose cache is
-/// missing answers `None`, and `retimed` marks nothing there rather than inventing loudness.
-///
-/// Failure is specific and local: one line naming what could not be read, and the run carries on
-/// elsewhere.
 pub fn press_word_list(
     tree: &crate::layout::Tree,
     project: &crate::project::Project,
@@ -577,10 +480,6 @@ pub fn press_word_list(
             )]
         }
     };
-    // No tokens means the stages have not produced anything to glue (this row ran before the speech
-    // pass, or nothing was transcribed). Writing a list with no words would be worse than writing none:
-    // the file IS this step's resume marker, so an empty one makes every later ▶ answer "already built --
-    // 0 words" and the session never gets a real list. Say what is missing and leave the marker unwritten.
     if sources.iter().all(|(_, tokens)| tokens.is_empty()) {
         return vec![no_tokens_log()];
     }
@@ -614,8 +513,6 @@ pub fn press_word_list(
 }
 
 /// The resume answer: one line when the list is already on disk, `None` when it has to be built.
-///
-/// Split out so the "second press changes nothing" claim is checkable without running the whole build.
 fn resume_line(tree: &crate::layout::Tree) -> Result<Option<String>, String> {
     Ok(load(tree)?.map(|words| already_built_log(words.len())))
 }
@@ -648,12 +545,6 @@ fn gather(
     for source in crate::fix_session::in_clock_order(project) {
         let lane = lane_of(source);
         let off = offsets.get(&lane).copied().unwrap_or(0.0);
-        // The aligner's times first: they are what a cut point is measured against, and gluing off
-        // them keeps the list agreeing with the edges F1.11 will place. ASR's own samples are the
-        // fallback for a session that was never aligned (no aligner served, or alignment skipped),
-        // which is the "aligner or ASR tokens" the spec names — the OR is a preference, not a coin
-        // toss, and taking ASR where an aligner answered would put cuts on coarser times than the
-        // app computed.
         let timed = match crate::requests::read_aligned(tree, &lane)? {
             Some(doc) if !doc.words.is_empty() => doc.words,
             _ => crate::requests::read_words(tree, &lane)?
@@ -749,9 +640,6 @@ fn raw_transcript(tree: &crate::layout::Tree, lane: &str) -> Option<String> {
 }
 
 /// The fix pass's spelling covering these seconds (S4), from either fixed file.
-///
-/// Answered strictly from the arguments: a closure that read a clock instead would send `list`'s while
-/// loop round forever, since every ask would succeed at the same window.
 fn fixed_spelling(
     tree: &crate::layout::Tree,
     lane: &str,

@@ -1,31 +1,4 @@
 //! F2.6 S1/S2/S3 — the selection gesture on the PAINTED band, read where it actually landed.
-//!
-//! F2.6's rule is `crate::cut_select`'s alone (which scope a ground gives, which part a press grabs, how
-//! far a snapped end may go). What lives here is only what a widget can answer: which second a pixel is at
-//! the zoom the band is drawn at, which band the y fell in, which recording a sound scope names, and
-//! whether the hand is on the band that is already there. The geometry comes from the same doors the
-//! painter and `cut_line_press` use (`cut_view::pps`/`origin`/`gutter_px`, `cut_tracks::bands_for`,
-//! `timeline::row_count`), so a drag's seconds agree with the ink under the pointer instead of with the
-//! placeholder strip's constants.
-//!
-//! Split out of `window.rs`, which is past its size budget.
-//!
-//! # What each spec clause costs here
-//!
-//! - **S1** draws from the second AT DRAG-BEGIN to the second at the pointer — never from 0. Under
-//!   `cut_select::DRAG_SLOP_PX` the press is a click and this module does NOTHING: F2.4's line press owns
-//!   a click on the same widget, and two claims on one press is how a click both places a line and draws a
-//!   band. The scope is decided once at begin and kept (`keep_started_surface`), so dragging across a
-//!   picture row after pressing on a wave strip does not silently change what the band is *of*.
-//! - **S1's effects lane** is the one ground that refuses: a press there puts a held effect down
-//!   (`ui::press_fx_lane`) and draws no band, at BEGIN, once — a drag across the lane must not put the
-//!   same effect down twelve times.
-//! - **S2** routes an update by `cut_select::part_at`: an end resizes and the middle moves, both through
-//!   `ui::nudge_selection`, which rebuilds the 8 px snap marks from the live cut every call. A press clear
-//!   of the band (`Part::Outside`) starts a new one, which is S1's job.
-//! - **S3**'s marks follow because every change ends in `ui::refresh_selection_readout`, which now also
-//!   queues a repaint of the band — the painter's in/out flags and blue band read `Scene::selection`,
-//!   which is this window's band, so nothing here paints anything itself.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -36,7 +9,7 @@ use crate::timeline;
 use crate::ui::{cut_folds, cut_tracks, cut_view, window as ui};
 
 /// The band's geometry and pointer maths for one press, in one place so the widget handler and a test
-/// answer with the same numbers. Nothing here decides a scope or a snap — that is `cut_select`.
+/// answer with the same numbers.
 #[derive(Debug, Clone)]
 pub struct Geometry {
     /// The band's pixels-per-second (`cut_view::strip_pps` on the placeholder strip, `cut_view::pps` on
@@ -51,14 +24,13 @@ pub struct Geometry {
     /// Rows the page draws, so `surface_at` knows where the last row ends.
     pub row_count: usize,
     /// The tape as the painter lays it out (`cut_tracks::band_span`): the filmed runs at this zoom, folds and
-    /// the gaps between recordings taking no width. Seconds and pixels are converted through it.
+    /// the gaps between recordings taking no width.
     pub span: timeline::Span,
 }
 
 impl Geometry {
     /// The live page's geometry: the zoom and scroll the band paints with, the row count the cut says, and
-    /// the lane depth the lane paints with. `Scene::of` measures the effects lane from the newest review
-    /// cut, so a press must too, or the rows shift under the pointer.
+    /// the lane depth the lane paints with.
     pub fn of(window: &adw::ApplicationWindow) -> Self {
         let cut_ = ui::newest_review_cut();
         let scene = cut_view::band_scene_for(window);
@@ -73,8 +45,7 @@ impl Geometry {
     }
 
     /// The session second a press x is at: the painter's own inverse (`cut_tracks::span_t_at`, the scroll
-    /// added back), never negative. The same door `cut_line_press::press` asks, which is the point: a line
-    /// click and a band drag must call the same pixel the same second.
+    /// added back), never negative.
     pub fn second_at(&self, x_px: f64) -> f64 {
         cut_tracks::span_t_at(&self.span, x_px + self.origin)
     }
@@ -97,21 +68,12 @@ impl Geometry {
         }
         // Named ground runs from the ruler at the top of the band through the last row's bottom; the
         // selection band and the effects lane above the rows name ground too, and a y below the rows on a
-        // session that has lanes is a lane, which is named ground as well. The bound is the whole PITCH
-        // (picture + wave strip), not the picture half alone: with a split row a wave-strip press would
-        // otherwise read as unnamed ground and a click there would clear the selection instead of leaving
-        // F2.4's line click to place the line.
+        // session that has lanes is a lane, which is named ground as well.
         y_px <= self.bands.first_picture
             + self.row_count as f64 * (self.bands.row_height + self.bands.wave_height)
     }
 
-    /// S2: which part of the band already drawn this press lands on. `Outside` when there is no band.
-    ///
-    /// The reach comes from the surface the PRESS is on (§I's "selection ends on the pictures within 10 px"),
-    /// not from one constant: the same pixel offset grabs an end on a picture row and misses it in the
-    /// selection band, which is what `cut_select::grip_px` decides. A caller that has no surface to hand (the
-    /// older two-argument call sites) gets [`GRIP_PX`](cut_select::GRIP_PX), the narrow grip, i.e. exactly the
-    /// rule this method had before §6's third reach existed.
+    /// S2: which part of the band already drawn this press lands on.
     pub fn part_of(&self, x_px: f64, band: &cut_select::Selection) -> Part {
         self.part_of_on(x_px, band, Surface::SelectionBand)
     }
@@ -127,16 +89,11 @@ impl Geometry {
     }
 }
 
-/// What one press means, decided from the geometry and the band that was there. Pure: it names the work
-/// without touching a slot, so the decision is testable without a window.
+/// What one press means, decided from the geometry and the band that was there.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Press {
-    /// A new drag from `from`, scoped to `scope`. A `Surface::FxLane` scope is the one refusal: put a held
-    /// effect down and draw no band.
     Draws { from: f64, surface: Surface },
-    /// The hand is on the band that is already there: adjust THAT part.
     Adjusts { part: Part },
-    /// Under the drag slop: a click, which F2.4's line press owns. This module does nothing at all.
     Click,
 }
 
@@ -184,7 +141,6 @@ pub fn camera_for_row(cut_: &Cut, row: usize) -> Option<String> {
     cams.get(row).map(|cam| format!("cam{cam}"))
 }
 
-/// The row index a y falls in on this band, however the surface answer named it.
 fn row_of(geo: &Geometry, y_px: f64) -> usize {
     let pitch = geo.bands.row_height + geo.bands.wave_height;
     if pitch <= 0.0 || y_px < geo.bands.first_picture {
@@ -194,16 +150,13 @@ fn row_of(geo: &Geometry, y_px: f64) -> usize {
 }
 
 /// The sound scope for a surface, resolved through live state: a wave strip names the camera of the row it
-/// hangs under, a lane names the separate recording stacked there. `None` for ground that is neither.
+/// hangs under, a lane names the separate recording stacked there.
 pub fn sound_scope(geo: &Geometry, surface: Surface, cut_: &Cut, y_px: f64) -> Option<String> {
     match surface {
         Surface::WaveStrip => camera_for_row(cut_, row_of(geo, y_px)),
         // A lane press names the recording stacked at THAT y: the lanes are drawn in the order the cut
-        // lists them, one row each, starting under the last camera row. Naming only the first would report
-        // one recording's sound however many rows the session has.
+        // lists them, one row each, starting under the last camera row.
         Surface::Lane => {
-            // `lanes.len()` may be 0 (a session with nothing laid down still draws the lane box): saturate
-            // rather than subtract, or a lane press on an empty lane crashes the page.
             let index = cut_
                 .lanes
                 .len()
@@ -215,8 +168,7 @@ pub fn sound_scope(geo: &Geometry, surface: Surface, cut_: &Cut, y_px: f64) -> O
     }
 }
 
-/// Which lane row (0-based, in the cut's own order) a y below the last camera row falls in. The rows are
-/// `fx_lane::lane_height_px`-sized and stacked from `bands.fx.0`, which is where the painter puts them.
+/// Which lane row (0-based, in the cut's own order) a y below the last camera row falls in.
 fn lane_row_at(geo: &Geometry, y_px: f64) -> usize {
     let row_px = crate::fx_lane::lane_height_px(1).max(1.0);
     if y_px < geo.bands.fx.0 {
@@ -226,16 +178,13 @@ fn lane_row_at(geo: &Geometry, y_px: f64) -> usize {
 }
 
 // The second this window's placeholder-strip drag began at, newest-slot rule like `SELECT_GESTURES` in
-// `window.rs`. Lives here because the only reader is `window.rs`'s own strip handler, and `window.rs` is
-// past its size budget.
+// `window.rs`.
 thread_local! {
     static DRAG_BEGINS: std::cell::RefCell<Vec<Option<f64>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Remember where this window's drag started, in session seconds. The whole Vec is swapped rather than
-/// borrowed in place: a handler that reads [`drag_begin`] later would meet a live `borrow_mut` here and
-/// panic with "RefCell already borrowed" inside a gesture callback.
+/// Remember where this window's drag started, in session seconds.
 pub(crate) fn set_drag_begin(at: f64) {
     DRAG_BEGINS.with(|slots| {
         let mut slots = slots.borrow_mut();
@@ -252,21 +201,16 @@ pub(crate) fn drag_begin() -> Option<f64> {
     DRAG_BEGINS.with(|slots| slots.borrow().last().copied().flatten())
 }
 
-/// What one drag does, per event, against the page. The three handlers below call exactly these.
 #[derive(Debug, Clone)]
 struct Drag {
-    /// The second the hand went down on — S1's start, kept for the whole drag.
     from: f64,
     /// The surface chosen at begin and never re-chosen (S1: scope is what it was DRAWN on).
     surface: Surface,
-    /// The part grabbed at begin, if this was an adjustment. `None` for a fresh draw.
     part: Option<Part>,
-    /// The x at begin, for the slop test.
     start_x: f64,
 }
 
 thread_local! {
-    /// The drag in flight on this window's band, newest-window rule as everywhere else here.
     static DRAGS: std::cell::RefCell<Vec<std::rc::Rc<std::cell::RefCell<Option<Drag>>>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -289,10 +233,7 @@ fn held_drag() -> Option<Drag> {
 }
 
 /// S1/S2 at drag-begin: decide the scope or the grabbed part, and handle the effects lane there and once.
-/// Returns what it decided so a test can read the same answer the page acted on.
 pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
-    // A press on one of the band's marks (a ✕, a fold badge, a sound switch, a lens) is that mark's, answered on
-    // release by `cut_band_marks::press_at`: it starts no selection and clears none.
     let scene = crate::ui::cut_view::band_scene_for(window);
     let rows = crate::ui::cut_tracks::rows_for_press(&scene);
     if crate::ui::cut_band_marks::mark_at(&scene, rows, x_px, y_px).is_some() {
@@ -305,8 +246,6 @@ pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
     match &press {
         Press::Draws { from, surface } => {
             if *surface == Surface::FxLane {
-                // The one ground that refuses a selection: put a held effect down, draw no band, and leave
-                // the band that was there exactly as it was.
                 ui::press_fx_lane(window);
                 *current_drag().borrow_mut() = None;
                 return press;
@@ -317,8 +256,7 @@ pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
                 part: None,
                 start_x: x_px,
             });
-            // S1's scope is decided now, once. Nothing is drawn yet: a press that turns out to be a click
-            // must not have replaced the band.
+            // S1's scope is decided now, once.
         }
         Press::Adjusts { part } => {
             *current_drag().borrow_mut() = Some(Drag {
@@ -331,7 +269,7 @@ pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
         Press::Click => {
             // F2.6 S1: a click on ground the band cannot name (the blank gutter at its left, everything
             // outside it) selects nothing, said here rather than silently drawing a band the user did not
-            // ask for. Everything else keeps F2.4's click — it places the line — and draws no selection.
+            // ask for.
             if !geo.names_ground(y_px) {
                 ui::clear_selection(window);
             }
@@ -341,8 +279,7 @@ pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
     press
 }
 
-/// S1/S2 per update: draw from the remembered begin second, or move/resize the grabbed part. Under the
-/// slop nothing has happened yet — the press may still turn out to be F2.4's click.
+/// S1/S2 per update: draw from the remembered begin second, or move/resize the grabbed part.
 pub fn update(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) {
     let Some(drag) = held_drag() else {
         return;
@@ -353,14 +290,9 @@ pub fn update(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) {
     let geo = Geometry::of(window);
     let at = geo.second_at(x_px);
     if let Some(part) = drag.part {
-        // S2: ends resize, middle moves; `nudge_selection` rebuilds the snap marks for THIS call, so a
-        // border an edit added mid-drag is a snap target the moment it exists.
         ui::nudge_selection(window, part, at, geo.pps);
         return;
     }
-    // S1: from the second the hand landed on, to the second under it now — the scope from begin, the
-    // recording named off live state, and `keep_started_surface` holding the ground even when the pointer
-    // wanders into another band mid-drag.
     let surface = cut_select::keep_started_surface(Some(drag.surface), geo.surface_at(y_px));
     let cut_ = ui::newest_review_cut();
     let recording = sound_scope(&geo, surface, &cut_, y_px);
@@ -372,16 +304,10 @@ pub fn update(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) {
 /// drawn nothing.
 pub fn end(window: &adw::ApplicationWindow) {
     *current_drag().borrow_mut() = None;
-    // The readout already followed every update; queue the band once more so the in/out flags land on the
-    // second the hand stopped on even if the last update was inside a snap's reach.
     cut_view::repaint_page(window);
 }
 
-/// The recording name a wave-strip or lane selection is scoped to. `cut_select::draw` takes `Option<&str>`
-/// and refuses (returns `None`) for a sound scope with no name, so the page must name one: the camera whose
-/// row the strip hangs under (or, on a lane, the cut's own separate recording), named off this window's
-/// live cut through the same door the painted band uses — never a stand-in literal, which would report a
-/// sound the session may not have.
+/// The recording name a wave-strip or lane selection is scoped to.
 pub fn recording_for_surface(
     window: &adw::ApplicationWindow,
     surface: Surface,
@@ -391,9 +317,7 @@ pub fn recording_for_surface(
     sound_scope(&Geometry::of(window), surface, &cut_, y_px)
 }
 
-/// Attach this window's selection drag to the PAINTED band and store it for a test to fire. Left button
-/// only: the right button belongs to trim/move (F2.8), and a click on the same widget is F2.4's line press
-/// (`cut_line_press::attach`), which this module deliberately does not consume.
+/// Attach this window's selection drag to the PAINTED band and store it for a test to fire.
 pub fn attach(window: &adw::ApplicationWindow) {
     let Some(content) = window.content() else {
         return;
@@ -435,9 +359,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// The PAINTED band's selection gesture ([`attach`]), for a test that fires it the way GTK does. Test-only
-/// reader: the page attaches the gesture and never asks for it back, so a name saying so keeps the program
-/// path honest about what calls this.
+/// The PAINTED band's selection gesture ([`attach`]), for a test that fires it the way GTK does.
 pub fn band_selection_gesture_for_test(
     window: &adw::ApplicationWindow,
 ) -> Option<gtk::GestureDrag> {

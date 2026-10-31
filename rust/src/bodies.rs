@@ -1,8 +1,6 @@
 //! The request bodies §5 confirms, and the sd.cpp waits.
 //!
-//! Two things are worth pinning down here rather than leaving to whoever writes the next call:
-//! which keys a body has at all (an extra one is a server's problem to ignore, a missing one is a
-//! different job), and whether a path in it is the server's or the local machine's.
+//! Pinned here: which keys a body has at all, and whether a path in it is the server's or the local machine's.
 
 use std::time::Duration;
 
@@ -12,19 +10,13 @@ use crate::services::Kind;
 
 /// A path on the audio.cpp server, returned by `POST /v1/ui/upload`.
 ///
-/// The type exists because "the `audio` field is a path" hides the one mistake that matters: this
-/// machine and the server are different filesystems (audio.cpp runs in a container), so a local
-/// path is not a wrong answer but no answer at all — the server looks for it in its own root and
-/// reports a missing file minutes later. Uploading first is the only way to get one, which is why
-/// [`ServerPath::from_upload`] is the only constructor: a body builder cannot be handed
-/// `std::path::Path::new("take.wav")` even by accident.
+/// This machine and the server are different filesystems (audio.cpp runs in a container), so a local path is no answer: the server looks in its own root and reports a missing file minutes later.
+/// Uploading is the only way to get one, so [`ServerPath::from_upload`] is the only constructor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerPath(String);
 
 impl ServerPath {
-    /// The path an upload answered with. Only an absolute one is accepted: a relative answer means
-    /// the server replied with something other than a path, and passing it through would turn a
-    /// protocol disagreement into a "file not found" from a task run.
+    /// The path an upload answered with. Only an absolute one is accepted: a relative answer is not a path, and would turn a protocol disagreement into "file not found".
     pub fn from_upload(reply: &str) -> Option<Self> {
         let path = reply.trim();
         if path.is_empty() || !path.starts_with('/') {
@@ -33,7 +25,6 @@ impl ServerPath {
         Some(Self(path.to_string()))
     }
 
-    /// The value the request carries.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -41,19 +32,13 @@ impl ServerPath {
 
 /// The voice reference is uploaded again before every line, not once per run (§5).
 ///
-/// The path a server hands out lives as long as its temp folder: restart audio.cpp — which a model
-/// swap or a container update does — and a remembered path names nothing. Re-uploading one small
-/// wav per line costs milliseconds against the seconds the synthesis takes, and it is what makes
-/// the first line after a restart work like the rest. The prototype's `serverFile`
-/// (go/audiocpp.go:63-93) does exactly this before every request, sending the file's base name as
-/// `X-Audiocpp-Filename`.
+/// The path a server hands out lives as long as its temp folder: a restart (model swap, container update) leaves a remembered path naming nothing. One small wav per line costs
+/// milliseconds against seconds of synthesis. The prototype's `serverFile` (go/audiocpp.go:63-93) does this before every request, sending the base name as `X-Audiocpp-Filename`.
 pub const VOICE_REF_REUPLOADED_EVERY_LINE: bool = true;
 
 /// `POST /v1/tasks/run` for speech-to-text: `{"audio","language"}`.
 ///
-/// The envelope is the server's (`{"model","request"}`, [Kind::RunTask]); these builders return the
-/// whole body so a test sees what goes on the wire, and they build with [`json!`] so key order
-/// follows the order §5 lists the fields in.
+/// The envelope is the server's (`{"model","request"}`, [Kind::RunTask]); these return the whole body, built with [`json!`] so key order follows §5.
 pub fn asr_body(model: &str, audio: &ServerPath, language: &str) -> Value {
     json!({
         "model": model,
@@ -61,14 +46,12 @@ pub fn asr_body(model: &str, audio: &ServerPath, language: &str) -> Value {
     })
 }
 
-/// `POST /v1/tasks/run` for diarization: `{"audio"}` and nothing else — a speaker label has no
-/// language to be told, and sending one invites a server to read meaning into it.
+/// `POST /v1/tasks/run` for diarization: `{"audio"}` and nothing else (a speaker label has no language).
 pub fn diar_body(model: &str, audio: &ServerPath) -> Value {
     json!({ "model": model, "request": { "audio": audio.as_str() } })
 }
 
-/// `POST /v1/tasks/run` for forced alignment: `{"audio","text","language"}`. The text is what the
-/// words are placed against, so it travels with the audio rather than being checked beforehand.
+/// `POST /v1/tasks/run` for forced alignment: `{"audio","text","language"}`; the text is what the words are placed against.
 pub fn align_body(model: &str, audio: &ServerPath, text: &str, language: &str) -> Value {
     json!({
         "model": model,
@@ -78,14 +61,10 @@ pub fn align_body(model: &str, audio: &ServerPath, text: &str, language: &str) -
 
 /// `POST /v1/audio/speech`: `{"model","input","voice_ref","language","options"}`.
 ///
-/// `voice_ref` is the uploaded path of `narrate/voice_ref.wav` — the pitch-shifted reference, which
-/// is the file the model actually clones from ([`crate::layout::Tree::voice_ref_wav`]) — and it
-/// must be re-uploaded per line, see [`VOICE_REF_REUPLOADED_EVERY_LINE`]. `options` is the emotion
-/// vector plus the `seed` that makes a take reproducible.
+/// `voice_ref` is the uploaded path of `narrate/voice_ref.wav`, the pitch-shifted reference the model clones from ([`crate::layout::Tree::voice_ref_wav`]), re-uploaded per line
+/// ([`VOICE_REF_REUPLOADED_EVERY_LINE`]). `options` is the emotion vector plus the `seed` that makes a take reproducible.
 ///
-/// `language` is P.policy.ttsLanguage: the project's language, the same one ASR and alignment send.
-/// The prototype hard-codes `"en"` here (go/narrate_tts.go:325-329), which is the thing this
-/// replaces — a model told to speak English reads Polish words as English spelling.
+/// `language` is P.policy.ttsLanguage, the same one ASR and alignment send; the prototype hard-coded `"en"` (go/narrate_tts.go:325-329), which reads Polish words as English spelling.
 pub fn speech_body(
     model: &str,
     text: &str,
@@ -105,9 +84,7 @@ pub fn speech_body(
 
 /// The one envelope `POST /v1/audio/speech` takes: `{"model","input","voice_ref","language","options"}`.
 ///
-/// Split from [`speech_body`] because what belongs in `options` is a flow of its own (F4.4's two emotion
-/// branches), while these five keys and their names never change — the endpoint drops anything it does not
-/// know, so a field sent at the top level is simply lost.
+/// Split from [`speech_body`] because what belongs in `options` is a flow of its own (F4.4's two emotion branches); the endpoint drops unknown keys, so a top-level extra is lost.
 pub fn speech_request(
     model: &str,
     text: &str,
@@ -126,16 +103,10 @@ pub fn speech_request(
 
 /// `POST /sdcpp/v1/img_gen`: the prompt, the optional framing, always a seed, and the references.
 ///
-/// The four optional keys are omitted rather than sent empty — sd.cpp reads an empty string as an
-/// instruction ("draw with no negative prompt" is not what `""` means) — while `seed` and
-/// `auto_resize_ref_image` are always present: a thumbnail must be redrawn identically, and a
-/// reference resized one way on one server and another way on the next changes the picture.
+/// The four optional keys are omitted rather than sent empty (sd.cpp reads an empty string as an instruction); `seed` and `auto_resize_ref_image` are always present, so a thumbnail redraws identically.
 ///
-/// References go as `ref_images` data URLs, never `init_image`: an edit model is *conditioned* on
-/// them, which is what lets it keep a face and change the background, whereas `init_image` means
-/// "redraw this" at the strength of a denoise parameter. Everything else — steps, sampler, cfg —
-/// stays with the server's start-up flags deliberately: the app asks for a picture, the machine it
-/// runs on decides how.
+/// References go as `ref_images` data URLs, never `init_image`: an edit model is *conditioned* on them (keeps a face, changes the background), while `init_image` means "redraw this".
+/// Steps, sampler and cfg stay with the server's start-up flags: the app asks for a picture, the machine decides how.
 #[allow(clippy::too_many_arguments)]
 pub fn img_gen_body(
     prompt: &str,
@@ -179,11 +150,7 @@ pub struct SdWait {
 
 /// §5's own numbers for sd.cpp.
 ///
-/// This table is *not* [`crate::services::timeout_for`], and the two are kept apart on purpose:
-/// §1 says audio task calls carry no client timeout (an hour of audio is an hour of work), while
-/// §5 gives the drawing server four short waits, because a thumbnail job is never long — it is
-/// either queued, drawing, or gone. `timeout_for` answers "may this kind run for an hour", this
-/// answers "how long until sd.cpp has said something".
+/// Not [`crate::services::timeout_for`]: §1 gives audio task calls no client timeout (an hour of audio is an hour of work), while §5 gives the drawing server four short waits (a thumbnail job is queued, drawing, or gone).
 pub fn sd_waits(kind: Kind) -> Option<SdWait> {
     let wait = |seconds: u64, interval: Option<Duration>| {
         Some(SdWait {
@@ -192,17 +159,13 @@ pub fn sd_waits(kind: Kind) -> Option<SdWait> {
         })
     };
     match kind {
-        // Fifteen seconds is the slowest a healthy server takes to describe itself; longer means
-        // it is starting up or not sd.cpp at all.
+        // Fifteen seconds is the slowest a healthy server takes to describe itself; longer means starting up or not sd.cpp.
         Kind::Capabilities => wait(15, None),
-        // Submitting only queues the work, so a minute is generous — and a submit that takes a
-        // minute is the model loading, which every later request would pay for again.
+        // Submitting only queues the work; a minute-long submit is the model loading, which every later request would pay again.
         Kind::SubmitImage => wait(60, None),
-        // One ask per second: the answer is a status line, so polling faster buys nothing and a
-        // longer gap would make a finished thumbnail appear late.
+        // One ask per second: the answer is a status line, so polling faster buys nothing and slower makes a finished thumbnail appear late.
         Kind::PollImage => wait(30, Some(Duration::from_secs(1))),
-        // Ten seconds, best effort: cancel hands the card back either way, so waiting longer for a
-        // server that is clearly busy would only hold up the UI.
+        // Best effort: cancel hands the card back either way, so waiting on a busy server only holds up the UI.
         Kind::CancelImage => wait(10, None),
         _ => None,
     }

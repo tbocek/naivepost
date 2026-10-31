@@ -1,10 +1,4 @@
 //! F2.3 — ▶✂✂: review every cut, the joins rather than the kept material.
-//!
-//! What you want to know about a cut is whether the JOIN works — does the sentence run on, is the splice
-//! in a silence, did the model take one word too many — and that is a few seconds either side of each
-//! seam, not the minutes of kept material between them. So ▶✂✂ plays exactly that, one join after the
-//! other, and stops when the last has been heard. The page forwards here and decides nothing
-//! (spec/00-principles.md §5).
 
 use crate::{
     cut::{Cut, Seg},
@@ -36,11 +30,6 @@ pub struct Window {
     pub to: f64,
 }
 
-/// The seam between `segs[join]` and `segs[join + 1]`, padded by [`REVIEW_PAD_SECONDS`] of the cut on
-/// each side — clamped to the two clips, because what lies before the earlier clip's start is a removed
-/// stretch rather than the cut, and a review that rewound into one would show the person footage their
-/// own edit took out. A card (`s == e`) has no length of its own, so its lead comes from the clip before
-/// it for the same reason.
 pub fn window(segs: &[Seg], join: usize) -> Window {
     let (before, after) = (&segs[join], &segs[join + 1]);
     Window {
@@ -92,16 +81,8 @@ pub fn reviewing_status(cut: &Cut, join: usize) -> String {
     )
 }
 
-// --- S3 to S5: the hand on the line ------------------------------------------------------------------
-
 /// The review's whole state: which join is being heard, and whether the line has been seen inside its
 /// window at all.
-///
-/// That second flag is what tells a moved line from a seek that has not landed. A line found before a
-/// window it had already been inside is somebody's hand on the timeline and the review is over; found
-/// there before it has ever been inside, it is the review's own seek — the player answers the old
-/// position for a tick or two after a flushing seek, and nothing at all on the first tick of a freshly
-/// cued file — and the answer is to wait rather than to declare the person changed their mind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Review {
     pub join: usize,
@@ -236,9 +217,6 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
 /// ▶ or ▶✂ pressed during a review (S5's second half): the review ends and nothing else changes — "each
 /// wears ⏸ only while its own thing runs; pressing another switches the preview without stopping; exactly
 /// one is lit". Whatever is playing plays on as the plain cut preview.
-///
-/// Only ▶✂ needs this: [`crate::preview::press_recording`] already clears `reviewing` when it switches to
-/// the recording, and keeps the transport running while it does. This is the switch that STAYS on the cut.
 pub fn switch_over(player: &mut Player) -> bool {
     let was = player.reviewing;
     player.reviewing = false;

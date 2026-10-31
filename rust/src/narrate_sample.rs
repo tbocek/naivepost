@@ -1,23 +1,12 @@
-//! F4.6 S5 — the sample's own legs: is a take already on disk, speak one that isn't, play it, stop it.
-//!
-//! The page keeps what only the page can hold (the refusal ladder over `NarrateState`, the entry widget,
-//! the status bar); everything here takes its inputs as arguments and returns the sentence the press
-//! should print, so the whole chain is testable without a window. Nothing in this module reads the
-//! page's state or widgets.
-//!
-//! The two seams a test replaces are the ones the program itself uses: the TTS address `speak_leg`
-//! re-reads from Settings per call (§02-services#1), and the player binary
-//! [`narrate_preview_leg::voice_program`] resolves per spawn. Point both at a fake and the program
-//! cannot tell the difference.
+//! F4.6 S5: the sample's own legs: is a take on disk, speak one that isn't, play it, stop it.
+//! Takes inputs as arguments and returns the sentence to print, so a test needs no window. Test seams: the TTS address (`speak_leg` re-reads Settings per call, §02-services#1) and the player binary [`narrate_preview_leg::voice_program`].
 
 use crate::layout::Tree;
 use crate::narrate_details;
 use crate::narrate_preview_leg;
 use crate::voice_ref;
 
-/// S5's door, before any dial: is this voice and these words already on disk? Answering here rather
-/// than inside the speak keeps the caller's busy flag honest — hearing a take that exists is instant,
-/// so it is not a synthesis and must not make the page look busy.
+/// S5's door before any dial: is this voice with these words already on disk? Hearing an existing take is instant, so it must not make the page look busy.
 pub fn already_heard(tree: &Tree, voice: &str, text: &str) -> Option<String> {
     let file = voice_ref::sample_file(tree, voice, text);
     let cached = voice_ref::sample_cached(tree, voice, text)?;
@@ -29,13 +18,8 @@ pub fn already_heard(tree: &Tree, voice: &str, text: &str) -> Option<String> {
     play(&file).ok()
 }
 
-/// S5's speech itself, shared by ▶ and ⟳ so neither copies the other's legs. `roll` is the re-roll
-/// count, and its absence from the log line (`>>> sample:` against `>>> sample take 2:`) is the point:
-/// a sample's first take is not worth naming.
-///
-/// Returns the status the caller should print. It does NOT write the status bar itself, because the
-/// press that started it owns the bar: the synthesising sentence goes up first, and whatever comes
-/// back replaces it, whether that is the take or the reason there is none.
+/// S5's speech, shared by ▶ and ⟳. `roll` is absent from the log line for a first take (`>>> sample:` vs `>>> sample take 2:`).
+/// Returns the status to print; the press owns the bar, so this does not write it.
 pub fn speak(
     tree: &Tree,
     voice: &str,
@@ -43,15 +27,14 @@ pub fn speak(
     text: &str,
     roll: usize,
 ) -> Result<String, String> {
-    // §6: every sample logs WHO spoke WHAT before anything can go wrong, since a sample has no output
-    // file to inspect afterwards if the dial never happens.
+    // §6: log WHO spoke WHAT first; a sample has no output file to inspect.
     crate::ui::window::log_line(&narrate_details::sample_log(
         voice,
         pitch,
         if roll == 0 { None } else { Some(roll) },
         text,
     ));
-    // A roll is a new take of the same words, so it is a new seed.
+    // A roll is a new take, so a new seed.
     let key = crate::narration::key_for(
         &crate::narration::Entry {
             text: text.to_string(),
@@ -68,9 +51,7 @@ pub fn speak(
         crate::narrate_tts::Outcome::Refused(why) => Err(why),
         crate::narrate_tts::Outcome::Take(take) => {
             let bytes = std::fs::read(&take).map_err(|err| format!("{}: {err}", take.display()))?;
-            // §6 (`an under-sized answer`): name the file and its byte count where it failed and store
-            // NOTHING — a header-only reply would otherwise be cached as this voice's take for these words
-            // and every later press would "succeed" in silence.
+            // §6 (`an under-sized answer`): name the file and byte count and store NOTHING, else a header-only reply is cached as the take and every later press succeeds in silence.
             if (bytes.len() as u64) < MIN_REPLY_BYTES {
                 let file = voice_ref::sample_file(tree, voice, text);
                 let said =
@@ -90,21 +71,15 @@ pub fn speak(
     }
 }
 
-/// A reply smaller than this carries no audio at all: a wav header is 44 bytes and one 16-bit mono frame
-/// is another 2, so anything at or under that bound is a server that answered with a header (or an empty
-/// body) and nothing spoken. Storing such a file would cache the mistake under a key that suppresses the
-/// line forever, so `speak` refuses it and logs [`crate::narrate_details::sample_too_small_log`] instead.
+/// A reply this small carries no audio (a wav header is 44 bytes plus one 16-bit frame); `speak` refuses it and logs [`crate::narrate_details::sample_too_small_log`].
 pub const MIN_REPLY_BYTES: u64 = 46;
 
-/// Hand the sample to the player. The player program is the same seam the preview uses, so a test
-/// points it at a stub and the program is unchanged. The child is held so ⏹ can reach it through
-/// [`stop`]; `-autoexit` was passed, so a player nobody stops ends on its own.
+/// Hand the sample to the player (same seam as the preview). The child is held so ⏹ can reach it via [`stop`]; `-autoexit` ends an unstopped one.
 fn play(file: &std::path::Path) -> Result<String, String> {
     play_file(file)
 }
 
-/// Hear one file on the voice player. Public because the take band's ▶ plays the same reference the
-/// speech server clones from, through the same seam (§1: "exactly what the model is cloned from").
+/// Hear one file on the voice player; public because the take band's ▶ plays the same reference (§1).
 pub fn play_file(file: &std::path::Path) -> Result<String, String> {
     let player = narrate_preview_leg::voice_program();
     let path = file.to_string_lossy().into_owned();
@@ -122,12 +97,10 @@ pub fn play_file(file: &std::path::Path) -> Result<String, String> {
     Ok(narrate_details::sample_playing_status().to_string())
 }
 
-/// §1 **8** ▶: play seconds `from`..`to` of a recording (its sound only), held with the sample players so ⏹ and
-/// a second ▶ reach it. The take band chains one of these per take (`narrate_page_take`).
+/// §1 **8** ▶: play seconds `from`..`to` of a recording (sound only), held with the sample players so ⏹ and a second ▶ reach it.
 pub fn play_span(file: &std::path::Path, from: f64, to: f64) -> Result<(), String> {
     let player = narrate_preview_leg::voice_program();
-    // An endless `to` (a recording whose length is unknown) plays to the file's own end; a player that takes
-    // no end is ended by the take band's own clock (`narrate_page_take::walk_on`).
+    // An endless `to` plays to the file's end; a player with no end is ended by `narrate_page_take::walk_on`.
     let args =
         narrate_preview_leg::audio_argv(&player, &file.to_string_lossy(), from, Some(to), 1.0);
     let child = narrate_preview_leg::spawn_player(&player, &args)
@@ -139,14 +112,10 @@ pub fn play_span(file: &std::path::Path, from: f64, to: f64) -> Result<(), Strin
     Ok(())
 }
 
-/// The sample players still alive. Held so ⏹ can reach them; each entry leaves when the player exits.
 static PLAYERS: std::sync::LazyLock<std::sync::Mutex<Vec<std::process::Child>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
-/// Freeze or thaw every sample player still running — §6's "sample paused — ▶ resumes, ⏹ starts over".
-/// Mirrors [`crate::narrate_preview_leg::hold_paused`]: `SIGSTOP`/`SIGCONT` on pids this module spawned,
-/// and `Option` because there is nothing to hold when no sample is playing (a `None` answer tells the page
-/// the press was not a pause at all, so it can start a sample instead of reporting a pause over nothing).
+/// Freeze or thaw every sample player (§6 "sample paused"), like [`crate::narrate_preview_leg::hold_paused`]; `None` when none is playing, so the page starts a sample instead.
 pub fn hold_paused(hold: bool) -> Option<bool> {
     let mut held = false;
     PLAYERS
@@ -168,9 +137,7 @@ pub fn hold_paused(hold: bool) -> Option<bool> {
     held.then_some(hold)
 }
 
-/// The players not yet reaped, each slot holding its exit status once the process is gone. A finished
-/// child keeps its status instead of being dropped: that record is what tells "takes played" (the walk ran
-/// out) apart from "stopped playing the takes" (a hand ended it), and ⏹ still reaches a running one.
+/// Players not yet reaped, each slot holding its exit status once gone, to tell "takes played" from "stopped playing the takes".
 fn alive() -> Vec<Option<std::process::ExitStatus>> {
     PLAYERS
         .lock()
@@ -180,22 +147,17 @@ fn alive() -> Vec<Option<std::process::ExitStatus>> {
         .collect()
 }
 
-/// Whether any sample player is still going: what makes a second ▶ a pause rather than a new sample.
 pub fn is_playing() -> bool {
     self::alive().iter().any(|status| status.is_none())
 }
 
-/// Whether every player this module spawned has run to the end: "takes played" (the walk finished by
-/// itself) against "stopped playing the takes" (⏹ ended it). Empty answers `false` — nothing was ever
-/// played, so neither sentence applies.
+/// Whether every spawned player ran to the end ("takes played") against ⏹ ("stopped playing the takes"). Empty is `false`.
 pub fn all_finished() -> bool {
     let statuses = self::alive();
     !statuses.is_empty() && statuses.iter().all(|status| status.is_some())
 }
 
-/// ⏹'s side of the sample: kill every sample player still running, and say how many. Kept separate
-/// from the preview's `stop_running` because the sample spawns its own players and is not a
-/// `Preview`; the two never share a child, so neither can stop the other's audio by accident.
+/// ⏹ for the sample: kill every running sample player and say how many. Separate from the preview's `stop_running`.
 pub fn stop() -> usize {
     let mut killed = 0usize;
     PLAYERS

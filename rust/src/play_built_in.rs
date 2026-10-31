@@ -1,20 +1,3 @@
-//! F2.1's built-in player: the recording played INSIDE the preview, the way the prototype plays it (`go/player.go`):
-//! one `playbin` whose video sink is `gtk4paintablesink`, so its frames land on a `GdkPaintable` the preview's
-//! picture shows (inventory §A: "preview (GtkPicture contain-fit, min height 160, click toggles play)"), and whose
-//! sound is the box's own audio sink, its loudness the playbin's `volume` property.
-//!
-//! The first port played through `gst-play-1.0` as a subprocess ([`crate::play_back`]), which on a desktop opens a
-//! window of its own and left the preview standing on one frame. That subprocess is still what plays when a player
-//! program is NAMED (`NAIVEPOST_PLAYER`): a person, or a test with its fake script, asking for an outside player.
-//! Otherwise this one plays whenever GStreamer starts and has both `playbin` and the GTK4 sink; without the sink the
-//! preview would be a black square (`release.sh` refuses to build without it for the same reason).
-//!
-//! Everything here runs on the GTK thread, which owns the sink's paintable: one pipeline, held in a thread-local and
-//! reused from cue to cue. That thread never waits (§03-shell §1): a cue sets the pipeline going and returns, and
-//! a 20 ms poll on the same thread finishes it (preroll, seek, preroll again, play) as GStreamer gets there. Until
-//! then the player answers as the cue asked: [`position`] is the cued second and [`playing`] what it will be. The
-//! first rewrite waited up to 3 s twice inside every cue, on every seek a line move made.
-
 use std::cell::RefCell;
 
 use gstreamer as gst;
@@ -95,11 +78,6 @@ fn build() -> Result<Pipe, String> {
     })
 }
 
-/// Stand on `file` at `at_secs` into the file, playing when `play` says so and held on that frame otherwise. Same
-/// file: a seek; another file: the playbin is handed it. Returns at once: the preroll (bounded by
-/// [`PREROLL_WAIT_S`]), the seek and the play are finished by a poll ([`finish_cue`]), and a pipeline that will
-/// not start says why in the log, from the bus's own error when it has one. What fails before anything is
-/// waited for (no such file, a pipeline that will not pause) still comes back here.
 pub fn cue(file: &str, at_secs: f64, play: bool, log: &dyn Fn(&str)) -> Result<(), String> {
     let _ = log;
     let generation = PIPE.with(|slot| -> Result<u64, String> {
@@ -129,7 +107,6 @@ pub fn cue(file: &str, at_secs: f64, play: bool, log: &dyn Fn(&str)) -> Result<(
         });
         Ok(pipe.generation)
     })?;
-    // A pipeline already prerolled on this file finishes here and now; one that is not goes on in the poll.
     if finish_cue(generation) {
         glib::timeout_add_local(std::time::Duration::from_millis(CUE_POLL_MS), move || {
             if finish_cue(generation) {
@@ -230,7 +207,6 @@ fn finish_cue(generation: u64) -> bool {
 /// Pause, keeping the frame on the picture. Answers whether it was playing.
 pub fn pause() -> bool {
     with_pipe(|pipe| {
-        // A cue still on its way to playing is told to hold instead.
         let mut was = false;
         if let Some(pending) = pipe.pending.as_mut() {
             was = pending.play;
@@ -251,8 +227,6 @@ pub fn resume() -> bool {
         .unwrap_or(false)
 }
 
-/// Play at `rate` from where it stands (F2.2 S5 "speed effects at their flat rate"): a flushing seek that carries
-/// the rate, the prototype's `SetRateNow`. Answers whether the pipeline took it.
 pub fn set_rate(rate: f64) -> bool {
     with_pipe(|pipe| {
         let Some(at) = pipe.playbin.query_position::<gst::ClockTime>() else {
@@ -285,7 +259,6 @@ pub fn stop() {
 /// Is it playing right now?
 pub fn playing() -> bool {
     with_pipe(|pipe| match pipe.pending {
-        // On its way: what the cue asked for.
         Some(pending) => pending.play,
         None => pipe.playbin.current_state() == gst::State::Playing,
     })
@@ -301,8 +274,6 @@ pub fn file() -> Option<String> {
 pub fn position() -> Option<f64> {
     with_pipe(|pipe| {
         drain(pipe);
-        // A cue on its way stands where it was cued: the pipeline's own position is the old second until its
-        // seek has settled, and a tick reading that would walk the line back.
         if let Some(pending) = pipe.pending {
             return Some(pending.at_secs);
         }

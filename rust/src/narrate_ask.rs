@@ -1,11 +1,4 @@
 //! F4.2's live seam: the gather-and-drive half of what ▶ does when nothing is scripted.
-//!
-//! `ui::press_narrate_run`'s no-script branch lands here, and this module holds it so the shell file
-//! stays a shell (§Layout). The rules stay where they belong: [`crate::narrate_call::drive`] owns the
-//! attempts, the thinking-off rule and the bar's monotonic progress; [`crate::narrate_live`] owns the
-//! wire and §3.8's tools. What lives here is only the gathering — the cut's SEGMENTS (whose rate is
-//! what "X s of footage at Rx" and the fit answer are made of), the transcript off disk, the voice,
-//! the two prompt wordings — plus ⏹ riding along as `cancel_leg::cancel_check_now()`.
 
 use crate::cut::{self, Seg};
 use crate::layout::Tree;
@@ -13,10 +6,6 @@ use crate::narrate_data;
 use crate::narrate_run::Written;
 
 /// One live narration run over this session folder: gather, build the pair, drive.
-///
-/// `bounds` are the clip seconds the run was planned over; the segments are looked back out of the
-/// newest `cut.json` so each keeps its rate. A bound with no matching segment is dropped rather than
-/// guessed at — a clip the cut no longer holds cannot be narrated.
 pub fn run(
     tree: &Tree,
     project: &crate::project::Project,
@@ -80,10 +69,6 @@ pub fn run(
     )
 }
 
-/// Which clip numbers hold a line that will not fit: every written line is put back on its own clip with the
-/// others that share it, and the clip is named when the ladder has to slide or speed to land them. A clip
-/// whose bounds no longer match a segment is skipped rather than guessed at \u{2014} `run` dropped such a
-/// bound for the same reason.
 pub fn unfitted_clips(segs: &[Seg], written: &[Written]) -> Vec<u32> {
     let mut bad: Vec<u32> = Vec::new();
     for (number, seg) in segs.iter().enumerate() {
@@ -117,9 +102,6 @@ pub fn unfitted_clips(segs: &[Seg], written: &[Written]) -> Vec<u32> {
     bad
 }
 
-/// Where a rejected attempt is said. The window owns the visible log; this module has no widget, so the
-/// line goes through the same sink every other headless flow uses when one is installed, and nowhere
-/// otherwise (`log_line` is a no-op with no window).
 fn log(line: &str) {
     crate::ui::window::log_line(line);
 }

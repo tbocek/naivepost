@@ -1,23 +1,4 @@
 //! F5.7 Page runs — the seven presses of §08's Produce page as **pure walks with injected legs**.
-//!
-//! `produce_runs` answers "what does this press cost"; this module answers "what does it *do*", in the
-//! order the spec draws it. Both stay free of GTK, sockets and subprocesses so a headless test can drive a
-//! press end to end: every external act arrives as a closure on [`Legs`], mirroring
-//! [`crate::produce_upload::Materials`] (F5.6) and the spawner seam of [`crate::produce_exec`] (F5.2).
-//!
-//! The order inside each function is the same everywhere and is load-bearing:
-//! **refuse → open → do → end.**
-//! - *refuse* first, before any log line or leg runs: a press with no cut, no picture or no video says
-//!   its one sentence and touches nothing (§F5.7's arrows all begin with their refusal).
-//! - *open* second: the `>>>` line that announces the run, logged before work starts so an interrupted
-//!   run still shows what it was about.
-//! - *do*: the legs, in the spec's order. A redraw draws then prints; a re-word prints and never draws.
-//! - *end* through [`runs::ending`], the ONE path §line 186 names, so both buttons report the same
-//!   trouble in the same voice.
-//!
-//! The cost story this file exists to make assertable: a redraw is one sd.cpp call, a re-word is one LLM
-//! call and **no** draw, Set Thumbnail is a print and no draw, and export / save / transcode ask a model
-//! for nothing at all. Each of those is a count on the returned [`Outcome`], not a comment.
 
 use crate::produce_runs as runs;
 use crate::produce_upload::{self as upload};
@@ -28,8 +9,6 @@ pub type WordsOf = Box<dyn Fn(&str) -> Vec<String>>;
 pub type ClearOwn = Box<dyn Fn() -> Result<(), String>>;
 /// An argv-shaped subprocess: what [`crate::produce_tag_page::MakePoster`] takes, so one spawner serves both.
 pub type RunArgv = Box<dyn Fn(&[String]) -> Result<(), String>>;
-/// A file operation with no encoder in it — ⤓ Save video's copy, kept apart from `RunArgv` so a test cannot
-/// read a copy as a transcode.
 pub type CopyOut = Box<dyn Fn(&str) -> Result<(), String>>;
 /// The export ladder: given where the JPEG is to be written, the weight of each rung's encode, best first.
 pub type JpegLadder = dyn Fn(&str) -> Vec<u64>;
@@ -43,8 +22,6 @@ pub struct Legs {
     pub has_picture: Box<dyn Fn() -> bool>,
     /// Whether a render is running right now. A copy taken mid-render is a short video that looks done.
     pub rendering: Box<dyn Fn() -> bool>,
-    /// What to print: the marked texts of `kind` (`"texts"` / `"title"`, the two entries of
-    /// [`upload::print_order`]). Empty means nothing of that kind, which is not an error.
     pub words_of: WordsOf,
     /// The edit instruction the picture is drawn from. Empty is refused rather than sent.
     pub instruction: Box<dyn Fn() -> String>,
@@ -52,28 +29,18 @@ pub struct Legs {
     pub print: Box<upload::PrintWords>,
     /// ffmpeg for ↻ Transcode. argv-shaped, like [`crate::produce_tag_page::MakePoster`].
     pub encode: RunArgv,
-    /// Copy the rendered video out to a chosen path — a file operation with no encoder in it, kept apart
-    /// from `encode` so a test cannot read a copy as a transcode.
     pub copy: CopyOut,
-    /// The ladder's weight at each rung of [`runs::JPEG_QUALITIES`] for the picture that stands, best first,
-    /// given where the exported JPEG is to be written: the leg ENCODES each rung and measures the file, so
-    /// the rung choice rests on bytes an encoder produced rather than on the size of the PNG already there.
     pub jpeg_sizes: Box<JpegLadder>,
     /// Was the run stopped (⊘ Cancel) rather than did a leg fail? Decides *"stopped"* vs *"failed — see log"*.
     pub was_stopped: Box<dyn Fn() -> bool>,
     /// §F5.7's "clears `own`": a finished ↻ hands the picture back to the model.
     pub clear_own: ClearOwn,
-    /// Whether this press counts its reprint passes onto [`Outcome::prints`]. The page sets it true; the
-    /// F5.6 words half leaves it false, because that walk already reports its own passes and double-counting
-    /// one print across two owners would make neither number mean anything.
     pub count_prints: bool,
 }
 
 /// What a press did. Every field is something a test pins about ORDER or COST, not just outcome.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Outcome {
-    /// The acts, in the order they ran — `"draw"`, `"poll"`, `"model"`, `"print-texts"`, `"copy"`,
-    /// `"encode"`. A press's cost story is this list's contents.
     pub calls: Vec<String>,
     /// sd.cpp calls. A redraw is exactly 1; a re-word, a set-from-image, an export and a transcode are 0.
     pub sd_calls: usize,
@@ -85,8 +52,6 @@ pub struct Outcome {
     pub status: String,
     /// Why the press failed, if it did. A refusal is not an error unless it came from a leg.
     pub error: Option<String>,
-    /// True when the press ended on its own refusal rather than on a leg failing: no cut, no picture, no
-    /// video, no instruction. Those leave everything untouched and are not failures.
     pub refused: bool,
 }
 
@@ -101,10 +66,6 @@ impl Outcome {
     }
 }
 
-// ---- ↻ over the thumbnail ---------------------------------------------------------
-
-/// S1: ↻ over the thumbnail: draw from the images and the instruction as they stand. `draw` is the run's own walk,
-/// so a redraw sends what ▶ sends. A failed draw changes nothing; only a finished one takes `own` away.
 pub fn press_redraw_thumbnail(
     legs: &Legs,
     draw: impl FnOnce() -> Result<(), String>,
@@ -131,11 +92,6 @@ pub fn press_redraw_thumbnail(
     out
 }
 
-// ---- ↻ beside Title ---------------------------------------------------------------
-
-/// S2: ↻ beside Title: rewrite the title and the description, and NOTHING else. In
-/// particular no draw: the picture stays exactly as it is, which is what makes the press cheap and why
-/// no draw leg is reachable here.
 pub fn press_reword(
     legs: &Legs,
     words: impl FnOnce() -> Result<(), String>,
@@ -155,10 +111,6 @@ pub fn press_reword(
     out
 }
 
-// ---- Set Thumbnail on an image ----------------------------------------------------
-
-/// S3: Set Thumbnail on an image — use that picture as it is, cropped, and print the marked words over
-/// it. No draw and no model call: the user's file *is* the picture.
 pub fn press_set_thumbnail(file: &str, legs: &Legs, mut log: impl FnMut(&str)) -> Outcome {
     let mut out = Outcome::default();
     if !(legs.has_cut)() {
@@ -175,12 +127,6 @@ pub fn press_set_thumbnail(file: &str, legs: &Legs, mut log: impl FnMut(&str)) -
     out
 }
 
-// ---- ⤓ export ---------------------------------------------------------------------
-
-/// S6: ⤓ export — the JPEG an uploader takes. The rung comes from [`runs::jpeg_rung`]: the first of
-/// 92/85/75/60/40 whose weight fits 2 MiB, or the last attempt when none does ("never rescaled"). The
-/// ladder's numbers are MEASURED by the leg (each rung really encoded), and the file the chosen rung wrote is
-/// what the status line reports the weight of — a printed size is always a byte count off disk.
 pub fn press_export(path: &str, legs: &Legs) -> Outcome {
     if !(legs.has_picture)() {
         return Outcome::refusal(runs::EXPORT_NO_PICTURE);
@@ -216,10 +162,6 @@ pub fn press_export(path: &str, legs: &Legs) -> Outcome {
     }
 }
 
-// ---- ⤓ Save video -----------------------------------------------------------------
-
-/// S7: ⤓ Save video — a copy out to a chosen path, so `produce/final` keeps its place as the stamped
-/// output. Announced first: copying a whole video is slow enough that silence reads as a hung button.
 pub fn press_save_video(file: &str, bytes: u64, legs: &Legs, mut log: impl FnMut(&str)) -> Outcome {
     let mut out = Outcome::default();
     if !(legs.has_video)() {
@@ -240,10 +182,6 @@ pub fn press_save_video(file: &str, bytes: u64, legs: &Legs, mut log: impl FnMut
     out
 }
 
-// ---- ↻ Transcode ------------------------------------------------------------------
-
-/// S8: ↻ Transcode — encode again with the row's own settings and **no model call at all**. That absence
-/// is the point of the press: `ask_model` and `ask_draw` are never touched here, only `encode`.
 pub fn press_transcode(
     source: &str,
     out_path: &str,
@@ -269,11 +207,6 @@ pub fn press_transcode(
     out
 }
 
-// ---- the shared pieces ------------------------------------------------------------
-
-/// Print the marked texts, then the title, in `print_order()`'s order. An empty kind prints no pass at all,
-/// so a picture with no marks costs nothing and claims nothing. The page counts its own passes through
-/// `count_prints`, which is what lets a test tell "no words to print" from "the print leg never ran".
 fn print_words(legs: &Legs, out: &mut Outcome) -> Result<(), String> {
     for kind in upload::print_order() {
         let words = (legs.words_of)(kind);

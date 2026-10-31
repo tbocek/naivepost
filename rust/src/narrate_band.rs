@@ -1,36 +1,24 @@
 //! §07-narrate#1-screen, the take band's arithmetic (§1's number **10**, inventory §A.7).
-//!
-//! The band is a strip of a recording: pixels in, seconds out, and back again. Every mapping the
-//! painted lane needs lives here as a plain function of numbers, so the drawing layer decides only
-//! WHERE ink goes and never what a position means — the same split `fx_band` keeps on the Cut page.
-//! Geometry constants stay in [`crate::narrate_screen`] (they are catalogued there under
-//! `narrate.bandRulerPx`, `narrate.bandLanePx`, `narrate.bandMaxPps` and `narrate.clickSlopPx`);
-//! this module reads them and adds no numbers of its own.
 
 use crate::narrate_screen::{self as screen, TakePress, BAND_MAX_PPS, TAKE_LABEL_MIN_PX};
 
-/// Zoom 1 is "the whole recording fits": fit px/s × this factor. One notch of the wheel is therefore
-/// `1.25^-dy` of FIT px/s, which is what §A.7's "wheel zooms 1.25^−dy" measures against — a notch at
-/// any zoom multiplies the fit-relative factor, so zooming out always returns to exactly fit.
+/// Zoom 1 is "the whole recording fits": fit px/s × this factor.
 pub const ZOOM_NOTCH: f64 = 1.25;
 
 /// Shift+wheel pans by w/8 of the visible width (§A.7: "Shift+wheel pans by w/8").
 pub const PAN_DIVISOR: f64 = 8.0;
 
-/// Pixels per second at `zoom`, capped at [`BAND_MAX_PPS`] ("max 200 px/s"). A zoom below 1 would
-/// show more than the whole recording, so the floor is fit itself: zoom is a magnification, never a
-/// shrink past the file.
+/// Pixels per second at `zoom`, capped at [`BAND_MAX_PPS`] ("max 200 px/s").
 pub fn px_per_second(zoom: f64, duration: f64, width: f64) -> f64 {
     (fit_pps(duration, width) * zoom.max(0.0)).min(BAND_MAX_PPS)
 }
 
 /// The band's zoom after one wheel notch of `dy` (`scroll.get_dy()`: negative scrolls up = zoom in).
-/// `1.25^-dy` applied to the fit-relative zoom, floored at fit so the view cannot leave the file.
 pub fn zoom_step(zoom: f64, wheel_dy: f64) -> f64 {
     (zoom / ZOOM_NOTCH.powf(wheel_dy)).max(1.0)
 }
 
-/// The px/s that puts the whole recording across `width`. Never zero: an empty band still maps.
+/// The px/s that puts the whole recording across `width`.
 pub fn fit_pps(duration: f64, width: f64) -> f64 {
     if duration <= 0.0 || width <= 0.0 {
         return 1.0;
@@ -38,9 +26,7 @@ pub fn fit_pps(duration: f64, width: f64) -> f64 {
     width / duration
 }
 
-/// Does the view need its own scrollbar? Only once the wheel has zoomed PAST fit — at fit the whole
-/// recording is already on screen and a bar would be decoration (§1: "own scrollbar once the wheel
-/// zooms past fit").
+/// Does the view need its own scrollbar?
 pub fn needs_scrollbar(zoom: f64, duration: f64, width: f64) -> bool {
     content_px(zoom, duration, width) > width + f64::EPSILON
 }
@@ -50,8 +36,7 @@ pub fn pan_by(width: f64) -> f64 {
     (width / PAN_DIVISOR).max(1.0)
 }
 
-/// The widest the drawn content can be: `duration × px_per_second`. Kept separate so the clamp and
-/// the scrollbar ask the same question.
+/// The widest the drawn content can be: `duration × px_per_second`.
 pub fn content_px(zoom: f64, duration: f64, width: f64) -> f64 {
     duration * px_per_second(zoom, duration, width)
 }
@@ -71,20 +56,17 @@ pub fn x_to_second(x: f64, offset: f64, pps: f64) -> f64 {
     ((x + offset) / pps.max(f64::EPSILON)).max(0.0)
 }
 
-/// A second of the recording → the px it is drawn at, never left of the lane's start. The right
-/// edge belongs to the caller: the widget's width is whatever GTK allocated, so [`take_box`] and
-/// [`paint_plan`] clip against it rather than against a constant that would lie at another size.
+/// A second of the recording → the px it is drawn at, never left of the lane's start.
 pub fn second_to_px(t: f64, offset: f64, pps: f64) -> f64 {
     (t * pps - offset).max(0.0)
 }
 
-/// What one press-release on the band means. Delegates the slop rule to
-/// [`screen::take_press`] so there is exactly one place that decides click-vs-drag.
+/// What one press-release on the band means.
 pub fn drag_or_click(pressed_x: f64, released_x: f64, start: f64) -> TakePress {
     screen::take_press(pressed_x, released_x, start)
 }
 
-/// Is a take wide enough to carry its duration? §1: labelled "when wider than 34 px".
+/// Is a take wide enough to carry its duration?
 pub fn take_shows_label(width_px: f64) -> bool {
     width_px > TAKE_LABEL_MIN_PX
 }
@@ -120,16 +102,13 @@ pub fn playhead_px(session: f64, offset: f64, pps: f64, playing: bool) -> Option
 }
 
 /// What the band says while its envelope is not decoded yet (§1: "reading the recording…" while the
-/// envelope decodes). Once decoded the band draws the waveform and says nothing of its own: the
-/// takes' own sentence is [`screen::band_status`]'s, and the ruler is the ruler.
+/// envelope decodes).
 pub fn envelope_note(decoded: bool) -> Option<&'static str> {
     (!decoded).then_some("reading the recording\u{2026}")
 }
 
 /// The wave as the lane draws it: one `(x, peak)` per pixel column in `width` px, the loudest peak the column
-/// covers. A recording's peaks come 200 to the second, so a 70 minute recording has 850 000 of them for some 900
-/// columns, and the first rewrite drew every one: a paint took far longer than the 100 ms between two beats of
-/// the preview, and the window stood still. Zoomed in past the peaks, a column shows the one it stands on.
+/// covers.
 pub fn peak_columns(hz: f64, peaks: &[u8], offset: f64, pps: f64, width: f64) -> Vec<(f64, u8)> {
     if peaks.is_empty() || hz <= 0.0 || pps <= 0.0 {
         return Vec::new();
@@ -150,8 +129,7 @@ pub fn peak_columns(hz: f64, peaks: &[u8], offset: f64, pps: f64, width: f64) ->
 }
 
 /// The band's paint plan: everything the draw func needs, decided from numbers alone, so a test can
-/// assert the picture without a cairo surface. Colours are the ones §A.7 documents (dark ground, blue
-/// envelope, green takes, red cue bar) and live with the CSS plate in the UI layer.
+/// assert the picture without a cairo surface.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan {
     /// The note shown instead of a waveform while the envelope decodes.
@@ -171,9 +149,7 @@ pub struct Plan {
 }
 
 /// What one frame of the band is asked to show: the view (`zoom`, `offset`, `pps` derived from them),
-/// the hand (`pointer_x`, `selection` in seconds, `red_bar`), and what is on it (`takes`). Built by
-/// the draw func from this module's thread-locals plus [`crate::ui::narrate_page`]’s state, so the
-/// painter has no rule of its own to apply.
+/// the hand (`pointer_x`, `selection` in seconds, `red_bar`), and what is on it (`takes`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BandPaint {
     /// Seconds of recording the lane covers — the denominator of fit.
@@ -202,7 +178,7 @@ pub struct BandPaint {
     pub envelope_decoded: bool,
 }
 
-/// Decide the whole picture from state. `selection` is the drag in progress, in seconds.
+/// Decide the whole picture from state.
 pub fn paint_plan(state: &BandPaint) -> Plan {
     Plan {
         note: envelope_note(state.envelope_decoded).map(str::to_string),

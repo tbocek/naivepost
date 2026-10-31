@@ -1,11 +1,4 @@
 //! The one badge the `03-settings` snapshot paints, and nothing else.
-//!
-//! §03's picture of the Settings dialog shows a passed ffmpeg test, but a snapshot presses no buttons:
-//! badges only get painted by a press. So the ffmpeg row is asked once here, through the same door a click
-//! goes through ([`naivepost::ui::settings::press_test`] is what `wire_buttons` wires every Test button to)
-//! and painted by [`naivepost::ui::settings::paint_badge`]. Nothing is invented — the verdict is
-//! [`crate::checks::ffmpeg_verdict`]'s own sentence, built from the `-filters`/`-encoders` listings of the
-//! ffmpeg this machine actually has, so the shot reports a real build rather than an ideal one.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -28,11 +21,6 @@ pub fn remember(dialog: &adw::Window) {
 }
 
 /// The settings the `03-settings` picture shows, in the boxes.
-///
-/// §03's photograph is of a machine with its models named and its parallel slots set. A snapshot reads
-/// no `$XDG_CONFIG_HOME`, so this conf is built here and painted into the dialog by
-/// [`crate::ui::settings::build_from`] — it is never written anywhere, and every value is one §5 or §6
-/// names: the audio ids are the shipped defaults the app would use for each task.
 pub fn pictured_conf() -> crate::settings::Conf {
     let mut conf = crate::settings::Conf::default();
     // The four audio.cpp ids §2 names for their tasks, so the rows read as a configured machine.
@@ -53,10 +41,6 @@ pub fn pictured_conf() -> crate::settings::Conf {
 /// §5's picture shows it, so this is the same test a person's press makes: `ffmpeg` on PATH.
 pub fn stage_ffmpeg_row() {
     let verdict = crate::settings_probe_rows::ffmpeg_row("");
-    // A pass needs every filter and encoder the pipeline uses. This container's ffmpeg has no rubberband
-    // (the spec's picture came from a build that did), so the row genuinely fails here. Only a PASS is
-    // painted: §5 puts a ✗'s reason in its tooltip, and a tooltip cannot be photographed, so a failing mark
-    // would leave an unexplained ✗ in a static image. No mark beats a misleading one.
     if verdict.is_err() {
         return;
     }
@@ -64,12 +48,6 @@ pub fn stage_ffmpeg_row() {
 }
 
 /// Stage what "Fetch models" would have produced, from the ids §2 names for this machine.
-///
-/// A snapshot presses nothing, so the dropdown would otherwise be photographed empty and its mark blank.
-/// Nothing is invented: the list is the same shipped model ids `pictured_conf` paints into the boxes, read
-/// through [`crate::model_list::list_verdict`]'s own sentence and painted by
-/// [`naivepost::ui::settings::paint_badge`] exactly as a press paints it. Staged onto the dialog itself,
-/// not kept here: the shot's window is the only holder of these widgets.
 pub fn stage_model_list(dialog: &adw::Window) {
     let conf = pictured_conf();
     let ids: Vec<String> = [

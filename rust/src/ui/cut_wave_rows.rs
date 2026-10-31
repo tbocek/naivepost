@@ -2,12 +2,6 @@
 //! sound read off `cache/waves/<base>.wave` (§01 §6) and drawn the way the prototype draws its paired strip
 //! (`go/cut_audio.go` `drawWaveCell`): a dim ground where the recording runs, the meter's zero as a baseline,
 //! one column per pixel standing up from it on the IEC 60268-18 meter curve, and a darker cap on the skyline.
-//!
-//! The cache is checked against the RECORDING it was measured from (`wave::read` takes the source's size and
-//! mtime), so this finds the source the project names for the row's base and stamps it the way
-//! `wave_build::ensure` stamped it. The first port asked with the cache file's own length and no mtime, so every
-//! read was a miss and the strip was a flat line. A decoded wave is held per cache file and re-read only when
-//! that file changes, so a draw ten times a second while ▶ runs reads no disk.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -18,21 +12,14 @@ use std::time::SystemTime;
 use crate::ui::cut_tracks::{self, Rows, Scene};
 use crate::{audio_task, layout, wave};
 
-/// The strip's voice under the pictures: the same wave turned down (the prototype's `dim`).
 const STRIP_ALPHA: f64 = 0.55;
-/// Where the recording runs, so an empty stretch and a silent one look different.
 const GROUND: (f64, f64, f64) = (0.16, 0.17, 0.2);
-/// The meter's zero.
 const BASELINE: (f64, f64, f64) = (0.35, 0.6, 1.0);
-/// The columns.
 const COLUMN: (f64, f64, f64) = (0.29, 0.62, 1.0);
-/// The skyline along the columns' tops.
 const CAP: (f64, f64, f64) = (0.09, 0.27, 0.52);
 
 thread_local! {
-    /// Decoded waves by cache file, with the cache file's mtime they were read at (`None`: not readable).
     static WAVES: RefCell<HashMap<PathBuf, (SystemTime, Option<Rc<wave::Wave>>)>> = RefCell::new(HashMap::new());
-    /// Each project's sources by base, with the project file's mtime they were read at.
     static SOURCES: RefCell<HashMap<PathBuf, (SystemTime, HashMap<String, PathBuf>)>> = RefCell::new(HashMap::new());
 }
 
@@ -72,7 +59,6 @@ pub fn draw_row_waves(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64)
 }
 
 /// A strip's ground and the meter's zero along its foot: Cut's rows and Narrate's take band draw the one strip.
-/// Answers the foot's y, where the columns stand.
 pub fn draw_ground(cr: &cairo::Context, x0: f64, x1: f64, top: f64, h: f64) -> f64 {
     cut_tracks::fill(cr, GROUND, x0, top, x1 - x0, h, STRIP_ALPHA);
     let bot = (top + h - 1.0).round() + 0.5;
@@ -85,7 +71,7 @@ pub fn draw_ground(cr: &cairo::Context, x0: f64, x1: f64, top: f64, h: f64) -> f
 }
 
 /// One `(x, meter level)` column per pixel standing on `bot`, `full` px at full scale, with the darker cap along
-/// their tops. Filled one by one: side by side in one path they cost cairo time by the square of their number.
+/// their tops.
 pub fn draw_columns(cr: &cairo::Context, levels: &[(f64, f64)], bot: f64, full: f64) {
     let columns = || {
         levels
@@ -105,8 +91,7 @@ pub fn draw_columns(cr: &cairo::Context, levels: &[(f64, f64)], bot: f64, full: 
     }
 }
 
-/// The loudest byte between two file-local seconds, as a fraction of full scale. A column covers many buckets
-/// zoomed out (the loudest of them: an average would fade the wave as you zoom out) and a part of one zoomed in.
+/// The loudest byte between two file-local seconds, as a fraction of full scale.
 pub fn peak(peaks: &[u8], hz: f64, from: f64, to: f64) -> f64 {
     if peaks.is_empty() || to <= 0.0 {
         return 0.0;
@@ -149,13 +134,11 @@ fn iec(amp: f64) -> f64 {
     }
 }
 
-/// The project whose caches the band reads: a snapshot's fixture first, else the open project.
 fn tree() -> Option<layout::Tree> {
     crate::ui::cut_picture::snapshot_frame_tree()
         .or_else(|| layout::Tree::new(crate::startup::open_dir()).ok())
 }
 
-/// `base`'s decoded wave, read once per change of its cache file and checked against its recording.
 fn wave_of(tree: &layout::Tree, base: &str) -> Option<Rc<wave::Wave>> {
     let file = tree.wave(base);
     let changed = std::fs::metadata(&file)
@@ -170,8 +153,6 @@ fn wave_of(tree: &layout::Tree, base: &str) -> Option<Rc<wave::Wave>> {
     }) {
         return held;
     }
-    // The recording the project names for the base; a project that names none (a staged shot, whose envelope
-    // `snapshot_lane::stage_envelope` folds straight from decoded audio) is stamped against that decoded audio.
     let read = source_of(tree.dir(), base)
         .or_else(|| Some(tree.voice16k_wav(base)))
         .and_then(|source| crate::wave_build::stamp(&source).ok())
@@ -181,7 +162,6 @@ fn wave_of(tree: &layout::Tree, base: &str) -> Option<Rc<wave::Wave>> {
     read
 }
 
-/// The recording the project names for `base`: the source whose file stem is the base Prepare files under.
 fn source_of(dir: &Path, base: &str) -> Option<PathBuf> {
     let project_file = dir.join("naivepost.json");
     let changed = std::fs::metadata(&project_file)

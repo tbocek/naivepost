@@ -1,13 +1,4 @@
 //! Opening a project the user picked (spec/03-shell.md F0.9).
-//!
-//! The chooser hands over a path; what happens next is a rule with an order, not a click handler:
-//! the folder and its output folder are settled **first**, then the project is read and applied, so
-//! every line that load produces belongs to the folder being opened rather than the one being left
-//! behind. Two refusals sit on that path — an old single-file project, and anything that simply will
-//! not open — and they are different messages for different reasons (see [`classify`]).
-//!
-//! Nothing here touches a widget. The window draws what these functions return and forwards the
-//! picker's answer (spec/00-principles.md §5).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -25,23 +16,14 @@ pub const CANNOT_OPEN: &str = "could not open that project \u{2014} see log";
 pub const NOT_A_PROJECT: &str = "not a project folder";
 
 /// S2: the log line naming the file that cannot be adopted any more.
-///
-/// The double hyphen is the spec's literal form; the prototype adopted such a file into a folder,
-/// which is exactly what the rewrite stopped doing, so the message says what happened rather than
-/// papering over it.
 pub fn single_file_refusal(file: &str) -> String {
     format!("!!! {file} is an old single-file project -- not supported")
 }
 
-/// S3: the log line for a source whose file has gone. Dropped, not deleted: the project keeps the
-/// record of what was there, the session stops pretending it can read it.
 pub fn dropped_line(file: &str) -> String {
     format!("!!! {file} is not there any more -- dropped from the session")
 }
 
-/// S1: the folder a picked path names. A path ending in `naivepost.json` opens the folder holding
-/// it, because that is how a file manager hands a project over when the user picks the file inside.
-/// Delegates to F0.6's rule so the two paths through which a project arrives agree.
 pub fn folder_for(picked: &Path) -> PathBuf {
     startup::project_folder(picked)
 }
@@ -51,8 +33,6 @@ pub fn folder_for(picked: &Path) -> PathBuf {
 pub enum Choice {
     /// S1: a folder to open — whether or not it holds a readable project yet is S3/S4's question.
     Openable(PathBuf),
-    /// S2: a regular file that is not a project folder. Carries both halves of the refusal so the
-    /// caller logs one and shows the other without re-deriving either.
     NotAFolder {
         target: PathBuf,
         log: String,
@@ -61,16 +41,6 @@ pub enum Choice {
 }
 
 /// S1 → S2: sort the picked path into "open it" and "this is not a project".
-///
-/// The two refusals are deliberately different and must not be merged:
-/// * A **regular file** that is not `<x>.naivepost/naivepost.json` is the pre-folder single-file
-///   project — S2's message, status `not a project folder`. It is named as such because the user
-///   has a file they used to open, and saying "old single-file project" tells them why this build
-///   cannot take it.
-/// * A **folder with no `naivepost.json`** is not an old project at all; it is a folder that will
-///   not open, and it takes S4's generic failure (`CANNOT_OPEN`) via [`apply`]'s error rather than
-///   S2's. Calling an empty directory an "old single-file project" would send the user looking for
-///   a legacy format they never had.
 pub fn classify(picked: &Path, is_file: impl Fn(&Path) -> bool) -> Choice {
     let folder = folder_for(picked);
     if folder == picked && is_file(picked) {
@@ -84,8 +54,6 @@ pub fn classify(picked: &Path, is_file: impl Fn(&Path) -> bool) -> Choice {
     Choice::Openable(folder)
 }
 
-/// Why an open did not happen. One shape for both refusals and for a failed read, so the shell's
-/// error path is one branch: log `log`, show `status`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenFailure {
     pub log: String,
@@ -103,14 +71,6 @@ impl OpenFailure {
 }
 
 /// What opening a project put in place.
-///
-/// `root` and `out` are filled before the project is read (S3's ordering rule): the output folder is
-/// the project folder itself (§01 §1 — the folder *is* the output folder), so settling them first
-/// means a later failure still leaves the shell pointing at the right place rather than mid-switch.
-/// `project` carries everything the apply list names — sources, `language`, prompts,
-/// `context`, `policy`, the reference flag
-/// (`reference_sources`), the hints folded into the prompts by [`project::load_report`], `produce`
-/// and `publish` — as one value the pages read, rather than field by field here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Applied {
     pub root: PathBuf,
@@ -123,12 +83,7 @@ pub struct Applied {
 }
 
 /// S3: set the project path and output folder first, then read and apply the project.
-///
-/// `exists` answers "is this file still where the project says it is", resolved against `dir` by
-/// [`source_present`]. It stays a parameter so the drop rule can be tested against a fake as well as
-/// a real tree; every live door passes real `Path::exists`.
 pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, OpenFailure> {
-    // --- S3, part one: the paths, before anything is read -------------------
     // The project folder is also the output folder; nothing else stores where work goes.
     let root = dir.to_path_buf();
     let out = dir.to_path_buf();
@@ -141,7 +96,6 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
         )));
     }
 
-    // --- S3, part two: read it, and keep what the load had to say ----------
     let (mut project, mut lines) =
         project::load_report(&root).map_err(|err| OpenFailure::could_not_open(&err))?;
 
@@ -168,12 +122,6 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
             lines.push(dropped_line(path));
         }
     }
-    // §4's fourth auto-fill moment: "a load that stripped a bad tag". A hand-edited or stale project
-    // file can claim two rows in one narrator slot, a slot past the last one, or frames out of an audio
-    // file; `sources::clean_on_load` clears those, says which row it cleared and why (those lines ride
-    // `Applied.lines`, so the shell logs them), and only then may slot 1 be auto-filled -- a strip is
-    // what empties a slot, and slot 1 is never left unheld. This door rather than a second check at each
-    // caller because `apply` is already the ONE place that decides what a load keeps.
     crate::sources::clean_on_load(&mut project, &mut lines);
     // …and the same auto-fill for the load that dropped slot 1's holder instead of stripping a tag: the
     // rows above were already dropped as missing, so a strip may never have happened and slot 1 can still
@@ -188,10 +136,6 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
     })
 }
 
-/// Where a stored source path lives on disk. `project:` is the project folder, an absolute path is
-/// itself, anything else hangs off the project too — the same rule [`crate::layout::resolve`]
-/// applies, with the project folder standing in for the application root because opening a project
-/// does not change which root the launch started under.
 fn layout_resolve(project_dir: &Path, written: &str) -> PathBuf {
     match written.strip_prefix("project:") {
         Some(rel) => project_dir.join(rel),
@@ -200,20 +144,11 @@ fn layout_resolve(project_dir: &Path, written: &str) -> PathBuf {
     }
 }
 
-/// Whether a stored source path still has its file in `project_dir`, asked through `present` so a
-/// caller can answer it from a fake. The ONE place a stored path becomes a disk path for this
-/// question: `apply` filters through it and so does the launch (`ui::launch::load_for_launch`), so
-/// S3's dropped-source sentence cannot be spelled or decided differently in two places.
 pub fn source_present(project_dir: &Path, written: &str, present: &impl Fn(&Path) -> bool) -> bool {
     present(&layout_resolve(project_dir, written))
 }
 
 /// S4: migrate old folder names and hand back the lines that say what moved.
-///
-/// Both passes run: `pass_one` renames the numbered `stepN` folders, `pass_two` folds `inputs/`
-/// and `understand/{describe,transcript}` under `prepare/`. Failures are returned alongside rather
-/// than swallowed — a folder that could not be renamed is worth one line even though the project
-/// still opens.
 pub fn finish(applied: &Applied) -> Migration {
     let (one, fail_one) = migrate::pass_one(&applied.root);
     let (two, fail_two) = migrate::pass_two(&applied.root);
@@ -245,15 +180,6 @@ pub struct Remembered {
     pub file: String,
 }
 
-/// S4: record this project against this root, following the `PROJECT_<n>` convention
-/// [`crate::settings`] numbers by folder order.
-///
-/// Data-level on purpose: writing `llm.conf` is [`crate::settings`]'s job (its writer quotes and
-/// renders the whole store), and this module must not reach for `$HOME` — the tests drive it with a
-/// map they own. The caller hands the pair to settings' existing writer unchanged.
-///
-/// Re-opening the same root replaces its entry rather than adding a second one: two entries for one
-/// folder would make the remembered list disagree with itself.
 pub fn remember(
     projects: &mut BTreeMap<String, String>,
     root: &Path,
@@ -272,9 +198,6 @@ pub fn project_file_in(dir: &Path) -> PathBuf {
     dir.join(PROJECT_FILE)
 }
 
-/// S1 → S3: classify then apply, so the shell calls one thing. `finish` and `remember` stay outside
-/// so each of those steps can be tested on its own — and so a caller that only wants to know whether
-/// a path is openable never triggers a rename on disk.
 pub fn open(
     picked: &Path,
     is_file: impl Fn(&Path) -> bool,

@@ -1,21 +1,10 @@
 //! F2.2 — ▶✂: play the CUT instead of the recording.
-//!
-//! Where ▶ (F2.1, [`crate::preview`]) plays every second the session holds, ▶✂ plays the finished
-//! video: removed stretches are skipped, the line jumps to the next clip's first playable second, and
-//! the clock reads the cut's own time rather than the session's. Nothing here decides anything the
-//! page could decide for itself (spec/00-principles.md §5): the button forwards, this answers.
-//!
-//! The three branches of the flowchart in spec/05-cut.md §F2.2 are S1-S6 below. S3 deliberately reuses
-//! [`crate::cut_review::switch_over`] rather than clearing the review flag by hand, so "a review is
-//! running → end it, carry on as the plain cut" has exactly one implementation between the two items.
 
 use crate::{
     cut::{Cut, Seg},
     cut_fold, cut_review, cut_screen,
     preview::{self, Player},
 };
-
-// --- S1 / S2: does ▶✂ have anything to do? ----------------------------------------------------------
 
 /// S1's greyed rule lives in [`cut_screen::can_play_cut`] — one function answers whether the button is
 /// sensitive and whether a press refuses, so the two can never disagree. This is the same question asked
@@ -42,8 +31,6 @@ pub const SWITCH_STATUS: &str = "preview is the cut \u{2014} the clock reads the
 pub const REVIEW_ENDED_STATUS: &str =
     "the review is over \u{2014} playing the plain cut, every kept second and nothing else";
 
-// --- S2: the line snaps onto kept material ---------------------------------------------------------
-
 /// A seg the cut actually shows: cards (`e <= s`) carry no length of their own and would make a "clip"
 /// out of an instant. `shell::cut_seconds` filters the same way, so the line and the clock agree about
 /// what counts as material.
@@ -60,11 +47,6 @@ pub fn visible_seg_at(segs: &[Seg], t: f64) -> Option<&Seg> {
 }
 
 /// S2: the first kept second at or after `line`.
-///
-/// A line parked inside a removed stretch must land on material rather than on nothing, because ▶✂ has
-/// no such thing as "play the gap": the nearest forward clip start is the honest answer. Past the last
-/// clip there is nothing ahead, so the line goes to the last clip's start rather than off the end of
-/// the video (the spec is silent; landing on material beats parking on a hole).
 pub fn snap_to_kept(segs: &[Seg], line: f64) -> f64 {
     let Some(last) = segs.iter().rfind(|seg| visible(seg)) else {
         return 0.0;
@@ -81,8 +63,6 @@ pub fn snap_to_kept(segs: &[Seg], line: f64) -> f64 {
         None => last.s,
     }
 }
-
-// --- S2 / S3 / S4: one press ---------------------------------------------------------------------
 
 /// What pressing ▶✂ did, so the page prints the right sentence without deciding anything itself.
 #[derive(Debug, Clone, PartialEq)]
@@ -113,8 +93,6 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
     }
 
     // S2: the preview is the recording → switch to the cut, snapping the line onto kept material.
-    // A review counts as the recording side here only in that it is not the plain cut; S3 handles it
-    // before we get here, so this branch is the true recording preview.
     if !player.cut_only && !player.reviewing {
         let kept_playing = player.transport.playing;
         player.cut_only = true;
@@ -169,8 +147,6 @@ fn first_start(segs: &[Seg]) -> f64 {
         .unwrap_or(0.0)
 }
 
-// --- S5: while playing, where the line goes ------------------------------------------------------
-
 /// One tick of the cut preview's line.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum At {
@@ -183,10 +159,6 @@ pub enum At {
 }
 
 /// S5: advance the line over the cut's own material.
-///
-/// Unlike [`preview::play_advance`], which walks straight through everything because ▶ shows cuts and
-/// all, this skips: a target that lands in a removed stretch becomes a jump to the next clip's start,
-/// and a target past the final clip ends playback rather than running off the end.
 pub fn advance(segs: &[Seg], from: f64, elapsed: f64) -> At {
     let target = from + elapsed;
     if segs
@@ -202,9 +174,6 @@ pub fn advance(segs: &[Seg], from: f64, elapsed: f64) -> At {
 }
 
 /// The kept clips as merged runs, so back-to-back clips are one stretch rather than a fake jump.
-///
-/// Sorted and disjoint, the same contract [`crate::timeline::filmed_runs`] gives the recording side —
-/// which is what lets [`preview::preload_target`] answer for both.
 pub fn kept_runs(segs: &[Seg]) -> Vec<(f64, f64)> {
     let mut clips: Vec<(f64, f64)> = segs
         .iter()
@@ -224,19 +193,10 @@ pub fn kept_runs(segs: &[Seg]) -> Vec<(f64, f64)> {
 }
 
 /// S5: which second to hand the spare pipeline, if any.
-///
-/// `P.eng.preloadLeadSeconds` — the same three seconds and the same helper ([`preview::preload_target`])
-/// serve all three jumps the spec says share the one spare pipeline: the cut's skipped stretch (here),
-/// the review's next run-up (`cut_review`'s seek), and the walk-on at a recording's end
-/// ([`preview::walk_on`]). One lead, three callers, so a retune moves them together.
 pub fn preload_ahead(segs: &[Seg], t: f64) -> Option<f64> {
     preview::preload_target(&kept_runs(segs), t)
 }
 
-/// §6's preview lead measured on the wall: has this long gone since the spare was last armed? Kept apart from
-/// [`preview::opens_ahead`], which asks the same three seconds off the CLIP's remaining time, because the arm
-/// question is "is this soon enough after the last arm to be worth a second process" and a re-arm of the second
-/// already held rebuilds a pipeline for nothing (see [`crate::cut_play_back::preroll`]'s one-slot note).
 pub const PRELOAD_ARM_GAP_MS: u64 = (preview::PRELOAD_LEAD_SECONDS * 1000.0) as u64;
 
 /// Whether an arm asked at `since_last_arm_ms` is worth a process at all: at or inside the lead, and the armed
@@ -257,12 +217,8 @@ pub fn worth_arming(
     }
 }
 
-// --- S5: the clock reads the cut's own time ----------------------------------------------------
-
 /// The cut's own second for a session second: the kept length before it, plus how far into the clip
 /// holding it we are. `None` when the line sits in a removed stretch, where the cut has no time to show.
-///
-/// The kept footage's own seconds: cards and speed effects are not counted, so this can differ from the finished video.
 pub fn cut_time(segs: &[Seg], session_t: f64) -> Option<f64> {
     let mut out = 0.0;
     for seg in segs.iter().filter(|seg| visible(seg)) {
@@ -283,10 +239,6 @@ pub fn cut_clock_note() -> &'static str {
 /// because this is the module whose rule reads it; [`crate::cut_speed`] owns the rates themselves.
 pub const FLAT_RATE: f64 = 1.0;
 
-/// S5: a stop shows its still. A stop is not the zero-rate case of a speed effect — `cut_speed` writes
-/// one as `kind: "speed"` with `rate: 0.0` over a two-second stretch (`STOP_SECONDS`), and a seg with
-/// no rate written at all is an ordinary clip whose `rate` field is also 0.0. So the still is read from
-/// the effect list, not off the clip: asking the clip would call every untouched segment a freeze frame.
 pub fn shows_a_still(cut: &Cut, session_t: f64) -> bool {
     cut.fx.iter().any(|fx| {
         fx.kind == "speed"
@@ -310,8 +262,6 @@ pub fn played_rate(seg: &Seg) -> f64 {
 pub fn volume_applies(_seg: &Seg) -> bool {
     true
 }
-
-// --- S6: dropped stretches dimmed on the tracks -----------------------------------------------
 
 /// S6: the spans to draw dimmed while ▶✂ runs — the removed stretches, computed once in
 /// [`crate::cut_fold::dropped_gaps`] rather than re-derived here.

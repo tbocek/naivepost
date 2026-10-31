@@ -1,15 +1,9 @@
 //! F1.3 S1 — the decode every other Prepare step reads: `voice16k.wav`, mono 16 kHz.
 //!
-//! Nothing else in the program writes that file. Before this module a ▶ Prepare run reached
-//! [`crate::run_stages`]' speech row, found no decoded audio, and said so — the ASR, the aligner, the
-//! diarizer and both transcripts were never touched, because everything downstream counts samples of
-//! THIS file ([`crate::transcribe::SAMPLE_RATE`] is the rate its word times are divided by). So this
-//! is the first leg of the pass, on the same subprocess door as every other ffmpeg call
-//! ([`crate::subprocess::run`], which logs the argv before starting it, §8).
+//! Nothing else writes that file: the ASR, aligner, diarizer and both transcripts count samples of THIS file ([`crate::transcribe::SAMPLE_RATE`] is the rate its word times are divided by). It is the first leg of the pass, on the same
+//! subprocess door as every ffmpeg call ([`crate::subprocess::run`], which logs the argv first, §8).
 //!
-//! The output is a real wav (`pcm_s16le`), not the headerless stream the separation split decodes to:
-//! §F1.3 names the file `voice16k.wav`, and ffprobe can read a duration out of a wav header, which is
-//! how the pass knows the take's length before it asks anyone anything (S2's short-take test).
+//! The output is a real wav (`pcm_s16le`), not the headerless stream separation decodes to: ffprobe reads a duration from a wav header, which is how the pass knows the take's length first (S2's short-take test).
 
 use std::path::{Path, PathBuf};
 
@@ -19,9 +13,7 @@ use crate::transcribe;
 
 /// S1's arguments: no picture, 16 kHz, one channel, signed 16-bit samples in a wav.
 ///
-/// The rate is [`transcribe::SAMPLE_RATE`] rather than a literal, because that constant is what turns
-/// this file's sample numbers into seconds everywhere after this — writing `16000` here would let the
-/// two drift, and a drifted rate shifts every word time by a percentage instead of breaking loudly.
+/// The rate is [`transcribe::SAMPLE_RATE`], not a literal: it turns sample numbers into seconds everywhere after, and a drifted rate would shift every word time by a percentage instead of breaking loudly.
 pub fn decode_plan() -> Vec<String> {
     vec![
         "-vn".into(),
@@ -34,18 +26,14 @@ pub fn decode_plan() -> Vec<String> {
     ]
 }
 
-/// S1's resume rule: the decode happens unless the file is already there. Its existence is the marker,
-/// not its size — an empty recording decodes to a header-only wav, and re-decoding it on every run
-/// would cost a full pass over the source for nothing.
+/// S1's resume rule: the decode happens unless the file is already there. Existence is the marker, not size (an empty recording decodes to a header-only wav).
 pub fn already_decoded(tree: &Tree, lane: &str) -> bool {
     tree.voice16k_wav(lane).exists()
 }
 
-/// Decode `source` into `out`. Every failure names a path: "the decode failed" without the file says
-/// nothing about which recording to look at (§Failure-is-specific).
+/// Decode `source` into `out`. Every failure names a path (§Failure-is-specific).
 ///
-/// A source with no audio stream fails here with ffmpeg's own sentence, which is the honest answer: the
-/// app does not decide whether a file has sound, the tool that reads it does.
+/// A source with no audio stream fails with ffmpeg's own sentence: the tool that reads it decides whether a file has sound.
 pub fn decode(
     configured_ffmpeg: &str,
     source: &Path,
@@ -72,12 +60,9 @@ pub fn decode(
     Err(format!("{}: the decode produced nothing", out.display()))
 }
 
-/// The decoded audio this row needs, making it first if it is not there. Returns the path every later
-/// step reads ([`Tree::voice16k_wav`]), so no caller has to know whether work was done here.
+/// The decoded audio this row needs, making it first if absent. Returns the path every later step reads ([`Tree::voice16k_wav`]).
 ///
-/// `source` is the recording itself, resolved by the caller through the one path rule; `lane` is the
-/// word the session files are named under, which is the row's own lane rather than the file's stem as
-/// it happens to sit on disk.
+/// `source` is the recording, resolved by the caller through the one path rule; `lane` is the row's own lane, not the file's stem as it sits on disk.
 pub fn ensure(
     tree: &Tree,
     lane: &str,

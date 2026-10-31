@@ -1,18 +1,6 @@
-//! F1.9's request leg: the retake marking pass reaching the LLM server over HTTP.
-//!
-//! [`crate::retakes`] holds every rule of F1.9 and dials nothing — by design, because a step that
-//! decided inside a tool call could never be tested (spec/00-principles.md §5). This is the leg that
-//! supplies the answers those rules act on: §F1.9 S2's brief goes out as the shipped `retake` prompt
-//! plus the numbered lines, S3's three identical calls each get their own cache slot, and whatever
-//! comes back is fed through §3.4's own tools (`mark_abandoned`, `unmark`, `get_lines`, `finish`) so
-//! the TOOL decides what a valid mark is rather than a copy of that decision living here. The answer
-//! therefore arrives two ways and both are honoured: as tool calls, and as the prototype's strict
-//! JSON in the reply content (§S3 spells that shape; a model that was told to answer in JSON and is
-//! then only read for tool calls loses the answer it gave).
-//!
-//! Nothing here computes a trim, a merge, a ceiling or a duration: those are `retakes::*` and
-//! `tools::retakes::*` already, and this module calls them. What is new is only the wire, the pooling
-//! of three runs into one set of marks, and reading the words S4 checks a mark against.
+//! F1.9's request leg: the retake marking pass reaching the LLM server over HTTP. [`crate::retakes`] holds the rules and dials nothing (spec/00-principles.md §5).
+//! §F1.9 S2's brief goes out as the shipped `retake` prompt plus numbered lines, S3's three identical calls get their own cache slots, and answers go through §3.4's tools (`mark_abandoned`, `unmark`, `get_lines`, `finish`) so the TOOL decides what a valid mark is. Answers arrive as tool calls and as the prototype's strict JSON in the content (§S3); both are honoured.
+//! New here is only the wire, pooling three runs into one set of marks, and reading the words S4 checks against.
 
 use crate::edges::AlignedWord;
 use crate::exchanges::{Message, Part};
@@ -28,39 +16,33 @@ use crate::tool_loop;
 use crate::tools::retakes::{Line, Mark, Marks, Trim, AGAIN_REACH_SECONDS};
 use crate::tools::{self, Tool};
 
-/// The step name this job's cache entries, timed rows and log lines carry.
 pub const STEP: &str = retakes::STEP;
 
-/// How much of the later take is read looking for the repeated tail. Beyond this the "repeat" is a
-/// new passage, not the tail of the attempt. P.machine.againReachSeconds
+/// How much of the later take is read for the repeated tail; beyond it the "repeat" is a new passage. P.machine.againReachSeconds
 const RETAKE_READ_SECONDS: f64 = AGAIN_REACH_SECONDS;
 
-/// What one pooled run came back as.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunOutcome {
-    /// The run answered and its marks went into the shared set: how many it named.
-    Answered { marks: usize },
-    /// Read back from `cache/llm` instead of asked: costs no wire and writes no row (§09 §10).
-    Cached { marks: usize },
-    /// The ask failed at the wire. Not a refusal of an answer: a server that is not there answers the
-    /// same way however often it is called, so the pool carries on without re-dialling it.
-    Failed { reason: String },
+    Answered {
+        marks: usize,
+    },
+    Cached {
+        marks: usize,
+    },
+    /// The ask failed at the wire; a server that is not there answers the same each time, so the pool carries on without re-dialling.
+    Failed {
+        reason: String,
+    },
 }
 
 impl RunOutcome {
-    /// Whether this run contributed an answer the pool can use.
     pub fn answered(&self) -> bool {
         !matches!(self, RunOutcome::Failed { .. })
     }
 }
 
-/// The whole marking pass with the wire in it: §S2's brief, §S3's pooled calls, §S4's check against
-/// the words, §S5's edges and merge, §S6's ceiling and §S7's file and log line.
-///
-/// Every line it speaks goes to `log`, oldest first, so the caller (and the window's ▶ handler)
-/// contributes nothing of its own about this pass. A dial that fails at the wire is reported per run
-/// and the pass still owes `retakes.tsv`, which is what tells Cut the pass ran (§Failure-is-specific:
-/// name the reason where it failed, carry on elsewhere).
+/// The whole marking pass with the wire in it: §S2 brief, §S3 pooled calls, §S4 check against the words, §S5 edges and merge, §S6 ceiling, §S7 file and log line.
+/// Every line goes to `log`, oldest first. A wire failure is reported per run and the pass still owes `retakes.tsv`, which tells Cut the pass ran.
 pub fn run_pass(
     tree: &Tree,
     project: &Project,
@@ -71,8 +53,7 @@ pub fn run_pass(
     // ---- S2: the brief ------------------------------------------------------
     let (lines, source_changes) = numbered_lines(tree, project);
     if retakes::too_few(&lines) {
-        // S1 again, from the side that would otherwise ask: fewer than four lines and nobody is
-        // dialled, but the empty file is still owed.
+        // Fewer than four lines: nobody is dialled, but the empty file is still owed.
         retakes::write_marks(tree, &[], &[], &[])?;
         log(&retakes::empty_marks_log());
         return Ok(());
@@ -82,9 +63,7 @@ pub fn run_pass(
     log(&briefing_log(&lines));
 
     // ---- S3: the pooled runs -----------------------------------------------
-    // ONE Marks across every run: the tool's own merge and its running share have to see what the
-    // earlier runs already marked, or three runs agreeing on one stretch count it three times
-    // against the ceiling and refuse a session the runs actually agreed about.
+    // ONE Marks across every run: the tool's merge and running share must see earlier runs' marks, else three runs agreeing on one stretch count it three times against the ceiling.
     let mut marks = Marks::new(lines.clone(), speech);
     let mut last: Option<String> = None;
     let mut standing = 0usize;
@@ -101,9 +80,7 @@ pub fn run_pass(
                 let _ = named;
             }
             RunOutcome::Failed { reason } => {
-                // Set aside, not fatal: losing one draw of three is not a reason to lose the two that
-                // answered. But if NONE of them answers, saying it once is enough — the run-by-run
-                // line is news only when the pool still goes on without that run.
+                // Set aside, not fatal; if NONE answers it is said once instead.
                 if standing + (retakes::RUNS - run - 1) > 0 {
                     for line in tools::retakes::run_set_aside_log(
                         run,
@@ -120,8 +97,7 @@ pub fn run_pass(
     if cached > 0 {
         log(&tools::retakes::cached_runs_log(cached, retakes::RUNS));
     }
-    // No run answered at all: the reason is said ONCE, not three times, and the empty file is still
-    // owed because that is what tells Cut this pass ran (§Failure-is-specific).
+    // No run answered: said ONCE; the empty file is still owed (tells Cut this pass ran).
     if standing == 0 {
         if let Some(reason) = last {
             log(&format!(
@@ -159,8 +135,7 @@ pub fn run_pass(
                 ));
             }
             Outcome::Rehear { from, to } => {
-                // The second hearing (§S4's last clause) — see `rehear` for why it re-asks the
-                // material rather than re-transcribing the span.
+                // The second hearing (§S4's last clause); see `rehear`.
                 match rehear(tree, paths, conf, &brief, &mut marks, from, to) {
                     Some(reheard) => {
                         log(&format!(
@@ -206,16 +181,14 @@ pub fn run_pass(
     let marked: f64 = placed.iter().map(|row| (row.e - row.s).max(0.0)).sum();
 
     // ---- S6 / S7: the ceiling, the file, the line --------------------------
-    // `stage_marking` owns the three endings (refusal, none-found, completion) so their wording lives
-    // in one place; every line it returns is spoken here.
+    // `stage_marking` owns the three endings (refusal, none-found, completion).
     let ending = retakes::stage_marking(true, &lines, &merged, marked, speech);
     let refused = ending.iter().any(|line| line.starts_with("!!!"));
     for line in &ending {
         log(line);
     }
     if refused {
-        // S6: refuse EVERYTHING — and still write the file, empty on purpose, so Cut can tell "ran,
-        // refused" from "never ran".
+        // S6: refuse EVERYTHING but still write the empty file, so Cut can tell "ran, refused" from "never ran".
         retakes::write_marks(tree, &[], &[], &[])?;
         return Ok(());
     }
@@ -229,8 +202,7 @@ pub fn run_pass(
     Ok(())
 }
 
-/// The answer `finish` gives, built the one way the retake leg builds it: a model that is over the ceiling
-/// has to hear it IN THE REPLY, where it can still call `unmark`, rather than only after the pass ended.
+/// The answer `finish` gives: a model over the ceiling must hear it IN THE REPLY, where it can still `unmark`.
 pub fn finish_answer(marks: &Marks) -> String {
     let total = marks.finish();
     tools::ok(&serde_json::json!({
@@ -241,8 +213,7 @@ pub fn finish_answer(marks: &Marks) -> String {
         "over_ceiling": total.over,
         "marked_seconds": marks.marked_seconds(),
         "speech_seconds": marks.speech_seconds(),
-        // §12 §4: the three pooled runs are thrown away together, and the model is told so here -- with
-        // the way out named -- instead of discovering it in the log after its last round.
+        // §12 §4: the three pooled runs are thrown away together, and the model is told so with the way out named.
         "all_runs_dropped": total.over,
         "why": if total.over {
             "over the ceiling: every mark from all three runs is thrown away -- take some back with \
@@ -253,12 +224,7 @@ pub fn finish_answer(marks: &Marks) -> String {
     }))
 }
 
-/// One pooled call: build the two messages, honour the cache, dial, run what was asked for.
-///
-/// The run index rides in the cache key ([`crate::llm_cache::Request::run_index`], the field §6 added
-/// for exactly this pool): three identical questions whose answers are three separate draws must not
-/// collapse into one answer read back twice. Thinking is OFF — §02 §2's row for this job — which is
-/// `Mode::Execute`, the same switch every non-thinking job takes.
+/// One pooled call: build the two messages, honour the cache, dial, run what was asked for. The run index rides in the cache key ([`crate::llm_cache::Request::run_index`]) so three identical questions stay three draws. Thinking is OFF (§02 §2), `Mode::Execute`.
 pub fn ask_run(
     tree: &Tree,
     paths: &Paths,
@@ -268,14 +234,11 @@ pub fn ask_run(
     marks: &mut Marks,
 ) -> RunOutcome {
     let system = system_message(paths, &user_context(tree));
-    // §6's slot for this draw, named by the one door that spells it. `ask_run` files its answer under
-    // exactly this digest — the store below hands `llm_cache` the same parts this key came from. The text
-    // handed over is the ASSEMBLED system message, because §6 keys a slot on what actually went out: an
-    // edited house prompt has to miss, and it would not if the slot were keyed on the job wording alone.
+    // §6's slot for this draw, named by the one door that spells it; `ask_run` files under exactly this digest. Keyed on the ASSEMBLED system message, so an edited house prompt misses.
     let slot = run_key(&system, brief, &conf.model, draw).expect("a brief and a model always key");
     let parts = cache_parts(&system, brief, &conf.model, draw);
     if let Some(cached) = crate::llm_cache::read(tree, STEP, &parts) {
-        // §09 §10: the cached draw writes its own `cache` line, with no time on the wire.
+        // §09 §10: a cached draw writes its own `cache` line, no wire time.
         crate::request_timing::record_cached(
             tree,
             crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes"),
@@ -295,22 +258,19 @@ pub fn ask_run(
     ];
     let offered: Vec<Tool> = tools::offered(Job::Retakes);
     let endpoint = services::llm_endpoint(conf);
-    // What the rounds collected: the raw body of the round that ENDED the flow, which is the pair this
-    // run's cache entry stands for, and how many marks the tool surface accepted.
+    // The raw body of the round that ENDED the flow (what this run's cache entry stands for) and how many marks the tools accepted.
     let mut final_body: Option<String> = None;
     let mut named = 0usize;
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
         let base =
             crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes");
-        // §2 S5: a server that refuses the `tools` field is asked again without it, once, and never offered the
-        // field again — the same door the fixer and the cut use, so no step re-logs the refusal per attempt.
+        // §2 S5: a server that refuses `tools` is asked again without it, once, and not offered it again (shared with the fixer and cut).
         let sent = crate::llm_tool_refusal_leg::dial_honouring_refusal(
             STEP,
             &endpoint.url,
             Some(tools),
             &|offer| {
-                // §4 gives the retake hunt thinking OFF; read from the prompt table so this cannot drift
-                // from the catalogue (§10 §4).
+                // §4 gives the retake hunt thinking OFF; read from the prompt table (§10 §4).
                 Ok(llm_request::body(
                     STEP,
                     &conf.model,
@@ -350,22 +310,14 @@ pub fn ask_run(
         })
     };
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
-        // §3.1's shared reads, answered from the batch in hand. `get_lines` is deliberately NOT taken
-        // here: §3.4 wants that read with the pause before every line, which is this job's own answer
-        // below, so the shared door is tried only for the names the retake hunt does not redefine.
+        // §3.1's shared reads answered from the batch. `get_lines` is NOT taken here: §3.4 wants it with the pause before every line, which this job answers below.
         if !matches!(asked.name.as_str(), "get_lines") {
             let ctx = crate::tool_reads::Context {
                 user_context: &user_context(tree),
                 job: Job::Retakes,
-                // The two fields §3.4's retake rules read, spelled as `naivepost.json` spells them, so
-                // `get_context` answers with what this job's answer actually depends on.
-                // The two fields §3.4's retake rules read, spelled as `naivepost.json` spells them. Read
-                // from the settings dialog's live fields rather than restated: `ask_run` is handed the
-                // `Marks`, not the project, and §12 §4 makes the marking pass the thing that decided this
-                // job runs at all.
+                // The two fields §3.4's retake rules read, spelled as `naivepost.json` does, from the settings dialog's live fields (`ask_run` holds `Marks`, not the project; §12 §4).
                 policy: &marking_policy_fields(),
-                // The transcript rows, in the numbering the request used. `get_lines` is answered from
-                // `marks` below (§3.4's pause), but `get_context` reads this batch's extent.
+                // The transcript rows in the request numbering; `get_context` reads this batch's extent.
                 lines: &shared_lines(marks.lines()),
                 events: &[],
                 frames: &[],
@@ -378,16 +330,12 @@ pub fn ask_run(
             serde_json::from_str(&asked.args).unwrap_or_else(|_| serde_json::json!({}));
         let number = |key: &str| args.get(key).and_then(|v| v.as_u64()).map(|v| v as u32);
         match asked.name.as_str() {
-            // The TOOL decides validity — range, `again` inside the stretch, the reach, the minimum —
-            // and its `{"error": …}` sentence goes straight back to the model, which is §S3's refusal
-            // loop. Swallowing it here would leave the model unable to correct itself.
+            // The TOOL decides validity; its `{"error": …}` goes straight back to the model (§S3 refusal loop).
             "mark_abandoned" => match (number("from"), number("to")) {
                 (Some(from), Some(to)) => {
-                    // `again` 0 or absent means "never picked up", which the tool spells None.
+                    // `again` 0 or absent means "never picked up" (None).
                     let again = number("again").filter(|n| *n != 0);
-                    // The retake's own first second goes to the tool with the mark, because the tool's
-                    // answer has to name what the CUT will lose (§12 §2) and only this lookup knows where
-                    // the attempt starts.
+                    // The retake's first second goes to the tool with the mark, since the answer must name what the CUT loses (§12 §2).
                     let onset = again
                         .and_then(|n| marks.lines().iter().find(|line| line.n == n))
                         .map(|line| line.start)
@@ -404,15 +352,12 @@ pub fn ask_run(
                 (Some(from), Some(to)) => marks.unmark(from, to),
                 _ => tools::error("unmark needs \"from\" and \"to\""),
             },
-            // §3.4's read: the lines again WITH every pause, including the ones under the threshold
-            // the brief leaves out — those short stops are where a speaker restarts.
+            // §3.4's read: the lines again WITH every pause, including those under the brief's threshold (where a speaker restarts).
             "get_lines" => match (number("from"), number("to")) {
                 (Some(from), Some(to)) => lines_answer(marks, from, to),
                 _ => tools::error("get_lines needs \"from\" and \"to\""),
             },
-            // §12 §4: the ceiling verdict is spoken IN THE REPLY, where the model can still answer with
-            // `unmark`, rather than only in the log after its last round. `finish_answer` is the one home
-            // of that payload; `stage_marking` is what actually drops the marks.
+            // §12 §4: the ceiling verdict is spoken IN THE REPLY so the model can still `unmark`; `finish_answer` is its one home, `stage_marking` drops the marks.
             "finish" => finish_answer(marks),
             other => tools::error(&format!("{other} is not one of this job's tools")),
         }
@@ -420,7 +365,7 @@ pub fn ask_run(
     let run = tool_loop::run(STEP, messages, &offered, &mut ask, &mut run_tool);
     match run.outcome {
         tool_loop::Outcome::Exhausted => {
-            // §2 S4's line is the loop's own; the run answered nothing, so say which and move on.
+            // §2 S4's line is the loop's own; say which run answered nothing.
             for line in &run.logs {
                 crate::ui::window::log_line(line);
             }
@@ -434,12 +379,10 @@ pub fn ask_run(
                     reason: "answered with nothing to read".to_string(),
                 };
             };
-            // Only a readable answer is stored: an unreadable one must go out again rather than be
-            // replayed from the slot it failed in. The slot is the one named above.
+            // Only a readable answer is stored; an unreadable one must go out again.
             let kept = crate::llm_cache::store(tree, STEP, &parts, &body);
             if kept == crate::llm_cache::Stored::Written {
-                // Said where it went: a resumed run reads this file back, and the name is what proves
-                // which draw it belongs to.
+                // Said where it went: a resumed run reads this file back.
                 crate::ui::window::log_line(&format!(
                     ">>> retakes draw {draw}: kept in cache/{STEP}/{slot}"
                 ));
@@ -452,9 +395,7 @@ pub fn ask_run(
     }
 }
 
-/// Feed one run's answer into the shared marks. Both shapes §S3 allows are read: the tool calls the
-/// loop already ran (counted by the caller), and the strict JSON the prototype demanded in the
-/// content. Returns how many stretches the JSON named.
+/// Feed one run's answer into the shared marks. Reads both §S3 shapes: tool calls (counted by the caller) and strict JSON in the content. Returns how many stretches the JSON named.
 fn apply_answer(body: &str, marks: &mut Marks) -> usize {
     let content = llm_request::reply_from("application/json", body)
         .map(|reply| reply.answer().to_string())
@@ -466,13 +407,7 @@ fn apply_answer(body: &str, marks: &mut Marks) -> usize {
     rows.len()
 }
 
-/// §S4: what the words say about one pooled mark.
-///
-/// The repeat is looked for in the later take's words starting at `again`, read no further than
-/// [`RETAKE_READ_SECONDS`] — beyond that the echo is a new passage rather than the tail of the
-/// attempt. No `again` and no repeat means the attempt broke off and was never picked up, which is
-/// only honest for a whole take (the rule `retakes::verify` states); a partial mark claiming no
-/// replacement is a rephrase, and only its broken-off tail goes.
+/// §S4: what the words say about one pooled mark. The repeat is looked for from `again`, no further than [`RETAKE_READ_SECONDS`]. No `again` and no repeat is honest only for a whole take (`retakes::verify`); a partial mark claiming no replacement is a rephrase and only its broken-off tail goes.
 fn check_against_words(
     marks: &Marks,
     words: &[SessionWord],
@@ -490,8 +425,7 @@ fn check_against_words(
         }
         None => (None, !whole_take),
     };
-    // A mark the words cannot confirm goes through `retakes::reheat`, so the second-hearing rule is
-    // stated once, in the module that owns the rule, rather than being implied by this branch.
+    // A mark the words cannot confirm goes through `retakes::reheat`, which owns the second-hearing rule.
     let verdict = retakes::verify(
         marks, mark.from, mark.to, mark.again, tail, rephrase, whole_take,
     );
@@ -501,15 +435,7 @@ fn check_against_words(
     verdict
 }
 
-/// §S4's last clause: a mark the words refuse is put to the model AGAIN over the same material before
-/// it is thrown away, because the commonest reason no repeat is found is that one of the two
-/// transcripts is wrong. `retakes::reheat` names the outcome this branch acts on.
-///
-/// It is a re-ASK of the material rather than a fresh transcription of the span on purpose: F1.3/F1.4's
-/// ASR pass owns `words.json` and that file's existence is ITS resume marker ("a step's own output file
-/// is its resume marker"), so a span re-transcription started here would rewrite another step's marker
-/// file out from under the rule that makes an interrupted run resume. Asking again costs one call and
-/// disturbs nothing.
+/// §S4's last clause: a refused mark is put to the model AGAIN over the same material, since the commonest cause is a wrong transcript. A re-ASK, not a re-transcription: F1.3/F1.4's `words.json` is the ASR pass's resume marker and must not be rewritten from here.
 fn rehear(
     tree: &Tree,
     paths: &Paths,
@@ -523,9 +449,7 @@ fn rehear(
         "{brief}\nThe previous answer was refused: lines {from}-{to} claim a retake but no repeated \
          tail was found in the words. Re-read the two attempts and answer again."
     );
-    // A different message is a different question, which is what puts this ask in its own cache slot
-    // rather than replaying the refusal it is meant to overcome. The answer lands in a scratch set so
-    // a second hearing cannot add marks nobody asked about; only the refused stretch is read back.
+    // A different message is a different question, so it gets its own cache slot. The answer lands in a scratch set; only the refused stretch is read back.
     let mut scratch = Marks::new(marks.lines().to_vec(), 0.0);
     match ask_run(tree, paths, conf, &message, retakes::RUNS, &mut scratch) {
         RunOutcome::Failed { .. } => None,
@@ -537,9 +461,7 @@ fn rehear(
     }
 }
 
-/// The §3.4 `get_lines` answer: each line with its seconds and the pause in front of it.
-/// The retake hunt's lines in `tool_reads`' shape, so `get_context`/`get_events`/`get_frames` can be
-/// answered by the shared door while `get_lines` stays this file's own (§3.4 wants the pause with it).
+/// The §3.4 `get_lines` answer: each line with its seconds and the pause in front of it, in `tool_reads`' shape so the shared door answers `get_context`/`get_events`/`get_frames`.
 fn shared_lines(lines: &[Line]) -> Vec<crate::textfmt::Line> {
     lines
         .iter()
@@ -552,10 +474,7 @@ fn shared_lines(lines: &[Line]) -> Vec<crate::textfmt::Line> {
         .collect()
 }
 
-/// The policy fields `get_context` names for this job: the marking pass that turned the retake hunt on
-/// (§12 §4 derives it from "stumbled and started again") and the target length the ceiling is judged
-/// against. Spelled as `naivepost.json` spells them; a value the hunt reads but §10 gives no field for
-/// (the reach, the floor, the ceiling) is the tool's own rule and is not offered as settable.
+/// The policy fields `get_context` names: the marking pass (§12 §4) and the target length, spelled as `naivepost.json`. The reach, floor and ceiling are the tool's own rules, not settable.
 pub(crate) fn marking_policy_fields() -> Vec<(&'static str, String)> {
     let policy = crate::ui::live_session_policy();
     vec![
@@ -570,8 +489,7 @@ pub(crate) fn marking_policy_fields() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// The §3.4 read, reached from outside the crate: the same `lines_answer` the live loop calls, so a
-/// test of the read and the loop cannot drift apart.
+/// The §3.4 read from outside the crate: the same `lines_answer` the live loop calls.
 pub fn lines_answer_for_test(marks: &Marks, from: u32, to: u32) -> String {
     lines_answer(marks, from, to)
 }
@@ -593,9 +511,7 @@ pub(crate) fn lines_answer(marks: &Marks, from: u32, to: u32) -> String {
     tools::ok(&serde_json::json!({ "lines": rows }))
 }
 
-/// The session's spoken lines, numbered across every source, plus the numbers that BEGIN a source
-/// after the first — the seams §S2's separator marks. `retakes::spoken_lines` does the numbering;
-/// this only records where each source starts so the seam list can be built beside it.
+/// The session's spoken lines numbered across sources, plus the numbers that BEGIN each source after the first (§S2 separator seams). `retakes::spoken_lines` numbers.
 pub fn numbered_lines(tree: &Tree, project: &Project) -> (Vec<Line>, Vec<u32>) {
     let mut changes: Vec<u32> = Vec::new();
     let mut seen = 0usize;
@@ -606,8 +522,7 @@ pub fn numbered_lines(tree: &Tree, project: &Project) -> (Vec<Line>, Vec<u32>) {
             continue;
         }
         if seen > 0 {
-            // The line that begins this recording is the first of its own block: §S2's separator goes
-            // in front of that number and nowhere else.
+            // §S2's separator goes in front of the line that begins a recording only.
             changes.push(seen as u32 + 1);
         }
         seen += count;
@@ -615,8 +530,7 @@ pub fn numbered_lines(tree: &Tree, project: &Project) -> (Vec<Line>, Vec<u32>) {
     (retakes::spoken_lines(tree, project), changes)
 }
 
-/// How many transcript rows one lane has — the same filter `spoken_lines` applies, so the seam lands
-/// on the number that row actually got.
+/// How many transcript rows one lane has, by `spoken_lines`' filter.
 fn transcript_count(tree: &Tree, lane: &str) -> usize {
     let Ok(text) = std::fs::read_to_string(tree.transcript_tsv(lane)) else {
         return 0;
@@ -631,9 +545,7 @@ fn transcript_count(tree: &Tree, lane: &str) -> usize {
         .count()
 }
 
-/// One word of the session, wherever it came from: the spelled list when F1.13 wrote one, the ASR's
-/// own words otherwise. Same preference `joins::session_words_with_list` states, for the same reason —
-/// the spellings every other pass works from, on the aligned times.
+/// One word of the session: the spelled list when F1.13 wrote one, else the ASR's own words (as `joins::session_words_with_list`).
 #[derive(Debug, Clone)]
 pub struct SessionWord {
     pub match_word: String,
@@ -641,7 +553,6 @@ pub struct SessionWord {
     pub end: f64,
 }
 
-/// The session's words in session order, narrator mic left out (its words are heard, not played).
 pub fn session_words(tree: &Tree, project: &Project) -> Vec<SessionWord> {
     if let Ok(Some(list)) = crate::word_list::load(tree) {
         let lanes: Vec<String> = project
@@ -666,7 +577,6 @@ pub fn session_words(tree: &Tree, project: &Project) -> Vec<SessionWord> {
     session_words_from_asr(tree, project)
 }
 
-/// The fallback: each lane's `words.json`, samples turned into seconds at the ASR's own rate.
 fn session_words_from_asr(tree: &Tree, project: &Project) -> Vec<SessionWord> {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut out = Vec::new();
@@ -692,7 +602,6 @@ fn session_words_from_asr(tree: &Tree, project: &Project) -> Vec<SessionWord> {
     out
 }
 
-/// The words a numbered range of lines covers.
 fn words_in(lines: &[Line], words: &[SessionWord], from: u32, to: u32) -> Vec<String> {
     let first = lines
         .iter()
@@ -705,7 +614,6 @@ fn words_in(lines: &[Line], words: &[SessionWord], from: u32, to: u32) -> Vec<St
     words_window(words, Some(start), Some(end))
 }
 
-/// The words between two seconds, inclusive at the front edge.
 fn words_window(words: &[SessionWord], start: Option<f64>, end: Option<f64>) -> Vec<String> {
     words
         .iter()
@@ -717,8 +625,7 @@ fn words_window(words: &[SessionWord], start: Option<f64>, end: Option<f64>) -> 
         .collect()
 }
 
-/// The session second the kept attempt begins: the `again` line's own start, 0.0 when the attempt was
-/// simply dropped and has nothing to point at.
+/// The session second the kept attempt begins: the `again` line's start, 0.0 when simply dropped.
 fn again_second(lines: &[Line], mark: &Mark) -> f64 {
     mark.again
         .and_then(|n| lines.iter().find(|line| line.n == n))
@@ -726,7 +633,6 @@ fn again_second(lines: &[Line], mark: &Mark) -> f64 {
         .unwrap_or(0.0)
 }
 
-/// S2 as a log line: what the brief numbers and how many pauses worth drawing it found.
 fn briefing_log(lines: &[Line]) -> String {
     let pauses = lines
         .iter()
@@ -744,22 +650,13 @@ fn briefing_log(lines: &[Line]) -> String {
     )
 }
 
-/// The wording to ask with: the shipped `retake` prompt, overridable through the settings folder so an
-/// edit there wins (§04-prepare#6) and an edited prompt misses the cache (§6).
-///
-/// This is the JOB's own wording only. What goes on the wire is [`system_message`], which wraps it in the
-/// house rules §8 cuts per job; this stays public because that door and §6's naming both read through it.
+/// The JOB's own wording: the shipped `retake` prompt, overridable in the settings folder (§04-prepare#6); an edit misses the cache (§6). On the wire it is wrapped by [`system_message`].
 pub fn system_wording(paths: &Paths) -> String {
     let shipped = crate::prompts::shipped_text("retake").unwrap_or_default();
     settings::prompt_text(paths, "retake", &shipped).unwrap_or(shipped)
 }
 
-/// The system message §8 asks for: the house rules cut to this job's sections, this job's own wording,
-/// and the precedence rule when there is a User Context to outrank anything.
-///
-/// Until now retakes sent the bare `retake` prompt as its system message, so none of §8 reached it: no
-/// heading table, no jobs list cut to this job's line, no preamble rule, no precedence rule. This is the
-/// door [`crate::prompt_assembly`] exists to be the only one of.
+/// The system message §8 asks for: the house rules cut to this job's sections, its own wording, and the precedence rule when there is a User Context ([`crate::prompt_assembly`]).
 pub fn system_message(paths: &Paths, context: &str) -> String {
     crate::prompt_assembly::system_message(
         &wording(paths, "system"),
@@ -771,23 +668,19 @@ pub fn system_message(paths: &Paths, context: &str) -> String {
     )
 }
 
-/// The wording reader every ask uses: the shipped file, or the settings copy of it (§04#6).
 fn wording(paths: &Paths, key: &str) -> String {
     let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
     settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
 }
 
-/// Where the User Context comes from: the session's own note in `naivepost.json`. Absent means no
-/// context rather than an invented one — a made-up context is a claim about the recording nobody wrote.
-/// Retakes runs inside a project folder, so the tree `ask_run` already holds answers this.
+/// The User Context from the session's note in `naivepost.json`; absent means none, not an invented one.
 fn user_context(tree: &Tree) -> String {
     crate::project::load(tree.dir())
         .map(|project| project.context.clone())
         .unwrap_or_default()
 }
 
-/// The deciding parts for one pooled run. `run_index` is the whole point: three identical questions
-/// are three draws, and a shared slot would make runs two and three read run one's reply back.
+/// The deciding parts for one pooled run; `run_index` gives three identical questions three slots.
 fn cache_parts(system: &str, user: &str, model: &str, run: usize) -> Vec<serde_json::Value> {
     let request = crate::llm_cache::Request {
         system,
@@ -803,14 +696,11 @@ fn cache_parts(system: &str, user: &str, model: &str, run: usize) -> Vec<serde_j
     crate::llm_cache::parts(&request)
 }
 
-/// §6's file name for one pooled draw: the digest over [`cache_parts`]' parts, which is how the run
-/// index reaches the key. `ask_run` asks for it before it dials and files its answer under exactly that
-/// name, so the rule has one spelling rather than a second copy of the digest somewhere else.
+/// §6's file name for one pooled draw: the digest over [`cache_parts`], which is how the run index reaches the key.
 pub fn run_key(system: &str, brief: &str, model: &str, run: usize) -> Option<String> {
     crate::llm_cache::key(&cache_parts(system, brief, model, run))
 }
 
-/// Seconds without a tail of zeroes, for a log line.
 fn trim(secs: f64) -> String {
     if (secs - secs.round()).abs() < 1e-9 {
         return format!("{}", secs.round() as i64);
@@ -818,7 +708,6 @@ fn trim(secs: f64) -> String {
     format!("{:.1}", secs)
 }
 
-/// The lane a source's files live under: its file name minus the extension.
 fn lane_of(name: &str) -> String {
     match name.split_once('.') {
         Some((stem, _)) => stem.to_string(),

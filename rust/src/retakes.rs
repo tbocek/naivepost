@@ -1,19 +1,10 @@
-//! Mark retakes — spec/04-prepare.md F1.9, the pass that finds which stretches of a session were
-//! said again and dropped.
+//! Mark retakes — spec/04-prepare.md F1.9: finds which stretches of a session were said again and dropped.
 //!
-//! Three files hold this flow and each owns one part of it:
+//! * [`crate::tools::retakes`] — the §3.4 TOOL half (`Marks`, `mark_abandoned`, `unmark`, `finish`, the `P.machine.retake*` constants).
+//! * [`crate::edges`] — F1.11: where a mark's two edges land on the audio.
+//! * this module — the FLOW: S1 gate, S2 brief, S3 keying and pooling, S4 words check, S5 merging, S6 ceiling, S7 file and log.
 //!
-//! * [`crate::tools::retakes`] — the §3.4 TOOL half: `Marks`, `mark_abandoned`, `unmark`,
-//!   `lines_with_pause`, `finish`, `Trim`, and the five `P.machine.retake*` constants.
-//! * [`crate::edges`] — F1.11: where a mark's two edges actually land on the audio. This module
-//!   calls it; it does not place an edge itself.
-//! * this module — the FLOW: whether there is anything to mark (S1), what the brief says (S2), how
-//!   the pooled runs are keyed and their answers pooled (S3), what the words say about a mark
-//!   (S4), merging (S5), the ceiling (S6) and the file and the log (S7).
-//!
-//! No model call happens here. The runs arrive as answers handed in by the caller, because a step
-//! that decided inside a tool call could never be tested (spec/00-principles.md §5); what this
-//! module decides is the keying, the pooling, the arithmetic and the wording.
+//! No model call happens here: runs arrive as answers handed in by the caller, so it is testable (spec/00-principles.md §5).
 
 use std::path::Path;
 
@@ -27,14 +18,12 @@ use crate::tools::retakes::{
     RETAKE_PAUSE_SECONDS,
 };
 
-/// The cache folder name under `cache/llm/<step>/` and the name the progress line uses.
 pub const STEP: &str = "retakes";
 
 /// Identical calls pooled into one marking pass. P.machine.retakeRuns
 pub const RUNS: usize = RETAKE_RUNS_POOLED as usize;
 
-/// Fewer spoken lines than this and there is no "said twice" to look for: one take, or less.
-/// S1 states the count, not a ratio, because with three lines every pair is the whole session.
+/// Fewer spoken lines than this and there is no "said twice" to look for. S1 states a count, not a ratio.
 pub const MIN_LINES: usize = 4;
 
 // ---- S1: is there anything to mark -----------------------------------------
@@ -44,25 +33,19 @@ pub fn too_few(lines: &[Line]) -> bool {
     lines.len() < MIN_LINES
 }
 
-/// S1: the sentence printed when the session is too short to hold a retake. Distinct from
-/// `tools::retakes::no_retakes_log()` (which is the model answering "nothing") because this is the
-/// arithmetic answering before anyone was asked.
+/// S1: the sentence printed when the session is too short to hold a retake (not the model answering "nothing", `tools::retakes::no_retakes_log()`).
 pub fn empty_marks_log() -> String {
     ">>> retakes: nothing to mark -- the session has fewer than 4 spoken lines".to_string()
 }
 
 // ---- S2: the brief --------------------------------------------------------
 
-/// S2: the brief the model is given — every line numbered, a pause drawn where it is long enough to
-/// be where somebody stopped and started again, and the source change spelled out.
+/// S2: the brief the model is given: every line numbered, a pause drawn where it is long enough to be a restart, and the source change spelled out.
 ///
-/// Only gaps of at least [`RETAKE_PAUSE_SECONDS`] draw a marker. That threshold is measured, not
-/// guessed: 139 of 141 gaps in the reference session cluster between 0.7 and 1.1 s, so a marker
-/// below 1.5 s would appear everywhere and mean nothing. A gap under it draws NOTHING rather than a
-/// shorter note, because the absence is what tells the model where to look.
+/// Only gaps of at least [`RETAKE_PAUSE_SECONDS`] draw a marker (measured: 139 of 141 gaps in the reference session sit between 0.7 and 1.1 s);
+/// a shorter gap draws NOTHING, because the absence tells the model where to look.
 ///
-/// `source_changes` holds the line numbers that begin a new recording; the literal separator goes in
-/// front of each, since a restart across files is invisible in the numbering otherwise.
+/// `source_changes` holds the line numbers that begin a new recording; the separator goes in front of each.
 pub fn brief(lines: &[Line], source_changes: &[u32]) -> String {
     let mut out = String::new();
     for line in lines {
@@ -80,8 +63,7 @@ pub fn brief(lines: &[Line], source_changes: &[u32]) -> String {
     out
 }
 
-/// S2: the separator written where one recording ends and the next begins. Spelled as a sentence
-/// rather than a rule code, because the model reads it as prose and must not describe it.
+/// S2: the separator where one recording ends and the next begins, a sentence the model reads as prose.
 pub const SOURCE_CHANGE_LINE: &str = "--- the recording stops here; the next one begins ---";
 
 /// Seconds without a tail of zeroes: `1.5`, not `1.500000`.
@@ -97,9 +79,7 @@ fn trim_seconds(secs: f64) -> String {
 
 /// S3: pool several runs' marks into one set.
 ///
-/// Deduped on the `from`/`to` pair the model named: two runs pointing at the same stretch are one
-/// stretch, not two, and adding them twice would double-count against the ceiling and refuse a
-/// session the runs actually agreed about.
+/// Deduped on the `from`/`to` pair: two runs pointing at the same stretch must not double-count against the ceiling.
 pub fn dedupe(marks: Vec<Mark>) -> Vec<Mark> {
     let mut out: Vec<Mark> = Vec::new();
     for mark in marks {
@@ -114,18 +94,16 @@ pub fn dedupe(marks: Vec<Mark>) -> Vec<Mark> {
     out
 }
 
-/// S3: the shape the prototype demanded back, documented so a reader of the cache knows what a
-/// stored answer looks like:
+/// S3: the shape the prototype demanded back, as documented for readers of the cache:
 ///
 /// ```json
 /// {"abandoned": [{"from": 7, "to": 12, "again": 15}]}
 /// ```
 ///
-/// Line numbers are 1-based throughout, matching the numbers the brief shows.
+/// Line numbers are 1-based, matching the brief.
 pub fn parse_answer(json: &str) -> Vec<(u32, u32, u32)> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
-        // A payload that is not JSON at all is no answer, not a crash: the run is set aside and the
-        // others carry on, which is what `run_set_aside_log` is for.
+        // Not JSON at all is no answer, not a crash: the run is set aside (`run_set_aside_log`).
         return Vec::new();
     };
     let Some(rows) = value.get("abandoned").and_then(|v| v.as_array()) else {
@@ -169,11 +147,9 @@ impl Outcome {
 
 /// S4: check one proposed mark against the words.
 ///
-/// `repeated_tail` is where the later take starts repeating the attempt, as a share of the mark's
-/// own length already accounted for by [`repeated_tail_match`]; `None` means no repeat was found.
-/// `whole_take` says the mark covers the entire recording, which is the ONLY case where `again = 0`
-/// is honest: a partial mark claiming no replacement is usually the model failing to find the retake
-/// rather than the take having been dropped, and cutting on that guess loses good material.
+/// `repeated_tail` is where the later take starts repeating the attempt ([`repeated_tail_match`]); `None` means no repeat was found.
+/// `whole_take` says the mark covers the entire recording, the ONLY case where `again = 0` is honest: a partial mark with no replacement
+/// is usually the model missing the retake, and cutting on that guess loses good material.
 pub fn verify(
     marks: &Marks,
     from: u32,
@@ -200,9 +176,7 @@ pub fn verify(
         ));
     }
 
-    // Rephrase: the attempt broke off mid-sentence and was restarted. Only the broken-off tail goes,
-    // and only while that tail is still short enough to be a fragment rather than a thought someone
-    // abandoned on purpose.
+    // Rephrase: the attempt broke off mid-sentence; only a fragment-sized tail goes, not a thought abandoned on purpose.
     if rephrase {
         let tail = span.min(RETAKE_FRAGMENT_SECONDS);
         if tail < RETAKE_MIN_SECONDS {
@@ -218,8 +192,7 @@ pub fn verify(
         };
     }
 
-    // A repeat found trims the mark to just the repeated tail: what the later take says again is the
-    // only part safe to lose. Without a repeat the mark stands as pointed at.
+    // A repeat trims the mark to the repeated tail, the only part safe to lose.
     let (removed_start, trimmed) = match repeated_tail {
         Some(tail_words) if tail_words > 0 => {
             // Proportional: the tail's share of the mark's word count is taken off the front. The
@@ -243,8 +216,7 @@ pub fn verify(
 
 /// S4: where the later take (`b`) starts repeating the attempt (`a`).
 ///
-/// The matcher is deliberately loose in three specific ways and tight everywhere else, because ASR of
-/// the same sentence twice rarely agrees letter-for-letter:
+/// Loose in three ways, tight elsewhere, because ASR of the same sentence twice rarely agrees letter-for-letter:
 ///
 /// * a word counts as matched if it is **equal**, shares a **prefix of at least 3 bytes** (so
 ///   "lecture"/"lecturer" match — the same stem heard differently), or is **one edit** away
@@ -252,13 +224,9 @@ pub fn verify(
 /// * at most **3 skips** are allowed inside the run;
 /// * at least **70 %** of the attempt's words must match for the run to count at all.
 ///
-/// Returns the index in `b` where the repeat begins. Below 70 % it returns `None`: a partial echo of
-/// one common phrase is not a retake, and trimming to it would cut words nobody repeated.
+/// Returns the index in `b` where the repeat begins; below 70 % it returns `None`, since a partial echo of a common phrase is not a retake.
 ///
-/// A skip spends two words rather than one. Skipping forward in `b` alone could never recover from a
-/// misheard word in the middle of the attempt — the two lists would slide apart and stay apart for the
-/// rest of the run, so a real retake with two bad words in it would read as no retake at all. Dropping
-/// the unmatched pair keeps both sides aligned on the next word, which is what the repeats actually do.
+/// A skip spends two words: skipping in `b` alone could not recover from a misheard word, and the lists would stay apart.
 pub fn repeated_tail_match(a: &[String], b: &[String]) -> Option<usize> {
     if a.is_empty() || b.is_empty() {
         return None;
@@ -293,8 +261,7 @@ pub fn repeated_tail_match(a: &[String], b: &[String]) -> Option<usize> {
     None
 }
 
-/// S4: do two transcribed words count as the same word? Equal, a shared prefix of at least 3 bytes,
-/// or one edit apart — and nothing looser, because "loose" on short words means matching everything.
+/// S4: do two transcribed words count as the same? Equal, a shared prefix of at least 3 bytes, or one edit apart; nothing looser.
 pub fn word_matches(a: &str, b: &str) -> bool {
     if a == b {
         return true;
@@ -305,8 +272,7 @@ pub fn word_matches(a: &str, b: &str) -> bool {
     one_edit_apart(a, b)
 }
 
-/// Do two strings share at least `bytes` bytes at the front? Compared on bytes, not characters,
-/// because the spec counts bytes and a multi-byte character can straddle the boundary.
+/// Do two strings share at least `bytes` bytes at the front? Bytes, not characters: the spec counts bytes.
 fn prefix_shared(a: &str, b: &str, bytes: usize) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() < bytes || b.len() < bytes {
@@ -347,9 +313,7 @@ fn shorter_fits(short: &[u8], long: &[u8]) -> bool {
     true
 }
 
-/// S4: the second-hearing rule stated where it belongs. A mark refused for lack of a repeat is not
-/// thrown away: both attempts get re-transcribed and the mark is asked about again, because the most
-/// common reason a repeat is not found is that one of the two transcripts is wrong.
+/// S4: a mark refused for lack of a repeat is not thrown away: both attempts are re-transcribed and the mark asked about again.
 pub fn reheat(from: u32, to: u32) -> Outcome {
     Outcome::Rehear { from, to }
 }
@@ -358,8 +322,7 @@ pub fn reheat(from: u32, to: u32) -> Outcome {
 
 /// S5: merge marks whose removals overlap or touch into one span.
 ///
-/// Adjacent marks merge as well as overlapping ones: two removals meeting at a second become one cut
-/// either way, and leaving them separate makes the count of stretches lie about what the cut does.
+/// Adjacent marks merge too: leaving them separate makes the stretch count lie about what the cut does.
 pub fn merge_marks(marks: Vec<Mark>) -> Vec<Mark> {
     let mut sorted = marks;
     sorted.sort_by(|a, b| {
@@ -386,9 +349,8 @@ pub fn merge_marks(marks: Vec<Mark>) -> Vec<Mark> {
 
 /// S5: place both edges of every mark on the audio, through F1.11's own function.
 ///
-/// This module owns no edge arithmetic: `edges::place_edges` fences each edge on the words and lets
-/// the envelope choose inside the fence, which is the rule that keeps a deep breath from being read
-/// as a join. `edge_of` is the caller's lookup of which recording's envelope answers for a second.
+/// No edge arithmetic here: `edges::place_edges` fences each edge on the words and lets the envelope choose inside the fence.
+/// `edge_of` is the caller's lookup of which recording's envelope answers for a second.
 pub fn place_edges<'a>(
     marks: Vec<Retake>,
     words: &[AlignedWord],
@@ -400,9 +362,7 @@ pub fn place_edges<'a>(
 
 // ---- S6: the ceiling -----------------------------------------------------
 
-/// S6: strictly more than [`RETAKE_CEIL`] of the speech called abandoned. Exactly at the ceiling is
-/// NOT over it: the rule refuses "more than 40 %", and a session sitting on 40 % is the model having
-/// stayed inside the limit it was given.
+/// S6: strictly more than [`RETAKE_CEIL`] of the speech called abandoned; exactly at the ceiling is NOT over it ("more than 40 %").
 pub fn over_ceiling(marked_seconds: f64, speech_seconds: f64) -> bool {
     if speech_seconds <= 0.0 {
         return false;
@@ -410,8 +370,7 @@ pub fn over_ceiling(marked_seconds: f64, speech_seconds: f64) -> bool {
     marked_seconds / speech_seconds > RETAKE_CEIL
 }
 
-/// S6: the refusal, in §F1.9's exact words. It names both numbers because a person deciding what
-/// to take back needs the size of the mistake, not just the fact of it.
+/// S6: the refusal, in §F1.9's exact words, naming both numbers.
 pub fn ceiling_refusal(marked_seconds: f64, speech_seconds: f64) -> String {
     format!(
         "!!! retakes: {} of {} of speech called abandoned -- refused, nothing is marked",
@@ -420,7 +379,6 @@ pub fn ceiling_refusal(marked_seconds: f64, speech_seconds: f64) -> String {
     )
 }
 
-/// Seconds as `m:ss` — the form every duration in these sentences is written in.
 pub fn m_ss(seconds: f64) -> String {
     let whole = seconds.max(0.0).round() as u64;
     format!("{}:{}", whole / 60, format_args!("{:02}", whole % 60))
@@ -437,16 +395,11 @@ pub fn written_log(stretches: usize, speech_seconds: f64) -> String {
 }
 
 /// S7: write `retakes.tsv` through `textfmt::write_retakes`, so the format is the one Cut reads and
-/// this pass cannot drift from it.
+/// S7: write `retakes.tsv` through `textfmt::write_retakes`, so the format is the one Cut reads.
 ///
-/// `again_seconds` carries, per mark in order, the session second the kept attempt begins — 0.0 for a
-/// take that was simply dropped. The caller supplies it because resolving a line number to a second
-/// means reading the transcript, and keeping that read outside this function is what lets the rule be
-/// tested without a project on disk.
+/// `again_seconds` carries, per mark in order, the session second the kept attempt begins (0.0 for a dropped take); the caller resolves it from the transcript.
 ///
-/// An empty list writes an EMPTY FILE rather than writing nothing. The file's presence is what tells
-/// the next step the pass ran and found nothing; its absence is indistinguishable from a session that
-/// was never marked, which is why §F1.9 says the empty file is written on purpose.
+/// An empty list writes an EMPTY FILE: its presence tells the next step the pass ran and found nothing (§F1.9).
 pub fn write_marks(
     tree: &Tree,
     marks: &[Mark],
@@ -460,9 +413,7 @@ pub fn write_marks(
             s: mark.removed.0,
             e: mark.removed.1,
             again: again_seconds.get(index).copied().unwrap_or(0.0),
-            // Where the cut stops removing: the end of the abandoned words. F1.11's edge placement
-            // widens this to the retake's own onset when everything up to it goes with them, and
-            // that widened value arrives here already resolved.
+            // Where the cut stops removing: already resolved by F1.11's edge placement.
             to: mark.removed.1,
             text: texts.get(index).cloned().unwrap_or_default(),
             whole: String::new(),
@@ -479,16 +430,10 @@ pub fn nothing_found_log() -> String {
 
 /// The one call the ▶ handler makes for a retake marking pass.
 ///
-/// It gathers what the rules read (the session's spoken lines and their total) and returns the lines
-/// this pass contributes to the log; it is silent when the policy names a different pass, so F1.10's
-/// joins pass owns its own lines and one press never speaks for both.
+/// Gathers the session's spoken lines and returns this pass's log lines; silent when the policy names a different pass (F1.10 owns its own).
 ///
-/// With four or more spoken lines the WHOLE pass runs here — §S2's brief out over the wire, §S3's three
-/// pooled calls, §S4's check against the words, §S5's edges, §S6's ceiling and §S7's file — through
-/// [`crate::retakes_ask::run_pass`], whose lines are returned in order. What this function settles by
-/// itself is only what needs no answer: S1's too-few gate and the empty `retakes.tsv` it owes Cut, plus
-/// the two ways there can be no address to dial at all. The file's presence is what tells Cut the pass
-/// ran rather than was skipped, which is why even a failure writes it.
+/// With four or more spoken lines the WHOLE pass runs through [`crate::retakes_ask::run_pass`]. Settled here: S1's too-few gate and the
+/// empty `retakes.tsv` it owes Cut, plus the two ways there can be no address to dial. The file's presence tells Cut the pass ran, so even a failure writes it.
 pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<String> {
     if pass != MarkingPass::Retakes {
         return Vec::new();
@@ -504,9 +449,7 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
         }
         return vec![empty_marks_log()];
     }
-    // Enough lines to hold a retake. The marks are the model's answer, so the pass that asks is only
-    // reached when there is an address to ask: with no settings folder at all nobody was contacted, and
-    // what this pass can settle alone is S1's answer plus the file it owes Cut.
+    // Enough lines to hold a retake. With no settings folder nobody was contacted, so only S1's answer and the file owed Cut are settled.
     let paths = match crate::settings::from_environment() {
         Some(paths) => paths,
         None => return vec![brief_log(&lines)],
@@ -514,8 +457,7 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
     let conf = match crate::settings::read(&paths) {
         Ok(conf) => conf,
         Err(reason) => {
-            // An unreadable settings file is reported, not guessed past, and the empty file is still
-            // owed so Cut can tell this pass ran (§Failure-is-specific).
+            // An unreadable settings file is reported, not guessed past; the empty file is still owed (§Failure-is-specific).
             let mut out = vec![format!(
                 "!!! retakes: the settings could not be read -- {reason}"
             )];
@@ -527,15 +469,13 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
             return out;
         }
     };
-    // The whole pass runs here, brief to file, and every line it speaks is returned so the caller's log
-    // carries them in order.
+    // The whole pass runs here, brief to file; every line it speaks is returned in order.
     let mut out: Vec<String> = Vec::new();
     let _ = speech;
     if let Err(reason) = crate::retakes_ask::run_pass(tree, project, &paths, &conf, &mut |line| {
         out.push(line.to_string())
     }) {
-        // The flow's own arithmetic failed on disk rather than at the server: say which, and still
-        // owe the file that tells Cut the pass ran.
+        // The flow's own arithmetic failed on disk: say which, and still owe the file.
         out.push(format!("!!! retakes: {reason}"));
         if let Err(error) = write_marks(tree, &[], &[], &[]) {
             out.push(format!(
@@ -564,9 +504,7 @@ fn brief_log(lines: &[Line]) -> String {
 
 /// The session's spoken lines, numbered across every source in the project's own order.
 ///
-/// Numbering runs over the whole session rather than restarting per source because the model marks
-/// across recordings: an attempt at the end of one file and its retake at the start of the next is
-/// exactly the case the pass exists for.
+/// Numbering runs over the whole session, not per source: an attempt at the end of one file and its retake at the start of the next is the case the pass exists for.
 pub fn spoken_lines(tree: &Tree, project: &Project) -> Vec<Line> {
     let mut out: Vec<Line> = Vec::new();
     for source in &project.sources {
@@ -590,8 +528,7 @@ pub fn spoken_lines(tree: &Tree, project: &Project) -> Vec<Line> {
     out
 }
 
-/// The seconds actually spoken — the sum of the lines' own spans, not the session's wall clock.
-/// Silence cannot be abandoned, so counting it would let a long recording absorb any number of marks.
+/// The seconds actually spoken: the sum of the lines' spans, not wall clock (silence cannot be abandoned).
 pub fn speech_seconds(lines: &[Line]) -> f64 {
     lines
         .iter()
@@ -599,7 +536,6 @@ pub fn speech_seconds(lines: &[Line]) -> f64 {
         .sum()
 }
 
-/// The lane a source's files live under: its file name minus the extension.
 fn lane_of(source: &Source) -> String {
     let name = source.path.rsplit('/').next().unwrap_or(&source.path);
     match name.split_once('.') {
@@ -608,16 +544,10 @@ fn lane_of(source: &Source) -> String {
     }
 }
 
-/// The one call the ▶ handler makes for a retake marking pass.
+/// Returns this pass's log lines, and nothing when the policy's marking pass is not retakes (F1.10 owns those lines).
 ///
-/// It returns the lines this pass contributes to the log and nothing at all when the policy's
-/// marking pass is not retakes — F1.10's joins pass owns those lines and must not be spoken for
-/// twice by a press. Everything else is delegated: S1's gate, the ceiling, the file.
-///
-/// `marks` are the marks the pooled runs produced, already verified against the words by the caller
-/// (S4 needs the transcript, which lives outside this function's reach); `marked_seconds` is their
-/// total and `speech_seconds` the session's spoken total, both measured by the caller so the same
-/// numbers reach the ceiling test and the log line.
+/// `marks` are the pooled runs' marks, already verified against the words by the caller (S4 needs the transcript); `marked_seconds` and
+/// `speech_seconds` are measured by the caller so the ceiling test and the log line see the same numbers.
 pub fn stage_marking(
     pass_is_retakes: bool,
     lines: &[Line],
@@ -642,7 +572,6 @@ pub fn stage_marking(
     vec![written_log(marks.len(), speech_seconds)]
 }
 
-/// Read the marks this pass wrote, for a caller that wants to show or re-check them.
 pub fn read_marks(path: &Path) -> Result<Vec<Retake>, String> {
     textfmt::read_retakes(path)
 }

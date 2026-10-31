@@ -1,33 +1,15 @@
 //! Prompt assembly — `spec/09-llm-and-tools.md` §8.
 //!
-//! One call gets two messages. The system message is the "system" prompt cut down to the sections
-//! this job can use, then the job's own prompt, then whatever rides on that job alone, then the
-//! precedence rule if there is a User Context to outrank anything. The user message is the User
-//! Context block, the speech rule for the two jobs that decide what is spoken, and the material.
+//! One call gets two messages. System: the "system" prompt cut to the sections this job can use, the job's prompt, job-only addenda, then the precedence rule if there is a User Context.
+//! User: the User Context block, the speech rule for the two jobs that decide what is spoken, and the material.
 //!
-//! Why a table rather than one long prompt for everyone: every section costs attention. A job that
-//! never chooses segments has no use for THE CUT, and a job with no web tools offered has no use
-//! for TOOLS — telling it about either invites it to reason about something it cannot act on. The
-//! trade is that the table can drift from the shipped wording, which is what the tests in
-//! `tests/suite/prompt_assembly.rs` are for: they check each row against the real headings in
-//! `spec/prompts/system.md`.
-//!
-//! Nothing here reads a file. The caller brings the system text and the job's wording (both read by
-//! [`crate::settings::stored_prompt`] / [`crate::prompts::shipped_file`]) and the User Context;
-//! this module only decides which parts of them reach the model and in what order.
-//!
-//! Ids this module touches: `prompt.system` (the text being cut), the twelve shipped job prompts
-//! plus `policy` ([`crate::prompts::KEYS`]), and `tool:web_search` / `tool:web_read`, which are
-//! what the TOOLS section describes.
+//! A per-job section table rather than one prompt for all: every section costs attention. The table can drift from the shipped wording; `tests/suite/prompt_assembly.rs` checks each row against `spec/prompts/system.md`.
+//! Nothing here reads a file; the caller brings the texts and the User Context.
 
 use crate::narrate_pass;
 
-/// Split into blocks on blank lines, as the shipped prompt writes them.
-///
-/// Runs of blank lines separate blocks; leading and trailing blanks are dropped so an empty input
-/// yields no blocks rather than one empty one. The jobs list is not split further here: in the
-/// shipped prompt its heading stands alone above the job lines, so the list body arrives as its own
-/// block with a `None` head and [`cut_system`] folds it into the heading block by [`is_job_line`].
+/// Split into blocks on blank lines; leading and trailing blanks are dropped, so empty input yields no blocks.
+/// The jobs list is not split further: its body arrives as its own `None`-head block and [`cut_system`] folds it in by [`is_job_line`].
 fn split_blocks(text: &str) -> Vec<String> {
     let mut blocks: Vec<String> = Vec::new();
     let mut current: Vec<&str> = Vec::new();
@@ -53,19 +35,12 @@ pub fn is_job_line(line: &str) -> bool {
     JOB_LABEL.iter().any(|(_, l)| trimmed.starts_with(l))
 }
 
-/// The heading of the jobs list inside the system prompt.
-///
-/// The shipped line carries a lower-case tail ("WHAT EACH JOB IS GIVEN, AND WHAT IT ANSWERS WITH --
-/// nothing around the answer:"), so a heading is matched by prefix on its first line rather than by
-/// equality.
+/// The heading of the jobs list inside the system prompt; matched by prefix, since the shipped line has a lower-case tail.
 pub const JOBS_HEAD: &str = "WHAT EACH JOB IS GIVEN";
 
 /// Every section the per-job table below has an opinion on.
 ///
-/// Ordered longest-first where one head is a prefix of another, so a prefix match cannot land on the
-/// wrong one: "THE CLOCKS" must not be read as "THE CUT", and both stay distinct from
-/// "THE FOUR STEPS". No entry here prefixes any other, so the order is not load-bearing today —
-/// `head_of` still walks this list in order, so keep it sorted longest-first if a new head is added.
+/// Longest-first where one head prefixes another (`head_of` walks in order); no entry prefixes another today.
 pub const KNOWN_HEADS: [&str; 8] = [
     "WHAT EACH JOB IS GIVEN",
     "THE FOUR STEPS",
@@ -77,18 +52,13 @@ pub const KNOWN_HEADS: [&str; 8] = [
     "TOOLS",
 ];
 
-/// Which sections one job reads. `None` means the key has no row, and a key with no row gets the
-/// whole system prompt (§8's last clause) — that is `system` itself and `policy`, neither of which
-/// is a section-by-section reader: the first *is* the house rules, the second derives numbers from
-/// a description and needs all of the context around them.
+/// Which sections one job reads. `None` means no row: `system` and `policy` get the whole system prompt (§8's last clause).
 ///
 /// Cross-checked against the prototype's `sysSections` (`go/syscontext.go`); §8's wording governs.
-/// Note `speed` deliberately lacks NEVER INVENT — it answers with rates, and the invention ban is
-/// about words and moments.
+/// `speed` deliberately lacks NEVER INVENT: it answers with rates.
 pub fn sections_for(key: &str) -> Option<&'static [&'static str]> {
     match key {
-        // Prepare's three: they write the lines every later job reads, so they need the material and
-        // the clocks but not the downstream steps.
+        // Prepare's three write the lines every later job reads: material and clocks, not the downstream steps.
         "describe" | "fix" | "retake" => Some(&[
             "THE ANSWER",
             "THE MATERIAL",
@@ -132,9 +102,7 @@ pub fn sections_for(key: &str) -> Option<&'static [&'static str]> {
 }
 
 /// How the jobs list names each key's own line.
-///
-/// Two keys are named differently in the list than in the catalogue because the list speaks of the
-/// job, not the prompt file: `fix` is "transcript:" and `youtube` is "upload text:".
+/// `fix` is "transcript:" and `youtube` is "upload text:" in the list: it speaks of the job, not the prompt file.
 pub const JOB_LABEL: [(&str, &str); 11] = [
     ("describe", "describe:"),
     ("fix", "transcript:"),
@@ -158,9 +126,7 @@ pub fn job_label(key: &str) -> Option<&'static str> {
 
 /// Which known head a block's first line opens with, if any.
 ///
-/// Prefix, not equality: the shipped jobs-list heading runs on into prose, and a known head with a
-/// tail is still that section. Returns `Some("")` for nothing recognised but upper-case — see
-/// [`is_heading`].
+/// Prefix, not equality: the jobs-list heading runs on into prose. `Some("")` for nothing recognised but upper-case (see [`is_heading`]).
 fn known_head(first_line: &str) -> Option<&'static str> {
     let line = first_line.trim();
     KNOWN_HEADS
@@ -171,10 +137,8 @@ fn known_head(first_line: &str) -> Option<&'static str> {
 
 /// Whether a block's first line is a heading at all, known or not.
 ///
-/// An unknown section still goes somewhere, so it has to be recognisable: upper-case words on their
-/// own line, and not a sentence (which ends in a full stop). This is what lets somebody add a
-/// section to the system box without editing the table — §8 sends an unknown heading, and anything
-/// before the first heading, to every job.
+/// An unknown section still goes somewhere, so it must be recognisable: upper-case words on their own line, not a sentence. This lets someone add a
+/// section to the system box without editing the table (§8 sends an unknown heading, and anything before the first heading, to every job).
 pub fn is_heading(first_line: &str) -> bool {
     if known_head(first_line).is_some() {
         return true;
@@ -205,28 +169,16 @@ pub fn head_of(block: &str) -> Option<&'static str> {
 
 /// Cut the system prompt down to one job's sections.
 ///
-/// Blocks are separated by blank lines, as the shipped prompt writes them. A block is kept when its
-/// head is wanted by [`sections_for`], when it is a preamble (anything before the first heading —
-/// it sets up every section, so dropping it would leave the rest unexplained), or when its heading
-/// is unknown (an unrecognised section is assumed to matter, which is also why a key with no row at
-/// all keeps everything).
+/// A block is kept when its head is wanted by [`sections_for`], when it is a preamble (before the first heading; it sets up every section), or when its heading is unknown
+/// (assumed to matter, which is why a key with no row keeps everything).
 ///
-/// Inside the jobs list only this job's own line survives, together with the example lines indented
-/// under it; every other job's line and its example go (§8: "jobs list cut to this job's own line,
-/// its example indented under it"). Because the shipped prompt puts no blank between two jobs'
-/// lines, that part is lifted out of the list by [`own_lines_in_jobs_block`] and re-issued under the
-/// list's own heading rather than filtered line-by-line out of one long block.
+/// Inside the jobs list only this job's line and its indented examples survive (§8); [`own_lines_in_jobs_block`] lifts them out and re-issues them under the heading,
+/// because the shipped prompt puts no blank between two jobs' lines.
 ///
-/// §8 is silent on whether the jobs-list heading itself survives when the job has no line there (a
-/// key like `system`, whose whole prompt is kept anyway): the decision here is that the heading
-/// follows its content — a block reduced to nothing contributes nothing, including the heading,
-/// because a bare heading over an empty body reads as a rule with no referent.
-///
-/// Deterministic: blocks keep their original order, nothing is sorted or merged.
+/// §8 is silent on the jobs-list heading when the job has no line there: the heading follows its content, since a bare heading over an empty body has no referent.
 pub fn cut_system(system: &str, key: &str) -> String {
     let want = sections_for(key);
-    // Fold the jobs list into one block when the shipped layout leaves its body standing apart from
-    // its heading: a `None` block whose first line is a job line belongs to the list above it.
+    // Fold the jobs list into one block: a `None` block whose first line is a job line belongs to the list above it.
     let mut blocks: Vec<String> = Vec::new();
     for block in split_blocks(system) {
         if head_of(&block).is_none() && block.lines().next().map(is_job_line).unwrap_or(false) {
@@ -266,8 +218,7 @@ pub fn cut_system(system: &str, key: &str) -> String {
             }
             continue;
         }
-        // The jobs list. Whole-prompt keys keep it as written; everyone else gets the heading plus
-        // only their own line and its examples.
+        // The jobs list: whole-prompt keys keep it as written; others get the heading plus only their own line and examples.
         if want.is_none() {
             out.push(block.clone());
             continue;
@@ -285,9 +236,7 @@ pub fn cut_system(system: &str, key: &str) -> String {
     out.join("\n\n")
 }
 
-/// This job's own lines within the jobs list: its line plus every example indented under it, and
-/// nothing of anyone else's. Kept as its own walk so a caller (and a test)
-/// can ask for just this job's part of the shipped list.
+/// This job's own lines within the jobs list: its line plus every example indented under it, nothing of anyone else's.
 pub fn own_lines_in_jobs_block(block: &str, key: &str) -> Vec<String> {
     let label: &str = match job_label(key) {
         Some(label) => label,
@@ -306,10 +255,7 @@ pub fn own_lines_in_jobs_block(block: &str, key: &str) -> Vec<String> {
             }
             continue;
         }
-        // The shipped list writes every job at two spaces ("  retake: every spoken line …"), which
-        // is the same indent as an example under some other heading, so a job line is recognised by
-        // carrying some job's label rather than by sitting at column zero. Examples are indented
-        // further and travel with the line above them.
+        // Job lines are two-space indented, like examples under other headings, so a job line is recognised by carrying some job's label; deeper-indented examples travel with it.
         if JOB_LABEL.iter().any(|(_, l)| trimmed.starts_with(l)) {
             mine = trimmed.starts_with(label);
         }
@@ -320,33 +266,21 @@ pub fn own_lines_in_jobs_block(block: &str, key: &str) -> Vec<String> {
     out
 }
 
-/// The second half of the precedence rule: what a job does when the User Context talks about
-/// something another job makes. Quoted from the prototype's `ctxRule` (`go/syscontext.go`), which
-/// ships as the wording rather than being paraphrased here.
+/// The second half of the precedence rule: what a job does when the User Context talks about something another job makes; the prototype's `ctxRule` (`go/syscontext.go`), quoted.
 pub const PRECEDENCE_OTHER_JOBS: &str = "The context is written once for the whole session and every job is given the same copy, so it carries instructions for jobs that are not yours: a title, a description, a thumbnail, what the transcript should spell, how long the video should be. An instruction that names a step or a thing another job makes is that job's. Where you meet one, it is not an instruction to you and it does not change what your answer is: answer your own question, in your own shape, and leave it alone.";
 
 /// The precedence rule that rides on the end of the system message when there is a User Context.
 ///
-/// Two halves: the opener [`crate::narrate_pass`] already holds (what the context is and how far it
-/// outranks the job's own rules) and [`PRECEDENCE_OTHER_JOBS`] (that a context instruction naming
-/// another step is that step's to act on, not this job's). Assembled here rather than written into
-/// each prompt file so every wording carries it, including a project's edited copy.
+/// Two halves: the opener [`crate::narrate_pass`] holds (what the context is and how far it outranks the job's rules) and [`PRECEDENCE_OTHER_JOBS`].
+/// Assembled here rather than in each prompt file so every wording carries it, including a project's edited copy.
 pub fn precedence_rule() -> String {
     format!("{}\n\n{}", narrate_pass::CTX_INTRO, PRECEDENCE_OTHER_JOBS)
 }
 
 /// Assemble one call's system message.
 ///
-/// Order: the cut system prompt, the job's own prompt, the narrate-only addenda, the precedence
-/// rule. Each piece is joined with "\n\n" and an empty piece adds nothing — so a job with no User
-/// Context is told nothing about a block it will not get, matching
-/// [`narrate_pass::user_message`]'s rule for the other message.
-///
-/// The narrate addenda come from [`narrate_pass::system`]: the no-microphone note
-/// ([`narrate_pass::SPEECH_ADDENDUM`]) when the clips play what people said out loud, and the
-/// captions addendum ([`narrate_pass::CAPTIONS_ADDENDUM`]) for a captions-only voice. They ride on
-/// the job's own wording, not on the house rules, because they qualify what the writer is asked to
-/// produce rather than how the answer is read.
+/// Order: the cut system prompt, the job's own prompt, the narrate-only addenda, the precedence rule, joined with "\n\n"; an empty piece adds nothing.
+/// The addenda come from [`narrate_pass::system`] ([`narrate_pass::SPEECH_ADDENDUM`], [`narrate_pass::CAPTIONS_ADDENDUM`]); they ride on the job's wording because they qualify what the writer produces.
 pub fn system_message(
     system: &str,
     key: &str,
@@ -377,18 +311,14 @@ pub fn system_message(
 
 /// Whether this job's user message carries the speech rule.
 ///
-/// Only the two jobs that decide what is spoken: the cut chooses which stretches of speech survive,
-/// and narration decides what to say over them. Every other job works on what those two settled.
+/// Only the two jobs that decide what is spoken: the cut and narration.
 pub fn carries_speech_rule(key: &str) -> bool {
     matches!(key, "cut" | "narrate")
 }
 
 /// The User Context with its script taken out: the block between a `SCRIPT START` and a `SCRIPT STOP` line, stars
-/// around them as the profiles write them. What the transcript fixer is shown. With the script in its request
-/// the model takes what was said for a mishearing of the script and rewrites the line to match; told otherwise
-/// in every wording tried, it still did. Measured on the 27B's 08-dex block, 8 asks each: with the script 3 lines
-/// kept the spoken USDC and 1 answer had the right format; without it 8 and 8, and across 12 name-heavy blocks the
-/// fixer kept 96 % of the spoken words and spelled the names the same. A context with no such block is unchanged.
+/// What the transcript fixer is shown: with the script in its request the model takes what was said for a mishearing and rewrites the line to match, in every wording tried
+/// (measured on the 27B's 08-dex block: with the script 3 lines kept the spoken USDC, without 8). A context with no such block is unchanged.
 pub fn without_script(context: &str) -> String {
     let Ok(block) = regex::Regex::new(r"(?s)\*+\s*SCRIPT START\s*\*+.*?\*+\s*SCRIPT STOP\s*\*+")
     else {
@@ -400,8 +330,7 @@ pub fn without_script(context: &str) -> String {
 /// Assemble one call's user message: the User Context block, the speech rule where it applies, and
 /// the job's material.
 ///
-/// An empty context adds nothing at all — no header over nothing — and the speech rule rides with
-/// the context because it is a statement about what the context says regarding the speakers.
+/// An empty context adds nothing, no header over nothing; the speech rule rides with the context.
 pub fn user_message(context: &str, key: &str, material: &str) -> String {
     let mut pieces: Vec<String> = Vec::new();
     if !context.trim().is_empty() {

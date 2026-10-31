@@ -1,16 +1,5 @@
 //! §05-cut#8 bullet 2 — `each change of the footage's own mute logs one line naming the reason`, and the
 //! stream volume that is reset once at build.
-//!
-//! The wording of every line here belongs to [`crate::preview`]; this module is the MISSING HALF — the call.
-//! Until now `preview::sound_change` answered a question nobody asked and `preview::reset_stream_volume`
-//! described a reset nothing performed, so no mute reason could ever reach the log and the spec's bullet was
-//! true of strings rather than of the program. Two doors, each called from the one place that already holds
-//! the state the line is about:
-//!
-//! - [`report_mute_change`] from `ui::window::apply_mix`, the door that already lands `footage_muted` on the
-//!   player every tick. It reads the player's PREVIOUS answer before overwriting it, which is what makes the
-//!   log one line per CHANGE rather than one line per 100 ms tick.
-//! - [`reset_stream_volume_once`] from the window's build, once, before any tick has asked for a gain.
 
 use crate::cut_hear;
 use crate::preview;
@@ -22,10 +11,6 @@ thread_local! {
 }
 
 /// Log the ONE line a change of the footage's own mute deserves, or nothing at all when nothing changed.
-///
-/// `heard_before` is what the player was told at the previous tick and `heard_now` what this tick's mix says;
-/// `card_held` is the card-over-the-picture answer, which outranks the scene's own hearing because it is the
-/// reason a person can see on the band (`preview::sound_change`'s rule, not a second one taken here).
 pub fn report_mute_change(
     heard_before: bool,
     heard_now: bool,
@@ -43,13 +28,6 @@ pub fn report_mute_change(
 }
 
 /// Put the stream volume back to full, once per process, through the element this app owns.
-///
-/// `preview::volume_is_app_owned` is the answer §8 asks for — gain and mute go to an element of this app's,
-/// never to the sound server's per-application stream volume, which the server remembers between runs and
-/// would leave last session's loudness behind for everything else on the desktop. There is no pactl/wpctl/
-/// amixer leg anywhere in `src/` and none is wanted: `Player::volume` is the app's own gain slot, multiplied
-/// into every pipeline by `cut_hear::mix_at`, so writing `STREAM_VOLUME` there IS the reset §8 describes.
-/// `preview::reset_stream_volume` decides whether it is still owed.
 pub fn reset_stream_volume_once(window: &adw::ApplicationWindow) {
     if !preview::volume_is_app_owned() {
         return;
@@ -106,24 +84,10 @@ pub fn heard_now(mix: &cut_hear::Mix) -> bool {
     !mix.footage_muted
 }
 
-// --- §06-effects#2: saying so when the preview cannot copy a speed's sound -------------------------------------
-
 thread_local! {
-    /// Whether the last tick was already inside a stretch whose sound needs its own clock. This is what keeps the
-    /// notice to ONE line per ENTRY: the tick asks [`report_sound_clock_change`] ten times a second, and eight
-    /// copies of "sound at 1× in the render only" would bury everything else in the log — exactly the failure
-    /// mode [`report_mute_change`] avoids by reading the previous answer first.
     static SOUND_CLOCK_NOTICED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// §06-effects#2-the-lane-and-the-preview (`the two 1× sound answers cannot be previewed`; §9's `it SHOULD say
-/// "sound at 1× in the render only"`): say the sentence when the line has just entered a stretch the preview can
-/// only fake, and say it once. `own` and `scene` need the sound on a different clock from the picture, which one
-/// player does not have, so what the person hears is sped-up sound — worth naming rather than letting the render
-/// surprise them later.
-///
-/// The words are [`crate::effect_overlap::says_render_only`]'s, the single source of that sentence (the speed
-/// form's own Apply quotes the same function), so the form and the tick cannot drift into two phrasings.
 pub fn report_sound_clock_change(
     had_notice: bool,
     needs_notice: bool,

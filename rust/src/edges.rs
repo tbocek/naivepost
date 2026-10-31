@@ -1,70 +1,26 @@
 //! Where a mark's two edges actually land (spec/04-prepare.md F1.11).
-//!
-//! The aligner returns words back to back — each ends where the next begins — so where the word after
-//! a kept word was dropped, the fence has no width: the edge lands on the aligner's time and the sound
-//! is never asked. With word times the words fence the cut and the envelope only chooses where inside
-//! the fence it falls; without them the mono envelope alone places the edge, which is the rule that had
-//! to cope with an ASR stamp running half a second late.
-//!
-//! As in [`crate::asr`], [`crate::align`] and [`crate::frames`], nothing is spawned and no socket
-//! opened: the envelope arrives as the [`Wave`] the timeline already caches, so a rule this load-bearing
-//! can be tested against a hand-written one.
 
 use crate::textfmt::Retake;
 use crate::tools::mm_ss;
 use crate::wave::Wave;
 
-/// What is left of a sound at a cut when there is no envelope to ask: a hair, so the last consonant is
-/// not shaved and the first is not clipped. §10 files this bound as `P.eng.wordPadSeconds` (0.08, "room a
-/// cut leaves a word"; prototype `wordPad`, go/retake.go), and `params::prepare()` rows it from this
-/// constant.
 pub const WORD_PAD: f64 = 0.08;
 
-/// How wide a stretch of the recording is looked at to find its room: this many seconds each side of
-/// the second being placed at. §10 files it as `P.eng.envelopeWindowSeconds` (4, "envelope searched
-/// each side of a stamp (±400 buckets)"; prototype 400 buckets at the 100 Hz envelope of
-/// go/retake_edge.go:163), and `params::prepare()` rows it from this constant. The 20th percentile
-/// of this window is the room; a window too narrow to hold the room raises the floor and hides sound,
-/// one too wide lets a far-loud stretch pull it down.
 pub const ENVELOPE_WINDOW: f64 = 4.0;
 
-/// How far an edge may be moved off its stamp. A stamp half a second late is what was measured; a sound
-/// a whole second away is a different sound. This is the reach of the ENVELOPE-ONLY placement — with
-/// aligned word times the words fence the edge and this bound is never consulted. §10 files it as
-/// `P.eng.edgeReachSeconds` (0.8, "envelope-only edge placement: search reach"; prototype
-/// `retake_edge`, go/retake_edge.go), and `params::prepare()` rows it from this constant.
 pub const EDGE_REACH: f64 = 0.8;
 
 /// What is left of a sound at a cut once the envelope has placed it, in seconds.
 pub const EDGE_PAD: f64 = 0.05;
 
-/// How far behind its sound a stamp may run and still be that sound's — half a second was measured on a
-/// take's opening word. §10 files it as `P.eng.lateStampSeconds` (0.6, "envelope-only edge placement:
-/// how late a stamp may be"; prototype `lateStamp`, go/retake_edge.go), and `params::prepare()` rows
-/// it from this constant.
 pub const LATE_STAMP: f64 = 0.6;
 
-/// With aligned words, how far below a word's own level its tail still counts as the word. On the meter
-/// scale the envelope is drawn in (−70…0 dBFS over 0…255) a breath sits 20 dB or more under the word it
-/// follows and a trailing consonant a few dB under; twelve tells them apart. §10 files it as
-/// `P.eng.edgeTailDB` (12, "word-fenced edge placement: tail threshold"; prototype `edgeTailDB`,
-/// go/retake_edge.go), and `params::prepare()` rows it from this constant.
 pub const EDGE_TAIL_DB: f64 = 12.0;
 
-/// How far past the aligner's edge a word's own sound is followed. The aligner is within a fiftieth on
-/// an onset and can be a touch early on a trailing `s` or `k`; a quarter second is that, and not the
-/// breath after. §10 files it as `P.eng.edgeTailMaxSeconds` (0.25, "word-fenced edge placement:
-/// longest tail"; prototype `edgeTailMax`, go/retake_edge.go), and `params::prepare()` rows it from
-/// this constant. The level bound beside it is `P.eng.edgeTailDB`: twelve decibels says which sound
-/// is still the word, this says how far to keep chasing it.
 pub const EDGE_TAIL_MAX: f64 = 0.25;
 
 /// How far into the gap the quietest moment is looked for. Past the word's own tail the gap is breath
 /// and room; the cut goes where that is lowest, and a trough further off than this is a different gap.
-/// §10 files it as `P.eng.troughReachSeconds` (0.4, "word-fenced edge placement: trough search";
-/// prototype `troughReach`, go/retake_edge.go), and `params::prepare()` rows it from this constant.
-/// It starts where [`EDGE_TAIL_MAX`] leaves off: the tail bound follows the word's own sound, this
-/// searches the gap behind it for the quietest place to cut.
 pub const TROUGH_REACH: f64 = 0.4;
 
 /// How long the silence after a recording's first word must be stamped for [`misplaced_first_word`] to look in it.
@@ -74,15 +30,6 @@ pub const MISPLACED_GAP_SECONDS: f64 = 0.2;
 const ONSET_STEP_SECONDS: f64 = 0.005;
 
 /// A recording's first word stamped too early: the corrected span, or `None` when it stands where it is.
-///
-/// The aligner hangs a first word on whatever comes first, and what comes first can be a breath: on 08-dex
-/// 17-54-32 "Dass" was stamped on 0.58..0.74 s (peak 25), "der" followed at 1.30 s, and the word itself was in
-/// that "gap" from 1.10 s (peak 63). The sign is speech where the words say nothing was said: a gap of at
-/// least [`MISPLACED_GAP_SECONDS`] after the first word holding sound at half the recording's median word peak or
-/// more, and half as loud again as the stamped word. The word then runs from where that sound starts to the next
-/// word. One first word in 94 recordings has this; the only other first word followed by a gap had silence in it.
-/// `words` are one recording's in order; `peak` answers the loudest bucket between two seconds, `None` where
-/// nothing is measured, and nothing unmeasured moves a word.
 pub fn misplaced_first_word(
     words: &[(f64, f64)],
     mut peak: impl FnMut(f64, f64) -> Option<i32>,
@@ -100,8 +47,6 @@ pub fn misplaced_first_word(
     }
     let mut at = first.1;
     while at < next.0 {
-        // Half the gap's own peak, not the recording's level: the breath the word was stamped on trails on into the
-        // gap at speech level or near it, and the start of the word is the first sound well above that.
         if peak(at, at + ONSET_STEP_SECONDS).is_some_and(|here| here * 2 >= in_gap) {
             return Some((at, next.0));
         }
@@ -110,9 +55,6 @@ pub fn misplaced_first_word(
     None
 }
 
-/// One lane of the session, as the edge placement needs it: the key Prepare keyed it under
-/// (`lecture` for `project:sources/lecture.mkv`), the session second its first sample lands on,
-/// and the recording's OWN size/mtime so the cache is checked against the file it was made from.
 #[derive(Debug, Clone)]
 pub struct Lane {
     pub key: String,
@@ -122,16 +64,6 @@ pub struct Lane {
 }
 
 /// The envelopes this session's `cache/waves` actually holds, in the lane order handed in.
-///
-/// A lane whose cache is missing, unreadable, or stamped against a DIFFERENT recording (the file was
-/// replaced since the cache was made) is left OUT rather than guessed at: [`finder`] then answers
-/// `None` there, which is spec F1.11's "Without: mono envelope alone" case — the word pad stands in
-/// ([`Edges::end_after`]). An invented or stale envelope would move a cut to sound that is not on
-/// the track any more, which is worse than no envelope at all.
-///
-/// The stamps come from the caller's stat of the real recording, never out of the cache file's own
-/// header: reading them back from the file being checked makes the staleness test unable to fail, and
-/// a cache that cannot be invalidated is a cache of the wrong audio waiting to happen.
 pub fn load(tree: &crate::layout::Tree, lanes: &[Lane]) -> Vec<(Lane, Edges)> {
     lanes
         .iter()
@@ -142,20 +74,6 @@ pub fn load(tree: &crate::layout::Tree, lanes: &[Lane]) -> Vec<(Lane, Edges)> {
         .collect()
 }
 
-/// The lookup `place_edges` asks: which envelope covers this session second. The LAST lane starting
-/// at or before `t` is the recording playing then; a second before the first take has nothing to ask
-/// and answers `None`.
-///
-/// The answer is borrowed out of the slice the caller already owns and never mutates after this
-/// returns, which is why this is a plain reference and no interior mutability is involved. Build the
-/// envelopes with [`load`] BEFORE calling this; do not try to fill them lazily from inside the
-/// closure — handing out references while inserting into the same collection is the shape that
-/// cannot type.
-///
-/// `held` may arrive in any order: a project's sources are often listed newest first. The first rewrite took the
-/// last in the list starting at or before `t`, which on such a list is always the session's first recording: every
-/// later second asked the wrong file, found nothing, and fell back to the word pad without a word said (08-dex: no
-/// edge of any of its 95 recordings was placed by the sound).
 pub fn finder<'a>(held: &'a [(Lane, Edges)]) -> impl Fn(f64) -> Option<&'a Edges> + 'a {
     move |t: f64| {
         held.iter()
@@ -219,14 +137,9 @@ impl Edges {
             .max()
     }
 
-    /// What counts as sound around a point: the quiet of that stretch of the recording, with room over
-    /// it. Measured from the buckets around `t` rather than fixed, because a room, a microphone and a
-    /// gain setting each put the silence somewhere else — and taken from the quieter end of the window,
-    /// so a window that is mostly talking still finds its floor.
     pub fn floor(&self, t: f64) -> u8 {
         let i = self.at(t);
         if i < 0 {
-            // Nothing to measure against: nothing can be sound.
             return u8::MAX;
         }
         let peaks = self.peaks();
@@ -252,11 +165,6 @@ impl Edges {
 
     /// What still counts as the word between these buckets: its own peak less [`EDGE_TAIL_DB`], and never
     /// under the room.
-    ///
-    /// The cache holds linear peaks — a byte is peak × 255 of full scale — while this threshold and
-    /// [`Edges::floor`] read that byte as a −70…0 dBFS meter, so twelve dB is forty-four bytes. Known
-    /// and kept: the placement scored against three hand-cut projects beat every alternative tried,
-    /// including a real dB envelope, so the rewrite does not "fix" the scale.
     fn tail_level(&self, i0: i64, i1: i64) -> u8 {
         let peaks = self.peaks();
         let (start, end) = (
@@ -272,9 +180,6 @@ impl Edges {
         thr.max(i16::from(room)).clamp(0, 255) as u8
     }
 
-    /// Where the cut ends after a word that stays, given how far it may go (the next word's start, which
-    /// it never reaches): the word's own sound followed to where it drops ([`EDGE_TAIL_MAX`]), then the
-    /// quietest moment after that ([`TROUGH_REACH`]). The words fence it; the sound chooses inside.
     pub fn end_after(&self, w: &AlignedWord, limit: f64) -> f64 {
         if limit <= w.e {
             // The fence has no width: the aligner's time is all there is, and the sound is never asked.
@@ -336,11 +241,6 @@ impl Edges {
         limit.max((self.off + best as f64 / self.wave.hz).min(w.s))
     }
 
-    /// Where the last sound before this session second ends: the cut ends there. The second is the stamp
-    /// of the first abandoned word, which may fall inside that word or just before it; either way the
-    /// sound run it belongs to is stepped out of first, then the quiet before it, and the sound before
-    /// THAT is what the cut keeps. Unchanged when no such edge is within reach — speech with no gap in it
-    /// is cut where the stamp says.
     pub fn end_before(&self, t: f64) -> f64 {
         let i = self.at(t);
         if i < 0 {
@@ -362,11 +262,6 @@ impl Edges {
         self.off + (j + 1) as f64 / self.wave.hz + EDGE_PAD
     }
 
-    /// Where the retake's sound begins: the cut resumes there. A stamp runs LATE, never early, so the
-    /// word is the sound run the stamp falls in or the one that ended just before it, and its onset is
-    /// where the cut resumes. A stamp with quiet for a while before it is a stamp the sound has not
-    /// reached yet and stands as it is: moving forward to the next sound would clip the very word it
-    /// names.
     pub fn start_at(&self, t: f64) -> f64 {
         let i = self.at(t);
         if i < 0 {
@@ -425,14 +320,6 @@ fn spoken_between(spoken: &[(f64, f64)], from: f64, to: f64) -> bool {
 }
 
 /// S1–S7 of the placement: every mark's two edges moved onto the sound.
-///
-/// `edge_of` answers with the envelope of the recording a session second belongs to — the spec leaves
-/// open which recording that is, and the prototype resolves it from the rows spoken nearest the second,
-/// so the caller owns that lookup and this only asks. `None` means no envelope: the word pad stands in
-/// for the walk, and a stamp with no words at all stays where it was.
-///
-/// `retimeStrays` is deliberately not here: moving a word the aligner put on nothing belongs to the
-/// retake pass that produced the mark (F1.9), not to placing an edge around one it already believes.
 pub fn place_edges<'a>(
     marks: Vec<Retake>,
     words: &[AlignedWord],
@@ -458,7 +345,6 @@ pub fn place_edges<'a>(
                     ));
                 }
                 if mark.again > mark.e && !words_between(words, mark.e, mark.again) {
-                    // Nothing said between: it all goes, up to the retake's own first word.
                     let mut to = (mark.again - WORD_PAD).max(mark.e);
                     if let Some(w) = word_at(words, mark.again) {
                         if let Some(e) = edge_of(mark.again) {
@@ -477,7 +363,6 @@ pub fn place_edges<'a>(
                 return mark;
             }
 
-            // No word times: the envelope alone, which is all there is to place an edge by.
             if let Some(e) = edge_of(mark.s) {
                 let s = e.end_before(mark.s);
                 if s != mark.s {

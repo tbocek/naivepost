@@ -1,18 +1,9 @@
-//! The frames door: §F1.6's media legs, the way [`crate::audio_task`] owns audio.cpp's and
-//! [`crate::separate_run`] owns separation's.
+//! The frames door: §F1.6's media legs, as [`crate::audio_task`] owns audio.cpp's.
 //!
-//! [`crate::frames`] holds every rule of the pass — which marker means "already done", what ffmpeg is
-//! asked for the scene sweep, which seconds a frame comes from, how the names are spelled, how many
-//! workers — and takes its legs as closures, exactly as `asr`/`align`/`transcribe` do. Nothing in that
-//! module runs a process. This file is the half that does: it probes the video's length, sweeps it at
-//! four frames a second through `scdet`, hands the scores to `frames::run`, and for each chunk runs
-//! `frames::extract_plan`'s commands so the pictures exist on disk before the `.frames` marker says
-//! they do.
+//! [`crate::frames`] holds every rule of the pass and takes its legs as closures; nothing there runs a process. This file does: it probes the video's length, sweeps it at
+//! four frames a second through `scdet`, hands the scores to `frames::run`, and runs `frames::extract_plan`'s commands per chunk so the pictures exist before the `.frames` marker says so.
 //!
-//! The row is a DIAL, not a spawned process: like the speech and describe rows it carries a marker
-//! program ([`FRAMES_TASK`]) that [`crate::run_stages::drive_walk`] reads as "call this" rather than
-//! "fork this", because one row is many ffmpeg calls (one sweep plus one per frame) whose output has to
-//! be read, not discarded.
+//! The row is a DIAL, not a spawned process: its marker program ([`FRAMES_TASK`]) tells [`crate::run_stages::drive_walk`] to call rather than fork, since one row is many ffmpeg calls whose output has to be read.
 
 use std::path::{Path, PathBuf};
 
@@ -21,14 +12,11 @@ use crate::project::Project;
 use crate::settings::{self, Paths};
 use crate::{frames, layout, requests, run_stages, subprocess};
 
-/// The marker [`crate::run_stages::drive_walk`] reads as “run this row's frames pass” rather than
-/// “spawn this”: the fourth of the dial kinds, beside `AUDIO_TASK`, `VISION_TASK` and `TEXT_TASK`.
+/// The marker [`crate::run_stages::drive_walk`] reads as “run this row's frames pass”: the fourth dial kind, beside `AUDIO_TASK`, `VISION_TASK` and `TEXT_TASK`.
 pub const FRAMES_TASK: &str = "naivepost:frames";
 
-/// One footage row per video, each a dial of this module. The index rides along because a frame's name
-/// is its second on the FILE's clock (§F1.6 S4), which is the source's offset on the session clock, and
-/// an offset can only be computed over the whole session — so the door recomputes the placement and
-/// picks this row's entry out by position, exactly as [`crate::describe_call::stage`] passes it.
+/// One footage row per video, each a dial of this module. The index rides along because a frame's name is its second on the FILE's clock (§F1.6 S4),
+/// which needs the offset over the whole session, so the door recomputes the placement and picks this row's entry by position, as [`crate::describe_call::stage`].
 pub fn stage(project: &Project) -> run_stages::Stage {
     let tasks = project
         .sources
@@ -53,9 +41,7 @@ pub fn stage(project: &Project) -> run_stages::Stage {
     }
 }
 
-/// The walk's door for one row: resolve the settings folder and the session exactly as the app does, then
-/// run the pass. A row naming no source, or one whose video is gone, stops with the reason named — §Failure-
-/// is-specific would rather say which file is missing than blame the tool that never got to run.
+/// The walk's door for one row: resolve the settings folder and session as the app does, then run the pass. A row naming no source, or whose video is gone, stops naming the missing file (§Failure-is-specific).
 pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
@@ -84,9 +70,7 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
     Ok(())
 }
 
-/// The whole pass for one video: probe, sweep, extract, mark. Returns what [`crate::frames`] recorded so
-/// a caller can count frames without walking the folder; the lines it produced go to `log` here, the same
-/// forwarding `audio_task::transcribe_asr` does for the ASR's outcome.
+/// The whole pass for one video: probe, sweep, extract, mark. Returns what [`crate::frames`] recorded; its lines go to `log` here, as `audio_task::transcribe_asr` does.
 pub fn stage_pass(
     tree: &Tree,
     paths: &Paths,
@@ -96,8 +80,7 @@ pub fn stage_pass(
     log: &mut impl FnMut(&str),
 ) -> Result<frames::Outcome, String> {
     let conf = settings::read(paths).unwrap_or_default();
-    // The configured box when Settings names one, the bare name otherwise — the rule every ffmpeg call
-    // site in the program uses (`separate_media::program`).
+    // The configured ffmpeg, else the bare name (as `separate_media::program`).
     let ffmpeg = crate::separate_media::program(&conf.ffmpeg);
     let duration = run_stages::probe_duration(&conf.ffmpeg, source_path, log)?;
     let start = clock_start(tree, index);
@@ -105,9 +88,7 @@ pub fn stage_pass(
         .map(|n| n.get())
         .unwrap_or(1);
 
-    // S1 first, before anything is asked of ffmpeg: the marker is this stage's resume marker, and a pass
-    // that matched it owes the run one sentence and no processes — not even the sweep, whose scores are
-    // what `scenes.tsv` already records.
+    // S1 first: the marker is the resume marker, and a matching pass owes one sentence and no processes, not even the sweep.
     if frames::marker_matches(
         requests::read_frames_marker(tree, lane)?,
         frames::GRID,
@@ -129,24 +110,18 @@ pub fn stage_pass(
             ..Default::default()
         });
     }
-    // Counts the chunks as they are handed over, so the door can put `frames::progress_log`'s string in
-    // front of the ffmpeg calls it stands for. The total is the number of chunks the plan makes, which is
-    // why it is filled in by `stage_pass` once the seconds are known rather than here.
+    // Counts chunks as they are handed over, so the door can print `frames::progress_log`'s string before the ffmpeg calls it stands for; the total is filled in once the seconds are known.
     let next_chunk = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1));
     let chunk_total = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1));
 
-    // S2: the sweep over the WHOLE video. `metadata=print:file=-` puts every frame's score on stdout,
-    // which is what `subprocess::run` hands back, so the returned string IS the score report; nothing
-    // else about this call is kept, since `-f null` throws the pixels away.
+    // S2: the sweep over the WHOLE video. `metadata=print:file=-` puts every frame's score on stdout, which `subprocess::run` hands back; `-f null` throws the pixels away.
     let mut sweep: Vec<String> = vec!["-i".to_string(), source_path.display().to_string()];
     sweep.extend(frames::scene_pass_plan(frames::SCENE_THRESHOLD));
     let owned: Vec<&str> = sweep.iter().map(String::as_str).collect();
     let scores = subprocess::run(&ffmpeg, &owned, &mut *log)?;
     // The grid runs to the last picture the sweep saw, not to the end of the sound.
     let duration = frames::picture_end(duration, &frames::parse_scores(&scores));
-    // How many chunks the plan will make, so each one's progress line can say `i/n` like `frames::run`
-    // records it — the door logs those lines itself (in front of the ffmpeg calls they stand for), so it
-    // has to know the denominator the same way the rule does.
+    // How many chunks the plan will make, so each progress line can say `i/n` as `frames::run` records it.
     let changes_for_count = frames::scene_changes(
         &frames::parse_scores(&scores),
         frames::SCENE_THRESHOLD,
@@ -199,11 +174,8 @@ pub fn stage_pass(
     Ok(outcome)
 }
 
-/// This row's first second on the session clock. `fix_transcripts::placement` needs the WHOLE session —
-/// leaving one file out moves zero and slides every other file — so the placement is computed over every
-/// source name in project order and this row's entry is picked out by position. A project that cannot be
-/// read, or a row past the end of it, starts at zero: an unstamped file sits at the session's start
-/// anyway (§8), and inventing an offset would name frames at seconds no camera saw.
+/// This row's first second on the session clock. `fix_transcripts::placement` needs the WHOLE session (leaving one file out slides every other), so it is computed over every
+/// source in project order and this row's entry picked by position. An unreadable project, or a row past its end, starts at zero (§8): inventing an offset would name frames at seconds no camera saw.
 fn clock_start(tree: &Tree, index: usize) -> f64 {
     let Ok(project) = crate::project::load(tree.dir()) else {
         return 0.0;
@@ -220,8 +192,7 @@ fn clock_start(tree: &Tree, index: usize) -> f64 {
     clock.zero + clock.offset(index)
 }
 
-/// The session's zero (the earliest recording's stamp), for a reader turning frame names back into session
-/// seconds ([`crate::clock::frame_session_seconds`]). 0 when the project cannot be read or nothing is stamped.
+/// The session's zero (the earliest recording's stamp), for turning frame names back into session seconds ([`crate::clock::frame_session_seconds`]); 0 when unreadable or unstamped.
 pub fn session_zero(tree: &Tree) -> f64 {
     let Ok(project) = crate::project::load(tree.dir()) else {
         return 0.0;
@@ -234,9 +205,8 @@ pub fn session_zero(tree: &Tree) -> f64 {
     crate::clock::clock(&names).zero
 }
 
-/// A folder the first rewrite extracted carries session seconds printed as 1970 dates: renamed in place to the
-/// recording's real instants (session second plus the session's zero), its scaled copies with it, so a resumed
-/// run does not re-extract and every reader still finds the same pictures. Answers how many were renamed.
+/// A folder an old extraction left with session seconds printed as 1970 dates: renamed in place to real instants (session second plus zero), scaled copies too, so a resumed run does not re-extract.
+/// Answers how many were renamed.
 fn rename_session_named(tree: &Tree, lane: &str, zero: f64) -> Result<usize, String> {
     if zero < crate::clock::SESSION_NAMED_BEFORE {
         return Ok(0);
@@ -249,8 +219,7 @@ fn rename_session_named(tree: &Tree, lane: &str, zero: f64) -> Result<usize, Str
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        // The scaled copies are named from their folder's first picture (`describe::scaled_name`), which is the
-        // stored folder's first instant once that folder is renamed.
+        // The scaled copies are named from their folder's first picture (`describe::scaled_name`).
         let shift = if shift.is_nan() {
             crate::describe_scale::name_base(tree, lane)
         } else {
@@ -276,15 +245,10 @@ fn rename_session_named(tree: &Tree, lane: &str, zero: f64) -> Result<usize, Str
     Ok(renamed)
 }
 
-/// One chunk's worth of frames, extracted for real: `frames::extract_plan`'s command per frame, each
-/// carrying `-progress pipe:1` so ffmpeg's own idea of how far it got reaches us (S3), parsed through
-/// [`frames::progress`] and said once per chunk rather than per line.
+/// One chunk's frames, extracted for real: `frames::extract_plan`'s command per frame, each with `-progress pipe:1` (S3) parsed through [`frames::progress`] and said once per chunk.
 ///
-/// The frames of one chunk go out on scoped threads bounded by the spec's worker count, because one
-/// ffmpeg per frame on a 250 ms grid is a lot of short processes and they spend their time decoding
-/// independently of each other. Each thread collects its own log lines into its own `Vec` and they are
-/// appended in order after the join: `log` is `&mut dyn FnMut` and cannot cross a thread boundary, and
-/// interleaving raw lines from four ffmpeg runs into one log would read as noise.
+/// Frames go out on scoped threads bounded by the spec's worker count (one ffmpeg per frame on a 250 ms grid is many short processes). Each thread collects its own log lines, appended in order after the join:
+/// `log` is `&mut dyn FnMut` and cannot cross threads, and interleaved raw lines would read as noise.
 #[allow(clippy::too_many_arguments)]
 fn extract_chunk(
     ffmpeg: &str,
@@ -303,29 +267,22 @@ fn extract_chunk(
     }
     std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display()))?;
     let plans = frames::extract_plan(input, seconds, dir, start);
-    // The pass-level chunks are already `frames::workers` wide; inside one chunk the same clamp applies
-    // to its own frames, so a two-frame chunk does not spawn twenty threads.
+    // Pass-level chunks are already `frames::workers` wide; the same clamp inside a chunk keeps a two-frame chunk from spawning twenty threads.
     let threads =
         frames::workers(cpus, seconds.len().max(frames::TINY_JOB_FRAMES + 1)).min(plans.len());
     let mut written = 0usize;
     let mut notes: Vec<String> = Vec::new();
-    // The per-chunk progress goes first: `frames::run` records it as each chunk is handed over, and this
-    // door's own lines about that chunk belong beside it rather than after every ffmpeg in the stage
-    // (which is what draining `Outcome.steps` at the end would have done).
+    // The per-chunk progress goes first, beside this door's own lines about that chunk.
     log(chunk_step);
-    // Every frame's path, taken from its own argv before `-progress` is appended to the call below:
-    // `extract_plan` ends each command with the file it writes, and that file's existence afterwards is
-    // the only proof the frame exists.
+    // Every frame's path, taken from its argv before `-progress` is appended: the file's existence afterwards is the only proof the frame exists.
     let expected: Vec<String> = plans
         .iter()
         .map(|plan| plan.last().cloned().unwrap_or_default())
         .collect();
-    // Scoped so the borrow of `plans` outlives every thread, and a failing ffmpeg is carried back as a
-    // value rather than unwinding through another worker.
+    // Scoped so the borrow of `plans` outlives every thread; a failing ffmpeg is carried back as a value.
     std::thread::scope(|scope| {
         let mut handles = Vec::new();
-        // Chunk the (command, expected file) pairs together so a worker always knows which file its own
-        // command was supposed to write.
+        // Chunk (command, expected file) pairs together so a worker knows which file its command should write.
         let pairs: Vec<(&Vec<String>, &String)> = plans.iter().zip(expected.iter()).collect();
         let share = pairs.chunks(pairs.len().div_ceil(threads.max(1)));
         for group in share {
@@ -342,26 +299,22 @@ fn extract_chunk(
                 let mut failure: Option<String> = None;
                 for (plan, out) in group {
                     let mut argv = plan.clone();
-                    // `-progress` goes last: ffmpeg takes it as an output option, so it belongs beside the
-                    // file it reports on (which is the argument just before it).
+                    // `-progress` goes last: ffmpeg takes it as an output option, beside the file it reports on.
                     argv.extend(["-progress".to_string(), "pipe:1".to_string()]);
                     let owned: Vec<&str> = argv.iter().map(String::as_str).collect();
                     match subprocess::run(&ffmpeg, &owned, |line| lines.push(line.to_string())) {
                         Ok(stdout) => {
-                            // `-progress` prints `key=value` lines all the way to the end; the last one
-                            // that carries a time is how far this frame's ffmpeg got.
+                            // `-progress` prints `key=value` lines to the end; the last one carrying a time is how far this ffmpeg got.
                             for line in stdout.lines() {
                                 if let Some(at) = frames::progress(line) {
                                     furthest = Some(furthest.map_or(at, |seen: f64| seen.max(at)));
                                 }
                             }
-                            // A command that exits 0 having written nothing is a failure, not a success:
-                            // the file's existence is the only proof the frame exists.
+                            // A command that exits 0 having written nothing is a failure.
                             if Path::new(&out).exists() {
                                 count += 1;
                             } else if near_the_end(plan, end) {
-                                // Past the last picture by less than a second (a video stream that stops a
-                                // frame short of the sweep's last score): no picture there, said, not failed.
+                                // Past the last picture by under a second (a video stream stopping a frame short of the sweep's last score): said, not failed.
                                 lines.push(format!(
                                     ">>> [{lane_name}] no picture at the very end ({}) -- skipped",
                                     Path::new(&out)
@@ -411,15 +364,12 @@ fn extract_chunk(
     Ok(written)
 }
 
-/// The folder one source's frames live in — [`Tree::frames_dir`], the same folder that holds `.frames`
-/// and `scenes.tsv`, named here so the door's own path rule is readable beside the calls that use it.
+/// The folder one source's frames live in ([`Tree::frames_dir`]), beside `.frames` and `scenes.tsv`.
 pub fn frames_dir(tree: &Tree, lane: &str) -> PathBuf {
     tree.frames_dir(lane)
 }
 
-/// Whether this extraction asks for a second within the last second of the take (`-ss <s>` in its argv
-/// against `end`, the take's picture end): the only place a missing picture is the video's own short end
-/// rather than a broken extraction.
+/// Whether this extraction asks for a second within the last second of the take (`-ss <s>` against `end`, the take's picture end): the only place a missing picture is the video's short end.
 fn near_the_end(plan: &[String], end: f64) -> bool {
     plan.iter()
         .position(|arg| arg == "-ss")

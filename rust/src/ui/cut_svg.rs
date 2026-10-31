@@ -1,11 +1,4 @@
 //! F3.5 ▨ SVG drawing by hand — the page half of the flow.
-//!
-//! Split out of `window.rs` unchanged: the rule half lives in [`crate::fx_svg`] (`press`/`Press`,
-//! `chose`/`Chose`, `arm_words`/`arm_head`, `MIDDLE`, `camera_layer_stays_up`, `place`,
-//! `form_title`/`FORM_FIELDS`/`CHOOSE_BUTTON`, `NO_LINE`/`NO_FILE`, `chooser_dir`/`base`, `Form`/`apply`,
-//! and the S5 raster: `PREVIEW_RASTER_PX`/`ffmpeg_raster`/`Rasters`/`Slot` and `fit_inside`). What is here
-//! is only the state a press leaves behind and the widgets that show it — no decision of its own. Mirrors
-//! the F3.4 text block one-for-one with the `svg_` prefix.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -23,16 +16,7 @@ use crate::ui::window::{
     review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
-/// F3.5 S1: what pressing ▨ SVG did — ask for the file, or refuse for want of a line. NOTHING is recorded on
-/// this press, and nothing is ARMED either: §F3.5 asks for the drawing first, because arming someone to place a
-/// drawing they have not chosen yet puts the box down for nothing. So unlike `press_text_item` this never consults
-/// an "already armed" flag — [`fx_svg::press`] has no `Armed` variant at all.
-///
-/// The refusal is answered BEFORE any chooser is built, so a cancelled dialog can never cost the user a refusal
-/// (the F2.12 Insert lesson, restated here by the flowchart's own order: `a line?` comes before the chooser).
 pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
-    // The line is read through the same seam Paste / Insert / Speed use, gated by whether one was EVER placed,
-    // so the page keeps one notion of "a line exists".
     let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
     let line = known.then(|| paste_line(window));
     match fx_svg::press(line) {
@@ -63,12 +47,6 @@ pub fn svg_chooser_asks_for_test() -> usize {
     SVG_CHOOSER_ASKS.with(std::cell::Cell::get)
 }
 
-/// Open the native file chooser over `dir` for a drawing. Kept apart from [`press_svg_item`] so the decision
-/// (where, which title, which filter) is testable without a display: a headless run simply never answers the
-/// dialog, exactly as `open_insert_chooser` is. Its answer forwards to [`svg_chosen`].
-/// GTK 4.10 replaced the file chooser with `gtk::FileDialog` and deprecated everything below it; the
-/// replacement offers no filtered native chooser, so this stays on the old calls and takes their
-/// warnings here rather than silencing them crate-wide.
 #[expect(
     deprecated,
     reason = "the 4.10 replacement cannot offer a filtered native chooser"
@@ -93,8 +71,6 @@ fn open_svg_chooser(
     chooser.add_filter(&filter);
     let win = window.clone();
     chooser.connect_response(move |chooser, response| {
-        // Whatever the answer, it goes through the SAME door as a chosen file, so "a file was picked" and "the
-        // dialog was cancelled" are two inputs to one path rather than two paths that can drift.
         let picked: Option<String> = if response == gtk::ResponseType::Accept {
             chooser
                 .file()
@@ -112,13 +88,9 @@ fn open_svg_chooser(
     crate::ui::chooser_hold::show(&chooser);
 }
 
-/// F3.5 S2: the chooser answered. A file arms the gesture and names itself in the arm sentence; no file places
-/// nothing. Never a toggle-off — [`fx_svg::chose`] takes no `already_armed` precisely so a second ▨ SVG press
-/// cannot quietly disarm the drawing someone just picked on purpose.
 pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String {
     match fx_svg::chose(file) {
         fx_svg::Chose::Refused(reason) => {
-            // No arm, no form, no record: there is no ink to place and no point arming a gesture without it.
             log_line(reason);
             reason.to_string()
         }
@@ -132,8 +104,6 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
             // A raster that came back from disk (the file was seen before) is ready the instant the ask returns, so
             // a form already open gets its picture now rather than on the next redraw.
             paint_svg_raster(window, &name);
-            // A marked stretch outranks the line for the tail's wording; a band under every effect's floor for
-            // "marked" (cut_speed::MIN_MARKED_SECONDS) is not a band at all, exactly as F3.3/F3.4 read it.
             let marked = selection(window)
                 .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
                 .map(|band| (band.start, band.end));
@@ -144,20 +114,11 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
     }
 }
 
-/// Ask for this file's preview raster and say what the job answered. The CACHE, the argument vector and the running
-/// of ffmpeg each keep their own home — [`fx_svg::Rasters`] decides whether work is needed, `cut_svg_raster::make`
-/// runs ffmpeg and keeps the png — so one logo placed six times asks once: the second call finds the cache busy or
-/// ready, and the third finds the file already on disk.
 pub fn request_svg_raster(path: &str) {
-    // // effects.previewRasterPx — 512 px, rgba, cached per file (S5).
     let slot = SVG_RASTERS.with(|cell| cell.borrow_mut().request(path));
     if slot != fx_svg::Slot::NeedsRaster {
         return;
     }
-    // Which ffmpeg and which folder are `make_here`'s business — the same doors every other ffmpeg job uses, so a
-    // path typed into Settings is honoured here too and no folder is invented for the occasion. Both are read
-    // here, on the window thread; ffmpeg itself runs on a worker (§03-shell §1), the cache saying "being made"
-    // meanwhile, and the open form gets its picture when the raster lands.
     let paths = crate::settings::from_environment();
     let program = match &paths {
         Some(paths) => crate::audio_task::ffmpeg_program(paths),
@@ -214,16 +175,10 @@ fn settle_raster(path: &str, made: Result<std::path::PathBuf, String>) {
     }
 }
 
-/// F3.5 S5: where this project keeps its rasters, `None` with no project open
-/// ([`crate::ui::window::narrate_session_tree`] is the app's one answer for "this session's folder", resolved the
-/// way every other flow resolves it). Public because [`make_here`] is.
 pub fn raster_dir() -> Option<std::path::PathBuf> {
     crate::ui::window::narrate_session_tree().map(|tree| tree.svg_raster_dir())
 }
 
-/// F3.5 S5: make (or find) this drawing's raster in THIS project's cache folder, answering which ffmpeg and which
-/// folder this session uses so a caller does not have to. The ask below goes through here; anything else that has to
-/// settle a file's preview copy without a window in hand uses it too.
 pub fn make_here(path: &str) -> Result<std::path::PathBuf, String> {
     let paths = crate::settings::from_environment();
     let program = match &paths {
@@ -240,16 +195,10 @@ pub fn raster_of(path: &str) -> Option<std::path::PathBuf> {
     SVG_RASTERS.with(|cell| cell.borrow().raster_of(path))
 }
 
-/// The cache's answer for a file right now — Ready / Busy / Failed / NeedsRaster. `Rasters` has no read-only
-/// lookup (asking IS how the module learns about a file), so this asks and reports what it was told, without
-/// claiming a second copy of the cache's rule.
 pub fn svg_raster_state(path: &str) -> fx_svg::Slot {
     SVG_RASTERS.with(|cell| cell.borrow_mut().request(path))
 }
 
-/// F3.5 S2/S3: the box came off the preview, now what? The seam BOTH the gesture AND the widget test drive,
-/// shaped exactly like `text_drag_ended_with_source`: the source's pixel size is handed in because no ffprobe
-/// runs headless, and nothing here composes a rule — every answer comes from `fx_svg`.
 pub fn svg_drag_ended_with_source(
     window: &adw::ApplicationWindow,
     from: (f64, f64),
@@ -258,8 +207,6 @@ pub fn svg_drag_ended_with_source(
 ) -> String {
     let dx = to.0 - from.0;
     let dy = to.1 - from.1;
-    // A press that did not travel is a CLICK wherever it landed, and for a drawing a click takes the MIDDLE
-    // ([`fx_svg::MIDDLE`]), not text's lower third: a drawing is as often the subject as a decoration.
     let choice = if dx.abs() < fx_zoom::DRAG_MIN_PX || dy.abs() < fx_zoom::DRAG_MIN_PX {
         fx_text::BoxChoice::Click
     } else {
@@ -290,9 +237,6 @@ pub fn svg_drag_ended_with_source(
             log_line(&said);
             said
         }
-        // No seconds to place it at: no line and no selection. NO form is drawn -- a chooser with no moment to
-        // happen in cannot be answered. `fx_svg::NO_LINE` is this flow's own sentence for it (NOT zoom's, which
-        // says "the effect"; four buttons ask for the same missing thing in the words of what each one does).
         None => {
             log_line(fx_svg::NO_LINE);
             fx_svg::NO_LINE.to_string()
@@ -306,9 +250,6 @@ pub fn svg_drag_ended(window: &adw::ApplicationWindow, from: (f64, f64), to: (f6
     svg_drag_ended_with_source(window, from, to, source)
 }
 
-/// This window's svg-form holder name. Only the Cut tab's instance is ever drawn into or read from —
-/// `page_box` runs once per tab, so an unscoped name exists four times per window (the `fold-badges` /
-/// `camera-rows` / `zoom-form` / `speed-form` / `text-form` rule).
 fn cut_svg_form_name() -> String {
     format!("svg-form-{}", Page::Cut.label())
 }
@@ -443,16 +384,10 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
 }
 
 /// Put this drawing's raster on the form's picture row, if there is one.
-///
-/// The file comes from the program's own cache ([`raster_of`]), never from a guess at a path, and it goes through
-/// gdk-pixbuf exactly as [`crate::ui::cut_picture::show_frame`] puts a frame of footage on the preview: a png that
-/// cannot be decoded leaves the row EMPTY rather than showing a stale drawing, because an old card beside a new
-/// file name would say something false about the file the row names.
 pub fn paint_svg_raster(window: &adw::ApplicationWindow, path: &str) {
     let Some(picture) = find_widget_by_name(window.upcast_ref(), "svg-preview-raster")
         .and_then(|w| w.downcast::<gtk::Picture>().ok())
     else {
-        // No form on screen: nothing to update. The next `show_svg_form` paints the row from the cache anyway.
         return;
     };
     paint_svg_raster_in(&picture, path);
@@ -472,7 +407,6 @@ fn paint_svg_raster_in(picture: &gtk::Picture, path: &str) {
 
 /// The raster row's sentence: the size, and what the per-file cache says about this file right now.
 fn svg_raster_note(path: &str) -> String {
-    // // effects.previewRasterPx
     let state = match svg_raster_state(path) {
         fx_svg::Slot::Ready => "ready",
         fx_svg::Slot::Busy => "being made",
@@ -523,9 +457,6 @@ pub fn swap_svg_file(window: &adw::ApplicationWindow, file: &str) {
     paint_svg_raster(window, file);
 }
 
-/// Drop the arm and the chosen file WITHOUT touching an open form. `press_svg_cancel` takes the form down too,
-/// which is what Cancel should do but not what a caller tidying between checks wants; this clears only the two
-/// pieces of state the arm owns.
 pub fn release_svg_arm_only() {
     set_svg_armed(false);
     set_svg_file(None);
@@ -551,9 +482,6 @@ fn set_svg_form(form: Option<fx_svg::Form>) {
 }
 
 thread_local! {
-    /// Whether ▨ SVG is armed, i.e. the next press on the preview draws a drawing box. Shaped exactly like
-    /// F3.1's `ZOOM_ARMED` / F3.4's `TEXT_ARMED`: the preview's ONE drag gesture dispatches on this to decide
-    /// whose flow a press is.
     static SVG_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
     /// The chosen drawing. Carried apart from the form because the arm happens before the form exists: the arm
@@ -576,8 +504,6 @@ thread_local! {
 
     /// The per-file preview raster cache, process-wide so one logo placed six times asks ffmpeg ONCE (S5). Not
     /// per-window: the raster belongs to the file, not to whoever opened it.
-    // `RefCell::default()` rather than `new(Rasters::default())`: the latter is not a const fn (it builds a
-    // HashMap), and thread_local statics need a const initialiser. Same empty cache either way.
     static SVG_RASTERS: std::cell::RefCell<fx_svg::Rasters> = std::cell::RefCell::default();
 }
 
@@ -604,10 +530,6 @@ fn svg_entry(name: &str) -> Option<gtk::Entry> {
 
 /// F3.5 S4: Apply. Reads the fields back into an [`fx_svg::Form`] and hands them to [`fx_svg::apply`], which
 /// decides whether there is a file at all and shares the fades. A refusal keeps the form OPEN.
-///
-/// That matters most for the no-file case: `fx_svg::NO_FILE` says "choose a drawing and it goes on the picture".
-/// Closing the form on that refusal would throw away the box that was just drawn and the Length that was just
-/// typed, both of which still stand.
 pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
     if !svg_form_owner(window) {
         return "no drawing form on this page \u{2014} pick a drawing first".to_string();
@@ -615,8 +537,6 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
     let Some(stored) = svg_form_open() else {
         return "no drawing to apply \u{2014} press \u{25a8} SVG first".to_string();
     };
-    // A non-parsing entry keeps what the form already held rather than becoming zero, so a half-typed number
-    // cannot silently place a 0-second drawing -- the same rule `press_text_apply` holds to.
     let read = |name: &str, keep: f64| -> f64 {
         svg_entry(name)
             .map(|entry| entry.text().trim().to_string())
@@ -637,7 +557,6 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
     let fx = match fx_svg::apply(&form) {
         Ok(fx) => fx,
         Err(reason) => {
-            // Verbatim, form still open. No record, no history write: nothing happened yet.
             log_line(&reason);
             live_form_refused();
             return reason;
@@ -652,8 +571,6 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
     refresh_effects_lane(window);
     close_svg_form(window);
     set_svg_armed(false);
-    // The sentence is `fx_record`'s own ("SVG recorded — ↶ Undo takes it back"), reused rather than composed
-    // here: a hand-placed drawing and a dropdown-recorded one are the same news about the same kind.
     let said = fx_record::recorded_status(cut::EffectKind::Svg);
     log_line(&said);
     said

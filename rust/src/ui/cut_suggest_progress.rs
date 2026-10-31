@@ -1,14 +1,5 @@
-//! §F2.14 S2b — "Streaming progress counts segments", painted.
-//!
-//! [`crate::ui::cut_suggest_watch::Call::report`] already answers what the progress is: the status sentence,
-//! the bar's fraction, and whether the bar is still pulsing because no segment has closed yet. What was
-//! missing was the half that puts those three on the run bar, so the clause described a rule with no door and
-//! §S2b's call ran from press to answer showing nothing but a standing bar.
-//!
-//! Like the rest of the suggest seam, the page hands itself in rather than this module reaching into
-//! `ui::window` (which is past its size budget): [`install`] runs from `build_window`, and [`watch`] answers
-//! the same `paint` for a window built by a test. Nothing here decides a number — every field comes from
-//! [`Call::report`].
+//! §F2.14 S2b: "Streaming progress counts segments", painted on the run bar.
+//! Everything comes from [`Call::report`]; [`install`] runs from `build_window`, and [`watch`] answers the same `paint` for a test window.
 
 use crate::ui::cut_suggest_watch::Progress;
 
@@ -17,24 +8,17 @@ type Paint = fn(&adw::ApplicationWindow, &Progress);
 
 thread_local! {
     static PAINT: std::cell::Cell<Option<Paint>> = const { std::cell::Cell::new(None) };
-    /// Every reading this thread's doors painted, oldest first. The bar's sentence is a transient — the press
-    /// overwrites the row with its own answer the moment the call ends, and GTK's `ProgressBar` has no getter
-    /// to read a fraction or a pulse back — so the door keeps what it was told. A history, not a cache: the
-    /// paint still happens, and a test of a press reads the line that already came and went.
+    /// Every reading painted on this thread, oldest first: GTK's `ProgressBar` has no getter and the press overwrites the sentence.
     static SAID: std::cell::RefCell<Vec<Progress>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Install this window's progress door, from `ui::window::build_window` — the same moment the suggest edit
-/// door goes on (`cut_suggest_land::install`), so a page that can land a suggestion can also show one coming.
+/// Install this window's progress door, from `ui::window::build_window`.
 pub fn install(paint: Paint) {
     PAINT.with(|slot| slot.set(Some(paint)));
 }
 
-/// Paint one reply's progress on the newest window, through the installed door. No window and no door means
-/// no page to tell — the state a headless logic test runs the attempt loop in — so the reading is simply
-/// dropped rather than failing the call.
+/// Paint one reply's progress on the newest window; with no window or door the reading is dropped.
 pub fn watch(progress: &Progress) {
-    // Suggest's model call runs on a worker (§03-shell §1); the paint reads the window, so it runs there.
     if crate::ui::background::on_worker() {
         let reading = progress.clone();
         crate::ui::background::on_window_thread(move || watch(&reading));
@@ -49,13 +33,11 @@ pub fn watch(progress: &Progress) {
     SAID.with(|held| held.borrow_mut().push(progress.clone()));
 }
 
-/// The readings painted so far on this thread, oldest first. For a test that must see a progress line the page
-/// has already overwritten; the program never reads it.
+/// Readings painted so far on this thread; test-only.
 pub fn painted_for_test() -> Vec<Progress> {
     SAID.with(|held| held.borrow().clone())
 }
 
-/// Forget them, so the next press's readings are only its own.
 pub fn clear_painted_for_test() {
     SAID.with(|held| held.borrow_mut().clear());
 }

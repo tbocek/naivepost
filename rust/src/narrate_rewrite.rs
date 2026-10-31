@@ -1,17 +1,4 @@
 //! P.policy.narrationRewrite — which clips the one narration call covers.
-//! `spec/10-parameters.md` row `P.policy.narrationRewrite` (default **off**), read by F4.1 S4
-//! ("Write a line for every clip without one, and for every clip when P.policy.narrationRewrite is
-//! on"). The spec's own wording of the reason strings lives in `spec/07-narrate.md` F4.1 S3; this
-//! module spells them out so the log cannot drift from it.
-//!
-//! This module owns the *decision* only: given the toggle, the cut's clips and the narration that
-//! exists, which clips go into the call, and what the log says about why. Writing the lines is F4.2's
-//! call and speaking them is S6's; neither is here, so the choice can be tested without a model.
-//!
-//! The silent list is never a filter here. A clip marked silent plays its own audio — that marker is the
-//! user's decision, not the model's, and it survives whether or not this pass rewrites entries
-//! ([`crate::audit_gaps::silent_survives_entry_rewrite`]). Nothing in this module mutates a
-//! [`Narration`], so the survival is structural rather than a rule to remember.
 
 use crate::narration::Narration;
 
@@ -21,12 +8,6 @@ use crate::narration::Narration;
 pub const REWRITE_DEFAULT: bool = false;
 
 /// The clips this ▶ writes a line for.
-///
-/// Off (the default): only clips with no line — an existing line is left exactly as it is, which is
-/// what makes off the safe default: nothing the user has edited disappears under a rewrite they did not
-/// ask for. On: every clip, in order, because the user asked for the whole narration to be redone.
-///
-/// Order is preserved rather than sorted: the caller passes the cut's clips, already in play order.
 pub fn clips_to_write(
     rewrite: bool,
     clips: &[(f64, f64)],
@@ -54,12 +35,6 @@ pub fn unwritten(clips: &[(f64, f64)], narration: &Narration) -> usize {
 /// The `<why>` of F4.1 S3's log line, `>>> narrate: <why> — writing N clip(s), one LLM call, then
 /// speaking them`. The reader is told why this run is happening, because a rewrite that came from a
 /// toggle reads differently from one forced by a moved cut.
-///
-/// Precedence, decided here: the toggle wins over staleness. Someone who turned rewriting on asked for
-/// it, so saying "clip 2 has no narration" would describe a side effect instead of the cause. Past
-/// that, a narration with nothing in it is its own reason; lines sitting on video the cut dropped come
-/// next, since they explain extra work the run has to undo; and the plain case names the first clip
-/// with no line, which is what the user can act on.
 pub fn why(
     rewrite: bool,
     clips_without_line: &[usize],
@@ -100,10 +75,6 @@ pub fn indexes_without_line(clips: &[(f64, f64)], narration: &Narration) -> Vec<
         .collect()
 }
 
-/// Whether this clip is marked silent — delegated whole to [`Narration::is_silent`] so there is one
-/// answer. A silent clip is still written for when it has no line (it needs a caption even when nothing
-/// is spoken); what silence guarantees is that no voice is laid on it, and that the marker outlives any
-/// entry rewrite ([`crate::audit_gaps::silent_survives_entry_rewrite`]).
 pub fn silent_kept(narration: &Narration, start: f64, end: f64) -> bool {
     narration.is_silent(start, end)
 }

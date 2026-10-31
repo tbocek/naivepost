@@ -1,11 +1,4 @@
 //! The sources list (spec/03-shell.md §4) — one row per file, and what each file is for.
-//!
-//! The list lives on Prepare but is specified with the shell because the shell is what snapshots it:
-//! ▶ freezes these rows as the session a run works through (F0.2 S3), so every rule here has to hold
-//! between two presses, not merely at load. This module is that state and those rules; the rows in
-//! `ui` draw them and forward clicks (spec/00-principles.md §5).
-//!
-//! This item cites no `P.*` parameter and no `tool:*`.
 
 use std::path::Path;
 
@@ -14,9 +7,6 @@ use crate::clock;
 use crate::project::{Project, Source};
 use crate::run::NARRATOR_SLOTS;
 
-/// The key to a row's four symbols, appended to each of their tooltips so the three the pointer is
-/// *not* on are explained where the eye already is. The track button and ⚠ do not carry it: they are
-/// self-evident once the four are, and §4 says so outright.
 pub const ROW_KEY: &str = "\n\nThe symbols on every row, in order:\n\
     🎥 footage — frames come out of it, and the cut is made of it\n\
     🎤 narrator — which of the voices this is; 1 speaks the narration\n\
@@ -41,8 +31,6 @@ pub const SEPARATE_TIP: &str =
     voice and everything else. This row keeps everything else; the voice\n\
     is added as a track of its own, so it can be cut and mixed apart.";
 pub const REMOVE_TIP: &str = "Remove from this session \u{2014} the file itself is left alone";
-/// The track popover's head. Its three-line explanation belongs to §5's lane rules; the face of the
-/// button is `<on>/<total>`, which says what is ticked without opening anything.
 pub const TRACKS_TITLE: &str = "Audio tracks in this file";
 pub const WARN_TIP: &str = "No timestamp in the file name \u{2014} this file starts where the\n\
     session does, which is only right if it was rolling from the start.\n\
@@ -50,18 +38,14 @@ pub const WARN_TIP: &str = "No timestamp in the file name \u{2014} this file sta
     clip_2026-08-08_19-55-15.mkv \u{2014} most recorders already do \u{2014} or drag it\n\
     into place with the right mouse button on the Cut page.";
 
-/// One audio stream of a file, as the probe found it. Probing is F1.x's; this module only draws what
-/// it is told about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackInfo {
     pub index: u32,
-    /// The stream's own title, or a placeholder when the container has none.
     pub title: String,
     pub channels: u8,
 }
 
 impl TrackInfo {
-    /// The popover's row for this track: numbered, titled, and saying what it holds.
     pub fn label(&self) -> String {
         let shape = if self.channels >= 2 { "stereo" } else { "mono" };
         format!("Track {} \u{2014} {} ({shape})", self.index, self.title)
@@ -80,11 +64,8 @@ pub enum Control {
     Remove,
 }
 
-/// The row's name as §4 shows it: the file's own name, the last part of the stored path whichever of
-/// the one path rule's three spellings it uses (01 §2). Nothing is stripped off it — neither the
-/// extension nor a recording's timestamp — because the stamp is what §4 places the file by (F1.1) and
-/// two files differing only by extension are two files (see `clash`). The middle-ellipsis and the
-/// path-carrying tooltip belong to the row's label in `ui`.
+/// The row's name as §4 shows it: the file's own name, the last part of the stored path whichever
+/// of the one path rule's three spellings it uses (01 §2).
 pub fn row_name(path: &str) -> String {
     base_name(path).to_owned()
 }
@@ -101,26 +82,17 @@ pub fn controls(source: &Source, stream_count: usize, any_track_out: bool) -> Ve
     controls
 }
 
-/// The controls this row shows, in order. `stream_count` and `tracks_out` come from the caller's
-/// probe (F1.x owns probing), which is why they are arguments rather than something read here.
-///
-/// Two of §4's numbered badges are deliberately absent: **9** frame size and **11** Style, both "gone
-/// in the rewrite" — frames are stored at the video's own size and the policy derives style from the
-/// User Context. **8** Freq and **10** Language are this page's other section (the frame controls),
-/// not rows of this list.
+/// The controls this row shows, in order.
 pub fn row_controls(source: &Source, stream_count: usize) -> Vec<Control> {
     let mut controls = vec![];
-    // Only a video may be footage, so on an audio file the control is not off — it does not exist.
     if is_video(Path::new(base_name(&source.path))) {
         controls.push(Control::Footage);
     }
     controls.push(Control::Narrator);
     controls.push(Control::Name);
-    // One stream needs no menu: there is nothing to choose.
     if stream_count >= 2 {
         controls.push(Control::Tracks);
     }
-    // A name with no stamp starts where the session does, which is a guess worth warning about.
     if clock::name_stamp(base_name(&source.path)).is_none() {
         controls.push(Control::Warning);
     }
@@ -131,27 +103,23 @@ pub fn row_controls(source: &Source, stream_count: usize) -> Vec<Control> {
     controls
 }
 
-/// The last part of a stored path, whichever of the one path rule's three spellings it uses.
 fn base_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-/// §4's three-line explanation over the track checks: what a tick means, said once instead of on every
-/// check. The lane half of it is §5's rule; this is the sentence the popover shows.
+/// §4's three-line explanation over the track checks: what a tick means, said once instead of on
+/// every check.
 pub const TRACKS_HELP: &str =
     "Each ticked track becomes a lane of its own, mixed like a separate\n\
     recording. Untick one and its audio leaves the session; the last one\n\
     cannot come off, because a row that hears nothing has no transcript to fix.";
 
-/// Why the last ticked track refused to come off — said where the click happened.
 pub fn last_track_says(track: u32) -> String {
     format!("track {track} is the only one left -- a row must hear something")
 }
 
-/// Whether this row's voice can still be split off: a half of a split has no voice left to take off a
-/// voice, so its scissors are dead rather than gone. The suffix is the stem's, before the extension —
-/// `mic.split-voice.wav` is a product, `mic.wav` is not (the prototype's `splitProduct`, which lists
-/// the same four stems).
+/// Whether this row's voice can still be split off: a half of a split has no voice left to take off
+/// a voice, so its scissors are dead rather than gone.
 pub fn separable(source: &Source) -> bool {
     const SUFFIXES: [&str; 4] = [".split-voice", ".split-novoice", ".voice", ".novoice"];
     let name = base_name(&source.path);
@@ -171,8 +139,6 @@ pub fn set_sepvoice(project: &mut Project, index: usize, on: bool) -> bool {
     true
 }
 
-/// The footage toggle. Refuses on a row that is not a video: only a video may be footage, and a
-/// toggle that silently never sticks reads as a bug in the list rather than a rule about the file.
 pub fn toggle_footage(project: &mut Project, index: usize, on: bool) -> bool {
     let Some(source) = project.sources.get_mut(index) else {
         return false;
@@ -184,20 +150,12 @@ pub fn toggle_footage(project: &mut Project, index: usize, on: bool) -> bool {
     true
 }
 
-/// The voice button's cycle: 1 → 2 → … → N → 1. There is no "no voice": every recording is somebody.
-///
-/// Nobody else is moved to make room: a row that already holds a slot is somebody the user named. And a
-/// click that empties slot 1 leaves it empty: the auto-fill is for an add, a removal, a rescan or a load
-/// (§4), not for a person's own click. Refilling here handed slot 1 to another row behind the user's back,
-/// or straight back to the row just clicked, so the click did nothing.
 pub fn cycle_narrator(project: &mut Project, index: usize) -> u32 {
     let held = project
         .sources
         .get(index)
         .map(|source| source.narrator)
         .unwrap_or(0);
-    // 1 → … → the last voice → 1. Not exclusive: the number says WHICH VOICE, and one person is usually
-    // every recording of a session, so many rows share 1. A 0 the load has not cleaned yet moves to 1.
     let next = if held >= NARRATOR_SLOTS as u32 {
         1
     } else {
@@ -209,7 +167,6 @@ pub fn cycle_narrator(project: &mut Project, index: usize) -> u32 {
     next
 }
 
-/// The first row with this voice number.
 pub fn slot_holder(project: &Project, slot: u32) -> Option<usize> {
     project
         .sources
@@ -217,18 +174,13 @@ pub fn slot_holder(project: &Project, slot: u32) -> Option<usize> {
         .position(|source| source.narrator == slot && slot != 0)
 }
 
-/// A narrator MICROPHONE: a recording with a voice number that the video does not play (audio only), so its
-/// words are heard by the app and are not film: no seam into it is a seam in the cut, no retake is marked in
-/// it, and the transcript labels it as the commentary. A video with a voice number is only "voice N speaks
-/// here": its words are the film's. The first rewrite read every tagged row as a microphone, so a tagged
-/// camera recording's words were left out of the joins and the retake marking.
 pub fn is_narrator_mic(source: &Source) -> bool {
     source.narrator != 0 && !source.footage
 }
 
-/// The tooltip §4 puts on the narrator button: what the row is now, and that a click moves it on. Slot
-/// 1 gets the extra sentence because it is the one that matters (F2.14 reads it as the narration's
-/// voice).
+/// The tooltip §4 puts on the narrator button: what the row is now, and that a click moves it on.
+/// Slot 1 gets the extra sentence because it is the one that matters (F2.14 reads it as the
+/// narration's voice).
 pub fn slot_tip(slot: u32) -> String {
     match slot {
         0 | 1 => "voice 1: the narration is spoken in this voice \u{2014} click for voice 2".into(),
@@ -239,17 +191,17 @@ pub fn slot_tip(slot: u32) -> String {
     }
 }
 
-/// The row's warning badge, or nothing when there is nothing to warn about: §4 puts ⚠ on a file whose
-/// name carries no timestamp, because such a file starts where the session does — which is only right
-/// if it was rolling from the start.
+/// The row's warning badge, or nothing when there is nothing to warn about: §4 puts ⚠ on a file
+/// whose name carries no timestamp, because such a file starts where the session does.
 pub fn warning(source: &Source) -> Option<&'static str> {
     clock::name_stamp(base_name(&source.path))
         .is_none()
         .then_some(WARN_TIP)
 }
 
-/// The recording a voice is taken from: its dedicated microphone when it has one, else the first recording
-/// with that number (§5's lane naming, Narrate's voice and Produce's readouts all want one file).
+/// The recording a voice is taken from: its dedicated microphone when it has one, else the first
+/// recording with that number (§5's lane naming, Narrate's voice and Produce's readouts all want
+/// one file).
 pub fn narrator_of(project: &Project, slot: u32) -> Option<&str> {
     if slot == 0 {
         return None;
@@ -267,10 +219,6 @@ pub fn narrator_of(project: &Project, slot: u32) -> Option<&str> {
         .map(|source| source.path.as_str())
 }
 
-/// 🗑 Remove from this session. The list *is* the session (spec/01 §1), so dropping a row is how a
-/// file leaves a project; the file itself is left alone, which is why nothing here touches a path.
-/// Slot 1 is re-filled when its holder was this row — "after an add, a removal, a rescan that dropped
-/// a row" (§4).
 pub fn remove(project: &mut Project, index: usize) -> Option<Source> {
     if index >= project.sources.len() {
         return None;
@@ -283,12 +231,6 @@ pub fn removal_status(path: &str, left: usize) -> String {
     format!("removed {} -- {left} source(s) left", base_name(path))
 }
 
-/// The first two rows sharing one base name. Two sources of one name would write into one folder
-/// under `inputs/`, and the second run would quietly find the first's transcript, so ▶ refuses (§4's
-/// "two sources with one base name refuse the run").
-///
-/// Compared on the whole base name including the extension, which is what makes `project:sources/
-/// clip.mkv` clash with `/media/clip.mkv`: they would both land in `inputs/clip`.
 pub fn clash(project: &Project) -> Option<(String, String)> {
     let mut seen: Vec<(&str, &str)> = vec![];
     for source in &project.sources {
@@ -301,8 +243,6 @@ pub fn clash(project: &Project) -> Option<(String, String)> {
     None
 }
 
-/// The log's line for a clash: it names both rows and the folder they would share. `base` is the name
-/// without its extension — the folder either file would be written into.
 pub fn clash_log(a: &str, b: &str) -> String {
     let base = base_name(a)
         .rsplit_once('.')
@@ -319,9 +259,6 @@ pub fn clash_status(a: &str, b: &str) -> String {
     )
 }
 
-/// Clear what a hand-edited project cannot mean: a voice past the last slot, or frames promised out of a file
-/// that has none, each reported. Several rows in one voice are fine: the number says which voice. A 0, the
-/// "no voice" older files could hold, is voice 1 now and goes unsaid: it is no mistake of the person's.
 pub fn clean_on_load(project: &mut Project, report: &mut Vec<String>) {
     for source in &mut project.sources {
         if source.narrator > NARRATOR_SLOTS as u32 {
@@ -346,8 +283,6 @@ pub fn clean_on_load(project: &mut Project, report: &mut Vec<String>) {
     }
 }
 
-/// The track popover's checks. The last ticked track cannot be unticked: a row with no track would
-/// hear nothing, and an empty `tracks` is what "not chosen yet" means elsewhere.
 pub fn tick_track(project: &mut Project, index: usize, track: u32, on: bool) -> bool {
     let Some(source) = project.sources.get_mut(index) else {
         return false;
@@ -368,9 +303,9 @@ pub fn tick_track(project: &mut Project, index: usize, track: u32, on: bool) -> 
     true
 }
 
-/// The audio streams a row hears, as 0-based stream indices (01 §2's `tracks`): what it lists, or the first
-/// stream alone when it lists none, which is how a project written before the menu existed reads. The first
-/// rewrite read an empty list as nothing ticked: a two-stream row showed "0/2" with both ticks off.
+/// The audio streams a row hears, as 0-based stream indices (01 §2's `tracks`): what it lists, or
+/// the first stream alone when it lists none, which is how a project written before the menu
+/// existed reads.
 pub fn ticked_tracks(source: &Source) -> Vec<u32> {
     if source.tracks.is_empty() {
         vec![0]
@@ -386,8 +321,6 @@ pub fn tracks_dimmed(any_track_out: bool) -> bool {
     any_track_out
 }
 
-/// The face of the track button: what is ticked over what the file holds, or nothing at all for a file
-/// with a single stream — that row has no menu to open.
 pub fn tracks_face(source: &Source, stream_count: usize) -> Option<String> {
     if stream_count < 2 {
         return None;
@@ -395,9 +328,7 @@ pub fn tracks_face(source: &Source, stream_count: usize) -> Option<String> {
     Some(format!("{}/{}", ticked_tracks(source).len(), stream_count))
 }
 
-/// Each ticked track becomes a lane, mixed like a separate recording (§4). Cut's §5 is the authority on
-/// what a lane is called; this is the list's own view of which rows will be split and after what — a
-/// file whose ticks are down to one stream is used as it stands, so it contributes no lanes. Spelled
+/// Each ticked track becomes a lane, mixed like a separate recording (§4). Spelled
 /// `{stem}-t{track}` so two tracks of one file never share a name.
 pub fn split_lanes(project: &Project) -> Vec<String> {
     project

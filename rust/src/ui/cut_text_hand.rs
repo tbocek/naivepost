@@ -1,11 +1,5 @@
 //! F3.4 ✐ Text (caption) by hand — the page half of the flow: the arm, the form drawer, the Apply —
 //! plus F3.2's Aspect-ratio dropdown door, which reads and repaints the same readout row.
-//!
-//! Split out of `window.rs` unchanged: the rules live in [`crate::fx_text`] and [`crate::fx_aspect`], and
-//! what is here is only the state a press leaves behind and the widgets that show it — the words entry, the
-//! box-choice dropdown, the fade toggles and the two buttons. No decision of its own. A caption has a box,
-//! so unlike Volume and Label there IS something to arm: the drawing layer stays up, and the drag legs land
-//! through [`text_drag_ended_with_source`] rather than a rule of their own.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -26,20 +20,6 @@ use crate::ui::window::{
     zoom_field_row, INSERT_PLACE_KNOWN, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
 };
 
-// --- F3.4 Text (caption) by hand: the arm, the form drawer ------------------------------------------------------
-//
-// The rule half lives in `src/fx_text.rs` (`arm`/`arm_words`, `camera_layer_stays_up`, `BoxChoice`, `place`,
-// `form_title`, `FORM_FIELDS`, `WORDS_HELP`/`FADES_HELP`/`WORDS_ROWS`/`MIN_SECONDS`/`NO_WORDS`, `Form`,
-// `apply`, and the S4 fitting + S5 snap/move/resize rules). What is here is only the state a press leaves
-// behind and the widgets that show it — no decision of its own.
-
-/// F3.4 S1: what pressing ❝ Text did — arm or disarm. NOTHING is recorded on this press: until the words are
-/// typed there is no caption to place, so the record happens in `press_text_apply`.
-///
-/// This branch deliberately does NOT call `set_camera_layer_down(...)`. §S1 keeps the camera layer UP while a
-/// caption is drawn because the box is measured against the OUTPUT frame ([`fx_text::camera_layer_stays_up`])
-/// — the mirror-image reason ⊕ Zoom puts it DOWN: a zoom frames on the source and must see the source, while a
-/// caption sits on what the finished video shows, so a camera stepping aside would move the ground under it.
 pub fn press_text_item(window: &adw::ApplicationWindow) -> String {
     // A marked stretch outranks the line for the tail's wording; a band under every effect's floor for "marked"
     // (cut_speed::MIN_MARKED_SECONDS) is not a band at all, exactly as F3.3 reads it.
@@ -61,15 +41,10 @@ pub fn press_text_item(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-/// This window's text-form holder name. Only the Cut tab's instance is ever drawn into or read from —
-/// `page_box` runs once per tab, so an unscoped name exists four times per window (the `fold-badges` /
-/// `camera-rows` / `zoom-form` / `speed-form` rule).
 fn cut_text_form_name() -> String {
     format!("text-form-{}", Page::Cut.label())
 }
 
-/// Resolve THIS window's text-form holder through its own content, so a closed window's surviving tree cannot
-/// answer for a live one.
 fn text_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     let content = window.content()?;
     find_widget_by_name(&content, &cut_text_form_name())?
@@ -77,8 +52,6 @@ fn text_form_box_raw(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
         .ok()
 }
 
-/// Hide and empty the caption form. Used by the disarm path too, so a form left open from an earlier press
-/// cannot sit on screen after the entry that opened it has been released.
 pub(crate) fn close_text_form(window: &adw::ApplicationWindow) {
     set_text_form(None);
     if let Some(holder) = text_form_box_raw(window) {
@@ -86,9 +59,6 @@ pub(crate) fn close_text_form(window: &adw::ApplicationWindow) {
     }
 }
 
-/// F3.4 S3: draw the form "Text at m:ss" — the five fields in [`fx_text::FORM_FIELDS`]'s order, with Apply
-/// and Cancel. Built into locals and appended LAST in one pass: a widget that already has a parent cannot be
-/// appended again and GTK asserts it, so nothing here may travel between calls.
 pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     // Hidden FIRST, before anything is touched: while invisible its children cannot read as "already parented
     // here" to a later pass, and the clear below then removes exactly what this holder owns.
@@ -116,8 +86,6 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     // start a new line inside those three; a one-line `gtk::Entry` ends the field on Enter, which would leave
     // no way to break a line at all. A later refactor that "simplifies" this to an Entry silently breaks the
     // multi-line rule, so the type itself is the documentation.
-    // §S3 asks for "the column's full width", so the key sits ABOVE the box instead of beside it: in a row with
-    // a label the box only ever got what the label left over (and a fixed 220 px at that).
     let words_row = gtk::Box::new(gtk::Orientation::Vertical, 2);
     let words_key = gtk::Label::new(Some(fx_text::FORM_FIELDS[0]));
     words_key.set_xalign(0.0);
@@ -152,11 +120,6 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         "text-field-length",
         &trim_seconds(fx.dur),
     );
-    // The two fades share ONE row, as `spec/img/06-text.png` draws them: `Fade in (s) [0.3]  Fade out (s) [0.3]`
-    // side by side rather than stacked. §S3's ORDER is untouched — Length, then Fade in, then Fade out, then Curve,
-    // each field still its own named entry under one holder row (`caption_text_widgets` reads that order off the
-    // holder's children) — only their layout differs, and it is text-local: `zoom_field_row` stays as the zoom and
-    // speed forms want it.
     let fades = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     fades.append(&zoom_field_row(
         fx_text::FORM_FIELDS[2],
@@ -201,9 +164,6 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     wire_text_buttons(window);
 }
 
-/// The `Fx` the gesture produced, as the caption form's own state — the fields a person edits are these
-/// numbers and words, so the form holds them and Apply reads them back rather than reaching into the cut.
-/// Named `caption_form_of`, not `form_of`: F3.3's speed block already owns that name for its own Form.
 fn caption_form_of(fx: &cut::Fx) -> fx_text::Form {
     fx_text::Form {
         t: fx.t,
@@ -221,16 +181,11 @@ fn caption_form_of(fx: &cut::Fx) -> fx_text::Form {
     }
 }
 
-/// F3.4: whether ❝ Text is armed right now — waiting for a click or a drag on the preview.
 pub fn text_armed() -> bool {
     TEXT_ARMED.with(|cell| cell.get())
 }
 
 /// Take the caption arm down WITHOUT touching an open form — the mirror of `cut_svg::release_svg_arm_only`.
-/// Public because the band's Esc (`ui::press_band_esc`) owns the key whenever an effect is in hand and so
-/// claims it before this kind's own controller runs: with the arm raised on a window that does not own the
-/// caption form, `press_text_esc` answers `None` (it only releases what its own window drew) and the arm
-/// would stay up after a press that said "cancelled". This clears the arm alone, leaving any form standing.
 pub fn release_text_arm_only() {
     set_text_armed(false);
 }
@@ -239,8 +194,6 @@ fn set_text_armed(armed: bool) {
     TEXT_ARMED.with(|cell| cell.set(armed));
 }
 
-/// F3.4 S3: the caption form waiting on the page, before Apply. What a widget test reads to assert the same
-/// state the logic test asserts ([`fx_text::Form`]) rather than a painted field.
 pub fn text_form_open() -> Option<fx_text::Form> {
     TEXT_FORM.with(|cell| cell.borrow().clone())
 }
@@ -250,23 +203,14 @@ fn set_text_form(form: Option<fx_text::Form>) {
 }
 
 thread_local! {
-    /// Whether ❝ Text is armed, i.e. the next press on the preview draws a caption box. Shaped exactly like
-    /// F3.1's `ZOOM_ARMED`: the preview's ONE drag gesture dispatches on this to decide whose flow a press is.
     static TEXT_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
-    /// The form a landed box left waiting on the page. `None` is no form open, which is also what hides the
-    /// holder — one slot answers both questions so they cannot disagree.
     static TEXT_FORM: std::cell::RefCell<Option<fx_text::Form>> =
         const { std::cell::RefCell::new(None) };
 
-    /// The window whose caption form was last shown, so the field readers have THIS window's tree to look in
-    /// rather than whichever tree a name walk reaches first.
     static LAST_TEXT_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
         const { std::cell::RefCell::new(None) };
 
-    /// Guard against a refresh-driven property write re-entering a handler through the sensitivity writes
-    /// below — the `CAMERA_REFRESH` / `ZOOM_FORM_REFRESH` shape. Nothing toggles a control on this form
-    /// today, so the guard is here for the day something does, not because a path needs it now.
     static TEXT_FORM_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -275,8 +219,6 @@ fn text_entry(name: &str) -> Option<gtk::Entry> {
     text_entry_of(&current_text_window().unwrap_or_default(), name)
 }
 
-/// The same lookup with the window passed in, which is what the debounced commit needs: by the time the pause runs
-/// out, the closure only has the window it was given.
 fn text_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
     find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
@@ -286,8 +228,6 @@ fn current_text_window() -> Option<adw::ApplicationWindow> {
     LAST_TEXT_WINDOW.with(|cell| cell.borrow().clone())
 }
 
-/// Does THIS window own the live caption form? Two windows both holding one would put Apply's write into
-/// whichever tree the reader reached first.
 fn text_form_owner(window: &adw::ApplicationWindow) -> bool {
     LAST_TEXT_WINDOW.with(|cell| {
         cell.borrow()
@@ -297,12 +237,6 @@ fn text_form_owner(window: &adw::ApplicationWindow) -> bool {
     })
 }
 
-/// F3.4 S3: Apply. Reads the five fields back into an [`fx_text::Form`] and hands them to [`fx_text::apply`],
-/// which decides whether there are words at all and shares the fades. A refusal keeps the form OPEN.
-///
-/// The empty-words case is why: `fx_text::NO_WORDS` says "type the words and they go on the picture — the form
-/// applies as you type it". Closing the form on that refusal would throw away the very words the sentence is
-/// asking for, so the door prints the reason and leaves everything on screen.
 pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
     if !text_form_owner(window) {
         return "no caption form on this page \u{2014} press \u{275d} Text first".to_string();
@@ -352,10 +286,6 @@ pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
     said
 }
 
-/// Type words into the caption form's OWN TextView and let the page repaint from it, which is the path typing
-/// takes: the field is the app's widget, and [`press_text_apply`] reads it back from the same place. A snapshot
-/// needs the caption visible in the shot, and there was no door for putting words into the field from outside a
-/// keyboard until this one.
 pub fn text_type_words(window: &adw::ApplicationWindow, words: &str) -> String {
     find_widget_by_name(window.upcast_ref(), "text-field-words")
         .and_then(|w| w.downcast::<gtk::TextView>().ok())
@@ -370,9 +300,6 @@ pub fn text_type_words(window: &adw::ApplicationWindow, words: &str) -> String {
         })
 }
 
-/// Read the caption's words back out of the TextView, typed newlines intact. `buffer.bounds()` gives the whole
-/// buffer's range and `delete_range(.., true)` keeps the visible characters rather than their display
-/// equivalents, which is what a file has to store.
 fn text_words() -> Option<String> {
     LAST_TEXT_WINDOW.with(|cell| {
         cell.borrow()
@@ -387,16 +314,12 @@ fn text_words() -> Option<String> {
     })
 }
 
-/// F3.4 S3: Cancel drops the form and the arm and changes nothing on the cut — no record pushed, no history
-/// written, so ↶ still points where it did before ❝ Text was pressed.
 pub fn press_text_cancel(window: &adw::ApplicationWindow) -> String {
     close_text_form(window);
     set_text_armed(false);
     "left as it was \u{2014} no caption placed".to_string()
 }
 
-/// F3.4: Esc releases the arm or drops an open caption form, and claims no other key. Returns `None` when this
-/// window holds neither, so the key travels on to whatever else is listening.
 pub fn press_text_esc(window: &adw::ApplicationWindow) -> Option<String> {
     if !text_form_owner(window) || (text_form_open().is_none() && !text_armed()) {
         return None;
@@ -404,8 +327,6 @@ pub fn press_text_esc(window: &adw::ApplicationWindow) -> Option<String> {
     Some(press_text_cancel(window))
 }
 
-/// Wire the caption form's two buttons BY NAME. Each forwards one press and prints what comes back; neither
-/// holds a rule — same shape as `wire_speed_buttons`.
 fn wire_text_buttons(window: &adw::ApplicationWindow) {
     for (name, door) in [("text-apply-button", true), ("text-cancel-button", false)] {
         if let Some(button) = line_step_button(window, name) {
@@ -451,8 +372,6 @@ fn wire_text_buttons(window: &adw::ApplicationWindow) {
     });
 }
 
-/// Esc releases the caption arm / form, wired after `set_content` like every other control. Claims Escape only
-/// when this window owns something to release; otherwise the key travels on.
 pub(crate) fn wire_text_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
@@ -473,9 +392,6 @@ pub(crate) fn wire_text_esc(window: &adw::ApplicationWindow) {
     window.add_controller(controller);
 }
 
-/// F3.4 S2: the box came off the preview, now what? The seam BOTH the gesture AND the widget test drive,
-/// shaped exactly like `zoom_drag_ended_with_source`: the source's pixel size is handed in because no ffprobe
-/// runs headless, and nothing here composes a rule — every answer comes from `fx_text`.
 pub fn text_drag_ended_with_source(
     window: &adw::ApplicationWindow,
     from: (f64, f64),
@@ -527,15 +443,6 @@ pub fn text_drag_ended(
     text_drag_ended_with_source(window, from, to, source)
 }
 
-/// F3.4 S5: move the caption box by `delta` px on the preview. [`fx_text::move_box`] against the pinned panel
-/// frame is what supplies the rules — the `SNAP_PX` (10 px) snap to the finished frame's left/centre/right
-/// and top/middle/bottom lines, and the fact that a MOVED box offers all three of its own lines to snap with.
-///
-/// `target` decides WHICH box moves, and that is the whole difference between an edit and a draft:
-///  - `None` — the form's own box, the one a just-landed caption carries before Apply. Nothing is on the cut yet,
-///    so nothing is recorded; the sentence names the new fractions because the person is still choosing them.
-///  - `Some(index)` — a text record already on the cut. The change is written through `record_edit`, the same door
-///    Apply uses, so one ↶ takes this move back on its own (§F3.8 S3), and the sentence is `fx_band::moved`'s.
 pub fn nudge_text_box(
     window: &adw::ApplicationWindow,
     target: Option<usize>,
@@ -576,8 +483,6 @@ fn no_box_to_move() -> String {
     "no caption box to move \u{2014} press \u{275d} Text and land one first".to_string()
 }
 
-/// The resize twin of [`no_box_to_move`] — a different missing thing, so a different sentence, exactly as the two
-/// doors are separate gestures.
 fn no_box_to_resize() -> String {
     "no caption box to resize \u{2014} press \u{275d} Text and land one first".to_string()
 }
@@ -588,9 +493,6 @@ fn placed_text_box(window: &adw::ApplicationWindow, index: usize) -> Option<cut:
     (record.kind == "text").then_some(record)
 }
 
-/// A text record's box. `Fx::centre` already answers the lower third for a record that stores no box (§06#1's
-/// legacy line), which is the same default a freshly landed caption gets, so a placed caption without a stored box
-/// still grabs where it draws.
 fn record_box(record: &cut::Fx) -> fx_text::Box_ {
     let (cx, cy) = record.centre();
     fx_text::Box_ {
@@ -601,9 +503,6 @@ fn record_box(record: &cut::Fx) -> fx_text::Box_ {
     }
 }
 
-/// Put `record` back at `index` on the page's cut and take the history step. Built from `review_cut_of` with ONE
-/// entry replaced, then handed to `record_edit` — the door Apply uses, so the undo lands the move as its own step
-/// rather than folding it into the caption's placement.
 fn write_text_record(window: &adw::ApplicationWindow, index: usize, record: &cut::Fx) {
     let mut edited = review_cut_of(window);
     if let Some(slot) = edited.fx.get_mut(index) {
@@ -613,13 +512,6 @@ fn write_text_record(window: &adw::ApplicationWindow, index: usize, record: &cut
     refresh_effects_lane(window);
 }
 
-/// F3.4 S5: drag one edge of the caption box to `to_px`. [`fx_text::resize_box`] gives the rules — the dragged
-/// edge offers ONLY itself to snap with (pulling a side to the centre must not be second-guessed into moving the
-/// middle there), the axes stay independent, and the axis never goes under `MIN_BOX_PX` (16 px) so a caption
-/// cannot be shrunk into nothing and lost.
-///
-/// `target` is [`nudge_text_box`]'s question asked of a resize: `None` sizes the draft on the form, `Some(index)`
-/// sizes a record already on the cut and writes it through `record_edit`, so ↶ takes the resize back alone.
 pub fn drag_text_edge(
     window: &adw::ApplicationWindow,
     target: Option<usize>,
@@ -659,21 +551,6 @@ pub fn drag_text_edge(
     said
 }
 
-// --- F3.2 Aspect ratio: the dropdown ------------------------------------------------------------------------
-//
-// The rule half lives in `src/fx_aspect.rs` (`ASPECTS`, `stored`, `choose`, `apply` and the three status
-// sentences). What is here is only the door the dropdown calls and the row it repaints, so the callback
-// cannot hold a decision of its own.
-
-/// F3.2: pick one of the five shapes and this answers the whole press — store the shape, add the staying zoom
-/// when the flowchart says to, say what happened. Every string comes from [`fx_aspect::apply`]; nothing is
-/// composed here.
-///
-/// It writes through [`record_edit`] and never `seed_review_cut`: the aspect AND the ⊕ zoom it brings are ONE
-/// Undo step (§F3.2's "same Undo step"), which is exactly why they go through one call rather than two
-/// publishes. A refused or reported pick (source, or a lane that already decides) still goes through the same
-/// door — `fx_aspect::apply` adds no zoom there, so the history sees the aspect change alone and ↶ takes just
-/// that back.
 pub fn press_aspect(window: &adw::ApplicationWindow, choice: &str) -> String {
     let mut cut_ = review_cut_of(window);
     let status = fx_aspect::apply(&mut cut_, choice);
@@ -689,11 +566,6 @@ pub fn press_aspect(window: &adw::ApplicationWindow, choice: &str) -> String {
     status
 }
 
-/// Repaint the idle form's Aspect ratio row from the cut this window holds NOW. `cut_screen::aspect_shown`
-/// holds the one spelling of 'empty means the default', shared with `idle_readouts`, so the row and the
-/// dropdown beside it cannot drift to two different answers. Called from [`refresh_selection_readout`] —
-/// the same path that keeps every other control honest — so Undo, Revert and Clear move this row too instead
-/// of leaving the last picked shape on screen.
 pub(crate) fn refresh_aspect_readout(window: &adw::ApplicationWindow) {
     let cut_ = review_cut_of(window);
     let name = cut_screen::readout_widget("Aspect ratio");

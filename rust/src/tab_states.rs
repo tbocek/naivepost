@@ -1,20 +1,4 @@
 //! The tab states — `spec/11-flow-index.md` §2.
-//!
-//! §2's table asks two questions of each of the four tabs: *when it opens*, and *what the run bar's
-//! ▶ means there*. Both answers exist already, one rule per module; this module only puts the two
-//! columns side by side so a caller (the run bar, the tab row) asks one question and gets one
-//! answer. Nothing here decides anything twice:
-//!
-//! | column | who actually owns the rule |
-//! |---|---|
-//! | when it opens | [`crate::shell::lock`] |
-//! | what ▶ runs | [`crate::run::step`] + [`crate::run::transport_for`] |
-//! | refuses without a cut | [`crate::cut::NO_CUT_YET`] / [`crate::cut::exists`] |
-//! | the three preview modes | [`crate::cut_screen`] (`play_cut_lit`, `review_lit`) |
-//!
-//! Keeping the aggregation separate rather than folding it into `shell` or `run` is what lets a test
-//! ask "what does ▶ do on Narrate with no cut" without a window and without a
-//! filesystem — see [`play`].
 
 use crate::{
     cut,
@@ -25,37 +9,22 @@ use crate::{
 };
 
 /// What the run bar's ▶ means on a page right now (§2's third column).
-///
-/// `Transport { resume }` is the preview's own transport: `resume` true when it is cued (started
-/// but paused), false when it is playing and ▶ would pause it — the same shape as
-/// [`run::Pressed::ToggledTransport`], which is what a press turns into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Play {
-    /// Start the page's step: Prepare runs Prepare, Cut runs Suggest, [`Step::Narrate`] is
-    /// "write and speak", [`Step::Produce`] is "render".
     Step(Step),
     /// The preview owns the button until ⏹ ends it.
-    Transport { resume: bool },
-    /// ▶ has nothing to start here, and says why — the reason comes back as the second half of
-    /// [`play`]'s answer so no caller invents its own words.
+    Transport {
+        resume: bool,
+    },
     Refused,
 }
 
 /// Whether the tab opens, `None` meaning it does (§2's second column: "always" for three of them).
-///
-/// Only Cut waits, and its reason is [`shell::CUT_LOCK`] — the sentence a click bounces with and a
-/// hover shows. Narrate and Produce open always even with no footage and no cut: their refusal lives
-/// in [`play`], because the voice picker and the render settings are useful before any cut exists.
 pub fn opens(page: Page, project: &Project) -> Option<&'static str> {
     shell::lock(page, project)
 }
 
 /// What ▶ means on this page (§2's third column), plus the refusal sentence if there is one.
-///
-/// `has_cut` is the caller's answer from [`cut::exists`] — a bool rather than a tree, so this rule
-/// reads no filesystem and a test can set the state directly. Returns the play meaning and, for the
-/// two refusals, the sentence the status line shows; `(Play::Refused(..), reason)` pairs are kept
-/// together because the bar needs both and a caller must not pick its own words.
 pub fn play(page: Page, has_cut: bool, transport: run::Transport) -> (Play, Option<&'static str>) {
     // Prepare: "runs Prepare", always. It owns no preview transport ([`run::transport_for`] is
     // None), so neither the cut nor a playing preview can take the button away from it.
@@ -84,22 +53,6 @@ pub fn play(page: Page, has_cut: bool, transport: run::Transport) -> (Play, Opti
     (Play::Step(run::step(page)), None)
 }
 
-/// §2's "one lit, one ⏸": the three Cut preview modes are recording ▶, cut ▶✂ and review ▶✂✂, and
-/// exactly one of them is lit at a time.
-///
-/// The individual rules are [`cut_screen::play_cut_lit`] and [`cut_screen::review_lit`]; the
-/// recording is not a flag of its own but what is left when neither ✂ mode is on (see
-/// [`crate::preview`]). So a state with both ✂ flags set lights ▶✂✂ only — which is still one —
-/// while the broken states are the ones where a rule stops lighting anything: hence *at least* one
-/// lit for every combination, rather than an exact count that would never catch the bug it guards.
-/// §2's "one lit, one ⏸" as the three slots a painter reads: `[recording ▶, cut ▶✂, review ▶✂✂]`,
-/// exactly one of them true.
-///
-/// The rule is [`exactly_one_preview_lit`]'s own arithmetic, returned instead of merely asserted, so
-/// the three buttons on the Cut page paint their faces from ONE decision rather than each deriving
-/// its own `cut_only && !reviewing` inline (which is how two of them could light at once). Recording
-/// is what is left when neither ✂ mode runs, matching [`crate::preview`]. The invariant is checked
-/// here, on the program path: a state that lights nothing or lights two stops with this sentence.
 pub fn preview_lits(preview: &Preview) -> [bool; 3] {
     let lits = [
         !preview.cut_only && !preview.reviewing,

@@ -43,7 +43,7 @@ pub enum Speak {
 }
 
 /// S2: speak every line with no wav, unless the voice is captions only (`spec/07-narrate.md` §5 short-circuits job 1/2).
-/// A blank line is a deliberate silence ([`crate::narrate_off::lines_to_speak`]). The list holds the **words**; which wav
+/// A blank line is a deliberate silence (`crate::narrate_off::lines_to_speak`). The list holds the **words**; which wav
 /// each lands in is [`crate::narration::tts_key`]'s answer.
 pub fn speak_job(
     voice_is_captions: bool,

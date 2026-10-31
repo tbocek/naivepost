@@ -1,21 +1,4 @@
 //! F2.6 (Select) — `spec/05-cut.md` F2.6.
-//!
-//! A selection is of what it was drawn on: a left-drag on any track area no control claims draws a band
-//! scoped to that ground — that row's footage, or one recording's sound — and the band between the ruler
-//! and the thumbnails is then an object with handles (ends resize, middle moves, ✕ clears) whose ends snap
-//! to the cut's own borders. The page's marks and the Selection readout follow it live. A sound selection
-//! greys ＋ Add, | Split and － Remove and re-aims ⧉ Copy and Insert at sound.
-//!
-//! The Cut page wires this: `rust/src/ui/window.rs` draws `select-surface` (the drag area),
-//! `clear-selection` (S2's cross) and `selection-readout` (S3), and forwards every one of them through
-//! `ui::draw_selection`, `ui::clear_selection`, `ui::nudge_selection` and `ui::selection_verbs` — the
-//! page reports state and forwards actions, it decides none of them. What has NOT arrived is the ground
-//! itself: the real picture rows, wave strips, lanes and ruler come with F2.8/F2.10/F2.11, so today's
-//! surface is scoped `Surface::Ruler` rather than inventing tracks, and the ＋ Add / | Split / － Remove /
-//! ⧉ Copy / Insert buttons whose greying S4 describes: F2.7 drew ＋ Add, | Split and － Remove (see
-//! `crate::cut_verbs`), while ⧉ Copy and Insert still wait for their own rounds. The geometry constants of
-//! tracks themselves live in [`crate::cut_screen`]; this module holds only the numbers F2.6 reads and no
-//! other module owns: the drag slop, the grip, the snap reach and the two length floors.
 
 use crate::cut::{Cut, Lane};
 
@@ -36,8 +19,6 @@ pub const READOUT_NONE: &str = "Selection: --:--.- \u{2013} --:--.-";
 
 /// F2.6 S3: the readout's prefix. Kept once here so the label and any later copy agree on the word.
 pub const READOUT_PREFIX: &str = "Selection:";
-
-// --- S1: what a drag was drawn on ---------------------------------------------------------------------
 
 /// F2.6 S1: the ground a left-drag started on — every track area no control claimed: a picture row, a
 /// wave strip, a lane, the ruler, the empty part of the selection band, or the effects lane (which is the
@@ -69,10 +50,6 @@ pub enum Scope {
     Sound { recording: String },
 }
 
-/// F2.6 S1: a scope for seconds drawn on ground that belongs to no row — the ruler and the empty selection
-/// band. Both are listed as places a drag may start, and neither is a row or a recording, so the selection
-/// covers the whole timeline's footage: that is what the page can act on with it, and a row of `0` would
-/// quietly mean "the first camera" in a project whose footage lives on three.
 pub const ANY_ROW: usize = usize::MAX;
 
 /// F2.6 S1: may a verb aimed at `row` use this selection? A whole-timeline scope answers yes to every row,
@@ -102,13 +79,6 @@ impl Selection {
 }
 
 /// F2.6 S1: what one left-drag from `from` to `to` on `surface` selects, or nothing at all.
-///
-/// A picture row gives that row's footage; a wave strip or a lane gives the named recording's sound — and
-/// with no recording under the pointer there is nothing to select, so the answer is `None` rather than a
-/// sound selection that would fall back to footage by accident. The ruler and the empty band take the
-/// whole timeline's footage ([`ANY_ROW`], see its comment). The effects lane refuses (see
-/// [`fx_lane_press`] for what it does instead). Seconds are normalised, so a drag right-to-left draws the
-/// same band as one left-to-right.
 pub fn draw(surface: Surface, recording: Option<&str>, from: f64, to: f64) -> Option<Selection> {
     let scope = match surface {
         Surface::PictureRow(row) => Scope::Footage { row },
@@ -151,21 +121,8 @@ pub fn is_drag(moved_px: f64) -> bool {
     moved_px > DRAG_SLOP_PX
 }
 
-/// F2.6 S1/S2: the shortest band there may be — a selection with no length is invisible, cannot be grabbed
-/// again, and every action taken on it does nothing, so a hand that overshoots must not silently destroy
-/// the thing it was adjusting. `P.eng.minPieceSeconds` (spec/10-parameters.md: 0.04, "shortest remainder a
-/// removal may leave (about a frame)"), held here because F2.6's resize is the rule that reads it first.
 pub const MIN_SECONDS: f64 = 0.04;
 
-/// F2.6 S1: the vertical layout a drag's y is read against. The page draws its tracks in bands — ruler,
-/// then one picture row with its wave strip under it per camera row, then the effects lane — and which
-/// band a press lands in is what decides the selection's scope, so the mapping lives here as data plus a
-/// pure function rather than inside a gesture callback.
-///
-/// PLACEHOLDER GEOMETRY: until F2.8/F2.10/F2.11 draw the real picture rows, wave strips and lane rows,
-/// these numbers describe the 240x48 placeholder surface only (`select-surface`, `set_size_request(240,
-/// 48)`). THE SEAM IS THE DELIVERABLE, NOT THE NUMBERS: when the real surfaces arrive they pass their own
-/// bands into [`surface_at`] and every rule above stays untouched.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SurfaceBands {
     /// y range of the ruler — ground that belongs to no row.
@@ -194,14 +151,6 @@ pub const PLACEHOLDER_BANDS: SurfaceBands = SurfaceBands {
     wave_height: 12.0,
 };
 
-/// F2.6 S1: which ground a press at `y` was drawn on. Ruler band → [`Surface::Ruler`]; the empty
-/// selection band → [`Surface::SelectionBand`]; the effects lane → [`Surface::FxLane`]; below
-/// `first_picture` the y falls in row `i`'s picture half → [`Surface::PictureRow(i)`] or its wave half
-/// → [`Surface::WaveStrip`]; past the last of `row_count` rows the ground is a separate recording's
-/// lane → [`Surface::Lane`].
-///
-/// An unknown y answers [`Surface::SelectionBand`] rather than panicking: the spec lists the empty band as
-/// legal ground for a drag, so falling back there keeps a press meaningful instead of killing the page.
 pub fn surface_at(y: f64, bands: &SurfaceBands, row_count: usize) -> Surface {
     if y >= bands.ruler.0 && y < bands.ruler.1 {
         return Surface::Ruler;
@@ -212,12 +161,6 @@ pub fn surface_at(y: f64, bands: &SurfaceBands, row_count: usize) -> Surface {
     if y >= bands.selection.0 && y < bands.selection.1 {
         return Surface::SelectionBand;
     }
-    // A y below EVERYTHING the surface draws is ground with nothing on it, so it answers the selection band
-    // rather than inventing a track. The bound is `max(rows' bottom, fx's bottom)`, never `fx.1` alone: on
-    // the painted band the effects lane sits ABOVE the picture rows (§A's order), so there `fx.1` is where
-    // the rows BEGIN and testing against it threw every real row press away as "past everything" -- which is
-    // why a picture-row click watched nothing. On the placeholder strip fx IS the bottom band, so its bottom
-    // is what bounds the surface there.
     let rows_bottom =
         bands.first_picture + row_count.max(1) as f64 * (bands.row_height + bands.wave_height);
     if y >= rows_bottom.max(bands.fx.1) {
@@ -248,15 +191,9 @@ pub fn surface_at(y: f64, bands: &SurfaceBands, row_count: usize) -> Surface {
     Surface::SelectionBand
 }
 
-/// F2.6 S1: a drag keeps the ground it STARTED on. Once the hand is down on a wave strip, dragging the
-/// pointer across a picture row must not re-scope the band mid-drag — the person chose that recording's
-/// sound at the press, and having the scope change under them would make the readout lie about what they
-/// drew. Returns `started` when there is one, else `now`.
 pub fn keep_started_surface(started: Option<Surface>, now: Surface) -> Surface {
     started.unwrap_or(now)
 }
-
-// --- S2: the band as an object ------------------------------------------------------------------------
 
 /// F2.6 S2 (`✕ clears`): throw the band away. The answer is nothing, and the marks and the Selection
 /// readout go with it — they are the band, not a copy of it ([`marks`]). A click on a track asks for the
@@ -273,22 +210,8 @@ pub const GRIP_PX: f64 = 6.0;
 /// §6's third pixel reach (`spec/05-cut.md` §6: "pixel reaches (6, 8, 10, 12 px)", and `spec/inventory/cut.md`
 /// §I's press order: "selection ends on the pictures within **10 px**"): how far from an end a press still
 /// grabs that end WHEN THE PRESS IS ON A PICTURE ROW.
-///
-/// Wider than [`GRIP_PX`] because the two surfaces ask different questions of the hand. In the selection band
-/// the band is the only thing drawn and its end is a visible edge to aim at, so 6 px is enough. On the pictures
-/// the press is over thumbnails, the green kept-scene bars and the red line — nothing there says "this is the
-/// selection's end" — so the end has to reach further to be found at all; the prototype spells the pair as
-/// `selGripPx` / `selGripPicsPx` (`go/cut_selband.go`) for exactly this reason.
-///
-/// Deliberately NOT [`SNAP_PX`] (8 px): snapping pulls a dragged end ONTO a landmark, which is what the cut's
-/// borders and word edges are for, while a grip decides whether the hand meant THAT END in the first place. Two
-/// different acts, so unifying them would silently change one of the two rules.
 pub const PIC_GRIP_PX: f64 = 10.0;
 
-/// The reach that grabs a selection end on each surface: [`PIC_GRIP_PX`] on a picture row, [`GRIP_PX`
-/// ] everywhere else (§I widens the reach for the pictures alone). The wave strip under a picture row keeps the
-/// narrow grip on purpose: that strip is where F2.6's own band lives and is aimed at, not ground the end has to
-/// be found through.
 pub fn grip_px(surface: Surface) -> f64 {
     match surface {
         Surface::PictureRow(_) => PIC_GRIP_PX,
@@ -310,17 +233,10 @@ pub enum Part {
     Outside,
 }
 
-/// F2.6 S2: the part of a band drawn between `from_px` and `to_px` that `px` is on. Within [`GRIP_PX`] of
-/// an end it is that end; inside the band its middle; clear of both ends' reach outside. When the band is
-/// narrower than two grips an end wins over the middle — a press can only mean one thing, and resizing is
-/// what the hand was aiming at when it found such a thin band in the first place.
 pub fn part_at(px: f64, from_px: f64, to_px: f64) -> Part {
     part_at_reach(px, from_px, to_px, GRIP_PX)
 }
 
-/// [`part_at`] with the reach spelled out, because it is not one number: [`grip_px`] answers 10 px on a picture
-/// row and 6 px elsewhere, and the page passes what its press's surface says. The body is `part_at`'s unchanged:
-/// the thin-band rule (an end wins over the middle when the band is narrower than two grips) holds at any reach.
 pub fn part_at_reach(px: f64, from_px: f64, to_px: f64, grip_px: f64) -> Part {
     if (px - from_px).abs() <= grip_px && px <= to_px {
         return Part::Start;
@@ -342,11 +258,6 @@ pub const SNAP_PX: f64 = 8.0;
 
 /// F2.6 S2: the landmarks a dragged end lands on — every border of the cut (what an end is nearly always
 /// aimed at), every recording's start and end, the ends of every effect's band, and the red line last.
-///
-/// Sorted and deduped within 1e-9 because two rules often name one second (a clip's end where an effect's
-/// band ends): one landmark, one pull, and the caller never has to know how many things agree there. A
-/// lane with no written length contributes its start only — a separate recording runs for its whole file,
-/// so it has no end before that file runs out.
 pub fn snap_marks(cut: &Cut, lanes: &[Lane], playhead: f64) -> Vec<f64> {
     let mut marks: Vec<f64> = Vec::new();
     for seg in &cut.segs {
@@ -390,10 +301,6 @@ fn nearest_within(t: f64, marks: &[f64], reach: f64) -> Option<f64> {
     best.map(|(mark, _)| mark)
 }
 
-/// F2.6 S2: where a band of `length` lands when its middle is slid to `from` — both ends are offered to
-/// the landmarks and the closer fit wins. Snapping only the leading end would leave the trailing one a
-/// pixel off the border it was aimed at, which is the difference between a cut that lines up and one that
-/// nearly does. Returns the new start, unsnapped when neither end is within reach.
 pub fn snap_span(from: f64, length: f64, marks: &[f64], pps: f64) -> f64 {
     let reach = SNAP_PX / pps.max(0.001);
     match (
@@ -415,11 +322,6 @@ pub fn snap_span(from: f64, length: f64, marks: &[f64], pps: f64) -> f64 {
 }
 
 /// F2.6 S2 (`ends resize`): move one end of the band to `to`, snapped, and leave the other where it is.
-///
-/// The band never closes: an end may reach the other but not pass it, and what is left is at least
-/// [`MIN_SECONDS`] long — a selection with no length is invisible, cannot be grabbed again, and every
-/// action taken on it does nothing, so a hand that overshoots would silently destroy the thing it was
-/// adjusting.
 pub fn resize(sel: &Selection, end: bool, to: f64, marks: &[f64], pps: f64) -> Selection {
     let moved = snap(to, marks, pps);
     // Clamped from the stationary end rather than towards it: an end dragged past its own still stops at
@@ -448,18 +350,9 @@ pub fn move_band(sel: &Selection, to: f64, marks: &[f64], pps: f64) -> Selection
     }
 }
 
-// --- S3: the marks and the readout follow --------------------------------------------------------------
-
-/// F2.6 S3 (`In/out marks and the Selection readout follow the band`): the in/out points the page shows —
-/// which ARE the band, not a copy of it, so the readout under ＋ Add and the flags on the picture band
-/// cannot disagree with the handle being dragged. This is exactly what
-/// [`crate::cut_screen::idle_readouts`] takes for its `selection` argument, and it is asked per drag update
-/// rather than on release: the reading follows the hand.
 pub fn marks(sel: Option<&Selection>) -> Option<(f64, f64)> {
     sel.map(|band| (band.start, band.end))
 }
-
-// --- S4: what a sound selection does to the verbs ------------------------------------------------------
 
 /// F2.6 S4 (`greys Add, Split, Remove · Copy and Insert aim at sound`): what ⧉ Insert puts in the selected
 /// seconds — a card between the footage, or a sound over them.
@@ -487,11 +380,6 @@ pub struct Verbs {
 pub const MIN_SCENE_SECONDS: f64 = 1.0;
 
 /// F2.6 S4: the verbs' state for the band there is now.
-///
-/// A sound selection greys ＋ Add, | Split and － Remove — all three act on footage, and a wave is seconds
-/// of sound — while ⧉ Copy stays live (long enough) and Insert turns to sound: S4 says they are re-aimed,
-/// not greyed. With nothing selected only | Split survives when there is footage at all, because it then
-/// cuts once at the red line; `has_footage` is the caller's "is there a recording to cut".
 pub fn verbs(sel: Option<&Selection>, has_footage: bool) -> Verbs {
     let Some(band) = sel else {
         return Verbs {
@@ -521,10 +409,6 @@ pub fn verbs(sel: Option<&Selection>, has_footage: bool) -> Verbs {
     }
 }
 
-/// F2.6 S4: the sentence ＋ Add wears when a sound selection makes it the wrong button — `spec/inventory/
-/// cut.md` §A's wording, naming the recording so the refusal says what was drawn on. `None` when there is
-/// nothing to say: the live button's own tooltip and the empty-selection sentences come from
-/// `crate::cut_verbs`.
 pub fn add_tip(sel: Option<&Selection>) -> Option<String> {
     match &sel?.scope {
         Scope::Sound { recording } => Some(format!(

@@ -1,26 +1,4 @@
 //! F3.11 S1's live half: the decorations ask itself.
-//!
-//! [`crate::cut_effects_pass`] owns every rule that settles with no server — the brief's layout, membership,
-//! the per-call skips, the app's own defaults for an undersized decoration and the two log lines. What it
-//! never did was *telephone*: `run_effects_pass` in the shell handed its own rules an empty list, so pressing
-//! ✨ Decorations could only ever report "no usable answer" while a server sat there willing to name a zoom,
-//! a stop and some volume. This module is that leg. It builds the two messages §F3.11 spells, dials the LLM
-//! over HTTP through [`crate::llm_retry_leg`] (so each ask writes its timed `requests.tsv` row and rides §3's
-//! patience), reads the EFFECTS reply back into [`cut_effects_pass::Call`]s, and hands those to
-//! `crate::ui::cut_effects_pass`, which lets §3.7's `add_effect` tool — not a copy of it — decide what may
-//! land.
-//!
-//! The seam a test drives this through is the settings address: point `LLM_SERVER` at a local fake and the
-//! very same endpoint resolution a typed address goes through reaches it. Nothing here takes a canned reply,
-//! and a server that is down answers `failed` naming it (§00-principles: failure is specific and local).
-//!
-//! Why it is a module of its own rather than more lines in `cut_effects_pass` or in `ui/window.rs`: the pass is
-//! judgement and answers to no socket, and the window is a page past its size budget. `captions_ask` and
-//! `speeds_ask` set the shape — two messages, the cache honoured, one dial, the reply read — and this copies
-//! it with the three things that differ spelled out below: the offer is `add_effect` + `finish` only, thinking
-//! is OFF (§4 does not list `effects` among the prompts that think), and the answer is a `{"fx":[…]}`
-//! document whose entries carry CLIP-RELATIVE offsets, because a model asked for a session second would have
-//! to compute one.
 
 use crate::cut_effects_pass::{self, Call};
 use crate::exchanges::{Message, Part};
@@ -35,14 +13,8 @@ use crate::tools::clips::Clips;
 use crate::tools::Tool;
 use std::path::PathBuf;
 
-/// The step name this job's cache entries and timed rows carry. §3.7 is one section for the three per-clip
-/// passes, but the cache must tell a decoration answer from a caption or a speed answer apart, so each gets
-/// its own step string. This one keeps the prototype's own name for the prompt, `effects`.
 pub const STEP: &str = "effects";
 
-/// The answer shape §`spec/prompts/system.md`'s `effects` row spells, with the rules that row and §F3.11
-/// state. Only a fallback: the wording that actually goes out is `spec/prompts/effects.md` and the machine's
-/// own edit of it, read through `wording` below into [`effects_system`].
 pub const EFFECTS_SYSTEM: &str = concat!(
     "Answer in JSON only: {\"fx\":[{\"clip\":<n>,\"kind\":\"zoom|stop|volume\",\"start\":<sec>,\"end\":<sec>,\
      \"gain\":<x>}]} \u{2014} clip is the clip number from the list, seconds are from that clip's start and \
@@ -53,10 +25,6 @@ pub const EFFECTS_SYSTEM: &str = concat!(
     "Strict JSON and nothing else: no prose, no code fence, no comment."
 );
 
-/// The SYSTEM for a decorations call: the house rules cut to this job's section, the effects wording, and the
-/// precedence rule only when there is a User Context to outrank anything (§09 §8 puts it last). Same assembly
-/// [`crate::captions_ask`] and [`crate::speeds_ask`] build, because §8 assembles every job's system message
-/// the one way.
 pub fn effects_system(context: &str) -> String {
     let paths = current_paths();
     crate::prompt_assembly::system_message(
@@ -69,9 +37,6 @@ pub fn effects_system(context: &str) -> String {
     )
 }
 
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6). With no
-/// settings folder at all, the shipped wording is what goes out, and with no shipped wording either the
-/// prompt's own one-line shape ([`EFFECTS_SYSTEM`]).
 fn wording(paths: Option<&Paths>, key: &str) -> String {
     let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
     match paths {
@@ -80,28 +45,14 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
     }
 }
 
-/// The settings folder, read from this process's environment each time an ask is built so a change made
-/// while a run is going is honoured by its next request (§02-services#1: settings are re-read per request).
 fn current_paths() -> Option<Paths> {
     settings::from_environment()
 }
 
-/// F3.11 S1 (`one call over every clip · told the captions and speeds`): the user message. The clip list with
-/// its notes comes from [`cut_effects_pass::brief`], which already marks a captioned clip
-/// `N caption(s) -- runs at 1` and a sped one `plays at Nx` — so the ask and the placement rules read one
-/// picture of the cut rather than two that can disagree. After it, the footage total and the prompt rules
-/// §F3.11 states, each stated as a rule the model can check before it answers rather than as a wish.
-///
-/// Every span asked for is CLIP-RELATIVE ("start"/"end" inside the clip): the standing rule forbids asking a
-/// model for a timestamp it would have to compute, and a decoration is placed by the app from the clip number
-/// plus these two offsets.
 pub fn user_message(clips: &Clips, speeds: &[(u32, f64)]) -> String {
     user_message_over(clips, speeds, &[], &[])
 }
 
-/// §9 (`With more than one camera row or lane the cut brief names the rows and lanes`): the
-/// ask with the session's camera rows and heard lanes named above the clip list. The pass
-/// that holds a real cut calls this; the two-argument form stays for a caller with no cut.
 pub fn user_message_over(
     clips: &Clips,
     speeds: &[(u32, f64)],
@@ -139,14 +90,6 @@ pub fn user_message_over(
     lines.join("\n")
 }
 
-/// The chat body: thinking OFF (§4 does not list `effects` among the prompts that think), and this job's two
-/// tools offered — `add_effect` for the work and `finish` to close the reply. `Job::ClipRules` is §3.7's job
-/// row (captions, speed and decorations share one state), so the names come from the catalogue and the two
-/// this item names are then asserted present rather than assumed: a model that is not told `add_effect`
-/// exists answers in prose about pacing instead of asking for a zoom.
-///
-/// Only the name travels, as every chat ask sends it: §1 keeps each tool's parameter schema in §3, and a copy
-/// written here would be a second answer to §3.7's question about `clip`, `kind`, `start`, `end` and `gain`.
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let tools: Vec<Tool> = this_pass_tools();
     let messages = two_messages(system, user);
@@ -178,17 +121,6 @@ fn two_messages(system: &str, user: &str) -> Vec<Message> {
 }
 
 /// This pass's own tools, from §3.7's job row: `add_effect` for the work and `finish` as the model's own signal.
-/// A call of another kind (a caption, a rate) is not offered because this ask cannot place it (§2 S4), and
-/// `get_frames` stays out too — §F3.11 names exactly these two on the wire (`tests/f3_11_s1_…` counts them), and a
-/// zoom is aimed at the clip's centre by the app's own default rather than by a frame the model asked to see.
-/// One list, used for the body AND for any later round, so the wire can never disagree with itself.
-/// The decoration pass's tools: this pass's own write, `finish`, and §3.7's read.
-///
-/// §3 says every job names its read tools as well as its write tools, and `get_frames` is exactly the read
-/// this pass wants — a zoom aimed at nothing is the prototype's centred punch-in, which is what §3.7 names
-/// as the reason the read exists. The batch and the `answer` door already serve it (`add_effect`'s result
-/// already carries the `box` the app used). `get_context`, `get_lines` and `get_events` stay out: this ask
-/// carries the clip list and no transcript, so it could only refuse them.
 fn this_pass_tools() -> Vec<Tool> {
     crate::tools::offered(Job::ClipRules)
         .into_iter()
@@ -196,24 +128,10 @@ fn this_pass_tools() -> Vec<Tool> {
         .collect()
 }
 
-/// An `add_effect` call's arguments read as a decoration: the same `{clip, kind, start, end, gain?}` shape the
-/// prose document's entries have, so [`call_of`] decides both spellings one way.
 pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
     call_of(args)
 }
 
-/// Read an EFFECTS reply into the calls this pass places. Two spellings are accepted, because a model offered
-/// tools answers with tools and one told to answer JSON answers with JSON, and both mean the same decoration:
-///
-/// - an `add_effect(clip, kind, start, end, gain?)` tool call, in the order it came;
-/// - else the content's `{"fx":[{"clip":…,"kind":…,"start":…,"end":…,"gain":…}]}` document
-///   (§`system.md`'s `effects` row).
-///
-/// An entry missing its clip, kind, start or end, or carrying a non-finite number, is SKIPPED rather than
-/// losing the whole reply: §F3.11 costs the round only for a clip outside the list, and that is
-/// [`cut_effects_pass::place`]'s judgement to make on the calls that did arrive. An unknown `kind` is passed
-/// through as text for the same reason — `place` reports it as a skip, so the sentence the user reads is the
-/// tool's and not a second vocabulary invented here. `{"fx":[]}` is an empty list and a whole answer.
 pub fn parse_effects(reply: &str) -> Vec<Call> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(reply.trim()) else {
         return Vec::new();
@@ -259,9 +177,6 @@ pub fn parse_effects(reply: &str) -> Vec<Call> {
         .unwrap_or_default()
 }
 
-/// One `{clip, kind, start, end, gain?}` entry, from either spelling. A missing or non-finite number, or no
-/// kind, is no call. `gain` stays an `Option`: §F3.11 makes an omitted field and a 1 the same ask, while an
-/// explicit 0 is silence and must survive the trip.
 fn call_of(value: &serde_json::Value) -> Option<Call> {
     let clip = value
         .get("clip")
@@ -299,23 +214,12 @@ fn call_of(value: &serde_json::Value) -> Option<Call> {
 /// What one decorations ask came to.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Asked {
-    /// Every decoration the model asked for, in the order it asked. Membership, the unknown-kind skip and the
-    /// ignored gain are NOT applied here — that is [`cut_effects_pass::place`]'s job, so one route decides and
-    /// this one only reports.
     pub calls: Vec<Call>,
-    /// The ask failed at the wire, so the caller should say why rather than treat the empty list as "the model
-    /// wanted nothing". An empty EFFECTS document is NOT a failure.
     pub failed: bool,
     /// The reason, naming the model and the fault. Empty when nothing failed.
     pub reason: String,
 }
 
-/// One live decorations ask: build the two messages, honour the cache, dial, read the reply. Settings are
-/// read HERE, per call, so an address changed while a run is going is honoured by the next ask
-/// (§02-services#1).
-///
-/// `clips` is the batch the pass just built (lengths, captions and rates on it already) and `speeds` the rate
-/// each clip plays at, so S1's brief can name both before any decoration is asked for.
 pub fn ask(
     tree: &Tree,
     context: &str,
@@ -379,8 +283,6 @@ pub fn ask_at(
     )
 }
 
-/// [`ask_at`] with the session's camera rows and heard lanes named in the brief (§9: the
-/// passes know nothing of cameras and lanes until there is more than one of either).
 #[allow(clippy::too_many_arguments)] // as [`ask_named`]: the brief's rows and lanes ride along
 pub fn ask_at_over(
     tree: &Tree,
@@ -588,20 +490,10 @@ pub fn ask_at_over(
     }
 }
 
-/// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
-/// the answering round's envelope (see [`crate::clip_rules_tools_leg::answering_envelope`]). [`parse_effects`]
-/// still reads a bare document back -- that is the cache reader's and a tools-refused server's shape.
-///
-/// One ask's two messages, so the file its answer is cached in (`cache_file_for_test`) is named from the very
-/// texts the request is made of.
 fn messages(context: &str, clips: &Clips, speeds: &[(u32, f64)]) -> (String, String) {
     (effects_system(context), user_message(clips, speeds))
 }
 
-/// The file one ask's answer is cached in — `Tree::cache_llm`'s layout and `llm_cache`'s key, reached through
-/// `cache_parts`, the ONE key recipe the pass itself stores by, so the two cannot drift apart. Named
-/// `_for_test` because only a proof names the file: the pass never asks for a path, it just stores and reads.
-/// A second hash recipe inside a test would be a rule able to disagree with the code.
 pub fn cache_file_for_test(
     tree: &Tree,
     context: &str,
@@ -616,8 +508,6 @@ pub fn cache_file_for_test(
     tree.cache_llm(STEP, &key)
 }
 
-/// The deciding parts for one decorations ask. The retry's slot rides in `state` — the texts, model and
-/// thinking flag are otherwise identical, and the slot is what keeps the two asks apart (§6).
 fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
     let state = ask_slot(system, attempt);
     let request = llm_cache::Request {
@@ -634,9 +524,6 @@ fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde
     llm_cache::parts(&request)
 }
 
-/// A distinct cache slot per attempt of the same cut. The first ask uses the plain hash of the system text;
-/// each retry appends its number, so a retry keys elsewhere than the rejection it is retrying rather than
-/// reading that reply back out of the cache.
 fn ask_slot(system: &str, attempt: u32) -> String {
     if attempt <= 1 {
         return system.to_string();

@@ -1,15 +1,3 @@
-//! §02-services.md §5 — the Settings rows that do not ride the LLM/audio/sd HTTP path: the LLM's two
-//! completion tests and the seven rows [`crate::settings_probe`] used to leave unanswered.
-//!
-//! Same rule as `settings_probe`: nothing here decides what a healthy service means. Every verdict is
-//! the sentence the function in [`crate::checks`] that owns it returns; this file only makes the call —
-//! one HTTP request, or one subprocess with a bounded wait — and hands over what came back. A row that
-//! cannot run says so in `checks`' words, never in a stub's.
-//!
-//! WHY the LLM row sends a completion instead of `GET /v1/models`: §5 keeps that endpoint for the two
-//! list jobs (`checks::LIST_MODELS_LLM_USES` — Fetch models, and sd.cpp's fallback). A model that
-//! lists itself and answers nothing is exactly the failure the row exists to catch.
-
 use std::time::{Duration, Instant};
 
 use crate::checks;
@@ -17,18 +5,15 @@ use crate::services::{self, Endpoint, Kind, Server};
 use crate::settings::Conf;
 use crate::subprocess;
 
-/// A subprocess that outlives this is a hung dialog, and a Test button has no ⏹ of its own — the
-/// cancel context only reaches sockets. ffmpeg's own listings and firefox's `--version` are both
-/// instant on a machine that has them, so a minute means it is stuck.
 const SUBPROCESS_WAIT: Duration = Duration::from_secs(60);
-/// One headless search rung: the same slice the pipeline's ladder gives a rung (§2's 45 s over three).
+/// One headless search rung: the same slice the pipeline's ladder gives a rung (§2's 45 s over
+/// three).
 fn search_slice() -> Duration {
     crate::web_browser::ladder_slice()
 }
 
-/// What a row's dial looks like: hand it a body and the whole-call ceiling §9 gives that probe, get the
-/// reply back. Borrowed lifetime `'a` rather than `'static`: the closure borrows the conf and the typed
-/// address of the press that made it.
+/// What a row's dial looks like: hand it a body and the whole-call ceiling §9 gives that probe, get
+/// the reply back.
 pub type Ask<'a> = dyn Fn(&str, Option<u64>) -> Result<String, String> + 'a;
 
 /// The LLM row: ONE completion at [`crate::model_list::probes`]' first entry — `max_tokens` 16, thinking
@@ -60,26 +45,20 @@ pub fn llm_row(conf: &Conf, ask: &Ask<'_>) -> Result<String, String> {
     // An answer of nothing is a failure, not a green tick beside an empty quote: F0.13 reports what came
     // back, and "nothing came back" is the thing worth reading.
     crate::model_list::probe_passes(&probe, &content)?;
-    // F0.13's sentence is "<model> answered in X s: “ok”" — the MODEL'S WORDS quoted, not a report about
-    // them. `probe_passes` above decides pass/fail (blank is a failure); its "answered …" phrasing is this
-    // row's own business and stays here.
+    // F0.13's sentence is "<model> answered in X s: “ok”" — the MODEL'S WORDS quoted, not a report
+    // about them.
     Ok(checks::llm_verdict(model, seconds, &content))
 }
 
 /// How long a probe took, in the seconds [`checks::llm_verdict`] prints.
 fn elapsed_seconds(began: Instant) -> f64 {
-    // `as_millis` then a divide rather than `as_secs_f64`'s full precision: the log reads "answered in
-    // 1.2 s", and a nanosecond-precise duration would only make the assertion noisy.
+    // `as_millis` then a divide rather than `as_secs_f64`'s full precision: the log reads "answered
+    // in 1.2 s", and a nanosecond-precise duration would only make the assertion noisy.
     u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX) as f64 / 1000.0
 }
 
-/// The LLM vision row: the 48 px red square as a data URL, [`crate::model_list::probes`]' second entry
-/// (120 s, no token cap of its own), and it passes only when the reply says "red".
-///
-/// No `max_tokens`: the table says the vision probe sets none, because the answer is a colour word and
-/// capping an image prompt cuts the answer off inside the reasoning. This row used to build its body from
-/// [`checks::llm_test_body`] and swap the messages, which quietly sent the text probe's 16-token cap with
-/// a picture — enough to spend on reasoning and answer nothing about a model that saw the square fine.
+/// The LLM vision row: the 48 px red square as a data URL, [`crate::model_list::probes`]' second
+/// entry (120 s, no token cap of its own), and it passes only when the reply says "red".
 pub fn vision_row(conf: &Conf, ask: &Ask<'_>) -> Result<String, String> {
     let model = conf.model.trim();
     if model.is_empty() {
@@ -107,8 +86,6 @@ pub fn vision_row(conf: &Conf, ask: &Ask<'_>) -> Result<String, String> {
     checks::vision_verdict(&content)
 }
 
-/// One of the four audio.cpp model rows (TTS/ASR/diarization/separation): the id in the box against
-/// the server's own catalogue, checking the DECLARED TASK. `task` comes from [`checks::AUDIO_ROWS`].
 pub fn audio_model_row(
     models: &[services::AudioModel],
     typed_id: &str,
@@ -125,19 +102,10 @@ pub fn audio_model_row(
     checks::model_verdict(models, wanted, services::Need { task, step })
 }
 
-/// The forced-aligner row, which has no box of its own to trust: alignment is asked for by TASK, so
-/// the catalogue is the whole answer and a name typed here could only disagree with the server.
 pub fn aligner_row(models: &[services::AudioModel], configured: &str) -> Result<String, String> {
     checks::aligner_verdict(configured, models)
 }
 
-/// The ffmpeg row: which binary, that ffprobe is beside it, then what the build has. Every list is
-/// read by running THAT binary (`-version`, `-filters`, `-encoders`), so the verdict describes the
-/// build the pipeline will actually shell out to, not the one on PATH.
-///
-/// An empty box is tested as the binary every step runs for it ([`crate::run_stages::FFMPEG`] on PATH,
-/// `audio_task::ffmpeg_program`'s rule); testing it as "nothing named" said "not on PATH" on a machine
-/// whose ffmpeg the pipeline was using all along.
 pub fn ffmpeg_row(typed: &str) -> Result<String, String> {
     let named = if typed.trim().is_empty() {
         crate::run_stages::FFMPEG
@@ -172,23 +140,17 @@ pub fn firefox_row(typed: &str) -> Result<String, String> {
     if typed.trim().eq_ignore_ascii_case(checks::FIREFOX_OFF) {
         return checks::firefox_verdict(typed, None, None);
     }
-    // The browser the search itself launches (`web_browser::firefox_path`, §9's lookup): the box, else
-    // firefox/firefox-esr/firefox-bin on PATH, else the usual install paths. An empty box IS that lookup
-    // (`llm_web_offer::availability` offers the web tools for it); testing it as "nothing named" said
-    // "--version failed" on a machine whose firefox every search was using.
+    // The browser the search itself launches (`web_browser::firefox_path`, §9's lookup): the box,
+    // else firefox/firefox-esr/firefox-bin on PATH, else the usual install paths.
     let program =
         crate::web_browser::firefox_path(typed).map_err(|why| format!("will not run: {why}"))?;
     let version = run(&program.display().to_string(), &["--version"])?;
-    // The program's own search door: one headless launch of the engine's own DuckDuckGo page, hits
-    // counted the way the pipeline counts them. No network is a failure of THIS row, said as such.
     let search =
         crate::web_browser::query_for(&program.display().to_string(), search_slice())("naivepost");
     let hits = search.ok().map(|hits| hits.len());
     checks::firefox_verdict(typed, Some(&version), hits)
 }
 
-/// Which binary a box names: a path as typed, else the name looked up on PATH. `None` when neither finds
-/// it (or the box is empty), which each row's verdict turns into its missing sentence.
 pub fn resolve(typed: &str) -> Option<std::path::PathBuf> {
     let wanted = typed.trim();
     if wanted.is_empty() {
@@ -198,12 +160,9 @@ pub fn resolve(typed: &str) -> Option<std::path::PathBuf> {
     if named.is_file() {
         return Some(named);
     }
-    // A bare command in the box means "find it on PATH", not "a file under the working folder".
     resolve_on_path(wanted)
 }
 
-/// A bare name on `PATH`. `web_browser` has its own version of this because firefox is also looked
-/// for by three names and in the install folders; ffmpeg has exactly one, so this is three lines.
 fn resolve_on_path(name: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var("PATH").ok()?;
     std::env::split_paths(&path).find_map(|dir| {
@@ -232,7 +191,6 @@ fn run(program: &str, args: &[&str]) -> Result<String, String> {
                     &String::from_utf8_lossy(&out.stderr),
                 ));
             }
-            // Past the deadline the child is killed, and the row says it could not be asked.
             None if Instant::now() >= deadline => {
                 let _ = child.kill();
                 return Err(format!(
@@ -246,14 +204,12 @@ fn run(program: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// The catalogue's ids, for a refusal that names what IS there.
 fn catalogue_ids(models: &[services::AudioModel]) -> String {
     let mut ids: Vec<&str> = models.iter().map(|model| model.id.as_str()).collect();
     ids.sort();
     ids.join(", ")
 }
 
-/// The endpoint a row dials: the TYPED address wins over the file, the key comes from the file.
 pub fn llm_endpoint(conf: &Conf, typed: &str) -> Endpoint {
     Endpoint {
         url: services::server_url(typed).unwrap_or_else(services::llm_default),
@@ -261,9 +217,8 @@ pub fn llm_endpoint(conf: &Conf, typed: &str) -> Endpoint {
     }
 }
 
-/// audio.cpp's endpoint: the FILE's address, because §5 puts an id in this box and the address in the
-/// row above it — the four model rows and the aligner row type an id, so dialling what was typed would
-/// dial the id as a host. The address in the Server box (or the shipped default) is what gets probed.
+/// audio.cpp's endpoint: the FILE's address, because §5 puts an id in this box and the address in
+/// the row above it.
 pub fn audio_endpoint(conf: &Conf, typed: &str) -> Endpoint {
     let _ = typed;
     Endpoint {
@@ -272,21 +227,10 @@ pub fn audio_endpoint(conf: &Conf, typed: &str) -> Endpoint {
     }
 }
 
-/// The session folder a settings probe records its timings into, `None` when there is no project open —
-/// the same rule [`crate::settings_probe::probe`] states: a down server is worth knowing about before a
-/// project exists, the `requests.tsv` line is simply not written.
 pub fn probe_tree() -> Option<crate::layout::Tree> {
     crate::layout::Tree::new(crate::startup::open_dir()).ok()
 }
 
-/// Build the chat caller a row sends through: the same leg the flows use, so ⏹ reaches it and
-/// `requests.tsv` records it. The body is the caller's — [`llm_row`] and [`vision_row`] build it, and each
-/// hands over the ceiling its [`crate::model_list::Probe`] states so §9's 60 s and 120 s bound the socket
-/// rather than sitting in a comment.
-///
-/// The address is the Server box's, as for the audio rows ([`audio_endpoint`]), and the model is `conf`'s,
-/// which [`crate::settings_probe::probe`] sets from the row's own box. Dialling what the Model row typed sent
-/// `https://Qwen3.8 (27B; …)/v1/chat/completions` and failed with "invalid uri character".
 pub fn chat_ask(conf: &Conf) -> impl Fn(&str, Option<u64>) -> Result<String, String> + '_ {
     let endpoint = llm_endpoint(conf, &conf.server);
     let model = conf.model.clone();

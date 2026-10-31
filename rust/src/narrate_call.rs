@@ -1,18 +1,9 @@
-//! F4.2 The narration call — the two messages this crate sends, assembled from parts that already
-//! own their wording (`spec/07-narrate.md` F4.2 S1/S2), and the attempt loop that reads one answer
-//! back (S3/S4/S5).
+//! F4.2 The narration call — the two messages this crate sends, assembled from parts that already own their
+//! wording (`spec/07-narrate.md` F4.2 S1/S2), and the attempt loop that reads one answer back (S3/S4/S5).
 //!
-//! `narrate_pass` builds the job's text and its addenda but reads no files, and `prompt_assembly`
-//! cuts the house rules to one job's sections but is never called with them: nothing until now held
-//! the two ends together. This module is that join plus the loop over attempts. It writes no file and
-//! opens no socket — the reply arrives through a caller-supplied closure exactly as in
-//! [`crate::describe`] and [`crate::fix_transcripts`].
-//!
-//! Why the wording is an argument rather than something looked up: the shipped text lives in
-//! `spec/prompts/<key>.md`, read through [`crate::prompts::shipped_text`], so a builder that went
-//! hunting for `prompts/` itself would invent a load path the app does not have. The door takes
-//! the two wordings from [`crate::settings::prompt_text`] with that shipped wording as the fallback,
-//! which is what the settings box itself shows when this machine holds no edit.
+//! No file or socket: the reply arrives through a caller-supplied closure as in [`crate::describe`] and
+//! [`crate::fix_transcripts`]. The wordings are arguments (from [`crate::settings::prompt_text`] with the
+//! shipped text as fallback), so no builder here invents a load path for `spec/prompts/<key>.md`.
 
 use crate::cut::{Fx, Seg};
 use crate::layout::Tree;
@@ -22,25 +13,20 @@ use crate::narrate_run;
 use crate::project::Project;
 use crate::textfmt::SessionLine;
 
-/// One narration call's two messages, as data: held apart so a test can read each side without a
-/// server, and so the request can be logged or re-sent without rebuilding it.
+/// One narration call's two messages, as data, so a test can read each side and the request can be re-sent.
 #[derive(Debug, Clone)]
 pub struct Request {
     pub system: String,
     pub user: String,
 }
 
-/// §F4.2's message pair, pure: every string comes from a builder that is itself tested, and no
-/// wording is retyped here.
+/// §F4.2's message pair, pure: every string comes from a tested builder.
 ///
-/// SYSTEM = the house rules cut to narrate's sections + the "narrate" prompt + the speech addendum
-/// when the clips play what people said out loud + the captions addendum for a captions-only voice
-/// + the precedence rule when there is a User Context to outrank anything (§09 §8 puts that last).
-/// USER = the User Context block with the speech rule, then the clips brief — that whole shape is
-/// [`crate::narrate_pass::user_message`]'s, unchanged.
+/// SYSTEM = the house rules cut to narrate's sections + the "narrate" prompt + the speech addendum when the
+/// clips play what people said + the captions addendum for a captions-only voice + the precedence rule when
+/// there is a User Context (§09 §8 puts that last). USER = [`crate::narrate_pass::user_message`]'s shape.
 ///
-/// An empty piece adds nothing: a project with no context gets no precedence rule and no header over
-/// nothing, matching the rule both message builders already follow.
+/// An empty piece adds nothing: no context means no precedence rule and no header over nothing.
 pub fn request(
     job_rules: &str,
     system_rules: &str,
@@ -54,9 +40,8 @@ pub fn request(
     let speech = crate::narrate_pass::speech_heard(segs, rows, narrator);
     let job = crate::narrate_pass::system(job_rules, speech, captions_only);
 
-    // Same pieces-join as `prompt_assembly::system_message`: house rules first (that module owns
-    // which sections narrate gets), then the job's own wording with its addenda, then the precedence
-    // rule only when there is a context for it to rank above.
+    // Same join as `prompt_assembly::system_message`: house rules, then the job's wording with its addenda,
+    // then the precedence rule only when there is a context to rank above.
     let mut pieces: Vec<String> = Vec::new();
     let house = crate::prompt_assembly::cut_system(system_rules, "narrate");
     if !house.trim().is_empty() {
@@ -75,11 +60,8 @@ pub fn request(
     }
 }
 
-/// The same pair filled from a live session folder. The only part of this module that reads anything,
-/// kept separate so the assembly above stays testable with no display, no settings and no project on
-/// disk. A missing `cut.json` or `session.tsv` yields an empty brief rather than a failed run: the
-/// refusals in F4.1 S1 are asked before this is ever reached, so arriving here means both exist and
-/// an unreadable one says so through the empty clips it produces.
+/// The same pair filled from a live session folder, the only part that reads anything. A missing `cut.json`
+/// or `session.tsv` yields an empty brief, not a failed run (F4.1 S1's refusals are asked before this).
 pub fn request_from_tree(
     tree: &Tree,
     project: &Project,
@@ -102,37 +84,27 @@ pub fn request_from_tree(
     )
 }
 
-// --- S3/S4/S5: the attempt loop ---------------------------------------------------------------
-
-/// Whether a tool answer is a success rather than the `{}` error shape every refusal comes in — read as
-/// JSON, because both of its answers are JSON and matching on a prefix would break the moment a
-/// sentence starts like a key (the same test `cut_captions` uses for its own tools).
+/// Whether a tool answer is a success rather than the `{}` error shape every refusal comes in. Read as
+/// JSON, since a prefix match breaks when a sentence starts like a key (as `cut_captions` does).
 fn is_ok(answer: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(answer).is_ok_and(|body| body.get("error").is_none())
 }
 
-/// §F4.2's attempt loop: ask, read the echoed bounds forward, refuse what does not hold up, ask again
-/// with the reason, three times, then give up with nothing written.
+/// §F4.2's attempt loop: ask, read the echoed bounds forward, refuse what does not hold up, ask again with
+/// the reason, three times, then give up with nothing written.
 ///
-/// Rejections are handed to `on_reject` rather than printed: this crate has no log sink of its own (the
-/// window owns `ui::log_line`), and a module that wrote to stderr would be invisible in the app and
-/// unverifiable in a test. What arrives there is [`narrate_pass::rejected_log`]'s line, and
-/// [`narrate_pass::thinking_off_log`]'s when thinking was switched off by this attempt.
+/// Rejections go to `on_reject` ([`narrate_pass::rejected_log`], and [`narrate_pass::thinking_off_log`]
+/// when this attempt switched thinking off), as this crate has no log sink of its own.
 ///
-/// The cursor over `clips` only ever advances, so a reply that walks back to a clip already passed
-/// matches nothing and is refused rather than quietly re-sorted — silently reordering lines is how a
-/// narration ends up spoken out of order ([`narrate_reply::unmatched_entry_fault`]). Silence has to
-/// be *said*: a clip nobody answered fails the attempt just as an empty line does, and a reply whose
-/// every line is empty is a model refusing the job, not exercising taste.
+/// The cursor over `clips` only advances, so a reply that walks back matches nothing and is refused rather
+/// than re-sorted (silent reordering speaks a narration out of order; [`narrate_reply::unmatched_entry_fault`]).
+/// Silence has to be *said*: a clip nobody answered fails the attempt like an empty line, and a reply of
+/// all-empty lines is a model refusing the job.
 ///
-/// Nothing here is derived that another module already owns: the bound count is
-/// [`narrate_pass::attempts`], the tolerance is [`narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS`], the
-/// completeness check is [`narrate_pass::finish`], and the bar's monotonicity is
-/// [`narrate_pass::progress_forward`]. Fitting (F4.3) is measured by the caller and handed to
-/// `finish` through `unfitted`; this loop neither owns nor redoes that arithmetic.
-///
-/// No cache is consulted: [`narrate_pass::served_from_cache`] answers false and nothing here reads one,
-/// for the reason §F4.2 gives — the TTS cache is the cache.
+/// Owned elsewhere: the bound count [`narrate_pass::attempts`], the tolerance
+/// [`narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS`], completeness [`narrate_pass::finish`], bar monotonicity
+/// [`narrate_pass::progress_forward`]. Fitting (F4.3) is measured by the caller and handed to `finish` via
+/// `unfitted`. No cache is consulted ([`narrate_pass::served_from_cache`] is false): the TTS cache is the cache (§F4.2).
 pub fn drive<FReply, FProgress, FUnfitted, FReject>(
     clips: &[Seg],
     mut reply: FReply,
@@ -147,17 +119,15 @@ where
     FReject: FnMut(&str),
 {
     let total = clips.len() as u32;
-    // Thinking starts on (§F4.2: "Thinking on") and is switched off by the rule below; it never
-    // comes back on, because a model that answered once was not held back by the reasoning budget.
+    // Thinking starts on (§F4.2) and is switched off by the rule below; it never comes back on.
     let mut thinking = true;
     let mut best = 0u32;
     let mut last_problem = String::new();
 
     for attempt in 1..=narrate_pass::attempts() {
         let answer = reply(attempt, thinking)?;
-        // The shape is read by `narrate_reply`, which accepts the wrapper document, a bare list and a
-        // single entry object: all three answer the same question, and refusing two of them would burn
-        // an attempt over a wrapper nobody asked for.
+        // `narrate_reply` accepts the wrapper document, a bare list and a single entry object; refusing two of
+        // them would burn an attempt over a wrapper nobody asked for.
         let entries = match narrate_reply::entries_of(&answer) {
             Ok(entries) => entries,
             Err(problem) => {
@@ -168,7 +138,7 @@ where
             }
         };
 
-        // Forward-only walk: `cursor` is the next clip an entry may land on and never moves back.
+        // Forward-only walk: `cursor` is the next clip an entry may land on.
         let mut written: Vec<narrate_run::Written> = Vec::new();
         let mut answered: Vec<u32> = Vec::new();
         let mut cursor = 0usize;
@@ -183,7 +153,7 @@ where
                 problem = narrate_reply::unmatched_entry_fault(entry.start, entry.end);
                 break;
             };
-            // Land the line, take the clip: the next entry may only go forward from here.
+            // Land the line, take the clip.
             cursor = index + 1;
             answered.push(index as u32 + 1);
             written.push(narrate_run::Written {
@@ -193,7 +163,7 @@ where
                 text: entry.text.clone(),
                 emotion: entry.emotion.clone(),
             });
-            // Streaming progress = written clips / clips, and only ever forward.
+            // Streaming progress = written clips / clips, only forward.
             best = narrate_pass::progress_forward(best, written.len() as u32);
             progress(best, total);
         }
@@ -213,7 +183,7 @@ where
             reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
             continue;
         }
-        // A clip nobody answered, said the way `finish` says it: silence must be explicit.
+        // A clip nobody answered, said the way `finish` says it.
         let missing: Vec<u32> = (1..=total).filter(|n| !answered.contains(n)).collect();
         if let Some(first) = missing.first() {
             last_problem = narrate_reply::clip_without_entry(*first - 1, clips);
@@ -232,12 +202,9 @@ where
     Err(last_problem)
 }
 
-/// §12 #22 / #27: the SAME attempt loop, but a round that answered through tools is matched by CLIP
-/// NUMBER and in ANY ORDER. `drive` above walks clips forward and refuses a reply that revisits one,
-/// because its entries carry echoed bounds; a tool call names its clip outright, so there is nothing to
-/// re-sort and no reason to demand the writer work top-to-bottom (§12 #27's one policy). One clip skipped
-/// fails the whole attempt (#22) and says which, through `finish`'s own sentence; a clip number outside
-/// this edit's clips fails it too, naming the number.
+/// §12 #22 / #27: the SAME attempt loop, but a round that answered through tools is matched by CLIP NUMBER
+/// in ANY ORDER (a tool call names its clip outright; §12 #27's one policy). One clip skipped fails the whole
+/// attempt (#22) and says which, through `finish`'s sentence; a clip number outside this edit's clips fails it too.
 pub fn drive_by_clips<FReply, FProgress, FUnfitted, FReject>(
     clips: &[Seg],
     mut round: FReply,
@@ -261,8 +228,7 @@ where
 
     for attempt in 1..=narrate_pass::attempts() {
         let said = round(attempt, thinking)?;
-        // A round that answered with prose instead of tool calls has no clip numbers to trust: hand the
-        // whole thing to `drive`, whose bound match is what that shape carries information in.
+        // Prose instead of tool calls has no clip numbers to trust: hand it to `drive`, whose bound match carries the information.
         if !said.used_tools {
             return drive(
                 clips,
@@ -273,9 +239,8 @@ where
             );
         }
         let mut problem = String::new();
-        // Any order, one line per clip: a second call for a clip already written is the mistake §12 #22
-        // describes as thirty-nine good clips lost for the fortieth, so it is refused by name rather than
-        // silently keeping the first or the last.
+        // A second call for a clip already written is §12 #22's "thirty-nine good clips lost for the fortieth":
+        // refused by name rather than silently keeping the first or last.
         let mut slots: Vec<Option<&crate::narrate_live::Picked>> = vec![None; clips.len()];
         for pick in &said.picks {
             let Some(index) = (1..=total).find(|n| *n == pick.clip) else {
@@ -300,7 +265,7 @@ where
             reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
             continue;
         }
-        // Ordered by clip, whatever order they arrived in: the render lays lines out by position.
+        // Ordered by clip: the render lays lines out by position.
         let written: Vec<narrate_run::Written> = slots
             .iter()
             .enumerate()
@@ -343,9 +308,9 @@ where
     Err(last_problem)
 }
 
-/// Report one rejected attempt and apply the thinking rule to the next one. `wrote_anything` is whether
-/// this attempt placed any line at all: a call spent entirely thinking gets no reasoning budget again
-/// ([`narrate_pass::thinking_after`]), and the second log line says so only when that switch happened.
+/// Report one rejected attempt and apply the thinking rule to the next one. `wrote_anything` is whether the
+/// attempt placed any line: a call spent entirely thinking gets no reasoning budget again
+/// ([`narrate_pass::thinking_after`]).
 fn reject<FReject>(
     on_reject: &mut FReject,
     attempt: u32,

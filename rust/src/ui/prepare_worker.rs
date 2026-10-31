@@ -10,8 +10,6 @@ use crate::project::{Policy, Project};
 use crate::run_stages::Drive;
 use crate::runqueue::Queue;
 
-/// What the worker is handed: the session as ▶ snapshotted it, and the derivation to make first, if one is
-/// owed (the context to derive from and the policy the derivation reads as "live").
 pub(crate) struct Ask {
     pub asked: Project,
     pub derive: Option<(String, Policy)>,
@@ -33,8 +31,6 @@ pub(crate) enum Answer {
     Walked(Drive, Project),
 }
 
-/// The whole press, on the worker. The run's `llm/` page is this thread's (§7 keeps one per thread), so the
-/// worker opens and closes it around the work.
 pub(crate) fn work(ask: Ask, queue: Queue, note: &dyn Fn(Note)) -> Answer {
     crate::exchange_leg::note_run_started();
     let answer = press(ask, queue, note);

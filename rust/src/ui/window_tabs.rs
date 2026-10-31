@@ -1,12 +1,4 @@
 //! §03-shell.md §1's tab row: the four tab words keep their whole label at the window's minimum size.
-//!
-//! §1 makes 1240×900 the size at which "every control and lane a page names is on screen at once", and
-//! the tabs are named controls (Prepare, Cut, Narrate, Produce). An `adw::ViewSwitcher` in Wide policy
-//! ellipsizes its button labels when the centre slot runs short — the shot showed "Prep…", "Narr…",
-//! "Prod…" — while badge **4** next to it is spec'd to give way by ellipsizing first ("as the window
-//! narrows: path + tab words → file name + tab words"). So the switcher asks for what its words need and
-//! never trades them for an ellipsis; the project path, already ellipsizing with a one-character
-//! minimum (`header_title`), absorbs whatever width is missing.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -28,9 +20,6 @@ pub fn keep_labels_whole(switcher: &adw::ViewSwitcher) {
     }
 }
 
-/// The tab row's look (§1 badge **5**): the four tabs as one joined group, a frame round the group and a
-/// line between neighbours, the shown tab shaded darker. A locked tab keeps libadwaita's dimmed label. The
-/// first rewrite drew libadwaita's flat switcher: four loose words with only the shown one shaded.
 pub fn style_as_joined(switcher: &adw::ViewSwitcher) {
     switcher.add_css_class(JOINED_CLASS);
     // A group of buttons sitting in the bar, not a strip the bar's height tall.
@@ -53,9 +42,6 @@ pub fn style_as_joined(switcher: &adw::ViewSwitcher) {
 /// The class [`style_as_joined`] puts on the switcher, which its CSS is scoped to.
 pub const JOINED_CLASS: &str = "naivepost-tabs";
 
-/// One frame round the group; neighbours share a 1 px line; the ends keep the frame's rounding; the shown tab
-/// is shaded, a hovered one lightly. The switcher's own padding and the buttons' own shadow are taken off, so
-/// the shading meets the one frame line: with them, the shown tab drew a second outline just inside the frame.
 const JOINED_CSS: &str = "
 viewswitcher.naivepost-tabs {
   border: 1px solid alpha(currentColor, 0.18);

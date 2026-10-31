@@ -1,9 +1,5 @@
 //! The waveform cache of spec/01-project-and-files.md §6: `cache/waves/<lane>.wave`, magic
 //! `AWV4`, a header naming the recording it was made from, then the peak bytes.
-//!
-//! A cache file is disposable, so nothing in here fails on a bad one — an unreadable wave
-//! is a miss, and the lane is measured again. Only writing our own garbage is an error,
-//! because that is a bug rather than a stale file.
 
 use std::path::Path;
 
@@ -30,10 +26,6 @@ pub struct Wave {
 }
 
 /// The bytes of one cache file.
-///
-/// An empty or ragged `Wave` is an `Err`, not a miss: this build would have written the
-/// nonsense itself, and a cache it cannot read back is a bug to be fixed at the writer, not
-/// papered over by silently recomputing on every start.
 pub fn encode(wave: &Wave, size: i64, mtime: i64) -> Result<Vec<u8>, String> {
     let count = match wave.chans.first() {
         None => return Err("a wave with no channels has nothing to cache".to_string()),
@@ -70,15 +62,6 @@ pub fn encode(wave: &Wave, size: i64, mtime: i64) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Read a cache file, or say it is not one. `size` and `mtime` are the source recording's:
-/// a wave cached against a different cut of the same file is a different answer, so a
-/// mismatch is a miss rather than a wrong picture on the page.
-///
-/// Every rejection — wrong magic, a short header, an impossible channel count or rate, a
-/// truncated block, trailing bytes, a stale `size`/`mtime` — returns `None`. That is the
-/// prototype's rule (go/cut_audio.go:290-318): a cache that cannot be read is measured
-/// again, and an error would stop a page from opening over a file whose only job is to save
-/// some work.
 pub fn decode(bytes: &[u8], size: i64, mtime: i64) -> Option<Wave> {
     if bytes.len() < MAGIC.len() + HEADER_LEN || &bytes[..MAGIC.len()] != MAGIC {
         return None;

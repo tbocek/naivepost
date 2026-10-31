@@ -1,21 +1,11 @@
 //! §09-llm-and-tools#6-cache — the reply cache under `cache/llm/<step>/`.
 //!
-//! Spec: `spec/09-llm-and-tools.md` §6. The folder itself is already
-//! [`crate::layout::Tree::cache_llm`]'s; this module owns the three things §6 actually decides:
-//! the **key** that names a file inside it ([`parts`] + [`key`]), **what may be stored**
-//! ([`usable`], [`store`]) and **who caches** ([`uses_cache`], plus the two irregularities in
-//! [`fixer_caches`] / [`gap_fill_caches`]).
+//! Spec: `spec/09-llm-and-tools.md` §6. This module owns what §6 decides: the **key** ([`parts`] + [`key`]), **what may be stored** ([`usable`], [`store`]) and **who caches** ([`uses_cache`], `fixer_caches` / [`gap_fill_caches`]).
 //!
 //! Two deliberate divergences from what else is in this tree:
 //!
-//! * [`crate::fix_transcripts::block_key`] keeps its own 16-char hash. F1.8 S3 pins that length,
-//!   the fixer's files are read by nothing outside that module, and folding it in here would move
-//!   every answer already written under `cache/llm/fix`. This module is §6's sha256 format for the
-//!   shared cache; the fixer is its own first draft of the same idea.
-//! * The prototype keyed on the deciding texts but **not** on the model id or the thinking flag,
-//!   which is exactly the behaviour §6 overturns ("changing the model in Settings replays the old
-//!   model's cached answers"). Both are parts here, so a swapped model asks again instead of
-//!   replaying another model's work as if it were this one's.
+//! * [`crate::fix_transcripts::block_key`] keeps its own 16-char hash (F1.8 S3 pins it; folding it in would move every answer under `cache/llm/fix`).
+//! * The prototype keyed on the texts but not the model id or thinking flag, which §6 overturns; both are parts here, so a swapped model asks again.
 
 use serde_json::{json, Value};
 
@@ -24,8 +14,7 @@ use sha2::{Digest, Sha256};
 
 /// What decides an answer — §6's list, in §6's own order, with the rewrite's two additions last.
 ///
-/// Everything a caller can change without changing the question must be absent, and everything that
-/// changes it must be present: a missing field makes a stale answer look like a fresh one.
+/// Everything that changes the question must be present and nothing else: a missing field makes a stale answer look fresh.
 #[derive(Debug, Clone)]
 pub struct Request<'a> {
     /// The system prompt as the job received it (sections cut per §8). An edited prompt misses.
@@ -38,25 +27,19 @@ pub struct Request<'a> {
     pub speech: &'a str,
     /// Surrounding context sent with the request (the grounding lines, the clip brief).
     pub context: &'a str,
-    /// Image data URLs, each one a part of its own. Positional: the frame in slot 2 changing is a
-    /// different question, so they are never merged into one blob. Owned rather than borrowed so a
-    /// caller can build a request from lists it just made without threading a lifetime through.
+    /// Image data URLs, each a part of its own and positional (the frame in slot 2 changing is a different question). Owned so callers needn't thread a lifetime.
     pub images: Vec<String>,
-    /// Which pooled draw this is — the retake pool asks the same question N times and each draw is
-    /// its own answer. `None` for a call that is not pooled.
+    /// Which pooled draw this is (the retake pool asks the same question N times); `None` if not pooled.
     pub run_index: Option<u32>,
-    /// The rewrite's addition (§6): the model id the answer came from. Without it a model swap
-    /// replays the previous model's answers forever.
+    /// The rewrite's addition (§6): the model id, so a model swap does not replay old answers.
     pub model: &'a str,
-    /// The rewrite's addition (§6): whether the model was asked to think. A thinking answer and an
-    /// executing answer to the same texts are not the same answer.
+    /// The rewrite's addition (§6): whether the model was asked to think.
     pub thinking: bool,
 }
 
 /// The deciding parts, in order, as JSON values — the exact bytes [`key`] hashes.
 ///
-/// Kept separate from [`key`] so a test can see the list rather than only its digest, and so a
-/// caller can tell "nothing to key on" apart from a key that happens to look odd.
+/// Separate from [`key`] so a test can see the list, and a caller can tell "nothing to key on" from an odd key.
 pub fn parts(request: &Request) -> Vec<Value> {
     let mut out = vec![
         json!(request.system),
@@ -65,13 +48,11 @@ pub fn parts(request: &Request) -> Vec<Value> {
         json!(request.speech),
         json!(request.context),
     ];
-    // One part per image, in the order they were sent: swapping two frames changes the answer, so
-    // it has to change the key.
+    // One part per image in sending order: swapping two frames changes the answer, so the key.
     for image in &request.images {
         out.push(json!(image));
     }
-    // A `null` part rather than a skipped one: an unpooled call is a different shape of question
-    // from draw 0 of a pooled one, and `Some(0)`/`None` must not collide.
+    // A `null` part, not a skipped one: `Some(0)` and `None` must not collide.
     out.push(match request.run_index {
         Some(index) => json!(index),
         None => Value::Null,
@@ -83,13 +64,9 @@ pub fn parts(request: &Request) -> Vec<Value> {
 
 /// The cache key: lowercase hex sha256 over each part's JSON encoding followed by one NUL byte.
 ///
-/// The NUL is the point of the format, not decoration: it pins the boundary between parts, so no
-/// way of splitting one text across two parts can produce the digest of a different split.
+/// The NUL pins the boundary between parts, so no split of one text across two parts can produce another split's digest.
 ///
-/// `None` means "an uncomputable key is no key": an empty part list (a caller that has not asked a
-/// question must not share a file with the digest of empty input) or a part `serde_json` refuses —
-/// a `f64::NAN` or infinity, which has no JSON encoding. On `None`, [`read`] finds nothing and
-/// [`store`] writes nothing.
+/// `None` means no key: an empty part list, or a part `serde_json` refuses (`f64::NAN`, infinity). On `None`, [`read`] finds nothing and [`store`] writes nothing.
 pub fn key(parts: &[Value]) -> Option<String> {
     if parts.is_empty() {
         return None;
@@ -108,15 +85,12 @@ pub fn key(parts: &[Value]) -> Option<String> {
     Some(hex)
 }
 
-/// Whether a reply is worth storing. An empty reply never is: caching it turns a step that could
-/// still be answered later into a permanent "nothing", and the second attempt never happens.
+/// Whether a reply is worth storing. An empty reply never is: caching it would turn a step that could still be answered into a permanent "nothing".
 pub fn usable(reply: &str) -> bool {
     !reply.trim().is_empty()
 }
 
-/// What [`store`] came to. `Failed` carries a sentence for the log rather than being propagated:
-/// an unwritable cache makes a slower step, never a failed one — the same rule
-/// [`crate::fix_transcripts`] spells as `!!! could not keep the fix`.
+/// What [`store`] came to. `Failed` carries a log sentence, not an error: an unwritable cache makes a slower step, never a failed one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stored {
     Written,
@@ -125,25 +99,18 @@ pub enum Stored {
     Failed(String),
 }
 
-/// The stored answer for these parts, if there is one. Any unreadable file is a miss, so the step
-/// asks again rather than failing — the rule [`crate::wave::read`] states for the wave cache: a
-/// cache that cannot be read is measured again.
+/// The stored answer for these parts, if any. An unreadable file is a miss, so the step asks again (as [`crate::wave::read`]).
 pub fn read(tree: &Tree, step: &str, parts: &[Value]) -> Option<String> {
     let key = key(parts)?;
     std::fs::read_to_string(tree.cache_llm(step, &key)).ok()
 }
 
-/// The answer already filed under a key a caller computed itself. [`store_at`]'s twin, for the jobs
-/// whose digest is built from something §6's [`Request`] has no field for — describe folds its frames
-/// into the parts before asking and keeps the hex it got. A name `key` could never produce reads as a
-/// miss, which is the same nothing a cleared cache is.
+/// The answer filed under a key a caller computed itself ([`store_at`]'s twin), for jobs whose digest has no field in §6's [`Request`] (describe folds its frames in). A name `key` could never produce is a miss.
 pub fn read_at(tree: &Tree, step: &str, key: &str) -> Option<String> {
     std::fs::read_to_string(tree.cache_llm(step, key)).ok()
 }
 
-/// File an answer under a key the caller already holds, applying §6's store rules to it: an empty
-/// reply is never written, and a cache that will not write comes back as [`Stored::Failed`] with a
-/// sentence rather than as an error the step has to handle.
+/// File an answer under a key the caller holds, with §6's store rules: an empty reply is never written, and a failed write comes back as [`Stored::Failed`].
 pub fn store_at(tree: &Tree, step: &str, key: &str, reply: &str) -> Stored {
     if !usable(reply) {
         return Stored::RefusedEmpty;
@@ -165,8 +132,7 @@ fn write_at(tree: &Tree, step: &str, key: &str, reply: &str) -> Stored {
     }
 }
 
-/// Store an answer under its key. Nothing touches the filesystem unless the answer is both keyable
-/// and usable, so a refused answer leaves no empty file behind.
+/// Store an answer under its key; nothing touches the filesystem unless it is both keyable and usable.
 pub fn store(tree: &Tree, step: &str, parts: &[Value], reply: &str) -> Stored {
     let Some(key) = key(parts) else {
         return Stored::RefusedNoKey;
@@ -180,11 +146,8 @@ pub fn store(tree: &Tree, step: &str, parts: &[Value], reply: &str) -> Stored {
 /// Which jobs use this cache: the five §6 names — describe, transcript (the fixer), textedit
 /// (joins), retake, translate — and nobody else.
 ///
-/// The cut, the narration and the upload text are named as non-users: their answers have to change
-/// when the user moves a cut or edits the prompt, and [`crate::narrate_pass::served_from_cache`]
-/// already answers `false` for narrate for that reason (its cache is the TTS one, where the words
-/// are cheap and the voice is not). The thumbnail is in neither list and gets no cache either:
-/// inventing one for a job §6 does not name would replay pictures nobody asked for.
+/// The cut, narration and upload text are non-users: their answers must change when the user moves a cut or edits the prompt
+/// ([`crate::narrate_pass::served_from_cache`] answers `false` for narrate). The thumbnail gets no cache either: §6 does not name it.
 pub fn uses_cache(job: crate::roles::Job) -> bool {
     matches!(
         job,
@@ -196,17 +159,12 @@ pub fn uses_cache(job: crate::roles::Job) -> bool {
     )
 }
 
-/// §6's first irregularity, the half that [`crate::produce_subtitles::cached`] does not cover: the
-/// gap-filling second call is never cached. The two rules are different and both hold — completeness
-/// gates the first call (a partial batch cached is a partial batch forever), and this one says the
-/// repair pass never earns a place in the cache at all.
+/// §6's first irregularity, the half [`crate::produce_subtitles::cached`] does not cover: completeness gates the first call, and the gap-filling second call is never cached.
 pub fn gap_fill_caches(second_call: bool) -> bool {
     !second_call
 }
 
-/// What translate puts in the file: the reconstructed numbered text, not the reply. A replayed
-/// batch then answers in the shape [`crate::produce_subtitles::merge`] wants and never re-parses
-/// prose, which is why a model that worded its answer oddly cannot break a resumed run.
+/// What translate puts in the file: the reconstructed numbered text, not the reply, so a replayed batch fits [`crate::produce_subtitles::merge`] without re-parsing prose.
 pub fn translate_store_value(reconstructed: &str, _reply: &str) -> String {
     reconstructed.to_string()
 }
@@ -216,15 +174,11 @@ pub fn translate_store_value(reconstructed: &str, _reply: &str) -> String {
 pub enum Ahead {
     /// The slot gate of §4 — a hit never takes a slot, so it never queues behind a busy model.
     Gate,
-    /// The exchange log of §7 — a hit opens no page section, so a resumed run's page holds only
-    /// the calls that were actually made.
+    /// The exchange log of §7 — a hit opens no page section.
     ExchangeLog,
 }
 
-/// A hit is answered before either of them. What this encodes is the caller's order: check the
-/// cache, return on a hit, and only then take a slot and open a page section. The hit is still
-/// recorded where a program can read it — `requests.tsv`'s `Outcome::Cache` row, with no time on
-/// the wire (§10) — just not on the human-facing page.
+/// A hit is answered before either: check the cache, return on a hit, only then take a slot and open a page section. The hit is still recorded in `requests.tsv` (`Outcome::Cache`, no wire time, §10).
 pub fn hit_answered_ahead(_stage: Ahead) -> bool {
     true
 }

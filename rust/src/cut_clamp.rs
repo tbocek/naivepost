@@ -1,58 +1,29 @@
 //! F3.12 — Clamp to the cut as applied (`spec/06-effects.md` §F3.12, S1..S5).
-//!
-//! One pass over the effect list, run **after** edge snapping, dead-air removal, mark removal and coalescing have all
-//! moved the timeline. Every one of those steps changes the seconds an effect was chosen for, so a rule enforced
-//! earlier is enforced against a cut that no longer exists — §06-effects §7's last clause: *suggested effects are
-//! clamped against the cut as applied*. The pass reads no model and no file, so it can run at any point.
-//!
-//! # What each kind gets
-//!
-//! - **A point effect** (`dur == 0`, a label being the usual one) has no width to overlap with: either it sits inside a
-//!   footage scene or it is dropped.
-//! - **A band** (zoom, text, svg, volume, speed) runs across scene and Split borders, and is trimmed only to the first
-//!   and last footage second it still covers. An insert does not count as footage. With under
-//!   [`MIN_SURVIVING_SECONDS`] left in the cut the band is dropped rather than kept as a fragment.
-//! - **A speed** is re-clamped after trimming so its rate stays playable over what is left; **a stop is not**, because
-//!   clamping would hand the frozen frame a rate and quietly turn a still into slow motion.
-//! - **A label is trimmed like the rest.** The prototype drops it outright, and §F3.12 says so in brackets: a label
-//!   marks a moment for the narration brief, and that moment may well still be in the cut. Trimming keeps the mark;
-//!   dropping it would lose information the next flow reads.
-//! - **Any other kind** — one this build does not know how to trim — is left exactly as it stands rather than dropped.
-//!   An unknown `kind` in an old file must not cost the user an effect (§1's reason for keeping `kind` a `String`).
-//!
-//! Fades shrink with the band, proportionally and in the same order they were given in, then take part in the usual
-//! rule that both together fit inside the length.
 
 use crate::cut::{self, Cut, EffectKind, Fx};
 use crate::cut_speed;
 use crate::fx_record;
 
-/// P.eng.effectMinSurvivingSeconds — a clamped band shorter than this is dropped instead of kept. §10's own wording:
-/// "a clamped effect band shorter than this is dropped". It is a floor on the *survivor*, not on what was trimmed
-/// away, so a 3 s caption with 2.5 s of it still in the cut stays.
+/// P.eng.effectMinSurvivingSeconds — a clamped band shorter than this is dropped instead of kept.
+/// §10's own wording: "a clamped effect band shorter than this is dropped".
 pub const MIN_SURVIVING_SECONDS: f64 = 1.0;
 
-/// What one pass did, so the caller can log S5's line and a test can name what went.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Clamped {
     /// The effects that are kept, in their original order, with the trimmed ones already trimmed.
     pub kept: Vec<Fx>,
-    /// How many were dropped — point effect without a footage scene under it, band under the floor, label over an
-    /// insert only. S5 logs the count and, through [`crate::cut_clamp_line::dropped_log`], names which
-    /// (§12 entry 19: a bare count is not something the user can act on).
+    /// How many were dropped — point effect without a footage scene under it, band under the floor,
+    /// label over an insert only.
     pub dropped: usize,
-    /// One note per dropped effect, in cut order, spelled by [`crate::cut_clamp_line::note`] — the kind word
-    /// and the second it was at. Filled where the drop is decided, so the sentence cannot disagree with the
-    /// arithmetic.
+    /// One note per dropped effect, in cut order, spelled by [`crate::cut_clamp_line::note`] — the
+    /// kind word and the second it was at.
     pub dropped_lines: Vec<String>,
-    /// The stops this pass left with no frame to hold: counted in `dropped`, and named here
-    /// because §9 wants a stop refused, not silently trimmed like the rest.
+    /// The stops this pass left with no frame to hold: counted in `dropped`, and named here because
+    /// §9 wants a stop refused, not silently trimmed like the rest.
     pub(crate) dropped_stops: Vec<Fx>,
 }
 
-/// F3.12 S1..S4 — hold every effect to the cut as it will actually play. `cut.segs` are the scenes *as applied*: this
-/// is the whole reason the pass exists, so passing a list from before snapping or coalescing answers about a cut that
-/// is not the one being rendered.
+/// F3.12 S1..S4 — hold every effect to the cut as it will actually play.
 pub fn clamp_to_cut(cut: &Cut) -> Clamped {
     let mut out = Clamped::default();
     for fx in &cut.fx {
@@ -69,10 +40,9 @@ pub fn clamp_to_cut(cut: &Cut) -> Clamped {
     out
 }
 
-/// §9 (`A stop at a dropped second SHOULD be refused when placed`), applied where the clamp
-/// already works out which effects the cut leaves without a home: a stop whose frame cannot be
-/// held is named here so its caller can say so, in the words [`crate::effect_overlap::no_frame`]
-/// gives. The clause lives there; this is the door it runs through.
+/// §9 (`A stop at a dropped second SHOULD be refused when placed`), applied where the clamp already
+/// works out which effects the cut leaves without a home: a stop whose frame cannot be held is
+/// named here so its caller can say so, in the words [`crate::effect_overlap::no_frame`] gives.
 pub fn refused_stops(clamped: &Clamped) -> Vec<f64> {
     clamped
         .dropped_stops
@@ -89,12 +59,9 @@ pub fn log_line(dropped: usize) -> String {
     )
 }
 
-/// One effect against the scenes: kept as proposed, kept trimmed, or `None` for gone.
 fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
     let (t0, t1) = fx.spans();
 
-    // S1: a point effect has no width, so being inside a footage scene is the whole question. `<=` both sides: a stamp
-    // on the exact second a scene starts is on it, not before it.
     if t1 <= t0 {
         let inside = segs
             .iter()
@@ -133,7 +100,6 @@ fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
     kept.t = nt0;
     kept.dur = nt1 - nt0;
     match fx.effect_kind() {
-        // The band is the band; its fades shrink with it below.
         Some(
             EffectKind::Zoom
             | EffectKind::Text
@@ -141,7 +107,6 @@ fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
             | EffectKind::Volume
             | EffectKind::Label,
         ) => {}
-        // S4: a rate has to stay playable over what the cut left. A stop gets none of this — see the module header.
         Some(EffectKind::Speed) => {
             if !fx_record::is_stop(fx) {
                 let (rate, dur) = cut_speed::clamp_speed(kept.rate, kept.dur);
@@ -158,9 +123,9 @@ fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
     Some(kept)
 }
 
-/// S4's "fades shrink proportionally": each fade keeps the share of the band it had before the trim, then both are put
-/// back inside the length by [`cut_speed::clamp_fades`], which is the one fade rule (§06-effects §7). `was` is the
-/// length before the trim; a band that grew or did not move leaves its fades alone.
+/// S4's "fades shrink proportionally": each fade keeps the share of the band it had before the
+/// trim, then both are put back inside the length by [`cut_speed::clamp_fades`], which is the one
+/// fade rule (§06-effects §7).
 fn shrink_fades(trans: f64, tout: f64, dur: f64, was: f64) -> (f64, f64) {
     let (trans, tout) = if was > 0.0 && dur < was {
         let share = dur / was;

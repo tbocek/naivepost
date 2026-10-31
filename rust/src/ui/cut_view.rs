@@ -1,14 +1,4 @@
 //! §05-cut.md §1 badge **31** and the wheel's three gestures: what part of the timeline is on screen.
-//!
-//! The zoom and the scroll are VIEW state, not cut state — folding, trimming or adding a scene never
-//! changes them, and they change without an edit to undo. So they live here rather than in `cut::Cut`,
-//! and every number that decides where the band is drawn comes from this module instead of the frozen
-//! [`crate::ui::window::TRACK_STRIP_PPS`] the placeholder strip was built with.
-//!
-//! Like the rest of `ui`'s split-out files this one exists because `window.rs` is past its size budget;
-//! it holds no rule of its own either (§00-principles §5): the ladder, the step and the floor all come
-//! from `cut_screen`/`timeline`, and this file only keeps the two numbers a view has (how tight, how far
-//! along) and turns a wheel event into a move.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -16,11 +6,6 @@ use gtk4 as gtk;
 use crate::ui::window::find_widget_by_name;
 use crate::{cut_screen, timeline, ui::cut_folds};
 
-/// One screenful of drag on the scrollbar (§1: "thumb geared at high zoom so one screenful is always
-/// 40 px of drag"). It is a DRAG distance, not the thumb's length: the thumb is the view's share of the
-/// tape, as on any scrollbar, and GTK's own drag moves `total / bar` tape pixels per pixel. Once that
-/// crosses a screenful in less than 40 px (a long session zoomed in), the drag is geared instead, so 40 px
-/// of hand travel always crosses one screenful ([`drag_gear`], the prototype's `cut_scrollgear.go`).
 pub const DRAG_PER_SCREENFUL_PX: f64 = 40.0;
 
 thread_local! {
@@ -47,18 +32,10 @@ fn filmed_seconds() -> f64 {
         .sum()
 }
 
-/// The same number, for a reader outside this module that has to do the tape's arithmetic the page's way —
-/// §A's zoom floor and the scrollbar's fit rule both divide the view by it, so a check that guessed the
-/// session's length would be testing its own guess. Named for that second reader; the program asks the
-/// private one.
 pub fn filmed_seconds_for_test() -> f64 {
     filmed_seconds()
 }
 
-/// The page's own surface width: §1's real band, asked of GTK for its measured allocation rather than trusted
-/// to a constant — the band spans the page column (`set_hexpand`), so it is wider than the 480 px placeholder
-/// packed beside it, and it is the surface the tape, the ruler and the red line are actually drawn on. This is
-/// what the scrollbar's fit rule, §B's reveal and the zoom floor are measured over.
 pub fn surface_width(window: &adw::ApplicationWindow) -> f64 {
     let content = match window.content() {
         Some(content) => content,
@@ -73,14 +50,6 @@ pub fn surface_width(window: &adw::ApplicationWindow) -> f64 {
 }
 
 /// The width the page's ZOOM arithmetic is measured over: always F2.8's placeholder strip, never §1's band.
-/// Read OFF THE WINDOW rather than through [`surface_width`], which falls back to this function when its own
-/// search finds nothing — calling each other would turn an un-laid-out window (every headless test) into
-/// infinite recursion.
-///
-/// The strip and not the band because that 480 px is what the ladder has been sized against since it existed:
-/// `strip_pps`, the door the placeholder's paint and press geometry read, clamps at `view_px(window::STRIP_WIDTH)`
-/// whatever GTK has laid out, so a floor worked out over the full-page band would be a number nothing on screen
-/// agrees with — − would stop there while the strip still showed the tape from its first second.
 pub fn zoom_surface_width(window: &adw::ApplicationWindow) -> f64 {
     let content = match window.content() {
         Some(content) => content,
@@ -106,9 +75,6 @@ pub fn extents(surface_width: f64) -> (f64, f64) {
 
 /// Repaint THIS window's scrollbar from its live zoom, scroll position and session length — the door
 /// `window.rs` calls after any zoom, scroll or cut change, so no caller has to carry numbers around.
-/// It records the bar's OWN allocation when GTK has given it one (the gear is a number about the bar's
-/// pixels, not about the band beside it) and falls back to the surface width only while the bar is still
-/// un-laid-out, which is every headless repaint and a test's freshly built window.
 pub fn refresh_scrollbar(bar: &gtk::Scrollbar, surface_width: f64) {
     let measured = f64::from(bar.width());
     let gear_from = if measured > 0.0 {
@@ -143,12 +109,6 @@ pub fn floor_pps(view: f64) -> f64 {
     timeline::floor_pps(&timeline::filmed_runs(&cut_folds::page_recordings()), view)
 }
 
-/// The pixels-per-second the page's geometry is drawn at RIGHT NOW: the stored zoom (§2's "zoom 4 px/s at
-/// open"), kept inside §2's own bounds — no shallower than the filmed-length fit of THIS session in THIS
-/// view (`floor_pps`, so − stops where all of it is on screen) and no deeper than [`cut_screen::ZOOM_MAX`]
-/// (240 px/s). Every strip, press and ruler reads this instead of a constant, which is what makes the
-/// stored zoom drive the layout rather than sit beside it. `view` comes from the caller that already knows
-/// its own width; [`live_pps_in`] takes it, because a headless window has no allocation to ask.
 pub fn live_pps(view: f64) -> f64 {
     pps().clamp(
         floor_pps(view).min(cut_screen::ZOOM_MAX),
@@ -163,13 +123,6 @@ pub fn origin() -> f64 {
 
 /// The strip's pixels-per-second right now: the stored zoom over this strip's own view (§2). One door, so
 /// the paint, the press geometry and every test read the SAME number the layout was drawn with.
-///
-/// The surface is the strip's DECLARED width (`window::STRIP_WIDTH`, its size request), NOT whatever width
-/// GTK happened to allocate it. That is deliberate: `press_zoom` floors the ladder at the same declared
-/// width via [`zoom_surface_width`]'s caller passing `view_px(STRIP_WIDTH)`, so §A's "− stops where the
-/// whole session is on screen" means "on screen in the strip as built" — a number that does not change if
-/// the Cut page's paned later stretches the strip across the column. Reading the realized allocation here
-/// would make − stop at one fit while the strip's own paint and press geometry ran at another.
 pub fn strip_pps() -> f64 {
     live_pps(view_px(f64::from(crate::ui::window::STRIP_WIDTH)))
 }
@@ -200,10 +153,6 @@ pub fn view_px(surface_width: f64) -> f64 {
     (surface_width - gutter_px()).max(0.0)
 }
 
-/// Clamp a scroll position into what exists: never left of the gutter, never past the last pixel. `total`
-/// counts the pinned gutter in front of the film and `view` does not (it is the band minus that gutter), so the
-/// film's own length is what is weighed against the view; weighing the gutter too let a scroll run one gutter
-/// past the last second.
 fn clamp_origin(px: f64, total: f64, view: f64) -> f64 {
     px.clamp(0.0, (total - gutter_px() - view).max(0.0))
 }
@@ -217,17 +166,12 @@ pub fn set_origin(px: f64, total: f64, view: f64) -> f64 {
 
 /// Does the whole session fit? When it does the scrollbar hides itself (§A: "hidden when everything
 /// fits") — a bar with a full-width thumb says nothing except that there is room to the right.
-///
-/// The film (`total` without the pinned gutter it counts) against the view (the band without that gutter): at
-/// the − floor the session exactly fills the view, so it fits and the bar hides. The first rewrite weighed the
-/// gutter on one side only, so the bar stayed up at the floor with a gutter's width to scroll.
 pub fn fits(total: f64, view: f64) -> bool {
     total - gutter_px() <= view + 1e-9
 }
 
 /// Tape pixels one pixel of thumb drag moves when the drag is geared, or `None` while GTK's own drag
 /// already costs at least [`DRAG_PER_SCREENFUL_PX`] per screenful (§1's gear engages at high zoom only).
-/// `bar_px` is the bar's length; GTK's own drag moves `total / bar_px` per pixel.
 pub fn drag_gear(total: f64, view: f64, bar_px: f64) -> Option<f64> {
     if bar_px <= 0.0 || view <= 0.0 {
         return None;
@@ -284,8 +228,6 @@ fn next_of(pps: f64, inward: bool, floor: f64) -> f64 {
 
 /// Zoom keeping the second under the cursor where it is (§A's wheel "does the same, around the
 /// cursor"), with the same floor as the buttons. Returns `(new_pps, new_origin)`.
-/// Zoom keeping the second under the cursor where it is (§A's wheel "does the same, around the
-/// cursor"), with the same floor as the buttons. Returns `(new_pps, new_origin)`.
 pub fn zoom_around(
     anchor_x: f64,
     factor: f64,
@@ -297,8 +239,6 @@ pub fn zoom_around(
     // The anchor arrives in PAGE pixels (where the pointer actually was). `origin()` scrolls the
     // TIMELINE, whose first pixel sits after the pinned gutter, so the second under the pointer is
     // `(anchor - gutter + origin) / pps` and the scroll back has to be solved in that same space.
-    // From the drawn zoom, as [`zoom_step`] steps: one scale and one floor for the buttons and the wheel, and a
-    // zoom out never widens a tape already narrower than the fit.
     let current = pps().min(cut_screen::ZOOM_MAX);
     let lowest = if factor < 1.0 {
         floor.min(current)
@@ -321,10 +261,6 @@ pub fn zoom_around(
 /// How far across the view a moving line may run before the view moves with it: the last quarter stays ahead of it.
 pub const LINE_HOLD_FRACTION: f64 = 0.75;
 
-/// Follow a moving line: the view stands still until the line would pass [`LINE_HOLD_FRACTION`] of it, then scrolls
-/// just enough to keep the line there. At the tape's end the clamp lets the line run on into the last quarter. A line
-/// that left by the left edge is recentred. `playhead_px` is a pixel INSIDE the timeline (the gutter already
-/// subtracted), which is what [`total_px`] measures from its start.
 pub fn reveal_playhead(playhead_px: f64, total: f64, view: f64) -> f64 {
     let held = origin();
     if playhead_px < held {
@@ -347,10 +283,6 @@ pub fn follow_playhead(window: &adw::ApplicationWindow, at: f64) {
     repaint_page(window);
 }
 
-/// Lay the tape out anew, with the line staying on screen if it was: its pixel moves with the layout, and the view,
-/// held in pixels, does not. The opening is the case that shows: the line is scrolled to on a tape implied by the
-/// cut, then the footage lengths land and the gaps between recordings take no width, which left the view minutes
-/// past the line. A line the person has scrolled away from stays away.
 pub fn keep_line_through_layout(window: &adw::ApplicationWindow, layout: impl FnOnce()) {
     let at = crate::ui::window::line_position(window).t;
     let view = view_px(surface_width(window));
@@ -422,10 +354,6 @@ fn keep_zoom() {
     });
 }
 
-/// The pixel inside the timeline the line is drawn at: through the span the tape is painted by, where the unfilmed
-/// time between recordings and a folded stretch take no width. The first rewrite followed `second * pps`, which is
-/// right only for one unfolded recording: with gaps it named a pixel far right of the line, and the view jumped
-/// there and left the line behind.
 pub fn line_px(runs: &[(f64, f64)], folds: &[[f64; 2]], pps: f64, at: f64) -> f64 {
     let span = timeline::Span::new(timeline::cells(runs, folds), pps, 0.0);
     span.x_of(at)
@@ -434,8 +362,6 @@ pub fn line_px(runs: &[(f64, f64)], folds: &[[f64; 2]], pps: f64, at: f64) -> f6
 /// §1's three wheel gestures, attached to the widgets they belong to: transport bar and preview step
 /// frames (Shift five), the tracks zoom around the cursor and pan an eighth with Shift — which gesture a
 /// notch is stays `cut_screen::wheel`'s rule. `wire_wheel_gestures` attaches them; this is what one does.
-/// `on_step` is the caller's transport seam: the red line belongs to `window.rs`, so a step goes through
-/// it and this answers `None` rather than reaching for a player it does not own.
 pub fn apply_wheel<S: Fn(i64)>(
     window: &adw::ApplicationWindow,
     over: cut_screen::WheelOver,
@@ -477,9 +403,6 @@ pub fn apply_wheel_at<S: Fn(i64)>(
     }
 }
 
-/// Where the pointer was over `widget` when the scroll that woke `ctrl` happened, in `widget`'s own pixels:
-/// the scroll event's own position when it carries one, else where `hovered` last saw the pointer (GDK's X11
-/// backend hands a wheel notch over with no position at all), else 0.0.
 fn pointer_x_on(ctrl: &gtk::EventControllerScroll, widget: &gtk::Widget, hovered: f64) -> f64 {
     let (Some(event), Some(native)) = (ctrl.current_event(), widget.native()) else {
         return hovered;
@@ -498,15 +421,6 @@ fn pointer_x_on(ctrl: &gtk::EventControllerScroll, widget: &gtk::Widget, hovered
 }
 
 /// The three wheel gestures of §1, attached to the widgets they belong to.
-///
-/// One `EventControllerScroll` per widget, each told what kind of ground it sits on: over the transport
-/// bar and the preview picture a notch steps frames, over the tracks it zooms around the cursor, and
-/// Shift+wheel (or a trackpad's sideways swipe) pans an eighth of the view. Which gesture a notch is,
-/// and what Shift does to it, is `cut_screen::wheel`'s rule alone — this only reads the modifier off the
-/// event and hands the answer to `apply_wheel`, which is also what a test drives.
-///
-/// `on_step` is the caller's transport seam (§A: stepping frames moves the red line, and the line belongs
-/// to `window.rs`), so this module never reaches for a player it does not own.
 pub fn attach_wheel<S>(
     window: &adw::ApplicationWindow,
     targets: &[(&'static str, cut_screen::WheelOver)],
@@ -515,10 +429,6 @@ pub fn attach_wheel<S>(
     S: Fn(&adw::ApplicationWindow, i64) + 'static,
 {
     let on_step = std::rc::Rc::new(on_step);
-    // The caller's list plus the band §1's tracks are actually drawn on. `track-band` is not in the caller's
-    // list because that list lives in `window.rs`, past its size budget, and because a widget built later than
-    // this call (the band arrives from `cut_tracks::install`) belongs to whoever builds it: naming it here
-    // keeps one rule — every ground the page shows gets exactly one controller of its kind.
     let mut grounds: Vec<(&'static str, cut_screen::WheelOver)> = targets.to_vec();
     // `track-band` is §1's single tracks stack; it is named here as well as in the caller's list because a
     // widget built later than this call (the band arrives from `cut_tracks::install`) belongs to whoever
@@ -548,9 +458,6 @@ pub fn attach_wheel<S>(
         let win = window.clone();
         let step = on_step.clone();
         controller.connect_scroll(move |ctrl, dx, dy| {
-            // The modifier comes off the event that woke the signal, not off a remembered key state:
-            // a trackpad swipe carries Shift without anyone holding a key the app watched. One door for
-            // both a live notch and a test's: `apply_wheel`, which is also what this closure is.
             let shift = ctrl
                 .current_event_state()
                 .contains(gtk::gdk::ModifierType::SHIFT_MASK);
@@ -582,10 +489,6 @@ fn carries_scroll_controller(widget: &gtk::Widget) -> bool {
 
 /// Carry out what `cut_screen::wheel` decided, then redraw. Returns the sentence for the status line,
 /// or `None` for a step — which belongs to the transport, and says nothing here.
-/// The width ONE wheel gesture is carried out over: §1's band when GTK has laid it out, else the placeholder
-/// strip. Both doors below (`apply_wheel`, and this) read it, so the eighth of the view a Shift notch pans and
-/// the floor that notch's zoom clamps at come from the same screenful — measured once per gesture rather than
-/// once per branch, which is what kept them disagreeing while each asked for itself.
 pub fn wheel_gestures_view(window: &adw::ApplicationWindow) -> f64 {
     view_px(surface_width(window))
 }
@@ -628,11 +531,6 @@ fn apply_wheel_result(
 }
 
 /// The surfaces a page redraw has to queue, in one place so the list and the page cannot drift apart.
-/// `track-band` is the tape; `track-playhead` is §1's red line on ITS OWN layer, which is exactly why it
-/// needs naming here — a draw callback only runs for a widget someone asked to be redrawn, so leaving the
-/// line's surface out of this list meant the 2 px line was painted once at its opening position and then
-/// never moved again, through a zoom, a scroll or a click that placed it. `track-strip` is F2.8's
-/// placeholder strip, still packed under the band and still repainted by the same door.
 pub fn repaint_targets() -> [&'static str; 3] {
     ["track-band", "track-playhead", "track-strip"]
 }
@@ -662,18 +560,9 @@ pub fn repaint_page(window: &adw::ApplicationWindow) {
 }
 
 thread_local! {
-    /// How wide the bar last refreshed was told to be, so [`paint_scrollbar`] can be handed only the view
-    /// and still size its thumb in pixels rather than in a fraction nobody checked. GTK gives a scrollbar
-    /// no natural width of its own, so before the page is laid out (a headless repaint, a test's fresh bar)
-    /// `bar.width()` is 0 and this is the only length there is. Written by [`refresh_scrollbar`], the one
-    /// door every repaint of badge **31** goes through.
     static BAR_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
-/// Repaint the bar from the view: upper is the whole timeline, the page (the thumb) is the view, the step
-/// an eighth of it, and the bar disappears when everything already fits. The bar's OWN adjustment is
-/// re-stated rather than replaced: [`attach_scrollbar`] listens on it, and a fresh adjustment per repaint
-/// left that listener on the first one, so dragging the thumb moved nothing.
 pub fn paint_scrollbar(bar: &gtk::Scrollbar, total: f64, view: f64) {
     bar.adjustment().configure(
         origin(),
@@ -773,12 +662,6 @@ pub fn attach_scrollbar(window: &adw::ApplicationWindow) {
     let Some(widget) = find_widget_by_name(&content, "track-scrollbar") else {
         return;
     };
-    // A bar §1 says is hidden has no allocation, and an unmapped scrollbar answers 0 px on both axes. The
-    // gearing is defined against the BAR's length (§B: "thumb geared at high zoom so one screenful is always
-    // 40 px of drag"), so the length has to be recorded while the bar is mapped and page-wide — which is true
-    // the moment the page is realized, whatever the tape's width turns out to be. Without this the bar is
-    // never mapped at the open zoom (the session fits), stays 0×0, and every thumb it later paints is geared
-    // against nothing.
     let bar = widget.clone();
     let win = window.clone();
     widget.connect_realize(move |_| {

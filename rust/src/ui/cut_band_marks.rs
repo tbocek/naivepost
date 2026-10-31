@@ -1,14 +1,4 @@
 //! §05-cut#1-screen "Tracks" — every mark on the band a hand can press, drawn on the band and pressed there.
-//!
-//! §1 puts them all on the tape: the ✕ on each green bar (badge 25) and on the selection (27), the −/+ fold badges
-//! in the dropped gaps (26), the fold-all badge (23), each row's sound switch (29) and the empty row's ✕ in the
-//! gutter, and the speaker and lens badges on the scene under the line or held. The prototype paints them as plated
-//! marks (`go/cut_edit.go` `drawKillBadge`, `go/cut_fold.go` `foldPlate`, `go/cut_hear.go` `hearPlate`/`camPlate`)
-//! and answers a press by asking which mark is under it. The first port made them GTK buttons: a row of them under
-//! the tape, grey button plates over the bar, and a ✕ inked on the bar that a press did nothing to.
-//!
-//! One list answers both questions: [`placed`] says where each mark stands, the painter draws that list, and
-//! [`press_at`] hit-tests the same list and forwards to the door the old button fired. No rule is decided here.
 
 use adw::prelude::*;
 
@@ -24,22 +14,14 @@ pub const PLATE_R: f64 = 7.0;
 pub const HEAR_PLATE_R: f64 = 8.0;
 /// How far from its mark a press still takes it, either way.
 pub const HIT_PX: f64 = 10.0;
-/// The glyph's reach inside a speaker plate (`hearR`).
 const HEAR_R: f64 = 4.5;
-/// A scene narrower than this wears no speaker or lens: the plate would cover its grips.
 const HEAR_MIN_PX: f64 = 28.0;
-/// The scene badges' column, in from the scene's left edge.
 const HEAR_IN_PX: f64 = 14.0;
-/// The selection's ✕, in from its right end (`killIn`: the grip's 6 px plus the hit's 10).
 const KILL_IN_PX: f64 = 16.0;
 
-/// A ✕ or fold plate, dark and translucent over the green.
 const PLATE_DARK: (f64, f64, f64, f64) = (0.06, 0.06, 0.07, 0.55);
-/// A speaker whose sound is off.
 const PLATE_OFF: (f64, f64, f64, f64) = (0.06, 0.06, 0.07, 0.62);
-/// A speaker whose sound is heard, a lens on the row in use.
 const PLATE_ON: (f64, f64, f64, f64) = (0.15, 0.65, 0.3, 0.95);
-/// The mark on a plate.
 const MARK_INK: (f64, f64, f64, f64) = (1.0, 1.0, 1.0, 0.92);
 
 /// What the band's marks say, read off the cut when the page builds its scene.
@@ -79,31 +61,20 @@ pub struct HearScene {
 /// One pressable mark.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mark {
-    /// A green bar's ✕: drop scene N.
     SceneCross(usize),
-    /// The selection's ✕: clear it.
     SelectionCross,
-    /// A dropped gap's badge: − folds it, + (folded) opens it.
     Fold((f64, f64), bool),
-    /// The gutter's fold-all badge.
     FoldAll(bool),
-    /// A camera row's sound switch for the whole cut.
     RowSound(usize, bool),
-    /// The emptied bottom row's ✕.
     RowCross(usize),
-    /// A cut lane's sound switch for the whole cut.
     LaneSound(usize, bool),
-    /// A cut lane's ✕.
     LaneCross(usize),
-    /// The badge scene's own footage sound.
     SceneSound(bool),
-    /// A cut lane, heard in the badge scene or not.
     SceneLane(usize, bool),
-    /// A row the badge scene could be shown from; lit on the row it is shown from.
     Lens(usize, bool),
 }
 
-/// A mark and where it stands. `pinned` marks live in the gutter and do not scroll; the others are in tape pixels.
+/// A mark and where it stands.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Placed {
     pub mark: Mark,
@@ -167,7 +138,6 @@ pub fn marks_for(
 }
 
 thread_local! {
-    /// `whole_takes`' last read: the file, its mtime then, and the bases it named.
     static WHOLE: std::cell::RefCell<Option<(std::path::PathBuf, std::time::SystemTime, Vec<String>)>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -308,10 +278,8 @@ pub fn placed(scene: &Scene, rows: Rows) -> Vec<Placed> {
     out
 }
 
-/// Paint the tape's marks. Called inside the band's scroll translation, so x is tape pixels.
+/// Paint the tape's marks.
 pub fn paint_tape(cr: &cairo::Context, scene: &Scene, rows: Rows) {
-    // The badge scene's own stretch of each strip it speaks for: green where heard, grey where not, so a scene
-    // too narrow for a badge still says what it does (`drawHearBadges`).
     if let Some(hear) = &scene.marks.hear {
         let seg = &scene.segs[hear.index];
         let (x, w) = cut_tracks::band_span_px(scene, seg.s, seg.e);
@@ -389,7 +357,6 @@ fn plate(cr: &cairo::Context, cx: f64, cy: f64, r: f64, rgba: (f64, f64, f64, f6
     let _ = cr.fill();
 }
 
-/// Two crossing strokes, 1.6 px.
 fn cross(cr: &cairo::Context, cx: f64, cy: f64, reach: f64, ink: (f64, f64, f64, f64)) {
     cr.set_source_rgba(ink.0, ink.1, ink.2, ink.3);
     cr.set_line_width(1.6);
@@ -400,7 +367,6 @@ fn cross(cr: &cairo::Context, cx: f64, cy: f64, reach: f64, ink: (f64, f64, f64,
     let _ = cr.stroke();
 }
 
-/// − on an open gap, + on a folded one.
 fn sign(cr: &cairo::Context, cx: f64, cy: f64, plus: bool) {
     cr.set_source_rgba(MARK_INK.0, MARK_INK.1, MARK_INK.2, MARK_INK.3);
     cr.set_line_width(1.6);
@@ -413,7 +379,6 @@ fn sign(cr: &cairo::Context, cx: f64, cy: f64, plus: bool) {
     let _ = cr.stroke();
 }
 
-/// The speaker: a cone, with two waves when heard and a small ✕ when not (`drawSpeaker`).
 fn speaker(cr: &cairo::Context, cx: f64, cy: f64, on: bool) {
     let r = HEAR_R;
     cr.set_source_rgba(MARK_INK.0, MARK_INK.1, MARK_INK.2, MARK_INK.3);
@@ -440,7 +405,6 @@ fn speaker(cr: &cairo::Context, cx: f64, cy: f64, on: bool) {
     let _ = cr.stroke();
 }
 
-/// The lens: a ring, filled on the row in use (`drawLens`).
 fn lens(cr: &cairo::Context, cx: f64, cy: f64, on: bool) {
     cr.set_source_rgba(MARK_INK.0, MARK_INK.1, MARK_INK.2, MARK_INK.3);
     cr.set_line_width(1.4);
@@ -498,7 +462,6 @@ pub fn press_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> bool {
     true
 }
 
-/// The door each mark stands for: the same seams the old buttons fired.
 fn fire(window: &adw::ApplicationWindow, scene: &Scene, mark: &Mark) -> Option<String> {
     use crate::ui::{cut_cameras, cut_folds, cut_verb_press::press_badge};
     let lane_name = |lane: usize| scene.lanes.get(lane).map(|lane| lane.name.clone());

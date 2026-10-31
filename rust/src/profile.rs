@@ -61,8 +61,7 @@ profile ({{name}} works there too); a step without one sends the built-in prompt
 The Produce settings are set in the form under the template (the same controls as the Produce page); they
 are kept in the file as a \"## produce\" section and set on a project when the profile is chosen.";
 
-/// The template without its `## produce` section, and that section's rows: the Profiles window shows the text in
-/// its box and the rows in the Produce form, never the rows as text.
+/// The template without its `## produce` section, and that section's rows (the Profiles window shows rows in the Produce form, never as text).
 pub fn split_produce(source: &str) -> (String, Vec<(String, String)>) {
     let (mut text, mut rows, mut inside) = (Vec::new(), Vec::new(), false);
     for line in source.lines() {
@@ -102,9 +101,7 @@ pub fn join_produce(text: &str, rows: &[(String, String)]) -> String {
     )
 }
 
-/// What "New" holds in the Profiles window: one big template with everything a profile can say. A field, a User
-/// Context to fill in, then every step's section holding its shipped prompt (so editing one starts from the words
-/// the app would send) and the Produce rows at their defaults.
+/// What "New" holds in the Profiles window: one template with everything a profile can say, every step's section holding its shipped prompt, and the Produce rows at their defaults.
 pub fn starter() -> String {
     let mut out = String::from(
         "---\ntitle: text required \"Title\"\n---\nWhat this recording is, who speaks, what to keep and what to cut. \
@@ -237,8 +234,7 @@ pub fn parse(source: &str) -> Result<Template, Vec<String>> {
             Err(why) => errors.push(format!("line {number}: {why}")),
         }
     }
-    // The text, cut into the User Context (before the first `## step` line) and one section per step: a line
-    // `## narrate` starts the section for that step; any other `##` line is ordinary text.
+    // The text, cut into the User Context (before the first `## step` line) and one section per step; other `##` lines are ordinary text.
     let mut context: Vec<&str> = Vec::new();
     let mut sections: Vec<(String, Vec<&str>)> = Vec::new();
     for (offset, line) in lines[text_from.min(lines.len())..].iter().enumerate() {
@@ -455,7 +451,7 @@ fn field_of(line: &str) -> Result<Field, String> {
 
 /// Is `value` one this field takes? A number field takes digits with one `.` or `,` and a leading `-`; a
 /// `choice` only its listed values; an empty value is always taken (whether it may stay empty is
-/// [`missing`]'s question).
+/// `missing`'s question).
 pub fn accepts(field: &Field, value: &str) -> bool {
     let value = value.trim();
     if value.is_empty() {
@@ -508,9 +504,7 @@ pub fn section(
     (!filled.trim().is_empty()).then_some(filled)
 }
 
-/// The section for step `key` of the profile the open project uses, filled in with the project's values:
-/// what `settings::prompt_text` sends in place of the step's shipped prompt. `None` with no profile, a profile this
-/// machine lacks or cannot read, or no section for the step.
+/// The section for step `key` of the open project's profile, filled in: what `settings::prompt_text` sends in place of the shipped prompt. `None` with no profile, an unreadable one, or no section.
 pub fn active_section(paths: &Paths, key: &str) -> Option<String> {
     let project = crate::project::load(&crate::startup::open_dir()).ok()?;
     let used = project.profile?;

@@ -1,82 +1,54 @@
-//! Retake marking — spec/02-services.md §3.4.
-//!
-//! The model says which stretches of the transcript were abandoned; everything else about a mark is
-//! arithmetic on lines and audio that only the app can do. That asymmetry is what the tool's result
-//! has to carry: an ok naming *the stretch that will actually be removed* — after trimming to the
-//! words the later take repeats and placing the edges on the audio — because the seconds the model
-//! sent are its guess at where the attempt ends, not what gets cut.
-//!
-//! The prototype ran this in three pooled runs and told the model nothing about any of it: each mark
-//! was trimmed by a fuzzy matcher, overlapping marks were merged, and over the ceiling every mark
-//! from all three runs was thrown away. Here a refusal names itself, a merge is reported, and the
-//! ceiling comes back as a number while there is still time to take something back.
+//! Retake marking, spec/02-services.md §3.4.
+//! The model names abandoned stretches; the app does the arithmetic. The tool result names the stretch that will actually be removed (after trimming to the words the later take repeats and placing edges on the audio), since the model's seconds are a guess. Refusals name themselves, merges are reported, and the ceiling comes back as a number.
 
 use serde_json::json;
 
-/// How far from the end of an attempt its replacement may be and still be that attempt's retake.
-/// P.machine.retakeReachSeconds
+/// How far from the end of an attempt its replacement may be and still be that attempt's retake. P.machine.retakeReachSeconds
 pub const RETAKE_REACH_SECONDS: f64 = 180.0;
 
 /// A removal shorter than this is a breath, not an abandoned take. P.machine.retakeMinSeconds
 pub const RETAKE_MIN_SECONDS: f64 = 0.3;
 
-/// A pause worth drawing in the retake brief — and the threshold the brief left out, since gaps
-/// under it are exactly where a speaker restarts. P.machine.retakePauseSeconds
+/// A pause worth drawing in the retake brief. P.machine.retakePauseSeconds
 pub const RETAKE_PAUSE_SECONDS: f64 = 1.5;
 
 /// Refused when more than this share of the session's speech is called abandoned.
 /// P.machine.retakeCeil
 pub const RETAKE_CEIL: f64 = 0.4;
 
-/// Longest line still a broken-off fragment rather than somebody starting a new thought — the retake
-/// brief keeps a tail this long with what came before it. P.machine.retakeFragmentSeconds
+/// Longest line still a broken-off fragment; the brief keeps a tail this long with what came before. P.machine.retakeFragmentSeconds
 pub const RETAKE_FRAGMENT_SECONDS: f64 = 6.0;
 
-/// How much of the later take is read for the repeat, so a mark's start can be pulled back to where the
-/// attempt stops being said again. P.machine.againReachSeconds
+/// How much of the later take is read for the repeat. P.machine.againReachSeconds
 pub const AGAIN_REACH_SECONDS: f64 = 25.0;
 
-/// One transcript line, as a mark sees it: its number and where it sits in time.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
-    /// The number the model is shown and sends back.
     pub n: u32,
     pub start: f64,
     pub end: f64,
 }
 
-/// One marked stretch of the session, in line numbers and in seconds.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mark {
-    /// The first abandoned line, as the model named it.
     pub from: u32,
-    /// The last one.
     pub to: u32,
-    /// What will actually be removed, after trimming to the words the later take repeats and placing
-    /// the edges on the audio. Not `from`..`to`: a mark whose tail is repeated by the retake leaves
-    /// that tail standing, and cutting where the model pointed would cut words that were meant.
+    /// What will actually be removed after trimming and edge placement; not `from`..`to`.
     pub removed: (f64, f64),
-    /// Whether the trim moved either edge off the lines named — which is what tells the model its
-    /// numbers were understood rather than obeyed.
+    /// Whether the trim moved either edge off the lines named.
     pub trimmed: bool,
-    /// The line the attempt is said again at; `None` for "never picked up" (`again` 0).
     pub again: Option<u32>,
 }
 
-/// A session's marks, and the speech total they are measured against.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Marks {
-    /// Every line of the session, in order — the range a mark has to fall inside.
     lines: Vec<Line>,
-    /// Seconds spoken in the whole session: what the running share is a share *of*.
     speech_seconds: f64,
     marks: Vec<Mark>,
 }
 
 impl Marks {
-    /// A session of transcript lines. `speech_seconds` is what the ceiling is measured against — the
-    /// seconds actually spoken, not the session's wall-clock length, because silence cannot be
-    /// abandoned and counting it would let a long recording absorb any number of marks.
+    /// A session of transcript lines. `speech_seconds` is the seconds actually spoken, not wall-clock length, since silence cannot be abandoned.
     pub fn new(lines: Vec<Line>, speech_seconds: f64) -> Marks {
         Marks {
             lines,
@@ -85,28 +57,20 @@ impl Marks {
         }
     }
 
-    /// The session's lines.
     pub fn lines(&self) -> &[Line] {
         &self.lines
     }
 
-    /// The marks so far, in the order they were made.
     pub fn marks(&self) -> &[Mark] {
         &self.marks
     }
 
-    /// `mark_abandoned(from, to, again)` — ok with what will actually be removed and the running
-    /// share of speech now marked, or a refusal naming the reason.
-    ///
-    /// `again` is `None` for "never picked up" (the model sends 0): always legal, because a take that
-    /// was simply dropped has no replacement to be near.
+    /// `mark_abandoned(from, to, again)`: ok with what will actually be removed and the running share, or a refusal. `again` `None` (model sends 0) is always legal.
     pub fn mark_abandoned(&mut self, from: u32, to: u32, again: Option<u32>, trim: Trim) -> String {
         self.mark_abandoned_at(from, to, again, trim, 0.0)
     }
 
-    /// [`mark_abandoned`] with the attempt's onset handed in, which is what §12 §2 wants named back: the
-    /// seconds up to the retake's first word go with the abandoned take, and only the caller can say where
-    /// that onset is. `0.0` — "nothing was picked up" — leaves the trim's own end as the end of the cut.
+    /// `mark_abandoned` with the attempt's onset handed in (§12 §2): seconds up to the retake's first word go with the abandoned take. `0.0` leaves the trim's own end as the end of the cut.
     pub fn mark_abandoned_at(
         &mut self,
         from: u32,
@@ -115,8 +79,7 @@ impl Marks {
         trim: Trim,
         onset: f64,
     ) -> String {
-        // The range has to name lines that exist. Checked first because every other message quotes
-        // these numbers, and a refusal about line 900 of 40 should not also explain a reach rule.
+        // The range must name lines that exist; checked first since every other message quotes these numbers.
         let (Some(first), Some(last)) = (self.lines.first(), self.lines.last()) else {
             return crate::tools::error("this session has no lines to mark");
         };
@@ -127,7 +90,6 @@ impl Marks {
             ));
         }
         let (replacement, replacement_gap) = match again {
-            // `again` 0 means never picked up: no line to point at and no distance to check.
             None => (None, 0.0),
             Some(n) => {
                 let Some(line) = self.lines.iter().find(|line| line.n == n) else {
@@ -136,15 +98,13 @@ impl Marks {
                          picked up"
                     ));
                 };
-                // How far the replacement starts after the end of what is being abandoned. A
-                // negative gap means it starts before, which the inside check below refuses.
+                // Gap after the end of what is abandoned; negative starts before, refused below.
                 let gap = line.start - self.seconds(to).1;
                 (Some(line), gap)
             }
         };
 
-        // A line cannot be picked up inside the stretch that abandons it: the mark would remove the
-        // very lines it says are said again. §3.4 gives the wording; only the numbers change.
+        // A line cannot be picked up inside the stretch that abandons it. §3.4 gives the wording.
         if let Some(line) = replacement {
             if line.n >= from && line.n <= to {
                 return crate::tools::error(&format!(
@@ -153,9 +113,7 @@ impl Marks {
                     line.n
                 ));
             }
-            // The replacement has to be the attempt's retake, not some later passage that happens to
-            // repeat a phrase. Exactly the reach is allowed: it is the limit, not a tolerance to
-            // round away.
+            // The replacement must be the attempt's retake; exactly the reach is allowed.
             if replacement_gap > RETAKE_REACH_SECONDS {
                 return crate::tools::error(&format!(
                     "line {} starts {:.1} s after line {to} ends -- a replacement is at most \
@@ -167,8 +125,7 @@ impl Marks {
 
         let edges = self.seconds(from).0..self.seconds(to).1;
         let (removed_start, removed_end) = trim.apply(edges.start, edges.end);
-        // A removal shorter than a breath is not an abandoned take: it is the model pointing at a
-        // stumble, and cutting it costs more than leaving it in.
+        // Shorter than a breath is a stumble; cutting it costs more.
         if removed_end - removed_start < RETAKE_MIN_SECONDS {
             return crate::tools::error(&format!(
                 "lines {from}-{to} leave {:.2} s to remove -- under {RETAKE_MIN_SECONDS} s that is \
@@ -214,20 +171,14 @@ impl Marks {
             "again": again,
             "speech_marked": share,
             "ceiling": RETAKE_CEIL,
-            // §12 §2's other half: the seconds the PLAYED cut loses are not `removed` alone. A take whose
-            // attempt was picked up loses everything up to that attempt's onset (`Retake::to`), so the
-            // model is handed the wider pair in the same answer and can disagree here rather than find it
-            // in the marks file. The caller passes the onset in (`onset`): finding it needs the transcript
-            // lookup that lives outside this module. With no onset the trim's end is the end of the cut.
+            // §12 §2: the PLAYED cut loses everything up to the picked-up attempt's onset (`Retake::to`), so the model gets the wider pair in the same answer. The caller passes `onset`; without it the trim's end is the cut's end.
             "cut_to_seconds": onset.max(removed_end),
-            // §12 §3: each verdict the model can get here arrives with a one-sentence reason it can act
-            // on, built from what this call actually did rather than from a fixed string.
+            // §12 §3: each verdict carries a one-sentence reason built from what this call did.
             "why": mark_reason(again, trimmed, merged),
         }))
     }
 
-    /// `unmark(from, to)` — ok. A mark overlapping the range loses that stretch; taking back part of
-    /// a mark is how a model comes back under the ceiling without losing the rest of its work.
+    /// `unmark(from, to)`: a mark overlapping the range loses that stretch.
     pub fn unmark(&mut self, from: u32, to: u32) -> String {
         let (Some(first), Some(last)) = (self.lines.first(), self.lines.last()) else {
             return crate::tools::error("this session has no lines to unmark");
@@ -241,7 +192,6 @@ impl Marks {
         let start = self.seconds(from).0;
         let end = self.seconds(to).1;
 
-        // Cut the asked stretch out of every mark it touches, keeping whatever is left on either side.
         let mut taken = 0.0;
         let mut kept: Vec<Mark> = Vec::new();
         for mark in std::mem::take(&mut self.marks) {
@@ -264,11 +214,7 @@ impl Marks {
         }))
     }
 
-    /// `get_lines(from, to)` — the lines again, each with the pause before it in seconds.
-    ///
-    /// Including the short ones: §3.4 calls out that the brief omits pauses under
-    /// [`RETAKE_PAUSE_SECONDS`], and those are exactly where a speaker stops, breathes and starts the
-    /// sentence over again — the shape of an abandoned take.
+    /// `get_lines(from, to)`: the lines again with the pause before each, including those under [`RETAKE_PAUSE_SECONDS`] (§3.4), where a speaker restarts.
     pub fn lines_with_pause(&self, from: u32, to: u32) -> Vec<(&Line, f64)> {
         self.lines
             .iter()
@@ -287,7 +233,6 @@ impl Marks {
             .collect()
     }
 
-    /// `finish` — the total marked against the ceiling, so a model over it can take some back.
     pub fn finish(&self) -> Total {
         let share = self.share();
         Total {
@@ -298,7 +243,6 @@ impl Marks {
         }
     }
 
-    /// The running share of the session's speech now marked.
     fn share(&self) -> f64 {
         if self.speech_seconds <= 0.0 {
             return 0.0;
@@ -306,16 +250,14 @@ impl Marks {
         let marked: f64 = self
             .marks
             .iter()
-            // Marks can touch after a merge attempt, so the total counts each second once rather
-            // than adding two overlapping stretches twice and reporting a share over 1.
+            // Marks can touch after a merge, so each second is counted once.
             .map(|mark| (mark.removed.1 - mark.removed.0).max(0.0))
             .sum::<f64>()
             / self.speech_seconds;
         marked.min(1.0)
     }
 
-    /// Seconds of speech the marks pooled so far actually take out, counted once per second (overlapping
-    /// marks merge, so adding their lengths twice would report a share over 1).
+    /// Seconds of speech the marks take out, each second once.
     pub fn marked_seconds(&self) -> f64 {
         self.marks
             .iter()
@@ -323,12 +265,10 @@ impl Marks {
             .sum::<f64>()
     }
 
-    /// The session's spoken seconds, which is what the ceiling is a share of.
     pub fn speech_seconds(&self) -> f64 {
         self.speech_seconds
     }
 
-    /// The session seconds a line number spans.
     fn seconds(&self, n: u32) -> (f64, f64) {
         match self.lines.iter().find(|line| line.n == n) {
             Some(line) => (line.start, line.end),
@@ -337,19 +277,14 @@ impl Marks {
     }
 }
 
-/// What a model's mark leaves once the repeated tail is trimmed and the edges are placed on the
-/// audio. Supplied by the caller because both halves are work this module must not invent: the trim
-/// comes from matching the later take's words, the placement from the waveform.
+/// What a mark leaves once the repeated tail is trimmed and edges placed; supplied by the caller (word matching, waveform).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Trim {
-    /// Seconds cut off the front — an edge slid to the nearest silence.
     pub lead: f64,
-    /// Seconds cut off the back — the words the later take repeats.
     pub tail: f64,
 }
 
 impl Trim {
-    /// Nothing trimmed: the mark removes exactly the lines named.
     pub fn none() -> Trim {
         Trim {
             lead: 0.0,
@@ -357,9 +292,7 @@ impl Trim {
         }
     }
 
-    /// The stretch that will actually be removed. Each side is clamped so a trim cannot swallow the
-    /// whole mark and leave a negative span — which would otherwise read as an empty removal rather
-    /// than as the refusal the length rule is there to give.
+    /// The stretch actually removed; each side is clamped so a trim cannot swallow the mark.
     pub fn apply(&self, start: f64, end: f64) -> (f64, f64) {
         let mid = (start + end) / 2.0;
         let out_start = (start + self.lead).min(mid);
@@ -368,9 +301,7 @@ impl Trim {
     }
 }
 
-/// The one-sentence reason §12 §3 wants with every accepted mark, written from what THIS call did:
-/// "whole take, never picked up", "trimmed to the fragment that broke off", "merged into the mark already
-/// there". A model that cannot tell which of these happened cannot decide whether to take a mark back.
+/// The one-sentence reason §12 §3 wants with every accepted mark ("whole take, never picked up", "merged into the mark already there").
 fn mark_reason(again: Option<u32>, trimmed: bool, merged: bool) -> &'static str {
     if merged {
         return "this stretch was already marked; the two became one";
@@ -385,21 +316,16 @@ fn mark_reason(again: Option<u32>, trimmed: bool, merged: bool) -> &'static str 
         None => "the whole take is treated as never picked up, so its own words are all that goes",
     }
 }
-/// The answer `finish` gives: the share of speech marked against the ceiling.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Total {
     pub share: f64,
     pub ceiling: f64,
-    /// Over the ceiling — and still holding every mark. The prototype threw all three runs away at
-    /// this point; here the model is told and can take some back with `unmark`.
+    /// Over the ceiling and still holding every mark; the model can `unmark`.
     pub over: bool,
     pub marks: usize,
 }
 
-/// S1: what one marking pass that came back unusable says, and what the pass then does about it. The
-/// three runs are pooled because they cost one request each and answer one question; losing one is not
-/// a reason to lose the marks the other two agreed on — hence "going on with N" rather than a failure.
-/// `count` is the runs still standing after this one was set aside.
+/// S1: what one unusable marking pass says and what the pass does about it. `count` is the runs still standing.
 pub fn run_set_aside_log(run: usize, reason: &str, count: usize) -> Vec<String> {
     vec![
         format!(
@@ -410,18 +336,15 @@ pub fn run_set_aside_log(run: usize, reason: &str, count: usize) -> Vec<String> 
     ]
 }
 
-/// S1: how many of this session's pooled runs were read back from `cache/llm` instead of asked again.
 pub fn cached_runs_log(cached: usize, total: usize) -> String {
     format!(">>> retakes: {cached} of {total} run(s) answered from the cache")
 }
 
-/// S1: a session with nothing said twice. Said out loud because silence looks like a pass that never
-/// ran, and "no retakes" is the answer the model gave — not an absence of one.
+/// S1: a session with nothing said twice; said aloud since silence looks like a pass that never ran.
 pub fn no_retakes_log() -> &'static str {
     ">>> retakes: none"
 }
 
-/// A line with the pause before it, as `get_lines` returns them.
 #[allow(
     dead_code,
     reason = "the method below is what a caller uses; this is the same rule once"
@@ -436,12 +359,10 @@ pub fn pause_before(lines: &[Line], n: u32) -> f64 {
     }
 }
 
-/// The overlap of two spans in seconds.
 fn overlap(a0: f64, a1: f64, b0: f64, b1: f64) -> f64 {
     (a1.min(b1) - a0.max(b0)).max(0.0)
 }
 
-/// `span` with `cut` taken out of it: nothing, one piece, or the two pieces either side.
 fn subtract(span: (f64, f64), cut: (f64, f64)) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
     if cut.0 > span.0 {

@@ -1,9 +1,5 @@
 //! The row-oriented text formats of spec/01-project-and-files.md §6: the transcripts,
 //! the merged timeline, the event log, the marks and the finished words.
-//!
-//! Pure data — reading and writing rows, no UI and no pipeline. Times go out with two
-//! decimals (§6's `%.2f`), which is what makes a re-write of an unchanged file byte-for-byte
-//! the same file.
 
 use std::fs;
 use std::path::Path;
@@ -17,9 +13,6 @@ pub struct Line {
     pub text: String,
 }
 
-/// One line of `session.tsv`: the same shape with a source and, in the speaker's place,
-/// either a speaker or the word `EVENT` — which is what marks a picture event rather than
-/// somebody talking ([`SessionLine::is_event`]). Everything in it is on the session clock.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionLine {
     pub start: f64,
@@ -29,8 +22,6 @@ pub struct SessionLine {
     pub text: String,
 }
 
-/// One line of `events.tsv`: what happened at one frame, and until when it still read as
-/// the same picture.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FrameEvent {
     pub start: f64,
@@ -46,12 +37,8 @@ pub struct Retake {
     pub e: f64,
     /// Where the attempt that was kept begins; 0 for none.
     pub again: f64,
-    /// Where what the cut removes ends: `e` when the words are all that goes, the
-    /// retake's own onset when everything up to it goes with them.
     pub to: f64,
     pub text: String,
-    /// The recordings this mark takes out entire, base names comma-separated; empty or
-    /// absent when none.
     pub whole: String,
 }
 
@@ -60,8 +47,6 @@ fn secs(v: f64) -> String {
     format!("{v:.2}")
 }
 
-/// Read a whole file, treating "not there" as no rows: a project that has not run the
-/// step yet has no file, which §6 does not call an error.
 fn read_to_string(path: &Path) -> Result<Option<String>, String> {
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
@@ -70,19 +55,6 @@ fn read_to_string(path: &Path) -> Result<Option<String>, String> {
     }
 }
 
-/// Write rows the way §6 spells them, through the caller's `path`. The file is written
-/// directly rather than through [`crate::layout::Tree::write_file`] because these formats
-/// are read and written by whatever step owns them, at paths that outlive one project
-/// folder; the mode is set after the write for the same reason §1 gives — a new file's
-/// creation mode is masked by the umask.
-/// Write a row-oriented file WHOLE at §1's 0644, making its directory.
-///
-/// The same part-then-rename rule [`crate::requests`] applies to every file it writes, and for the same
-/// reason: these are the transcripts and marks a stage's resume marker vouches for, so a file truncated
-/// by a ⏹ or a full disk would be read by the next ▶ as finished work. The bytes land on `<name>.part`
-/// beside the destination, get their mode there, and only then are renamed onto the name — atomic within
-/// one directory, so a reader sees either nothing or the whole file, and a failure leaves the previous
-/// contents standing.
 pub(crate) fn write_rows(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("{parent:?}: {err}"))?;
@@ -108,10 +80,6 @@ pub(crate) fn write_rows(path: &Path, text: &str) -> Result<(), String> {
     }
 }
 
-/// [`write_rows`] for a file that only exists when it says something (§6): with nothing to say no file is
-/// written, and one left by an earlier run is removed, so the folder never holds a 0-byte transcript or
-/// timeline that looks like finished work. A reader takes the missing file as "nothing here", which is
-/// what an empty one meant.
 pub(crate) fn write_rows_or_none(path: &Path, text: &str) -> Result<(), String> {
     if !text.trim().is_empty() {
         return write_rows(path, text);
@@ -128,10 +96,6 @@ fn rows(text: &str) -> impl Iterator<Item = &str> {
     text.lines().filter(|line| !line.trim().is_empty())
 }
 
-// --- transcript.tsv / transcript.fixed.tsv ------------------------------------
-
-/// Write `transcript.tsv` (or a `*.fixed.tsv`): `start\tend\tspeaker\ttext`. A text is
-/// written verbatim, tabs included — one row per line, never re-flowed.
 pub fn write_lines(lines: &[Line], path: &Path) -> Result<(), String> {
     let mut out = String::new();
     for line in lines {
@@ -146,9 +110,6 @@ pub fn write_lines(lines: &[Line], path: &Path) -> Result<(), String> {
     write_rows_or_none(path, &out)
 }
 
-/// Read `transcript.tsv`. A row with fewer than the four columns is corruption rather
-/// than an empty transcript: a half-written row means the file was cut off, and reading
-/// it as no words would delete speech from the page.
 pub fn read_lines(path: &Path) -> Result<Vec<Line>, String> {
     let Some(text) = read_to_string(path)? else {
         return Ok(Vec::new());
@@ -175,8 +136,6 @@ pub fn read_lines(path: &Path) -> Result<Vec<Line>, String> {
     Ok(out)
 }
 
-// --- session.tsv ---------------------------------------------------------------
-
 /// Write `session.tsv`: `start\tend\tsource\tspeaker|EVENT\ttext`.
 pub fn write_session(lines: &[SessionLine], path: &Path) -> Result<(), String> {
     let mut out = String::new();
@@ -193,8 +152,6 @@ pub fn write_session(lines: &[SessionLine], path: &Path) -> Result<(), String> {
     write_rows_or_none(path, &out)
 }
 
-/// Read `session.tsv`. A row with fewer than the five columns is an error naming the
-/// path, as for [`read_lines`].
 pub fn read_session(path: &Path) -> Result<Vec<SessionLine>, String> {
     let Some(text) = read_to_string(path)? else {
         return Ok(Vec::new());
@@ -227,27 +184,16 @@ impl SessionLine {
     }
 }
 
-// --- events.tsv ----------------------------------------------------------------
-
-/// A frame's line saying nothing changed. The prototype trims whitespace and trailing
-/// `.`/quotes and lower-cases before comparing, and accepts the older `(same)`
-/// (go/describe.go:336-339) — a file written then still means the same thing now.
 pub fn is_same(text: &str) -> bool {
     let t = text.trim().to_lowercase();
     let t = t.trim_matches(|c: char| ".\"'".contains(c) || c == ' ');
     t == "same" || t == "(same)"
 }
 
-/// The ONE spelling of an `events.tsv` row (§6's `start\tend\ttext`). It lives here rather than
-/// inline in either caller so the stage that appends rows chunk by chunk and the writer that lays a
-/// whole file down cannot drift into two shapes — which they had: the describe stage wrote
-/// `at\ttext`, and every reader of this file then refused it.
 pub fn event_row(start: f64, end: f64, text: &str) -> String {
     format!("{}\t{}\t{}", secs(start), secs(end), text)
 }
 
-/// Write `events.tsv`, one row per frame as given — the folding is a read-side rule
-/// ([`read_events`]), so a file keeps every frame it was written with.
 pub fn write_events(events: &[FrameEvent], path: &Path) -> Result<(), String> {
     let mut out = String::new();
     for event in events {
@@ -257,10 +203,6 @@ pub fn write_events(events: &[FrameEvent], path: &Path) -> Result<(), String> {
     write_rows(path, &out)
 }
 
-/// Read `events.tsv`, folding each `same` row into the row before it by extending that
-/// row's end (§6). Two frames in a row of nothing changing extend it twice, so what comes
-/// back is one event per thing that happened, dated from when it started to the last
-/// second it still held.
 pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
     let Some(text) = read_to_string(path)? else {
         return Ok(Vec::new());
@@ -268,11 +210,6 @@ pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
     let mut out: Vec<FrameEvent> = Vec::new();
     for row in rows(&text) {
         let fields: Vec<&str> = row.splitn(3, '\t').collect();
-        // A two-field row is the older spelling (`start\ttext`, no end), which projects on disk hold:
-        // the describe stage wrote that shape before §6's three columns landed here. Refusing it would
-        // be swallowed by both readers' callers (`fix_transcripts::load_events`, the upload brief's
-        // `read_all_events`) and silently empty the picture context those steps send. Such a row ends
-        // where it started, which is what a frame-only reading always meant.
         let (start, end, text): (&str, Option<&str>, &str) = match fields.as_slice() {
             [start, end, text] => (*start, Some(*end), *text),
             [start, text] => (*start, None, *text),
@@ -305,15 +242,8 @@ pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
     Ok(out)
 }
 
-// --- retakes.tsv ---------------------------------------------------------------
-
-/// S1: the marks of a session whose words all survive — an empty `retakes.tsv`, written rather than
-/// skipped. The file's presence is what tells Cut "this pass ran and found nothing", so leaving it out
-/// makes a clean single-take recording indistinguishable from one that was never marked.
 pub const NO_MARKS: &str = "";
 
-/// S1: write `retakes.tsv`: `S\tE\tAgain\tTo\tText`, plus a sixth column only when there is
-/// something to say about whole takes (§6: "empty or absent when none").
 pub fn write_retakes(marks: &[Retake], path: &Path) -> Result<(), String> {
     let mut out = String::new();
     for m in marks {
@@ -333,15 +263,6 @@ pub fn write_retakes(marks: &[Retake], path: &Path) -> Result<(), String> {
     write_rows(path, &out)
 }
 
-/// Read `retakes.tsv`, accepting the 3- to 6-column files §6 allows and the prototype's
-/// reader accepts (go/retake.go:371-402). A line that is too short or whose first three
-/// columns are not numbers is skipped rather than failing the file — a mark written by
-/// hand with a typo costs that mark, not every other mark.
-///
-/// The shapes, oldest first: 3 columns predate the placed edges; 4 was written before the
-/// edges were placed and removes the words alone (its fourth column is the text); from 5
-/// on `To` is its own column and a `To` of nought means "the words alone", so it reads
-/// back as `E`.
 pub fn read_retakes(path: &Path) -> Result<Vec<Retake>, String> {
     let Some(text) = read_to_string(path)? else {
         return Ok(Vec::new());
@@ -389,8 +310,6 @@ pub fn read_retakes(path: &Path) -> Result<Vec<Retake>, String> {
     Ok(out)
 }
 
-// --- final.txt -----------------------------------------------------------------
-
 /// The join marker of `final.txt`: `|cut N|` where N words went, `|cut|` where none did.
 fn cut_mark(gone: usize) -> String {
     if gone == 0 {
@@ -400,15 +319,6 @@ fn cut_mark(gone: usize) -> String {
     }
 }
 
-/// The join marker as a caller writes it, including the whole-take spelling §F1.10 requires when a
-/// join took out an entire recording: `|cut N|whole take|`, or `|cut|whole take|` where the count
-/// is nought.
-///
-/// Public because the joins pass builds its text from per-recording runs rather than one flat list
-/// (a marker belongs only at a change of recording), so it needs the marker itself and not the
-/// every-transition loop [`write_final`] runs. Both spellings round-trip through [`read_final`],
-/// whose [`marker_len`] already recognises the longer form; the count reads back as nought for the
-/// whole-take shape, which is honest — that marker carries words, not a number.
 pub fn cut_marker(gone: usize, whole: bool) -> String {
     let base = cut_mark(gone);
     if whole {
@@ -419,15 +329,6 @@ pub fn cut_marker(gone: usize, whole: bool) -> String {
 }
 
 /// The words of the finished video as written, with a marker at every join (§6).
-///
-/// `joins` is one entry per transition between the words passed — so its length is
-/// `words.len() - 1`, and an entry of nought is a join where nothing went. A caller that
-/// only knows where words were removed passes zeros everywhere else, which writes the
-/// bare `|cut|` §6 spells out.
-///
-/// The prototype's third spelling — a mark carrying that a whole take went — is 08's rule
-/// and is deliberately not produced here; the reader below still recognises it and reads
-/// no words out of it, so such a file loses nothing either way.
 pub fn write_final(words: &[String], joins: &[usize]) -> String {
     let mut out = String::new();
     for (n, word) in words.iter().enumerate() {
@@ -443,15 +344,6 @@ pub fn write_final(words: &[String], joins: &[usize]) -> String {
     out
 }
 
-/// Read `final.txt` back: the surviving words with every marker taken out, and the counts
-/// the markers carried.
-///
-/// A marker is recognised by its shape — a pipe, then `cut`, then optionally a number,
-/// then a pipe — rather than by "it contains a pipe", so that a word of a marked join does
-/// not have to be guessed at: the prototype's longer mark (`|cut|whole take|`) has fields
-/// separated by spaces inside it, and treating those as words would put `whole` and `take`
-/// on the page. Anything else holding a pipe is left where it is, since dropping text that
-/// was not a marker is worse than keeping an odd word.
 pub fn read_final(text: &str) -> (Vec<String>, Vec<usize>) {
     let mut words = Vec::new();
     let mut joins = Vec::new();
@@ -473,10 +365,6 @@ pub fn read_final(text: &str) -> (Vec<String>, Vec<usize>) {
     (words, joins)
 }
 
-/// How many bytes the marker at the start of `text` runs to. Two shapes: the two §6 names
-/// (`|cut|`, `|cut 10|`) and the prototype's longer one, which is a bare `|cut|` followed
-/// with no space by another `|…|` field whose own text may hold spaces —
-/// `|cut|whole take|`. `None` when this is not a marker.
 fn marker_len(text: &str) -> Option<usize> {
     let after = text.strip_prefix('|')?;
     let rest = after.strip_prefix("cut")?;
@@ -501,9 +389,6 @@ fn marker_len(text: &str) -> Option<usize> {
     Some(end)
 }
 
-/// The number a marker carried: `|cut 10|` is ten, `|cut|` nought. A marker of another
-/// shape — the whole-take spelling carries words, not a count — says nought and stays a
-/// join, because something did go there.
 fn cut_count(marker: &str) -> usize {
     let inner = marker
         .strip_prefix('|')

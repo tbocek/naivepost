@@ -2,11 +2,6 @@
 //! rule is [`crate::narrate_frame`]'s; this file only reads the page's state, asks for the next second,
 //! and writes it back — the shape every other Narrate wire uses, so the step can be tested without a
 //! window and the widget cannot disagree with the rule.
-//!
-//! One `EventControllerScroll` on `narrate-picture`, named `wheel-narrate-picture`. It must not sit on
-//! ground that already carries one: the Cut page attaches its own preview wheel through
-//! [`crate::ui::cut_view::attach_wheel`] to `preview-panel`, which is a different widget in a different
-//! page, so the two never meet on one surface.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -33,8 +28,6 @@ pub fn install(window: &adw::ApplicationWindow) {
 }
 
 /// One notch while paused: the second the picture should show, or `None` when the notch is not ours.
-/// Split out so the wheel handler is three lines and the branch is testable through the same door a
-/// real scroll signal reaches.
 pub fn step_paused(window: &adw::ApplicationWindow, dy: f64) -> Option<f64> {
     let state = crate::ui::narrate_page::read_state();
     if state.playing || dy == 0.0 {

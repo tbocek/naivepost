@@ -1,11 +1,9 @@
-//! §03-shell.md §1 S9: the narration write a close owes, split out of `window.rs` (which is past its
-//! size budget).
+//! §03-shell.md §1 S9: the narration write a close owes.
 //!
-//! `narrate_text::flush_owed` reads the Narrate page's process-global state, which belongs to whichever
-//! page was refreshed last. A window closed while its own tab was showing never left the tab, so the
-//! switch that normally carries the two copies together (`carry_into_held_record`) never ran: what this
-//! window was shown lives in its held record, and only that reaches disk here. Both are written, newest
-//! copy last, because typing lands in the page's state and a tab leave writes the held record.
+//! `narrate_text::flush_owed` reads the Narrate page's process-global state, which belongs to whichever page
+//! was refreshed last. A window closed while its own tab was showing never ran the switch that carries the two
+//! copies together (`carry_into_held_record`), so both are written, newest last: typing lands in the page's
+//! state and a tab leave writes the held record.
 
 use crate::layout;
 use crate::narration;
@@ -31,8 +29,7 @@ pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
     let Some(tree) = layout::Tree::new(&dir).ok() else {
         return;
     };
-    // `silent` is the file's to keep, never invented here: it records the clips a delete remembered as
-    // deliberately silent, and a flush of text must not erase them.
+    // `silent` is the file's to keep, never invented here: a flush of text must not erase the clips a delete remembered as silent.
     let silent = narration::load(&tree)
         .map(|existing| existing.silent)
         .unwrap_or_default();
@@ -43,8 +40,7 @@ pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
             .last()
             .map(|held| held.borrow().entries.clone())
     });
-    // The page's copy first, this window's held record over it: the held record is what a tab leave would
-    // have written, so where both hold text that one is the window's own answer.
+    // The page's copy first, the window's held record over it: that is what a tab leave would have written.
     for entries in [page_lines, held_lines.unwrap_or_default()] {
         if entries.is_empty() {
             continue;
@@ -67,6 +63,6 @@ pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
     {
         shell.borrow_mut().narration_pending.flush();
     }
-    // The live project reaches disk here too (§2 S6): what the session holds now is what a reopen reads.
+    // The live project reaches disk here too (§2 S6).
     let _ = crate::ui::window_line_step::flush_session_on_close();
 }

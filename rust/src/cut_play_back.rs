@@ -1,48 +1,4 @@
 //! F2.2 S5's media leg: the cut preview's TWO real player processes — the one playing and the spare.
-//!
-//! [`crate::play_back`] is ▶'s leg: one process, cued at the red line. ▶✂ needs a second one. Inventory
-//! §D ("Preload") and `go/player_spare.go` state the shape the spec's S5 requires — "next jump preloaded
-//! three seconds ahead in a spare pipeline so the join does not freeze" — as *a pipeline taken to PAUSED at
-//! exactly the next second, decoded and prerolled, so that when the line lands there the two pipelines
-//! change places instead of building one*. In the prototype both are playbin pipelines inside one process.
-//! The built-in player ([`crate::play_built_in`]) is one such pipeline, and under it a jump is a seek and no
-//! spare is held. This module is the NAMED player's half (`NAIVEPOST_PLAYER`, a subprocess), where the same two
-//! states are two processes:
-//!
-//! - **preroll** = spawn the player with `-s` already at the jump's second, then `SIGSTOP` it at once. A
-//!   stopped process builds its pipeline and reads its first frames and then freezes: decoded, prerolled,
-//!   silent, holding no CPU. That is the spare, and it costs one signal.
-//! - **swap in** = `SIGCONT` the spare and `SIGTERM` the outgoing one. The join therefore never waits for a
-//!   pipeline: the process that plays the second clip was already sitting on it.
-//!
-//! Both slots hold one pid each, for the reason `go/player_spare.go` gives ("One spare, not one per row:
-//! the line goes one place next"). Every answer here is a signal on a real process, so a test observes it
-//! through the fake player script at `NAIVEPOST_PLAYER` (see [`crate::play_back::player_program`]).
-//!
-//! # What the player's argv can and cannot express
-//!
-//! `gst-play-1.0 --help-all` was read for this (the container's own copy). Its whole flag list is
-//! `--gapless`, `-s/--start`, `-a/--accurate-seeks`, `-i/--instant-rate-changes`, `--wait-on-eos`,
-//! `--no-position`, `--use-playbin2`, `-p/--playlist`, `--no-missing-plugin-installation`, `-q/--quiet` and
-//! the `--gst-*` group: **there is no rate or speed flag, and no volume flag.** `-i` only makes *its own*
-//! rate changes instant, and nothing in the argv asks for a rate. So:
-//!
-//! - **rate** cannot be asked of a running player. [`set_rate`] says so honestly: a flat (1.0) rate re-cues
-//!   at the head so no earlier stretch's clock can leak into the flat seconds; any other rate is logged as
-//!   unexpressible and answered `false`. The app's own clock arithmetic is unaffected —
-//!   [`crate::cut_play::cut_time`] does not apply rates, and that is the number the person reads.
-//! - **still** is expressible: `SIGSTOP` freezes the frame, which is exactly "stops show their still"
-//!   ([`hold_still`]).
-//! - **volume** is not in the argv either, so it never goes through this leg: the preview's one volume door
-//!   (`ui::set_preview_volume`, fed by `cut_hear`) keeps it. See the note in
-//!   [`crate::cut_play_leg::start_cut_preview_tick`].
-//!
-//! # How a test sees a signal
-//!
-//! A `SIGSTOP` leaves a mark a test can read without any help from this module: `ps -o state= -p <pid>` says
-//! `T`. [`is_stopped_for_test`] reads exactly that, and the other `_for_test` doors show what each slot holds.
-//! Those are the TEST's outside look: the program's own doors are [`preroll`], [`swap_spare_in`],
-//! [`hold_still`], [`set_rate`] and [`halt`], and none of them asks for a state back.
 
 use std::sync::{Mutex, OnceLock};
 
@@ -75,9 +31,6 @@ fn signal(pid: u32, signal: i32) {
 }
 
 /// Spawn the player over `files` at `at_secs` and answer its pid, WITHOUT putting it in any slot.
-///
-/// Same argv as ▶'s leg — deliberately the SAME function ([`play_back::command_for`]), so the two players
-/// can never drift apart in spelling: `--no-position --gapless -s <tenth> <files…>`.
 fn spawn_at(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, String> {
     let program = play_back::player_program();
     let args = play_back::command_for(files, at_secs);
@@ -105,8 +58,6 @@ pub fn cue_clips(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u
         .expect("the cut-preview player slot")
         .replace(pid);
     if let Some(old) = outgoing {
-        // SIGTERM, not KILL, for the reason `play_back::halt` gives: a term lets the pipeline tear itself
-        // down instead of leaving the next one to find the file held.
         signal(old, libc::SIGTERM);
     }
     Ok(pid)
@@ -114,10 +65,6 @@ pub fn cue_clips(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u
 
 /// Preroll the spare at `at_secs`: spawn it there and freeze it at once, so the pipeline is built and
 /// prerolled by the time the line needs it — and silent while it waits.
-///
-/// An older spare is stopped first: one slot, one spare, because the line goes one place next. Re-arming at
-/// the second the spare already holds costs a new process, which is what a real player would also need;
-/// callers avoid that churn by arming only when the armed second CHANGED (see [`crate::cut_play_leg::arm_spare`]).
 pub fn preroll(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, String> {
     drop_spare();
     let pid = spawn_at(files, at_secs, log)?;
@@ -132,9 +79,6 @@ pub fn spare_pid_for_test() -> Option<u32> {
     *spare().lock().expect("the spare slot")
 }
 
-/// Whether `pid` is stopped — `T` in `ps`'s state column, which is what "prerolled and waiting" looks like
-/// from outside a process, with no cooperation asked of the player. A test's evidence only: the program
-/// freezes and releases through [`hold_still`] and never asks for the state back.
 pub fn is_stopped_for_test(pid: u32) -> bool {
     let out = std::process::Command::new("ps")
         .args(["-o", "state=", "-p", &pid.to_string()])
@@ -157,11 +101,6 @@ pub fn drop_spare() -> bool {
     }
 }
 
-/// The swap S5 exists for: the spare becomes the running player (`SIGCONT`), the outgoing one goes
-/// (`SIGTERM`). Answers the pid now playing, or `None` when no spare was waiting — the caller then cues,
-/// which is the reload the spare was meant to avoid.
-///
-/// The still flag is cleared: a swapped-in process runs, whatever the stop before the jump left behind.
 pub fn swap_spare_in(log: &dyn Fn(&str)) -> Option<u32> {
     let incoming = spare().lock().expect("the spare slot").take()?;
     let outgoing = running()
@@ -194,21 +133,13 @@ pub fn halt() -> bool {
         }
         None => false,
     };
-    // The spare goes too, and its answer is not this one: the caller asks whether a PLAYER was running.
-    if drop_spare() {
-        // Nothing else to do; the arm log keeps the record of the spare that was released.
-    }
+    if drop_spare() {}
     was
 }
 
 /// S5, "stops show their still": freeze the running player's frame (`SIGSTOP`), or release it (`SIGCONT`).
-/// Answers whether a process was there to hold — `false` means no player, not that the stop was refused.
-///
-/// A frozen player keeps its last decoded frame on screen; that IS the still, so nothing is drawn here.
-/// When the seconds the stop covers end, the caller releases with `hold_still(false)`.
 pub fn hold_still(hold: bool) -> bool {
     let Some(pid) = playing_pid() else {
-        // Nothing to freeze, so nothing can be holding a still when the next stop arrives.
         if hold {
             *held_still().lock().expect("the still slot") = false;
         }
@@ -220,26 +151,6 @@ pub fn hold_still(hold: bool) -> bool {
 }
 
 /// S5, "speed effects at their flat rate", handed to the player.
-///
-/// The limits are the player's, measured, not a choice about what to build: `gst-play-1.0 --help-all`
-/// (module doc lists every flag) has **no rate flag**. So a rate cannot be asked of a live process and this
-/// function does not pretend otherwise:
-///
-/// - no player at all → `false`, nothing happens.
-/// - `rate == 1.0`, the flat rate a preview is asked to hold: the player is RE-CUED at the head with
-///   `--gapless` kept, so the flat seconds run on a fresh flat pipeline and a rate written on the stretch
-///   before them cannot leak in. `true` when a process was there to replace.
-/// - any other rate: logged as not expressible through this player's argv and answered `false`.
-///
-/// The person's clock does not depend on any of this: [`crate::cut_play::cut_time`] reads the kept footage
-/// for the number printed, whatever the process can do.
-/// S5 "speed effects at their flat rate", handed to the player at the head.
-///
-/// A rate change under a running preview is asked for as a re-cue, and re-cueing on every tick that asks is a
-/// stutter the ear hears: inventory §D's `rateSeekGap 250 ms` is the floor the prototype holds its flushing
-/// seeks to (`go/player.go`'s `SetRateNow` — inside the gap the rate is put back so a later tick asks again).
-/// The same floor applies to the one re-cue this player can do, so it lives here, and [`rate_seek_action`] is the
-/// rule apart from any clock so a test can ask it directly.
 pub const RATE_SEEK_GAP_MS: u64 = 250;
 
 /// What a rate change asks of the player: re-cue now, or leave the rate alone and let a later tick ask again.
@@ -252,7 +163,6 @@ pub enum RateSeek {
 }
 
 /// §D's `rateSeekGap`: the plain answer, asked of elapsed time rather than of a clock, so a test needs neither.
-/// An unchanged rate never asks at all — nothing moved, so nothing stumbles.
 pub fn rate_seek_action(changed: bool, since_last_ms: Option<u64>) -> RateSeek {
     if !changed {
         return RateSeek::Hold;
