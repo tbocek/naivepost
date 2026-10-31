@@ -219,9 +219,9 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
     );
     let after = cut_of(&window);
     assert_eq!(
-        after.segs.len(),
-        2,
-        "a BETWEEN insert splices one more segment: {after:?}"
+        after.segs.iter().filter(|seg| seg.is_insert()).count(),
+        1,
+        "a BETWEEN insert splices one card: {after:?}"
     );
     assert!(
         after.segs.iter().any(|seg| seg.is_insert()),

@@ -534,6 +534,7 @@ pub fn place(
 
     let segs = if mode == Mode::Between {
         cut.segs.push(card.clone());
+        cut.segs = crate::cut::spliced(std::mem::take(&mut cut.segs));
         vec![card]
     } else {
         lay_over_footage(cut, &card)

@@ -254,23 +254,16 @@ pub fn frame_images(
     run: &crate::produce_flow::Run,
 ) -> Vec<(f64, std::path::PathBuf)> {
     let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
-    let mut at = 0.0;
     let zero = crate::frames_run::session_zero(tree);
-    for seg in &run.cut.segs {
-        let kept = output_length(seg);
-        if !seg.ins.is_empty() {
-            at += kept;
-            continue;
-        }
+    for seg in run.cut.segs.iter().filter(|seg| seg.ins.is_empty()) {
         for source in run.sources.footage.iter() {
             let dir = tree.frames_dir(&stem_of(source));
             for (seconds, path) in crate::produce_upload_media::listed_frames(&dir, zero) {
                 if seconds >= seg.s && seconds < seg.e {
-                    out.push((at + (seconds - seg.s), path));
+                    out.push((seconds, path));
                 }
             }
         }
-        at += kept;
     }
     out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     out

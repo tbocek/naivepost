@@ -442,7 +442,12 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // `cut_speed_split::sped_segs`, which cuts footage at each rate boundary and stamps the averaged, ramped rate —
     // without it the planner sees an unstamped list and every clip comes out at ×1 however many speeds are on the
     // lane. Clip numbers follow THIS list, so "clip 7" means the same here as in the log and on the Cut page.
-    let sped = crate::cut_speed_split::sped_cut(&run.cut);
+    // Cuts saved before a card opened its footage still play it where it was placed.
+    let opened = crate::cut::Cut {
+        segs: crate::cut::spliced(run.cut.segs.clone()),
+        ..run.cut.clone()
+    };
+    let sped = crate::cut_speed_split::sped_cut(&opened);
     let (clips, plan_logs) = render::plan_clips(
         &sped,
         mats.fx_for,
@@ -645,9 +650,6 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                     eprintln!("produce: {}: {err}", path.display());
                 }
             }
-            for (kind, path) in built.inputs.iter() {
-                inputs.push((kind.as_str(), path.as_deref()));
-            }
             // §5: a card is not read as the file it is. Its holes are filled (or it is redrawn from its generator),
             // and an animated one is baked to one static SVG per frame at the bake fps — all of that is
             // `produce_cards`' decision; this writes what it produced into the scratch folder BEFORE the command is
@@ -674,6 +676,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             }
             for (kind, path) in card_paths.iter() {
                 inputs.push((*kind, Some(path.as_str())));
+            }
+            // Last: `video_graph` counts the overlays' inputs back from here.
+            for (kind, path) in built.inputs.iter() {
+                inputs.push((kind.as_str(), path.as_deref()));
             }
             // The > 10× cap and a missing drawing are said here, beside the clip they belong to, so the render log
             // reads in clip order like every other line about a clip.

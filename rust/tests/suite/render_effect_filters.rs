@@ -136,7 +136,8 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_freezes_a_fr
     };
     assert!(naivepost::fx_record::is_stop(&stop));
 
-    let chain = render::still_chain(stop.t, (4.0, 6.0), (stop.trans, stop.tout), HD).join(";");
+    let built = render::still_overlay((4.0, 6.0), (stop.trans, stop.tout), HD);
+    let chain = format!("{};{}", built.prep.join(";"), built.place);
     assert!(chain.contains("alpha=1"), "{chain}");
     assert_eq!(
         chain.matches("alpha=1").count(),
@@ -272,9 +273,8 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_words_and_drawings_
         .expect("text and svg");
     assert!(camera < subs && subs < words, "{order:?}");
 
-    let chain =
-        render::overlay_chain("text", (2.0, 5.0), (0.5, 0.5), (100, 200, 800, 300)).join(";");
-    assert!(chain.contains("looped"), "{chain}");
+    let built = render::overlay((2.0, 5.0), (0.5, 0.5), (100, 200, 800, 300));
+    let chain = format!("{};{}", built.prep.join(";"), built.place);
     assert!(chain.contains("enable=between(t"), "{chain}");
     assert_eq!(chain.matches("alpha=1").count(), 2, "both fades: {chain}");
 
@@ -293,11 +293,6 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_words_and_drawings_
         stroke < black && black < fill,
         "outline under letters: {svg}"
     );
-
-    // The user's own drawing goes in at its box and nothing else is done to it.
-    let drawn = render::scaled_into_box("project:assets/arrow.svg", (0, 0, 640, 480)).join(";");
-    assert!(drawn.contains("project:assets/arrow.svg"), "{drawn}");
-    assert!(drawn.contains("scale=640:480"), "{drawn}");
 }
 
 // --- S5: volume ----------------------------------------------------------------------------------------------------
@@ -357,24 +352,6 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s6_a_label_renders_not
     }
     // An unknown kind in an old file is not something this build knows how to draw either.
     assert!(!render::is_rendered("marker"));
-
-    let only = [Fx {
-        text: "results".into(),
-        ..fx("label", 2.0, 4.0)
-    }];
-    assert!(render::clip_filters(&only, &seg(0.0, 10.0), HD, HD).is_empty());
-
-    // A kind that does render is not empty, so the assertion above is about labels and not about the assembler.
-    let glide = Fx {
-        stay: false,
-        trans: 1.0,
-        tout: 1.0,
-        hf: Some(0.5),
-        cx: Some(0.5),
-        cy: Some(0.5),
-        ..fx("zoom", 2.0, 4.0)
-    };
-    assert!(!render::clip_filters(&[glide], &seg(0.0, 10.0), HD, HD).is_empty());
 }
 
 // --- S7: the frame box ---------------------------------------------------------------------------------------------

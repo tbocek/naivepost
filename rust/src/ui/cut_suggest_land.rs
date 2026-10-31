@@ -146,8 +146,11 @@ fn land_model(window: &adw::ApplicationWindow, made: crate::ui::cut_suggest_mode
         end_run(window, &made.said);
         return;
     }
-    land_spans(window, &made.segs);
-    land_effect_pair(window, &made.applied);
+    if crate::cancel_leg::cancelled() {
+        end_run(window, "stopped \u{2014} the cut stands as it was");
+        return;
+    }
+    land(window, &made.applied);
     // §S2b's `M2` node: the cut landed, so now the passes that work over a cut are asked — captions, speeds,
     // decorations, and only those the policy switched on. Each asks over the cut the one before it left; their
     // sentences go to the log as they said them, then §S3's effect line counts what actually landed.
@@ -186,13 +189,7 @@ fn end_run(window: &adw::ApplicationWindow, said: &str) {
 /// Lay the walk-back's effects on the cut that just landed, as its own edit: publish, record, move the
 /// base, save. No recorder installed means nothing to write — the same answer [`land`] gives.
 pub fn land_effects(window: &adw::ApplicationWindow, answer: &Applied) {
-    land_effect_pair(window, answer);
-}
-
-fn land_effect_pair(window: &adw::ApplicationWindow, answer: &Applied) {
     if answer.effects.is_empty() {
-        // Nothing to add: the scenes landed and there were no decorations to propose. A second write
-        // that changed nothing would be an undo step for no change, so ↶ would appear to do nothing.
         return;
     }
     let mut with_effects = screen_cut();
@@ -201,9 +198,6 @@ fn land_effect_pair(window: &adw::ApplicationWindow, answer: &Applied) {
         recorder(window, &with_effects);
     }
     if let Some(Some(tree)) = session_tree() {
-        // §7's one writer, and the tree is `session_tree`'s OWN — written into that folder rather than into
-        // whatever `current_dir()` happens to say, because a test points ▶ at a temp `.naivepost` of its own
-        // (`set_session`) and the write must land where the refusal looked.
         if let Err(why) = crate::cut_save::write_cut_at(&with_effects, &tree) {
             crate::ui::window_logs::say_failure(&format!("!!! could not save the cut -- {why}"));
         }
@@ -399,7 +393,11 @@ pub fn land(window: &adw::ApplicationWindow, answer: &Applied) -> Cut {
     // the cut from before the model spoke.
     if let Some(recorder) = RECORDER.with(|slot| slot.get()) {
         recorder(window, &landed);
-        return landed;
+    }
+    if let Some(Some(tree)) = session_tree() {
+        if let Err(why) = crate::cut_save::write_cut_at(&landed, &tree) {
+            crate::ui::window_logs::say_failure(&format!("!!! could not save the cut -- {why}"));
+        }
     }
     landed
 }

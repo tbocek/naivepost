@@ -9,10 +9,9 @@
 //!
 //! - **A point effect** (`dur == 0`, a label being the usual one) has no width to overlap with: either it sits inside a
 //!   footage scene or it is dropped.
-//! - **A band** (zoom, text, svg, volume, speed) is trimmed to the *footage* scene it shares the most time with. An
-//!   insert is never home — it brings its own picture, and an effect placed over a card belongs to no footage. Left
-//!   under [`MIN_SURVIVING_SECONDS`] the band is dropped rather than kept as a fragment: most of the moment it
-//!   decorated is no longer in the video.
+//! - **A band** (zoom, text, svg, volume, speed) runs across scene and Split borders, and is trimmed only to the first
+//!   and last footage second it still covers. An insert does not count as footage. With under
+//!   [`MIN_SURVIVING_SECONDS`] left in the cut the band is dropped rather than kept as a fragment.
 //! - **A speed** is re-clamped after trimming so its rate stays playable over what is left; **a stop is not**, because
 //!   clamping would hand the frozen frame a rate and quietly turn a still into slow motion.
 //! - **A label is trimmed like the rest.** The prototype drops it outright, and §F3.12 says so in brackets: a label
@@ -103,33 +102,33 @@ fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
         return inside.then(|| fx.clone());
     }
 
-    // S2: the footage scene this effect shares the most time with. Zero overlap is not "the most" — a band that only
-    // touches inserts, or sits in a hole the cut does not keep, has no home at all.
-    let mut best: Option<&cut::Seg> = None;
-    let mut overlap = 0.0;
-    for seg in segs {
-        if seg.is_insert() {
-            continue;
-        }
-        let o = t1.min(seg.e) - t0.max(seg.s);
-        if o > overlap {
-            overlap = o;
-            best = Some(seg);
-        }
+    // S2: only footage the cut no longer keeps can shorten a band; a scene border or a Split inside it is nothing.
+    let mut stretches: Vec<(f64, f64)> = segs
+        .iter()
+        .filter(|seg| !seg.is_insert())
+        .map(|seg| (t0.max(seg.s), t1.min(seg.e)))
+        .filter(|(from, to)| to > from)
+        .collect();
+    stretches.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (first, last) = (
+        stretches.first()?.0,
+        stretches.iter().map(|s| s.1).fold(t0, f64::max),
+    );
+    let mut kept_seconds = 0.0;
+    let mut reached = first;
+    for (from, to) in stretches {
+        kept_seconds += (to - from.max(reached)).max(0.0);
+        reached = reached.max(to);
     }
-    let Some(seg) = best else { return None };
 
-    // Already inside: exactly as proposed, fades and all. The comparison is on the span, so an effect whose band ends
-    // on a scene border counts as inside rather than as needing a trim to itself.
-    if t0 >= seg.s && t1 <= seg.e {
+    let was = t1 - t0; // the band before the cut took a piece off it: the fades are shrunk against this
+    if kept_seconds >= was - 1e-9 {
         return Some(fx.clone());
     }
-
-    let was = t1 - t0; // the band before the cut took a piece off it — the fades are shrunk against this
-    let (nt0, nt1) = (t0.max(seg.s), t1.min(seg.e));
-    if nt1 - nt0 < MIN_SURVIVING_SECONDS {
+    if kept_seconds < MIN_SURVIVING_SECONDS {
         return None; // S3: too little of it survives to be the effect that was meant
     }
+    let (nt0, nt1) = (first, last);
 
     let mut kept = fx.clone();
     kept.t = nt0;

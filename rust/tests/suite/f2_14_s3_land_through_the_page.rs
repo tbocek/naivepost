@@ -247,20 +247,14 @@ fn round(app: &adw::Application) {
     RAN_LOG.store(true, Ordering::SeqCst);
 
     // --- §S3's one Undo ----------------------------------------------------------------------
-    // The landing records TWO steps by design (the scenes, then their effects, so §S3 can count them
-    // separately), so on a page whose base is already the seeded cut the first ↶ takes the effects back and
-    // the second takes the suggested scenes back. What this pins is that the walk-back's work is undone in
-    // the smallest number of steps the landing wrote, that the footage the page opened with comes back, and
-    // that the card nobody proposed survives every step of it.
+    // One step for the scenes and their effects together.
     let first = ui::press_undo(&window);
     settle();
     let after_first = ui::review_cut_of(&window);
-    let second = ui::press_undo(&window);
-    settle();
-    let back = ui::review_cut_of(&window);
+    let back = after_first.clone();
     assert!(
-        !first.contains("nothing to undo") && !second.contains("nothing to undo"),
-        "the suggestion left steps to take back: {first} / {second}"
+        !first.contains("nothing to undo"),
+        "the suggestion left a step to take back: {first}"
     );
     assert!(
         back.segs

@@ -38,6 +38,8 @@ pub struct Built {
     pub video: Vec<String>,
     /// Filter text for the sound: the sped-sound answer and the volume cues, in `render_fx::audio_order()`'s order.
     pub audio: Vec<String>,
+    /// Pictures laid over the clip, one per entry of `inputs` and in its order.
+    pub overlays: Vec<render_fx::Overlay>,
     /// Extra inputs the filters above read, as `(kind, path)` pairs in the order they must appear after `-i` #0 —
     /// the same shape [`crate::produce_render::encode_command`] takes.
     pub inputs: Vec<(String, Option<String>)>,
@@ -77,32 +79,34 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     // the whole picture would only give the encoder something to resample. §4's static branch is a CROP, so a parked
     // camera that looks anywhere but at the full frame does get its pair.
     if !samples.is_empty() && (!render_fx::is_static(&samples) || !fills_frame(&samples[0])) {
-        built
-            .video
-            .extend(render_fx::camera_chain(&samples, src, clip.frame));
+        // The stream is frame-sized by now, and its clock starts at the clip with the rate already applied.
+        let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
+        let on_clip_clock: Vec<render_fx::Sample> = samples
+            .iter()
+            .map(|sample| render_fx::Sample {
+                t: (sample.t - clip.seg_s) / rate,
+                ..sample.clone()
+            })
+            .collect();
+        built.video.extend(render_fx::camera_chain(
+            &on_clip_clock,
+            clip.frame,
+            clip.frame,
+        ));
     }
 
     // --- the stop: a still over footage that runs on ----------------------------------------------------------------
     for stop in drawn.iter().filter(|e| crate::fx_record::is_stop(e)) {
-        let from = (stop.t - clip.seg_s).max(0.0);
-        let to = from + stop.dur.max(0.0);
-        built.video.extend(render_fx::still_chain(
-            stop.t,
-            (from, to),
-            (stop.trans.max(0.0), stop.tout.max(0.0)),
-            clip.frame,
-        ));
-        // The frame at t from THIS scene's lens, extracted by the caller's ffmpeg from the same input the clip
-        // reads. Naming it under the scratch folder keeps it out of the project and out of the next run (§3).
-        built.inputs.push((
-            "still".to_string(),
-            Some(
-                scratch
-                    .join(still_name(clip.no, stop.t))
-                    .display()
-                    .to_string(),
-            ),
-        ));
+        let Some((window, fades)) = on_clip(stop, clip) else {
+            continue;
+        };
+        built
+            .overlays
+            .push(render_fx::still_overlay(window, fades, clip.frame));
+        // The moment, not a file: the encode reads that frame off the clip's own footage.
+        built
+            .inputs
+            .push(("still".to_string(), Some(format!("{}", stop.t))));
     }
 
     // --- words and drawings: after the camera and the burned cues -------------------------------------------------
@@ -116,9 +120,9 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         })
         .enumerate()
     {
-        let from = (effect.t - clip.seg_s).max(0.0);
-        let window = (from, from + effect.dur.max(0.0));
-        let fades = (effect.trans.max(0.0), effect.tout.max(0.0));
+        let Some((window, fades)) = on_clip(effect, clip) else {
+            continue;
+        };
         let box_px = box_px(effect, clip.frame);
         match effect.effect_kind() {
             Some(EffectKind::Text) => {
@@ -139,23 +143,14 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
                     continue;
                 }
                 built
-                    .video
-                    .extend(render_fx::scaled_into_box(&effect.src, box_px));
-                built
                     .inputs
                     .push(("svg".to_string(), Some(effect.src.clone())));
             }
             _ => {}
         }
-        built.video.extend(render_fx::overlay_chain(
-            match effect.effect_kind() {
-                Some(EffectKind::Svg) => "svg",
-                _ => "title",
-            },
-            window,
-            fades,
-            box_px,
-        ));
+        built
+            .overlays
+            .push(render_fx::overlay(window, fades, box_px));
     }
 
     // --- the sound of a re-timed stretch ----------------------------------------------------------------------------
@@ -246,6 +241,30 @@ pub fn box_px(effect: &Fx, frame: (i32, i32)) -> (i32, i32, i32, i32) {
 /// Seconds of FOOTAGE the clip plays through, which is what a camera walk and a read head are measured on — as
 /// opposed to [`Clip::on_screen`], the shorter time it spends in the finished file. A rated clip shows `dur / rate`
 /// seconds of film; a stop is not a rate (§4 means "a frame held") so it divides by 1 like the footage it covers.
+/// Where an effect shows inside one clip, on the clip's own clock: its window and its fades, or `None` when it does
+/// not reach this clip. Every clip is handed the whole list, and an effect may run across clips, so a fade belongs
+/// only to the clip holding that end of the band.
+fn on_clip(effect: &Fx, clip: &Clip) -> Option<((f64, f64), (f64, f64))> {
+    let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
+    let start = (effect.t - clip.seg_s) / rate;
+    let end = start + effect.dur.max(0.0) / rate;
+    let (from, to) = (start.max(0.0), end.min(clip.on_screen));
+    if to <= from {
+        return None;
+    }
+    let fade_in = if start >= 0.0 {
+        effect.trans.max(0.0)
+    } else {
+        0.0
+    };
+    let fade_out = if end <= clip.on_screen {
+        effect.tout.max(0.0)
+    } else {
+        0.0
+    };
+    Some(((from, to), (fade_in, fade_out)))
+}
+
 fn footage_length(clip: &Clip) -> f64 {
     let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
     let played = if (rate - 1.0).abs() > f64::EPSILON {
@@ -272,11 +291,6 @@ fn even(v: i32) -> i32 {
 /// same clip must not overwrite each other, and §3 lists these as scratch that is cleared every run.
 fn title_name(no: usize, index: usize) -> String {
     format!("c{no:03}_t{index}.svg")
-}
-
-/// The scratch name of one clip's frozen frame. Same reasoning as [`title_name`].
-fn still_name(no: usize, at: f64) -> String {
-    format!("c{no:03}_f{at:.3}.png")
 }
 
 /// §4's drawing that is not there: named and skipped, in keeping with `Failure is specific and local`. Losing the

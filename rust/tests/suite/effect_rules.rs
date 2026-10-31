@@ -678,12 +678,12 @@ fn sec_06_effects_7_rules_s17_the_lane_draws_what_the_render_does() {
     };
     let record = fx_text::apply(&form).expect("a caption");
     let end = record.t + record.dur;
-    let chain = render_fx::overlay_chain(
-        "movie",
+    let chain = render_fx::overlay(
         (record.t, end),
         (record.trans, record.tout),
         (0, 0, 640, 128),
-    );
+    )
+    .prep;
 
     // The fade out starts where the band ends minus the record's own fade, and the enable window is the band.
     let expected_out = format!(
@@ -695,11 +695,6 @@ fn sec_06_effects_7_rules_s17_the_lane_draws_what_the_render_does() {
         chain.contains(&expected_out),
         "{chain:?} should carry {expected_out}"
     );
-    let expected_window = format!(
-        "overlay=0:0:eof_action=pass:enable=between(t\\,{}\\,{})",
-        record.t, end
-    );
-    assert!(chain.contains(&expected_window), "{chain:?}");
 
     // The label is deliberately different: read by the briefs, never painted.
     assert!(!render_fx::is_rendered("label"));

@@ -56,6 +56,7 @@ mod cut_play_recording_widgets;
 mod cut_play_the_cut;
 mod cut_play_the_cut_widgets;
 mod cut_proposed_speeds;
+mod cut_render_time;
 mod cut_review_cuts;
 mod cut_review_cuts_widgets;
 mod cut_rules;

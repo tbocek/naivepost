@@ -618,7 +618,7 @@ where
         // §12: and the model is TOLD which of the two changed, beside the complaint about its last answer.
         // Read AFTER `offer`, which owns the withdrawal and marks the sentence as owed.
         let note = call.note_to_model();
-        let (_finished, ok, round_logs) = attempt_with_tools(
+        let (finished, ok, round_logs) = attempt_with_tools(
             &system,
             &user,
             complaint,
@@ -639,13 +639,18 @@ where
         // §8: an answer that was all reasoning and no answer gets its next call asked WITHOUT thinking, and
         // the log says why the question changed.
         logs.extend(retry_note(&mut call, &last_reply));
-        if ok {
+        // A run cut off mid-answer (⏹, a dropped connection) holds a partial cut, however long it already is.
+        if finished && ok {
             // §8's drop runs BEFORE the length is judged, so the count the walk-back is built from is the one
             // the page ends up with: a segment with no recording at either end names a stretch of session that
             // was never filmed, and nothing downstream should be sized around it.
             let dropped = cut_suggest::drop_unfilmed(placed(&plan), &filmed);
             if dropped.1 > 0 {
                 logs.push(cut_suggest::dropped_log(number, dropped.1));
+            }
+            // Nothing filmed in the whole answer: landing it would empty the cut.
+            if dropped.0.is_empty() {
+                continue;
             }
             let applied = suggest::apply(&dropped.0, &inserts, &cut.fx, &walk);
             let said = Landed::landed_log(&applied.log);

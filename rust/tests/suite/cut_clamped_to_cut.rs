@@ -97,19 +97,22 @@ fn f3_12_s2_a_point_effect_needs_footage_under_it() {
     assert_eq!(out.kept.len(), 2);
 }
 
-/// F3.12 S2 (`a zoom/text/svg/volume band is trimmed to the clip it overlaps most`) — the winner is the scene sharing
-/// the most time with the band, not the first one it touches, and trimming moves `t` as well as shortening `dur`.
+/// F3.12 S2: a band crosses scene and Split borders whole; only footage that is gone can shorten it.
 #[test]
-fn f3_12_s3_the_band_follows_the_scene_it_overlaps_most() {
-    // Two scenes; the band straddles both with more of it in the second.
+fn f3_12_s3_a_band_crosses_borders_and_stops_only_where_footage_is_gone() {
     let segs = [seg(0.0, 10.0), seg(10.0, 30.0)];
     let out = clamp::clamp_to_cut(&cut_of(&segs, &[fx("zoom", 7.0, 8.0)]));
     assert_eq!(out.dropped, 0);
-    assert_eq!((one(&out.kept).t, one(&out.kept).dur), (10.0, 5.0));
+    assert_eq!((one(&out.kept).t, one(&out.kept).dur), (7.0, 8.0));
 
-    // The same band the other way round belongs to the first scene.
-    let out = clamp::clamp_to_cut(&cut_of(&segs, &[fx("zoom", 2.0, 8.0)]));
-    assert_eq!((one(&out.kept).t, one(&out.kept).dur), (2.0, 8.0));
+    // A hole inside the band plays nothing, so the band keeps both sides of it.
+    let holed = [seg(0.0, 10.0), seg(12.0, 30.0)];
+    let out = clamp::clamp_to_cut(&cut_of(&holed, &[fx("text", 5.0, 10.0)]));
+    assert_eq!((one(&out.kept).t, one(&out.kept).dur), (5.0, 10.0));
+
+    // Footage gone at one end pulls that end back.
+    let out = clamp::clamp_to_cut(&cut_of(&[seg(10.0, 30.0)], &[fx("zoom", 7.0, 8.0)]));
+    assert_eq!((one(&out.kept).t, one(&out.kept).dur), (10.0, 5.0));
 
     // A band reaching past the last scene is pulled back to where the footage ends.
     let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 10.0)], &[fx("volume", 6.0, 8.0)]));

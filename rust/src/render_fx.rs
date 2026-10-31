@@ -234,29 +234,14 @@ pub fn sound_filters(rate: f64, snd: &str) -> Vec<String> {
 /// S2 (`a still of the frame at t … overlaid with alpha fades for the frozen spans; footage runs on at 1×`): the
 /// freeze is not a rate and never was — giving it one would turn a still into slow motion the moment the cut moved
 /// under it, which is why [`crate::cut_speed`] refuses to clamp it either.
-pub fn still_chain(
-    t: f64,
-    frozen: (f64, f64),
-    fades: (f64, f64),
-    frame: (i32, i32),
-) -> Vec<String> {
-    let dur = (frozen.1 - frozen.0).max(0.0);
-    vec![
-        // The frame at t from the scene's own lens, looped to cover the span and faded in alpha so the picture under
-        // it arrives and leaves rather than cutting. The still is cut at the clip's own size, since the overlay is a
-        // full-frame one: `t` says which moment it is and `frame` what shape it must be in when it lands.
-        format!("select=eq(n\\,0) at {t},scale={}:{}", frame.0, frame.1),
-        format!("tpad=stop_mode=clone:stop_duration={dur}"),
-        format!(
-            "format=yuva420p,fade=t=in:st={}:d={}:alpha=1",
-            frozen.0, fades.0
-        ),
-        format!("fade=t=out:st={}:d={}:alpha=1", frozen.1 - fades.1, fades.1),
-        format!(
-            "overlay=0:0:eof_action=pass:enable=between(t\\,{}\\,{})",
-            frozen.0, frozen.1
-        ),
-    ]
+pub fn still_overlay(frozen: (f64, f64), fades: (f64, f64), frame: (i32, i32)) -> Overlay {
+    let mut built = overlay(frozen, fades, (0, 0, frame.0, frame.1));
+    // One frame of the footage, held for as long as the clip runs.
+    built.prep.insert(
+        0,
+        format!("trim=end_frame=1,loop=loop=-1:size=1,setpts=N/{OVERLAY_FPS}/TB"),
+    );
+    built
 }
 
 /// S2: does the footage under these effects run at its own speed? A stop is not a rate — [`cut_speed::steps_of`]
@@ -385,10 +370,20 @@ pub fn camera_chain(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> V
     if let Some((w, h, l, t)) = pad_box(samples, src, out_a) {
         chain.push(format!("pad={w}:{h}:{l}:{t}:color=black"));
     }
-    chain.push(format!("zoompan=dur={}:fps={ZOOM_GRID_FPS}", samples.len()));
     let ts: Vec<f64> = samples.iter().map(|s| s.t).collect();
-    let hs: Vec<f64> = samples.iter().map(|s| s.hf * src.1 as f64).collect();
-    chain.push(format!("zoompan=z='{}'", piece_expr(&ts, &hs)));
+    let along = |pick: fn(&Sample) -> f64| {
+        let vs: Vec<f64> = samples.iter().map(pick).collect();
+        piece_expr(&ts, &vs)
+    };
+    // `it` runs on the stream's own clock, so a caller hands `t` from the clip's start. d=1: one frame out per frame in.
+    chain.push(format!(
+        "zoompan=z=1/({hf}):x=({cx})*iw-iw/zoom/2:y=({cy})*ih-ih/zoom/2:d=1:s={w}x{h}:fps={ZOOM_GRID_FPS}",
+        hf = along(|s| s.hf),
+        cx = along(|s| s.cx),
+        cy = along(|s| s.cy),
+        w = frame.0,
+        h = frame.1,
+    ));
     chain
 }
 
@@ -452,7 +447,7 @@ pub fn piece_expr(ts: &[f64], vs: &[f64]) -> String {
             format!("{v1:.4}")
         } else {
             format!(
-                "{v0:.4}+{:.4}*clip((it-{t0:.4})/ {:.4}\\,0\\,1)",
+                "{v0:.4}+{:.4}*clip((it-{t0:.4})/{:.4}\\,0\\,1)",
                 v1 - v0,
                 t1 - t0
             )
@@ -545,24 +540,40 @@ pub fn picture_order() -> Vec<&'static str> {
     vec!["camera", "burned subtitles", "text and svg"]
 }
 
-/// §4: one title or drawing, from a looped still input, with alpha fades and an enable window.
-pub fn overlay_chain(
-    kind: &str,
-    enable: (f64, f64),
-    fades: (f64, f64),
-    box_px: (i32, i32, i32, i32),
-) -> Vec<String> {
-    let dur = (enable.1 - enable.0).max(0.0);
-    vec![
-        format!("{kind} input looped for {dur}"),
-        format!("format=auto,scale={}:{}", box_px.2, box_px.3),
-        format!("fade=t=in:st={}:d={}:alpha=1", enable.0, fades.0),
-        format!("fade=t=out:st={}:d={}:alpha=1", enable.1 - fades.1, fades.1),
-        format!(
-            "overlay={}:{}:eof_action=pass:enable=between(t\\,{}\\,{})",
+/// The rate a looped picture input is read at.
+pub const OVERLAY_FPS: u32 = 30;
+
+/// One picture laid over the clip: the filters its own input runs through, then the overlay that places it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Overlay {
+    pub prep: Vec<String>,
+    pub place: String,
+}
+
+/// §4: one title or drawing, with alpha fades and an enable window. A fade of no length gets no filter: ffmpeg reads
+/// `d=0` as its default of 25 frames. `shortest` because the picture's input loops for ever.
+pub fn overlay(enable: (f64, f64), fades: (f64, f64), box_px: (i32, i32, i32, i32)) -> Overlay {
+    let mut prep = vec![
+        "format=rgba".to_string(),
+        format!("scale={}:{}", box_px.2, box_px.3),
+    ];
+    if fades.0 > 0.0 {
+        prep.push(format!("fade=t=in:st={}:d={}:alpha=1", enable.0, fades.0));
+    }
+    if fades.1 > 0.0 {
+        prep.push(format!(
+            "fade=t=out:st={}:d={}:alpha=1",
+            enable.1 - fades.1,
+            fades.1
+        ));
+    }
+    Overlay {
+        prep,
+        place: format!(
+            "overlay={}:{}:shortest=1:enable=between(t\\,{}\\,{})",
             box_px.0, box_px.1, enable.0, enable.1
         ),
-    ]
+    }
 }
 
 /// §4 (`title: generated transparent frame-sized SVG, black round-joined stroke then white fill`) and F3.4 S4
@@ -602,18 +613,10 @@ pub fn title_svg(words: &str, w: i32, h: i32) -> String {
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\
          <g font-family=\"sans-serif\" font-weight=\"bold\" font-size=\"{size:.3}\" text-anchor=\"middle\" \
-         stroke-linejoin=\"round\" stroke=\"black\" stroke-width=\"{stroke:.3}\" fill=\"white\">\
+         paint-order=\"stroke\" stroke-linejoin=\"round\" stroke=\"black\" stroke-width=\"{stroke:.3}\" fill=\"white\">\
          {texts}</g></svg>",
         stroke = fx_text::render_stroke_width(size),
     )
-}
-
-/// §4 (`svg effect: the user's file scaled into its box`). Their document, our box; nothing else about it is ours.
-pub fn scaled_into_box(src: &str, box_px: (i32, i32, i32, i32)) -> Vec<String> {
-    vec![
-        format!("input {src}"),
-        format!("scale={}:{}", box_px.2, box_px.3),
-    ]
 }
 
 // --- S5: volume ----------------------------------------------------------------------------------------------------
@@ -771,63 +774,4 @@ pub fn is_rendered(kind: &str) -> bool {
     // The kinds §4 gives a filter to. Written out rather than asked of `EffectKind::parse`, which would also answer
     // true for a label and needs no new public surface for this one question.
     matches!(kind, "zoom" | "speed" | "stop" | "text" | "svg" | "volume")
-}
-
-/// The filter text one clip carries for its effects — the single place that assembles them, so S6's answer cannot be
-/// forgotten: a label never reaches any of the per-kind builders below.
-pub fn clip_filters(fx: &[Fx], seg: &Seg, src: (i32, i32), frame: (i32, i32)) -> Vec<String> {
-    let drawn: Vec<Fx> = fx
-        .iter()
-        .filter(|e| is_rendered(&e.kind))
-        .cloned()
-        .collect();
-    let mut chain = Vec::new();
-    for picture in split_pictures(&drawn, seg) {
-        if let Some(step) = picture.setpts {
-            chain.push(step);
-        }
-    }
-    // A camera nobody moved needs no filters: the clip is already the right size and shape, and a crop-and-scale pair
-    // that takes the whole frame would only give the encoder something to resample.
-    let (samples, _) = cap_zoom(&camera_samples(&drawn, seg.s, seg.e - seg.s), src, frame, 1);
-    if !is_static(&samples) {
-        chain.extend(camera_chain(&samples, src, frame));
-    }
-    for effect in drawn.iter().filter(|e| {
-        matches!(
-            e.effect_kind(),
-            Some(EffectKind::Text) | Some(EffectKind::Svg)
-        )
-    }) {
-        chain.extend(overlay_chain(
-            &effect.kind,
-            (effect.t - seg.s, effect.t + effect.dur - seg.s),
-            (effect.trans, effect.tout),
-            (0, 0, frame.0, frame.1),
-        ));
-    }
-    let cues = gain_cues(&drawn, seg.s, 1.0, seg.e - seg.s);
-    if !cues.is_empty() {
-        // §9's lane reach on the whole-cut chain too: a naming cue still runs on its own
-        // recording, so it cannot ride the summed bed here either.
-        let (before, after): (Vec<_>, Vec<_>) = all_gain_cues(&drawn, seg.s, 1.0, seg.e - seg.s)
-            .into_iter()
-            .partition(|cue| cue.before_the_mix());
-        for cue in &before {
-            chain.push(gain_chain(std::slice::from_ref(cue), &cue.lane));
-        }
-        if !after.is_empty() {
-            chain.push(gain_chain(&after, "snd"));
-        }
-    }
-    // A stop is not a rate and appears here only as the overlay that holds its frame.
-    for effect in drawn.iter().filter(|e| fx_record::is_stop(e)) {
-        chain.extend(still_chain(
-            effect.t,
-            (effect.t - seg.s, effect.t + effect.dur - seg.s),
-            (effect.trans, effect.tout),
-            frame,
-        ));
-    }
-    chain
 }

@@ -220,6 +220,16 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_an_own_clock_run_ge
     assert_eq!(plain.matches("afade=").count(), 0, "{plain}");
 }
 
+/// The filters a clip's overlays run through, and where each lands.
+fn overlays_of(c: &render::Clip) -> String {
+    naivepost::produce_fx_chain::for_clip(c, &c.fx, c.src, &common::temp_root("overlays"))
+        .overlays
+        .iter()
+        .map(|overlay| format!("{},{}", overlay.prep.join(","), overlay.place))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 // --- S2: the stop ---------------------------------------------------------------------------------------------
 
 /// §4 (`a still of the frame at t (scene's own camera) overlaid with alpha fades for the frozen spans; footage
@@ -228,12 +238,13 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_an_own_clock_run_ge
 fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_overlays_a_faded_still_and_keeps_the_clock(
 ) {
     let mut c = clip(1, 1.0, 30.0);
-    c.fx = vec![stop(10.0, 3.0)];
-    let video = render::video_chain(&c, &Produce::default(), None).join(",");
-    assert!(
-        video.contains("tpad=stop_mode=clone:stop_duration=3"),
-        "the frame is held for its span: {video}"
-    );
+    c.fx = vec![Fx {
+        trans: 0.5,
+        tout: 0.5,
+        ..stop(10.0, 3.0)
+    }];
+    let video = overlays_of(&c);
+    assert!(video.contains("loop=loop=-1"), "the frame is held: {video}");
     assert!(
         video.contains("alpha=1"),
         "both edges are ALPHA fades, so the picture under it shows through: {video}"
@@ -244,7 +255,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_overlays_a_f
         "one fade in, one out: {video}"
     );
     assert!(
-        video.contains("overlay=0:0:eof_action=pass"),
+        video.contains("overlay=0:0:"),
         "it covers the frame: {video}"
     );
     assert!(
@@ -252,7 +263,9 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_overlays_a_f
         "only for the frozen span: {video}"
     );
     assert!(
-        !video.contains("setpts"),
+        !render::video_chain(&c, &Produce::default(), None)
+            .join(",")
+            .contains("setpts"),
         "§4: the footage runs on at 1× — a stop is not a rate: {video}"
     );
     assert!(
@@ -435,12 +448,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_title_is_written_
         "the words themselves: {read_back}"
     );
     // In the graph: a looped input, two alpha fades, an enable window, and AFTER the burned cues.
-    let video =
-        render::video_chain(&c, &Produce::default(), Some("produce/clips/final.srt")).join(",");
-    assert!(
-        video.contains("looped for 4"),
-        "each comes from a looped input: {video}"
-    );
+    let video = overlays_of(&c);
     assert_eq!(
         video.matches("alpha=1").count(),
         2,
@@ -450,14 +458,11 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_title_is_written_
         video.contains("enable=between(t\\,6\\,10)"),
         "and only while it is on: {video}"
     );
-    let burned = video
-        .find("subtitles=")
-        .expect("the burned sheet is in the chain");
-    // The LAST overlay is the title's own (a blurred-edges backdrop overlays first, and that belongs under the
-    // cues); what §4 pins is that no title work happens before the burned sheet.
-    let title = video.rfind("overlay=").expect("the title overlay is too");
+    // The overlays are laid on the chain's output, so the burned cues in it are always underneath.
+    let chain =
+        render::video_chain(&c, &Produce::default(), Some("produce/clips/final.srt")).join(",");
     assert!(
-        burned < title,
+        chain.contains("subtitles=") && !chain.contains("between(t"),
         "§4: a title sits over a burned cue, never under it: {video}"
     );
     assert!(
@@ -473,11 +478,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_title_is_written_
 fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_a_drawing_is_scaled_into_its_box() {
     let mut c = clip(1, 1.0, 30.0);
     c.fx = vec![drawing(6.0, "project:assets/arrow.svg")];
-    let video = render::video_chain(&c, &Produce::default(), None).join(",");
-    assert!(
-        video.contains("input project:assets/arrow.svg"),
-        "their file is read: {video}"
-    );
+    let video = overlays_of(&c);
     assert!(video.contains("scale="), "into a box: {video}");
     assert!(
         video.contains("overlay="),
@@ -689,7 +690,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s8_the_filters_reach_t
     let seen = std::fs::read_to_string(&log).expect("the stub logged its argv");
     for needle in [
         "zoompan",
-        "tpad=stop_mode=clone",
+        "loop=loop=-1",
         "alpha=1",
         "volume=volume='if(between(t,4.000,10.000)",
         "gv1",

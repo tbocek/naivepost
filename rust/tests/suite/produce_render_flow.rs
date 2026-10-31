@@ -456,9 +456,8 @@ fn f5_2_s4_subtitles_on_the_produced_clock() {
     let clocks = r::produced_clocks(&[first, second]);
     assert_eq!(clocks[0].0, 0.0);
     assert_eq!(clocks[0].1, 5.0);
-    // The second clip starts where the first's produced length ends — 5 s of footage at 2× is 2.5 s.
-    assert_eq!(clocks[1].0, naivepost::narration::output_seconds(5.0, 2.0));
-    assert_eq!(clocks[1].0, 2.5);
+    // `on_screen` has the rate in it already: the next clip starts where this one ends on screen.
+    assert_eq!(clocks[1].0, 5.0);
 
     assert_eq!(r::final_srt_name(), "final.srt");
 

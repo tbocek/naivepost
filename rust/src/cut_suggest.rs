@@ -130,15 +130,14 @@ pub fn pulses(shown: f64, segments_closed: usize) -> bool {
 /// later take, and an end that lands on it is inside a recording, which [`timeline::spans_overlap`] already
 /// reads that way.
 pub fn drop_unfilmed(segs: Vec<(f64, f64)>, runs: &[(f64, f64)]) -> (Vec<(f64, f64)>, usize) {
-    // A second is filmed when a recording covers it; the point test stands in for "either end of the segment".
-    let filmed = |t: f64| {
+    let filmed = |from: f64, to: f64| {
         runs.iter()
-            .any(|run| timeline::spans_overlap((t, t + 0.001), *run))
+            .any(|run| timeline::spans_overlap((from, to), *run))
     };
     let total = segs.len();
     let kept: Vec<(f64, f64)> = segs
         .into_iter()
-        .filter(|(start, end)| filmed(*start) && filmed(*end))
+        .filter(|(start, end)| filmed(*start, start + 0.001) && filmed(end - 0.001, *end))
         .collect();
     let dropped = total - kept.len();
     (kept, dropped)

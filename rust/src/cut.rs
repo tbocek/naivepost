@@ -507,11 +507,65 @@ pub fn exists(tree: &layout::Tree) -> bool {
 /// nothing for them to sit on. The caller moves the base as well ([`History::suggested`]), since what Revert
 /// returns to after a suggestion is the model's answer and not whatever was on disk an hour ago.
 pub fn keep_inserts(suggested: &[Seg], current: &[Seg]) -> Vec<Seg> {
+    let inserts: Vec<&Seg> = current.iter().filter(|seg| !seg.ins.is_empty()).collect();
+    // A picture laid over the footage replaces those seconds; a sound plays over them.
     let mut kept: Vec<Seg> = suggested.to_vec();
-    kept.extend(current.iter().filter(|seg| !seg.ins.is_empty()).cloned());
+    for over in inserts.iter().filter(|seg| {
+        seg.is_overwrite_insert()
+            && crate::cut_insert::kind(&seg.ins) != crate::cut_insert::Kind::Audio
+    }) {
+        kept = kept
+            .into_iter()
+            .flat_map(|seg| outside(seg, over.s, over.e))
+            .collect();
+    }
+    kept.extend(inserts.into_iter().cloned());
+    spliced(kept)
+}
+
+/// The parts of a scene outside `[from, to)`, or the scene whole when it is an insert.
+fn outside(seg: Seg, from: f64, to: f64) -> Vec<Seg> {
+    if !seg.ins.is_empty() || seg.e <= from || seg.s >= to {
+        return vec![seg];
+    }
+    let mut parts = Vec::new();
+    if seg.s < from {
+        parts.push(Seg {
+            e: from,
+            ..seg.clone()
+        });
+    }
+    if seg.e > to {
+        parts.push(Seg { s: to, ..seg });
+    }
+    parts
+}
+
+/// The list in play order, with footage cut open wherever a spliced card lands inside it: the list's order is what
+/// the render walks, so a card behind a scene it was placed inside would play after that scene.
+pub fn spliced(segs: Vec<Seg>) -> Vec<Seg> {
+    let cards: Vec<f64> = segs
+        .iter()
+        .filter(|seg| seg.is_insert())
+        .map(|seg| seg.s)
+        .collect();
+    let mut out: Vec<Seg> = Vec::with_capacity(segs.len() + cards.len());
+    for seg in segs {
+        let mut rest = seg;
+        for at in &cards {
+            if rest.ins.is_empty() && rest.s < *at && *at < rest.e {
+                out.push(Seg {
+                    e: *at,
+                    ..rest.clone()
+                });
+                rest.s = *at;
+            }
+        }
+        out.push(rest);
+    }
     // `total_cmp` so a fold's negative zero and a plain 0.0 cannot order two ways in one save.
-    kept.sort_by(|a, b| a.s.total_cmp(&b.s).then(a.e.total_cmp(&b.e)));
-    kept
+    out.sort_by(|a, b| a.s.total_cmp(&b.s).then(a.e.total_cmp(&b.e)));
+    out
 }
 
 // --- The edit history (§2's undo snapshots and base) ---------------------------------------------

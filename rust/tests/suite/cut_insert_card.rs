@@ -441,7 +441,7 @@ fn f2_12_s5_a_spliced_card_costs_no_session_time() {
     let was = cut_seconds(&cut);
     let placed = ins::place(&mut cut, CARD, 35.0, ins::Mode::Between, 4.0, false).unwrap();
 
-    let card = &cut.segs[cut.segs.len() - 1];
+    let card = cut.segs.iter().find(|seg| !seg.ins.is_empty()).unwrap();
     assert_eq!(
         (card.s, card.e),
         (35.0, 35.0),

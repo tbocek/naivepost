@@ -189,6 +189,21 @@ pub fn matches(entry: &Entry, seg: &Seg) -> bool {
     overlap >= line.min(clip) / 2.0
 }
 
+/// The one clip a line is spoken in. A speed effect splits a scene into pieces that all match its line, so the piece
+/// holding the line's own second takes it, else the first that matches.
+fn holding_clip(entry: &Entry, segs: &[Seg]) -> Option<usize> {
+    let second = entry.s + entry.at;
+    let matching = || {
+        segs.iter()
+            .enumerate()
+            .filter(|(_, seg)| matches(entry, seg))
+    };
+    matching()
+        .find(|(_, seg)| seg.s <= second && second < seg.e)
+        .or_else(|| matching().next())
+        .map(|(index, _)| index)
+}
+
 /// The answer a caller gives when it has no footage in hand: the produce page falls back here for a clip
 /// that sits in no filmed run ([`crate::ui::produce_page`]'s `footage_left` door), and a caller with no
 /// session timeline at all answers the same. `0.0`, which lets [`fit_in`] keep §10's own ceiling instead
@@ -266,8 +281,11 @@ pub fn plan_clips(
         let mine: Vec<(usize, f64, f64)> = entries
             .iter()
             .enumerate()
-            .filter(|(_, entry)| matches(entry, seg))
-            .map(|(entry_index, entry)| (entry_index, entry.at, 0.0))
+            .filter(|(_, entry)| holding_clip(entry, segs) == Some(index))
+            .map(|(entry_index, entry)| {
+                let into_clip = (entry.s + entry.at - seg.s).max(0.0);
+                (entry_index, narration::output_seconds(into_clip, rate), 0.0)
+            })
             .collect();
         // F4.3 with its eyes open: the CLIP number (not the entry index) names the log, and the
         // footage still running past this clip's end caps how far the clip may be grown. What the
@@ -602,7 +620,7 @@ pub fn produced_clocks(clips: &[Clip]) -> Vec<(f64, f64)> {
     let mut clocks = Vec::with_capacity(clips.len());
     for clip in clips {
         clocks.push((at, clip.on_screen));
-        at += narration::output_seconds(clip.on_screen, clip.rate);
+        at += clip.on_screen;
     }
     clocks
 }
@@ -1089,8 +1107,29 @@ pub fn encode_command_with(
                 ]);
             }
             (_, Some(path)) => {
-                if matches!(*kind, "text" | "svg" | "still") {
-                    argv.extend(["-loop".into(), "1".into(), "-framerate".into(), "30".into()]);
+                // A still names its moment: read off the clip's own footage, however far from this clip it lies.
+                if *kind == "still" {
+                    let moment: f64 = path.parse().unwrap_or(clip.seg_s);
+                    argv.extend([
+                        SEEK_FLAG.into(),
+                        format!("{:.3}", (seek + moment - clip.seg_s).max(0.0)),
+                        "-i".into(),
+                        inputs
+                            .first()
+                            .and_then(|(_, p)| *p)
+                            .unwrap_or_default()
+                            .into(),
+                    ]);
+                    filter_inputs += 1;
+                    continue;
+                }
+                if matches!(*kind, "text" | "svg") {
+                    argv.extend([
+                        "-loop".into(),
+                        "1".into(),
+                        "-framerate".into(),
+                        render_fx::OVERLAY_FPS.to_string(),
+                    ]);
                 }
                 // §5 (`to frames at the render fps (default 25)`): a baked card is an image2 sequence, not a looped
                 // still — its own frame rate is the bake's, so ffmpeg must be told that number and nothing else.
@@ -1121,11 +1160,11 @@ pub fn encode_command_with(
     for take in &clip.voice_files {
         argv.extend(["-i".into(), take.clone()]);
     }
-    let video = video_chain(clip, settings, burned).join(",");
+    let video = video_graph(clip, settings, burned, lane_base);
     let audio = audio_graph(clip, settings, lane_base, voice_base);
     argv.extend([
         "-filter_complex".into(),
-        format!("[0:v]{video}[v];{audio}"),
+        format!("{video};{audio}"),
         // The graph's two labelled outputs ARE the clip: ffmpeg maps only unlabelled outputs by itself.
         "-map".into(),
         "[v]".into(),
@@ -1153,6 +1192,39 @@ pub fn encode_command_with(
     argv.push(out.display().to_string());
     let _ = filter_inputs;
     argv
+}
+
+/// The clip's picture ending in `[v]`: its chain, then each overlay laid on what came before. The overlays' inputs are
+/// the last ones the picture reads, so they end at `first_after`.
+fn video_graph(
+    clip: &Clip,
+    settings: &Produce,
+    burned: Option<&str>,
+    first_after: usize,
+) -> String {
+    let chain = video_chain(clip, settings, burned).join(",");
+    let overlays =
+        crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch).overlays;
+    if overlays.is_empty() {
+        return format!("[0:v]{chain}[v]");
+    }
+    let mut graph = format!("[0:v]{chain}[b0]");
+    let first = first_after - overlays.len();
+    let last = overlays.len() - 1;
+    for (index, overlay) in overlays.iter().enumerate() {
+        let out = if index == last {
+            "v".to_string()
+        } else {
+            format!("b{}", index + 1)
+        };
+        graph.push_str(&format!(
+            ";[{input}:v]{prep}[o{index}];[b{index}][o{index}]{place}[{out}]",
+            input = first + index,
+            prep = overlay.prep.join(","),
+            place = overlay.place,
+        ));
+    }
+    graph
 }
 
 /// S5 (`every command logged`): the whole argv on one line, prefixed by the clip it belongs to. Logged

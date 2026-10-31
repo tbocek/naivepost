@@ -313,7 +313,7 @@ flowchart TD
   K -- "a point effect" --> P{"a footage clip under it?"}
   P -- no --> DR["dropped"]
   P -- yes --> KP["kept"]:::done
-  K -- "zoom · text · svg · volume" --> TR["trimmed to the clip it overlaps most"]
+  K -- "zoom · text · svg · volume" --> TR["trimmed only where footage is gone: crosses scene and Split borders"]
   TR --> S{"≥ P.eng.effectMinSurvivingSeconds?"}
   S -- no --> DR
   S -- yes --> KP
@@ -325,7 +325,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-After snapping, dead-air and mark removal, coalescing: a point effect needs a footage clip under it; a zoom/text/svg/volume band is trimmed to the clip it overlaps most, dropped under P.eng.effectMinSurvivingSeconds (1.0); a speed is re-clamped unless a stop; a label is trimmed like the rest (prototype: dropped outright, never trimmed — yet it marks a moment for the narration brief, and the moment may still be in the cut); fades shrink proportionally; ">>> N effect(s) pointed at footage the final cut does not keep — dropped". Suggested effects replace the list, same Undo step as the segments.
+After snapping, dead-air and mark removal, coalescing: a point effect needs a footage clip under it; a zoom/text/svg/volume band crosses scene and Split borders freely and is trimmed only to the first and last footage second it still covers, dropped when under P.eng.effectMinSurvivingSeconds (1.0) of it is left in the cut; a speed is re-clamped unless a stop; a label is trimmed like the rest (prototype: dropped outright, never trimmed — yet it marks a moment for the narration brief, and the moment may still be in the cut); fades shrink proportionally; ">>> N effect(s) pointed at footage the final cut does not keep — dropped". Suggested effects replace the list, same Undo step as the segments.
 
 ## 4. Render (how each effect becomes ffmpeg)
 
