@@ -130,6 +130,15 @@ fn check_autosave_beat(app: &adw::Application) {
         &format!("the timer's write on the beat (the box says {shown:?})"),
         || typed_written(&tree, "half-typed"),
     );
+    // Only a `[@N]` differs from the record: the words match, and the line still moves.
+    let line = ui::read_state().entries[0].clone();
+    let words = line.text.clone();
+    ui::note_typing(&window, 0, &format!("[@{}] {words}", line.s + 1.0));
+    assert_eq!(
+        ui::read_state().entries[0].at,
+        1.0,
+        "the tag alone moves it"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 /// The row's live box; writing its buffer is what makes `changed` run, as a keystroke does.

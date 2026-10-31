@@ -1079,7 +1079,7 @@ fn wire_switching(
         // writes, so a switch over an untouched narration costs no file.
         if owed {
             if let Some(tree) = tree.as_ref() {
-                if let Err(why) = narration::save(&held.borrow(), tree) {
+                if let Err(why) = narration::save_held(&held.borrow(), tree) {
                     crate::ui::window_logs::say_failure(&format!(
                         "!!! could not save the narration -- {why}"
                     ));
@@ -1097,7 +1097,7 @@ fn wire_switching(
         {
             if moved + orphan > 0 {
                 if let Some(tree) = tree.as_ref() {
-                    if let Err(why) = narration::save(&held.borrow(), tree) {
+                    if let Err(why) = narration::save_held(&held.borrow(), tree) {
                         crate::ui::window_logs::say_failure(&format!(
                             "!!! could not save the narration -- {why}"
                         ));

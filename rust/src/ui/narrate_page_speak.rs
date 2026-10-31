@@ -25,7 +25,7 @@ use crate::ui::narrate_page::{self, NarrateState};
 /// A take on disk is heard at once. A take to synthesize is dialled on a worker (§03-shell §1, "The window
 /// thread never waits"; the first rewrite held the window for the whole synthesis): the page is `busy` until
 /// it lands, which is what makes another row's ▶ say "still speaking", and the audition below runs only if
-/// nothing gave up on it in between (⏹ clears `busy`).
+/// nothing gave up on it in between (⏹ or a newer press moves the audition turn).
 pub(crate) fn speak_and_audition(
     window: &adw::ApplicationWindow,
     s: &NarrateState,
@@ -77,6 +77,7 @@ pub(crate) fn speak_and_audition(
         );
     }
     narrate_page::mutate(|state| state.busy = true);
+    let turn = narrate_preview_leg::next_audition();
     let (text, emotion) = (entry.text.clone(), entry.emotion.clone());
     let (worker_tree, worker_key) = (tree.clone(), key.clone());
     let held = window.clone();
@@ -92,8 +93,8 @@ pub(crate) fn speak_and_audition(
             crate::speak_leg::speak(&worker_tree, &text, &emotion, seed, &worker_key, &language)
         },
         move |outcome| {
-            // ⏹ gave up on it while it was out: the take is filed all the same, and nothing plays.
-            if !narrate_page::read_state().busy {
+            // ⏹ or a newer press gave up on it while it was out: the take is filed all the same, and nothing plays.
+            if !narrate_preview_leg::audition_is_current(turn) {
                 return;
             }
             narrate_page::mutate(|state| state.busy = false);
@@ -212,15 +213,28 @@ fn hear(
             Err(why) => crate::ui::window::log_line(&format!("!!! audition: {why}")),
         }
     }
-    match narrate_preview_leg::spawn_player(
-        &narrate_preview_leg::voice_program(),
-        &narrate_preview_leg::voice_args(&wav.display().to_string(), 0.0, gain),
-    ) {
-        Ok(child) => crate::ui::window::log_line(&format!(
-            "audition: take plays at gain {gain:.3} (pid {})",
-            child.id()
-        )),
-        Err(why) => crate::ui::window::log_line(&format!("!!! audition: {why}")),
-    }
+    // The picture starts at the lead-in, so the take waits for its own second.
+    let wait = (entry.s + entry.at - from).max(0.0);
+    let line = s.entries.iter().position(|row| row == entry);
+    let file = wav.display().to_string();
+    let turn = narrate_preview_leg::next_audition();
+    glib::timeout_add_local_once(std::time::Duration::from_secs_f64(wait), move || {
+        if !narrate_preview_leg::audition_is_current(turn) {
+            return;
+        }
+        match narrate_preview_leg::spawn_player(
+            &narrate_preview_leg::voice_program(),
+            &narrate_preview_leg::voice_args(&file, 0.0, gain),
+        ) {
+            Ok(child) => {
+                crate::ui::window::log_line(&format!(
+                    "audition: take plays at gain {gain:.3} (pid {})",
+                    child.id()
+                ));
+                narrate_preview_leg::hold_audition(child, line);
+            }
+            Err(why) => crate::ui::window::log_line(&format!("!!! audition: {why}")),
+        }
+    });
     narrate_page::say(window, &crate::narrate_tts::outcome_said(&outcome))
 }

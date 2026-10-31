@@ -1,9 +1,13 @@
 //! Spoken lines: heard once, whole, where they were put.
 
+use crate::common;
 use naivepost::cut::Seg;
 use naivepost::narrate_preview::{tick, Take, Tick};
+use naivepost::narrate_preview_leg::{
+    audition_is_current, hold_audition, next_audition, stop_running,
+};
 use naivepost::narrate_screen::tag_moves_line;
-use naivepost::narration::{lines_to_speak, Entry};
+use naivepost::narration::{lines_to_speak, load, save, save_held, Entry, Narration, Silent};
 use naivepost::produce_exec::fit_spoken;
 use naivepost::produce_render::{Clip, Placed};
 
@@ -127,4 +131,44 @@ fn a_new_take_is_a_different_file_for_the_render_too() {
     let second = naivepost::produce_stamp::wav_of(&tree, &line, Some("own"), line.roll);
     assert_ne!(first, second);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_held_save_does_not_bring_back_a_deleted_clip() {
+    let (root, tree) = common::tree_in("held-save-silent");
+    let mut on_file = Narration::default();
+    on_file.silent.push(Silent { s: 4.0, e: 9.0 });
+    save(&on_file, &tree).unwrap();
+    let mut held = Narration::default();
+    held.entries.push(entry("words", ""));
+    save_held(&held, &tree).unwrap();
+    let back = load(&tree).unwrap();
+    assert_eq!(back.entries.len(), 1, "the held lines are written");
+    assert_eq!(back.silent.len(), 1, "the file's marker stays");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_newer_press_or_a_stop_ends_the_audition_before_it() {
+    let first = next_audition();
+    assert!(audition_is_current(first));
+    let child = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    hold_audition(child, None);
+    let second = next_audition();
+    assert!(!audition_is_current(first), "the older press may not play");
+    let gone = || {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .map_or(true, |stat| stat.contains(") Z "))
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !gone() && std::time::Instant::now() < deadline {
+        std::thread::yield_now();
+    }
+    assert!(gone(), "the voice ended");
+    let _ = stop_running();
+    assert!(!audition_is_current(second), "⏹ counts too");
 }

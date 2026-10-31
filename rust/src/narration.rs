@@ -249,6 +249,14 @@ pub fn load(tree: &layout::Tree) -> Result<Narration, String> {
     Ok(narration)
 }
 
+/// A window's held lines onto the file. The `silent` list stays the file's: a delete writes it there directly, and
+/// the held copy would put a deleted clip back.
+pub fn save_held(held: &Narration, tree: &layout::Tree) -> Result<(), String> {
+    let mut record = held.clone();
+    record.silent = load(tree)?.silent;
+    save(&record, tree)
+}
+
 /// The one function that writes `narration.json` (§4).
 pub fn save(narration: &Narration, tree: &layout::Tree) -> Result<(), String> {
     let mut sorted = narration.clone();

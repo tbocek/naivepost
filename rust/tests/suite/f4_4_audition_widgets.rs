@@ -181,12 +181,14 @@ fn last_of(lines: &[String]) -> Vec<String> {
 /// is a real child writing to a file from its own process, so its line lands a moment after the call that
 /// spawned it; bounded, so a missing spawn fails with the log it did write instead of hanging the suite.
 fn poll_for_new(log: &Path, tag: &str, before: usize) -> Vec<String> {
-    for _ in 0..400 {
+    // By the clock: the take waits out the picture's lead-in before its player starts.
+    for _ in 0..1000 {
         let fresh = new_lines(&tagged(log, tag), before);
         if !fresh.is_empty() {
             return fresh;
         }
         settle();
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
     panic!(
         "no new {tag} player call reached the recorder; log holds {:?}",

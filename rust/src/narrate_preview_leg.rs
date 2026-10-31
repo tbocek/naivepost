@@ -222,8 +222,8 @@ impl Preview {
         self.waiting = None;
         self.speaking = Some(line);
         // The old voice belongs to the line that just ended; drop it before the new one starts so one
-        // preview never has two wavs playing over the same second.
-        self.voice = None;
+        // preview never has two wavs playing over the same second. Dropping a child does not end it.
+        end_child(self.voice.take());
         if let Ok(child) = spawn(
             &VOICE_PROGRAM.with(|name| name.borrow().clone()),
             &voice_args(wav, 0.0, ducked_voice(self.game_volume)),
@@ -1201,6 +1201,7 @@ pub fn hold_paused(hold: bool) -> Option<bool> {
 /// says so with the same struct (both players come back `picture_paused`/`voice_paused`, since
 /// nothing is playing), with no pids to report.
 pub fn stop_running() -> (narrate_preview::Stopped, Vec<u32>) {
+    next_audition();
     let said = RUNNING.with(|slot| {
         let mut held = slot.borrow_mut();
         match held.as_mut() {
@@ -1212,6 +1213,45 @@ pub fn stop_running() -> (narrate_preview::Stopped, Vec<u32>) {
     // preview in place would make the next ⏸ answer a hold over nothing and the next ▶ thaw dead pids.
     RUNNING.with(|slot| *slot.borrow_mut() = None);
     said
+}
+
+thread_local! {
+    /// The row ▶'s voice, which has to outlive the press for ⏹ to reach it.
+    static AUDITION: std::cell::RefCell<Option<Child>> = const { std::cell::RefCell::new(None) };
+    static AUDITION_TURN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn end_child(child: Option<Child>) {
+    if let Some(mut child) = child {
+        let _ = child.kill();
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+
+/// A new row press, or a ⏹: whatever an earlier press still has out no longer speaks. Returns this press's turn.
+pub fn next_audition() -> u64 {
+    end_child(AUDITION.with(|slot| slot.borrow_mut().take()));
+    AUDITION_TURN.with(|turn| {
+        turn.set(turn.get() + 1);
+        turn.get()
+    })
+}
+
+/// Whether `turn` is still the newest press.
+pub fn audition_is_current(turn: u64) -> bool {
+    AUDITION_TURN.with(std::cell::Cell::get) == turn
+}
+
+/// Hold the row ▶'s voice, and tell a running preview this line is speaking so its tick does not start it again.
+pub fn hold_audition(child: Child, line: Option<usize>) {
+    end_child(AUDITION.with(|slot| slot.borrow_mut().replace(child)));
+    RUNNING.with(|slot| {
+        if let Some(preview) = slot.borrow_mut().as_mut() {
+            preview.speaking = line;
+        }
+    });
 }
 
 /// The one running preview's pids, for the page to register with `run::Subprocesses` so ⏹ reaches

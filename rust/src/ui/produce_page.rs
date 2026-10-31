@@ -608,10 +608,12 @@ pub fn session_counts(tree: &crate::layout::Tree) -> SessionCounts {
     let lines = crate::narration::load(tree)
         .map(|n| n.entries)
         .unwrap_or_default();
+    let voice = Some(read_state().voice).filter(|voice| !voice.is_empty());
     let owed = crate::narration::lines_to_speak(&lines)
         .iter()
         .filter(|line| {
-            crate::produce_stamp::wav_of(tree, line, None, 0).is_none_or(|wav| !wav.exists())
+            crate::produce_stamp::wav_of(tree, line, voice.as_deref(), line.roll)
+                .is_none_or(|wav| !wav.exists())
         })
         .count();
     SessionCounts {

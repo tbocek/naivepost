@@ -108,7 +108,11 @@ pub fn note_typing(window: &adw::ApplicationWindow, index: usize, typed: &str) -
         return String::new();
     };
     let parsed = narrate_edit::parsed_text(typed, &entry.emotion);
-    if parsed.words == entry.text && parsed.emotion == entry.emotion && parsed.pos == entry.pos {
+    if parsed.words == entry.text
+        && parsed.emotion == entry.emotion
+        && parsed.pos == entry.pos
+        && parsed.moves_to.is_none()
+    {
         return String::new();
     }
     let said = apply_box(window, index, typed);

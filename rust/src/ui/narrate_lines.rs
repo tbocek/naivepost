@@ -19,6 +19,16 @@ use gtk4 as gtk;
 /// one outside the cut comes back as a refusal plus the old number written back into the same box.
 pub const TIME_FIELD_TIP: &str = "when this line's audio starts (mm:ss.s on the session clock) \u{2014} after the dash is when it stops speaking. A time inside another clip moves the line there; one outside the cut is refused and the box goes back to where the line really is";
 
+/// How long this line's take runs, when it has one.
+fn take_seconds(
+    tree: &crate::layout::Tree,
+    entries: &[crate::narration::Entry],
+    index: usize,
+) -> Option<f64> {
+    let wav = crate::narrate_preview_leg::take_file(tree, entries, index)?;
+    crate::voice_ref::wav_seconds(&wav)
+}
+
 /// **18** ＋ a line below this one. Inserts a NEW row under the clicked one — the clicked row's own
 /// second is not moved, which is what "below" means.
 pub fn press_line_add_below(window: &adw::ApplicationWindow, index: usize) -> String {
@@ -28,7 +38,10 @@ pub fn press_line_add_below(window: &adw::ApplicationWindow, index: usize) -> St
     };
     // The gap depends on whether the row above has audio to wait for (§F4.7): 0.5 s after its words,
     // 1.2 s flat when there are none.
-    let audio_end = entry.s + entry.at;
+    let spoken = crate::ui::window::narrate_session_tree()
+        .and_then(|tree| take_seconds(&tree, &s.entries, index))
+        .unwrap_or(0.0);
+    let audio_end = entry.s + entry.at + spoken;
     let clip_end = entry.e;
     match narrate_edit::add_below(audio_end, clip_end, narrate_edit::below_gap(entry)) {
         Ok(at) => {
