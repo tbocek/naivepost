@@ -96,6 +96,16 @@ pub fn refusals(
         if missing_asset || on_screen < crate::tools::cutpass::MIN_CLIP_SECONDS {
             continue;
         }
+        // A pasted stretch is read from the seconds it was copied from, not from where it was pasted.
+        let read = seg.copy_seconds().map_or_else(
+            || seg.clone(),
+            |from| crate::cut::Seg {
+                s: from,
+                e: from + on_screen,
+                ..seg.clone()
+            },
+        );
+        let seg = &read;
         let on_tape = produce_read_head::on_recording(seg, doors.runs);
         let base = (doors.base_of)(seg);
         let copied = seg.ins.starts_with("copy:");

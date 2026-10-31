@@ -22,9 +22,7 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
     // different sentence from "the selection was too short" — it names the button to use. A zero-width or
     // negative selection is exactly "nothing was dragged", so it is answered before the floor rule.
     if selection.1 <= selection.0 {
-        // Nothing has been picked in this session at all: §6 keeps that its own sentence (`no_takes_yet`),
-        // distinct from "no takes left", which is what － says after emptying a band that had some.
-        return say(window, narrate_details::no_takes_yet());
+        return say(window, narrate_details::take_add_hint());
     }
     if !narrate_screen::can_make_take(selection) {
         let seconds = selection.1 - selection.0;
@@ -61,6 +59,13 @@ pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) ->
 
 /// **8** − takes those seconds back out, splitting takes when they fall inside one.
 pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64)) -> String {
+    if selection.1 <= selection.0 {
+        return say(window, narrate_details::take_remove_hint());
+    }
+    // Nothing changes, so the reference stays: it was cut from these very takes.
+    if narrate_screen::remove_takes(&read_state().takes, selection) == read_state().takes {
+        return say(window, narrate_details::nothing_picked());
+    }
     let takes = mutate(|s| {
         s.takes = narrate_screen::remove_takes(&s.takes, selection);
         s.takes.clone()

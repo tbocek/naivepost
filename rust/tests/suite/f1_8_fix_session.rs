@@ -452,12 +452,7 @@ fn f1_8_s3_a_fix_lands_on_disk() {
 fn f1_8_s3_a_refused_block_keeps_the_original_lines() {
     // Nothing listens on this port: every ask fails at the socket (§Failure-is-specific: name the
     // reason where it failed, carry on elsewhere).
-    let dead = {
-        let probe = TcpListener::bind("127.0.0.1:0").expect("a port to name");
-        let port = probe.local_addr().expect("its address").port();
-        drop(probe);
-        format!("http://127.0.0.1:{port}")
-    };
+    let dead = "http://127.0.0.1:1".to_string();
     let scene = Scene::new(4, &dead);
     let (_drive, log) = walk(&scene);
     assert!(

@@ -39,6 +39,23 @@ pub const BADGE_PLATE_PX: f64 = 7.0;
 
 // --- S1: which stretches may be folded ---------------------------------------------------------------------
 
+/// Folds only ever hide what the cut dropped. After an undo or a trim gave seconds back, a fold keeps what is
+/// still dropped of its span and nothing else, so kept footage cannot sit at zero width with no badge to open it.
+pub fn sync_folds(cut: &mut Cut, runs: &[(f64, f64)]) {
+    let gaps = dropped_gaps(runs, &cut.segs);
+    let mut kept: Vec<[f64; 2]> = Vec::new();
+    for fold in &cut.folds {
+        for (from, to) in &gaps {
+            let (start, end) = (fold[0].max(*from), fold[1].min(*to));
+            if end > start && !kept.contains(&[start, end]) {
+                kept.push([start, end]);
+            }
+        }
+    }
+    kept.sort_by(|a, b| a[0].total_cmp(&b[0]));
+    cut.folds = kept;
+}
+
 /// F2.11 S1 (`Folds cover stretches THE CUT DROPS — holes between kept clips; each filmed run's head and tail`):
 /// every stretch of filmed time that no kept clip covers, in time order.
 ///
@@ -53,7 +70,8 @@ pub fn dropped_gaps(runs: &[(f64, f64)], segs: &[Seg]) -> Vec<(f64, f64)> {
         // The kept clips lying inside this run, in time order — the cut's own order is not guaranteed.
         let mut clips: Vec<(f64, f64)> = segs
             .iter()
-            .filter(|seg| seg.ins.is_empty() && seg.e > *from && seg.s < *to)
+            // A spliced card holds no session time; anything else with a length covers footage it did not drop.
+            .filter(|seg| seg.e > seg.s && seg.e > *from && seg.s < *to)
             .map(|seg| (seg.s.max(*from), seg.e.min(*to)))
             .collect();
         clips.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -343,11 +361,14 @@ pub fn remove_lane(cut: &mut Cut, name: &str) -> String {
     cut.lanes.retain(|lane| lane.name != name);
     cut.rows.remove(name);
     cut.shift.remove(name);
+    // A file another lane still windows keeps its pictures, and a laid sound belongs to the lane it names.
+    let shared: Vec<String> = cut.lanes.iter().map(|lane| lane.src.clone()).collect();
     cut.segs.retain(|seg| {
         let its_sound = seg.lane == name;
-        let its_picture = sources
-            .iter()
-            .any(|src| !seg.ins.is_empty() && &seg.ins == src);
+        let its_picture = seg.lane.is_empty()
+            && !seg.ins.is_empty()
+            && sources.contains(&seg.ins)
+            && !shared.contains(&seg.ins);
         !(its_sound || its_picture)
     });
     format!("removed the {name} lane")

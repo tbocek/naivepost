@@ -301,7 +301,12 @@ pub fn render_half(
             // first footage recording of the snapshot's source list.
             source_file: &|clip| {
                 if clip.source.is_empty() || clip.source.starts_with("copy:") {
-                    return footage_file(snap, clip.seg_s);
+                    let from = clip
+                        .source
+                        .strip_prefix("copy:")
+                        .and_then(|second| second.parse().ok())
+                        .unwrap_or(clip.seg_s);
+                    return footage_file(snap, from);
                 }
                 // `Seg::insert_asset` is the one path rule of §1; the clip carries the same spelling.
                 Some(

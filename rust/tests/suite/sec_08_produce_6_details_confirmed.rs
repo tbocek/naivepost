@@ -40,7 +40,7 @@ fn copy_seg(s: f64, e: f64) -> Seg {
     Seg {
         s,
         e,
-        ins: format!("copy:{}", e - s),
+        ins: format!("copy:{s}"),
         ..Default::default()
     }
 }

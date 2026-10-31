@@ -400,3 +400,11 @@ pub fn press_lane_cross(window: &adw::ApplicationWindow, name: &str) -> String {
     }
     said
 }
+
+/// [`crate::cut_fold::sync_folds`] over the recordings the page draws.
+pub(crate) fn sync_page_folds(cut: &mut crate::cut::Cut) {
+    let mut spans = page_recordings();
+    spans.extend(crate::timeline::kept_footage_recordings(cut));
+    let runs = crate::timeline::filmed_runs(&spans);
+    crate::cut_fold::sync_folds(cut, &runs);
+}

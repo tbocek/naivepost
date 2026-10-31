@@ -66,7 +66,8 @@ impl Hand {
     /// own, and the pieces it lays inherit the footage they stand over instead.
     fn row(&self) -> i32 {
         match self.scope {
-            Scope::Footage { row } => row as i32,
+            Scope::Footage { row } if row != crate::cut_select::ANY_ROW => row as i32,
+            Scope::Footage { .. } => 0,
             Scope::Sound { .. } => 0,
         }
     }
@@ -306,9 +307,12 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
         for piece in &pieces {
             if piece.s < seg.e && piece.e > seg.s {
                 let (from, to) = (piece.s.max(seg.s), piece.e.min(seg.e));
+                // The picture stays what it was: only the sound under it changes.
                 out.push(Seg {
                     s: from,
                     e: to,
+                    cam: seg.cam,
+                    quiet: seg.quiet.clone(),
                     ..piece.clone()
                 });
             }
@@ -346,11 +350,23 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
 pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
     let recording = match hand.recording() {
         Some(base) => filmed.iter().find(|rec| rec.base == base).cloned(),
-        None => filmed
-            .iter()
-            .find(|rec| rec.start <= hand.from && hand.from < rec.end)
-            .cloned(),
-    };
+        None => None,
+    }
+    .or_else(|| {
+        // A camera strip goes by its row, not a file. Any other name not on the page has left the session.
+        let by_time = hand.recording().is_none_or(|base| {
+            base.strip_prefix("cam")
+                .is_some_and(|row| row.parse::<u32>().is_ok())
+        });
+        by_time
+            .then(|| {
+                filmed
+                    .iter()
+                    .find(|rec| rec.start <= hand.from && hand.from < rec.end)
+                    .cloned()
+            })
+            .flatten()
+    });
     let Some(recording) = recording else {
         return 0.0;
     };

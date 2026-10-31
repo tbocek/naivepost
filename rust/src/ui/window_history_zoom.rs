@@ -97,6 +97,7 @@ pub fn press_undo(window: &adw::ApplicationWindow) -> String {
         Some(snapshot) => {
             let mut cut_ = ui::newest_review_cut();
             snapshot.restore(&mut cut_);
+            crate::ui::cut_folds::sync_page_folds(&mut cut_);
             land_history(window, &cut_);
             // S1: the sentence is `cut::undone`'s, not composed here.
             let said = cut::undone(cut_.segs.len());
@@ -119,6 +120,7 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
         Some(snapshot) => {
             let mut cut_ = ui::newest_review_cut();
             snapshot.restore(&mut cut_);
+            crate::ui::cut_folds::sync_page_folds(&mut cut_);
             land_history(window, &cut_);
             // S1: one walk sentence for both directions (spec F2.13 gives the pair a single line).
             let said = cut::undone(cut_.segs.len());

@@ -458,17 +458,25 @@ fn f2_8_s2_folds_near_the_grab_open_for_the_drag_and_refold_after(app: &adw::App
         "AFTER RELEASE: open={:?} folds={after:?}",
         ui::open_folds(&window)
     );
+    // The fold comes back, less whatever the move left kept: footage never hides under one.
     assert_eq!(
-        after, folds_at_open,
-        "release refolds exactly what the drag opened"
+        after.len(),
+        folds_at_open.len(),
+        "release refolds what the drag opened"
     );
+    for (now, was) in after.iter().zip(&folds_at_open) {
+        assert!(
+            now[0] >= was[0] && now[1] <= was[1],
+            "{now:?} inside {was:?}"
+        );
+    }
     assert!(
         ui::open_folds(&window).is_empty(),
         "and the drag forgets the hold: nothing stays opened for it"
     );
     assert_eq!(
         saved_cut().folds,
-        folds_at_open,
+        after,
         "and the file keeps the fold list the person saved, not the drag's temporary opening"
     );
     drop(window);

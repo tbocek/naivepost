@@ -88,7 +88,7 @@ fn line_is_placed() -> bool {
 }
 
 /// The red line's second when there is one — the row's start — or `None` when the page has no line yet.
-fn paste_line_opt(window: &adw::ApplicationWindow) -> Option<f64> {
+pub(crate) fn paste_line_opt(window: &adw::ApplicationWindow) -> Option<f64> {
     line_is_placed().then(|| window::paste_line(window))
 }
 

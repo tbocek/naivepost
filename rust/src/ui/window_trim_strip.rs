@@ -347,6 +347,31 @@ pub fn press_copy(window: &adw::ApplicationWindow) -> String {
 pub fn paste_line(window: &adw::ApplicationWindow) -> f64 {
     crate::ui::cut_lane::paste_line(window)
 }
+/// The file a copy came from: a lane's window or a recording of that name, else the recording under its first second.
+fn hand_file(hand: &cut_copy::Hand, sources: &[String]) -> Option<String> {
+    let stem_of = |path: &str| crate::narrate_data::take_base(std::path::Path::new(path));
+    let named = |name: &str| {
+        sources
+            .iter()
+            .find(|source| stem_of(source) == stem_of(name))
+            .cloned()
+    };
+    if let Some(recording) = hand.recording_public() {
+        let lane = ui::newest_review_cut()
+            .lanes
+            .iter()
+            .find(|lane| lane.name == recording)
+            .map(|lane| lane.src.clone());
+        if let Some(file) = lane.or_else(|| named(recording)) {
+            return Some(file);
+        }
+    }
+    crate::ui::cut_folds::page_recordings()
+        .iter()
+        .find(|rec| rec.start <= hand.from && hand.from < rec.end)
+        .and_then(|rec| named(&rec.base))
+}
+
 /// F2.9 S2: ⧉ Paste at the red line. [`cut_copy::paste`] decides footage-vs-sound, splices or lays, and
 /// refuses with its own sentence; this supplies the three things only the page knows — the line, the
 /// copied recording's project path, and the file second the span starts at — then writes the mutated cut
@@ -354,18 +379,19 @@ pub fn paste_line(window: &adw::ApplicationWindow) -> f64 {
 pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     let at = paste_line(window);
     let mut hand = copy_hand();
-    // The copied recording's path: a sound names itself by base, and until F2.10/F2.11 own the row/path
-    // mapping the base IS the project-relative path the cut uses, so an unmatched name passes through
-    // unchanged rather than inventing one.
     let sources = ui::session_sources(window);
-    let path = match hand.as_ref().and_then(|h| h.recording_public()) {
-        Some(recording) => sources
-            .iter()
-            .find(|source| crate::ui::cut_lane::source_base(source) == recording)
-            .cloned()
-            .unwrap_or_else(|| recording.to_string()),
-        None => String::new(),
-    };
+    let path = hand
+        .as_ref()
+        .filter(|h| h.recording_public().is_some())
+        .and_then(|h| hand_file(h, &sources))
+        .unwrap_or_default();
+    // A sound whose file was found is in the session, whatever spelling its strip goes by.
+    let session: Vec<String> = hand
+        .as_ref()
+        .and_then(|h| h.recording_public())
+        .filter(|_| !path.is_empty())
+        .map(|recording| vec![recording.to_string()])
+        .unwrap_or_else(|| sources.clone());
     // Session→file seconds for the copied span — see [`cut_copy::file_seconds`].
     let file_seconds = hand
         .as_ref()
@@ -381,10 +407,10 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     let outcome = cut_copy::paste(
         &mut cut_,
         &mut hand,
-        Some(at),
+        crate::ui::cut_lane::paste_line_opt(window),
         &path,
         file_seconds,
-        &sources,
+        &session,
     );
     // Only a paste that landed writes: a refusal left the cut untouched.
     if outcome.is_ok() {
@@ -430,15 +456,9 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
         cut_copy::LaneStart::Start(at) => {
             let taken: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
             let name = cut_copy::lane_name("Copied", &taken);
-            let source = hand
-                .source_public()
-                .map(|src| src.to_string())
-                .unwrap_or_else(|| {
-                    ui::session_sources(window)
-                        .first()
-                        .cloned()
-                        .unwrap_or_default()
-                });
+            let source = hand_file(&hand, &ui::session_sources(window))
+                .or_else(|| hand.source_public().map(str::to_string))
+                .unwrap_or_default();
             // The FILE second the row windows from — the same conversion the paste asks for.
             let file_seconds =
                 cut_copy::file_seconds(&cut_, &crate::ui::cut_folds::page_recordings(), &hand);
@@ -471,7 +491,7 @@ pub(crate) fn wire_copy_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
     controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key == gtk::gdk::Key::Escape {
+        if key == gtk::gdk::Key::Escape && COPY_HAND.with(|cell| cell.borrow().is_some()) {
             COPY_HAND.with(|cell| *cell.borrow_mut() = None);
             if let Some(status_line) = ui::find_status(win.upcast_ref()) {
                 status_line.set_text(cut_copy::DROPPED);

@@ -715,7 +715,7 @@ pub fn end_move(window: &adw::ApplicationWindow) {
             cut_.folds.push(*span);
         }
     }
-    cut_.folds.sort_by(|a, b| a[0].total_cmp(&b[0]));
+    crate::ui::cut_folds::sync_page_folds(&mut cut_);
     // `record_edit`, not a bare seed: opening the drag's folds and refolding them is ONE act of the hand,
     // so the refold belongs to the step the move already opened rather than spending one of its own.
     crate::ui::window::record_edit(window, &cut_);

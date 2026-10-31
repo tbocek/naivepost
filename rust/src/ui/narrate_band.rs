@@ -474,9 +474,11 @@ fn selected(x: f64) -> Option<(f64, f64)> {
         screen::TakePress::SetBar => None,
         screen::TakePress::Select { .. } => {
             let (start, pps) = view();
+            // The left edge clamps itself; a drag off the right end stops where the tape does.
+            let end = painted_seconds().unwrap_or(f64::MAX);
             Some((
-                band::x_to_second(press.min(x), start, pps),
-                band::x_to_second(press.max(x), start, pps),
+                band::x_to_second(press.min(x), start, pps).min(end),
+                band::x_to_second(press.max(x), start, pps).min(end),
             ))
         }
     }
