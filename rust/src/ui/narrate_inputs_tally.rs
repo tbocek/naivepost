@@ -68,10 +68,3 @@ pub fn apply(state: &mut crate::ui::narrate_page::NarrateState, tree: Option<&Tr
     state.off_cut = tally.off_cut;
     state.has_timeline = tally.has_timeline;
 }
-
-pub fn fill_defaults(state: &mut crate::ui::narrate_page::NarrateState, tree: Option<&Tree>) {
-    if state.unwritten != 0 || state.off_cut != 0 || state.has_timeline {
-        return;
-    }
-    apply(state, tree);
-}

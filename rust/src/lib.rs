@@ -9,6 +9,7 @@ pub mod bodies;
 pub mod cancel_leg;
 pub mod captions_ask;
 pub mod checks;
+pub mod clip_pass_ask;
 pub mod clip_rules_tools_leg;
 pub mod clock;
 pub mod cut;

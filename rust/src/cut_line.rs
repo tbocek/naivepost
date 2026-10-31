@@ -41,17 +41,6 @@ pub struct ClickOutcome {
     pub watches: Option<usize>,
 }
 
-/// F2.4 S1: a click the cut refuses (F2.2 S2) — nothing moves, clears or is watched.
-pub fn refused_click(at: f64) -> ClickOutcome {
-    ClickOutcome {
-        line_at: at,
-        line_moved: false,
-        takes_scene: false,
-        clears_selection: false,
-        watches: None,
-    }
-}
-
 /// F2.4 S1: does this press watch the row it landed on? `on_picture` is true only for the picture band; `playing` covers any ▶; `sources` is
 /// false before the first source loads; a gutter click answers no.
 pub fn watches_row(on_picture: bool, playing: bool, sources: bool, gutter: bool) -> bool {

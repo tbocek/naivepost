@@ -1,11 +1,10 @@
 //! F3.10 S1's live half: the speed ask itself.
 
+use crate::clip_pass_ask;
 use crate::cut_speed_pass::{self, Call, GAP_SECONDS};
-use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
-use crate::requests::{Request, Service};
 use crate::roles::Job;
 use crate::services;
 use crate::settings::{self, Conf, Paths};
@@ -120,7 +119,7 @@ pub fn user_message_over(
 /// The chat body: thinking OFF (§4 does not list `speed` among the four prompts that think), and this job's
 /// two tools offered — `set_clip_speed` for the work and `finish` to close the reply.
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
-    let messages = two_messages(system, user);
+    let messages = clip_pass_ask::two_messages(system, user);
     let tools: Vec<Tool> = this_pass_tools();
     Ok(llm_request::body(
         STEP,
@@ -131,19 +130,6 @@ pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String
         true,
     )?
     .to_string())
-}
-
-fn two_messages(system: &str, user: &str) -> Vec<Message> {
-    vec![
-        Message {
-            role: "system".to_string(),
-            parts: vec![Part::Text(system.to_string())],
-        },
-        Message {
-            role: "user".to_string(),
-            parts: vec![Part::Text(user.to_string())],
-        },
-    ]
 }
 
 /// This pass's own two tools, from §3.7's job row: a call of another kind (a caption, a decoration) is not
@@ -222,17 +208,7 @@ fn call_of(value: &serde_json::Value) -> Option<Call> {
     Some(Call { clip, rate })
 }
 
-/// What one speed ask came to.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Asked {
-    /// Every rate the model asked for, in the order it asked.
-    pub calls: Vec<Call>,
-    /// The ask failed at the wire, so the caller should say why rather than treat the empty list as "the
-    /// model wanted nothing sped up".
-    pub failed: bool,
-    /// The reason, naming the model and the fault.
-    pub reason: String,
-}
+pub type Asked = clip_pass_ask::Asked<Call>;
 
 /// One live speed ask: build the two messages, honour the cache, dial, read the reply.
 pub fn ask(
@@ -261,13 +237,13 @@ pub fn ask_named(
 ) -> Asked {
     let conf = match current_paths().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
-        Some(Err(reason)) => return failed(format!("settings could not be read: {reason}")),
+        Some(Err(reason)) => return Asked::failed(format!("settings could not be read: {reason}")),
         None => Conf::default(),
     };
     // No LLM address at all: name it, because "no usable answer" would blame the model for a server nobody
     // typed in.
     if services::server_url(&conf.server).is_none() {
-        return failed("no LLM address is set \u{2014} nothing was asked".to_string());
+        return Asked::failed("no LLM address is set \u{2014} nothing was asked".to_string());
     }
     ask_at_over(
         tree, &conf, context, clips, captioned, rows, lanes, attempt, cancel,
@@ -311,199 +287,33 @@ pub fn ask_at_over(
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
     if clips.is_empty() {
-        return Asked {
-            calls: Vec::new(),
-            failed: false,
-            reason: String::new(),
-        };
+        return Asked::answered(Vec::new());
     }
-    let model = conf.model.clone();
     let total: f64 = clips.iter().map(|(_, length)| length).sum();
-    let system = speeds_system(context);
-    let user = user_message_over(clips, captioned, total, rows, lanes);
-    // A retry asks with the same two messages, so it needs its own cache slot: without one the second round
-    // would be served the reply that was just refused (§6).
-    let parts = cache_parts(&system, &user, &model, attempt);
-    if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
-        // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
-        // the record that this ask cost nothing, not a second count of the request that earned it.
-        crate::request_timing::record_cached(tree, base_row(&model));
-        return Asked {
-            calls: parse_speeds(&cached),
-            failed: false,
-            reason: String::new(),
-        };
-    }
-    let base = base_row(&model);
-    let endpoint = services::llm_endpoint(conf);
-    let offered = this_pass_tools();
-    // How to build the body for one offer; `None` means no `tools` key, which is what §2 S5 resends to a server
-    // that refused the field.
-    let build = |offer: Option<&[Tool]>| {
-        Ok(llm_request::body(
-            STEP,
-            &model,
-            &two_messages(&system, &user),
-            // §4's flag for this prompt, read from the one table (§10 §4: thinking off outside
-            // textedit/cut/narrate/youtube).
-            crate::prompts::mode_of(STEP),
-            offer,
-            true,
-        )?
-        .to_string())
-    };
-    // One live ask is ONE request on the wire.
-    let sent = match crate::llm_tool_refusal_leg::dial_honouring_refusal(
-        STEP,
-        &endpoint.url,
-        Some(&offered),
-        &build,
-        &|body: &str| {
-            crate::llm_retry_leg::chat(
-                STEP,
-                tree,
-                &base,
-                &endpoint,
-                body,
-                cancel,
-                &crate::ui::window::log_line,
-            )
-        },
-        &crate::ui::window::log_line,
-    ) {
-        Ok(sent) => sent,
-        // The ask itself failed.
-        Err(reason) => return failed(reason),
-    };
-    let reply = match llm_request::reply_from(&sent.content_type, &sent.body) {
-        Ok(reply) => reply,
-        Err(_) => {
-            // Neither JSON nor a stream: nothing to place, read as "the model proposed nothing" — the same
-            // ending a `{"speeds":[]}` answer has (§F3.10 does not fail a cut over an unreadable rate list).
-            return Asked {
-                calls: Vec::new(),
-                failed: false,
-                reason: String::new(),
-            };
-        }
-    };
-    if reply.tool_calls.is_empty() {
-        if crate::llm_tools_offer::tools_for(&endpoint.url, &offered).is_none() {
-            let text = reply.answer().to_string();
-            if !text.trim().is_empty() {
-                llm_cache::store(tree, STEP, &parts, &text);
-            }
-            return Asked {
-                calls: parse_speeds(&text),
-                failed: false,
-                reason: String::new(),
-            };
-        }
-        // §3's answered question on this item: the tools ARE on the wire, and a reply carrying a JSON document
-        // instead of calling `set_clip_speed` has not answered.
-        let went_out = std::time::Instant::now();
-        let dial = |body: &str| {
-            crate::llm_retry_leg::chat(
-                STEP,
-                tree,
-                &base,
-                &endpoint,
-                body,
-                cancel,
-                &crate::ui::window::log_line,
-            )
-            .map(|sent| (sent.content_type, sent.body))
-        };
-        let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
-            STEP,
-            Tool::SetClipSpeed.name(),
-            two_messages(&system, &user),
-            &reply,
-            &crate::ui::window::log_line,
-            &|conversation| {
-                Ok(llm_request::body(
-                    STEP,
-                    &model,
-                    conversation,
-                    crate::prompts::mode_of(STEP),
-                    Some(&offered),
-                    true,
-                )?
-                .to_string())
-            },
-            &dial,
-        ) {
-            Ok(second) => second,
-            Err(reason) => return failed(reason),
-        };
-        // That retry was a request, and §09 §10 wants every request on the record; the repair leg owns the dial,
-        // so the row is written here (`chat` files rows only for what IT dials -- one line per request).
-        crate::clip_rules_tools_leg::record_repair_row(tree, base_row(&model), went_out);
-        let calls: Vec<Call> = second
-            .tool_calls
-            .iter()
-            .filter(|call| call.name == Tool::SetClipSpeed.name())
-            .filter_map(|call| {
-                let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
-                call_of_args(&args)
-            })
-            .collect();
-        // §6: the ANSWERING round's envelope is what is kept, so an unchanged batch costs no socket.
-        if crate::clip_rules_tools_leg::asks_for_anything(&second) {
-            llm_cache::store(
-                tree,
-                STEP,
-                &parts,
-                &crate::clip_rules_tools_leg::answering_envelope(&second).to_string(),
-            );
-        }
-        return Asked {
-            calls,
-            failed: false,
-            reason: String::new(),
-        };
-    }
     // The refusal a captioned clip earns comes back as the tool's own sentence, so it has to be REACHED.
     let mut batch = crate::clip_rules_tools_leg::batch_of(clips);
-    // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
-    // grid, and a default 1 s spread would name pictures this session never extracted.
     for (clip, count) in captioned {
         for index in 0..*count {
             batch.add_caption(*clip, 0.0, 0.5, &format!("caption {index}"));
         }
     }
-    // The calls above are RUN against the batch (the tool's own refusal sentence for a rate over a captioned clip
-    // is logged, §F3.10 S2) and then they END the ask: the model has its result, so no second request goes out.
-    let calls_out: Vec<Call> = reply
-        .tool_calls
-        .iter()
-        .filter(|call| call.name == Tool::SetClipSpeed.name())
-        .filter_map(|call| {
-            let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
-            call_of_args(&args)
-        })
-        .collect();
-    // §2's loop from here, over the batch that already knows which clips carry captions.
-    for line in crate::clip_rules_tools_leg::answer_calls(&reply.tool_calls, &mut batch) {
-        crate::ui::window::log_line(&line);
-    }
-    // §6: the ANSWERING round's envelope is what is kept, so an unchanged batch costs no socket when the cut is
-    // asked again.
-    if crate::clip_rules_tools_leg::asks_for_anything(&reply) {
-        llm_cache::store(
-            tree,
-            STEP,
-            &parts,
-            &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string(),
-        );
-    }
-    // A call this pass can already answer ENDS the ask: the model has its result and there is nothing to ask it
-    // for, so no second request goes out (§F3.10 counts batches by rows in `requests.tsv`).
-    Asked {
-        calls: calls_out,
-        failed: false,
-        reason: String::new(),
-    }
+    clip_pass_ask::run(
+        tree,
+        conf,
+        cancel,
+        &clip_pass_ask::Pass {
+            step: STEP,
+            tool: Tool::SetClipSpeed,
+            tools: this_pass_tools(),
+            model: &conf.model,
+            system: &speeds_system(context),
+            user: &user_message_over(clips, captioned, total, rows, lanes),
+            attempt,
+            batch: batch,
+            parse: &parse_speeds,
+            call_of_args: &call_of_args,
+        },
+    )
 }
 
 /// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
@@ -528,51 +338,7 @@ pub fn cache_file_for_test(
 ) -> PathBuf {
     let (system, user) = messages(context, clips, captioned);
     // A missing key is no file: `llm_cache::store` refuses to write one either (§6).
-    let key = llm_cache::key(&cache_parts(&system, &user, model, attempt)).unwrap_or_default();
+    let key = llm_cache::key(&clip_pass_ask::cache_parts(&system, &user, model, attempt))
+        .unwrap_or_default();
     tree.cache_llm(STEP, &key)
-}
-
-/// The deciding parts for one speed ask.
-fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
-    let state = ask_slot(system, attempt);
-    let request = llm_cache::Request {
-        system,
-        user,
-        state: &state,
-        speech: "",
-        context: "",
-        images: Vec::new(),
-        run_index: None,
-        model,
-        thinking: false,
-    };
-    llm_cache::parts(&request)
-}
-
-fn ask_slot(system: &str, attempt: u32) -> String {
-    if attempt <= 1 {
-        return system.to_string();
-    }
-    format!("{system}\u{21bb}{attempt}")
-}
-
-fn base_row(model: &str) -> Request {
-    Request {
-        started: String::new(),
-        run: String::new(),
-        step: "cut".to_string(),
-        job: STEP.to_string(),
-        service: Service::Llm,
-        model: model.to_string(),
-        kind: "chat".to_string(),
-        ..Default::default()
-    }
-}
-
-fn failed(reason: String) -> Asked {
-    Asked {
-        calls: Vec::new(),
-        failed: true,
-        reason,
-    }
 }

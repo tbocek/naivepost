@@ -30,40 +30,6 @@ pub fn is_picker_subject(screen: &str) -> bool {
     false
 }
 
-fn panel_box(chosen: usize) -> (i32, i32) {
-    panel_frame(&picker_list(chosen))
-}
-
-/// Where the open list sits on the realized Prepare window, as `(x, y, width, height)`: the same four numbers
-/// [`paint_open_over_window`] blits at, read through exactly the arithmetic the shot uses, so a green test and
-/// a wrong picture cannot coexist.
-pub fn open_panel_box_for_test(window: &adw::ApplicationWindow) -> Option<(f64, f64, f64, f64)> {
-    let picker = ui::find_source_widget(window, "bench-picker")?;
-    let bounds = picker.compute_bounds(window.upcast_ref::<gtk::Widget>())?;
-    let chosen = usize::try_from(picker.downcast_ref::<gtk::DropDown>()?.selected()).unwrap_or(0);
-    let (width, height) = panel_box(chosen);
-    // The size the SHOT is taken at, not the widget's allocation: under xvfb a presented 1240x900 window is
-    // allocated 1230x890 (the WM border), so `window.width()` would answer 0 before the first map and let a
-    // panel be clamped against a canvas the picture never uses.
-    let (asked_w, asked_h) = crate::snapshot_face::asked_shot_wh();
-    let (w, h) = (
-        asked_w.max(window.width()).max(crate::shell::WINDOW_MIN_W),
-        asked_h.max(window.height()).max(crate::shell::WINDOW_MIN_H),
-    );
-    Some((
-        panel_x(bounds.x(), bounds.width(), width, w) as f64,
-        panel_y(bounds.y(), bounds.height(), height, h) as f64,
-        width as f64,
-        height as f64,
-    ))
-}
-
-/// One pair — width and height — behind both the doors above and the paint below, so a test and the PNG cannot
-/// disagree about how big the panel is.
-fn panel_frame(list: &gtk::Box) -> (i32, i32) {
-    (panel_width(), panel_height(list))
-}
-
 /// Paint this window's bench row list into `out`, on its own mapped top level.
 pub fn paint(window: &adw::ApplicationWindow, out: &Path) -> Result<(usize, String), String> {
     let chosen = chosen_row(window)?;

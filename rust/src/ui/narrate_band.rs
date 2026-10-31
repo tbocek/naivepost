@@ -249,10 +249,6 @@ pub fn view_width_for_test() -> f64 {
     VIEW_WIDTH.with(|slot| slot.get())
 }
 
-pub fn painted_seconds_for_test() -> f64 {
-    DURATION.with(|slot| slot.get().max(0.1))
-}
-
 pub const RED_BAR_COLOUR: (u8, u8, u8) = (219, 51, 46);
 
 pub fn painted_plan_for_test(width: f64, height: f64) -> band::Plan {

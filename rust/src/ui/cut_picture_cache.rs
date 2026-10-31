@@ -199,10 +199,6 @@ pub fn card_frames(
     Card::Coming
 }
 
-pub fn forget_card(dir: &Path) {
-    LISTS.with(|lists| lists.borrow_mut().remove(dir));
-}
-
 pub fn note_listed_here() {
     LISTED_HERE.with(|count| count.set(count.get() + 1));
 }

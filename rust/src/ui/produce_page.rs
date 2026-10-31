@@ -560,10 +560,6 @@ pub fn press_set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> Str
     crate::ui::produce_press_wiring::set_thumbnail(window, index)
 }
 
-pub fn press_export_thumbnail(window: &adw::ApplicationWindow) -> String {
-    crate::ui::produce_press_wiring::export_thumbnail(window)
-}
-
 pub fn press_redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
     crate::ui::produce_press_wiring::redraw_thumbnail(window)
 }
@@ -571,14 +567,6 @@ pub fn press_redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
 /// **8** ↻ suggest: the only press here that asks a model to rewrite text; the picture stays.
 pub fn press_suggest(window: &adw::ApplicationWindow) -> String {
     crate::ui::produce_press_wiring::reword(window)
-}
-
-pub fn press_transcode_again(window: &adw::ApplicationWindow) -> String {
-    crate::ui::produce_press_wiring::transcode_again(window)
-}
-
-pub fn press_save_video_from_button(window: &adw::ApplicationWindow) -> String {
-    crate::ui::produce_press_wiring::save_video_from_button(window)
 }
 
 fn store_setting(row: &str, value: &str) -> String {

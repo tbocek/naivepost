@@ -188,23 +188,3 @@ fn picture_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
         .downcast()
         .ok()
 }
-
-pub fn queued_line_for_test(tree: &crate::layout::Tree, from: f64) -> Option<usize> {
-    let entries = crate::ui::narrate_page::read_state().entries;
-    entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.s + entry.at > from)
-        .map(|(index, _)| index)
-        .find(|&index| crate::narrate_preview_leg::line_take(tree, &entries, index).is_some())
-}
-
-/// The take wav the preview played for one line, or `None` when it had nothing to play. A door for the
-/// wire test, which has to check that a real press reached a REAL file rather than a sentence.
-pub fn line_take_for_test(tree: &crate::layout::Tree, line: usize) -> Option<std::path::PathBuf> {
-    crate::narrate_preview_leg::line_take(
-        tree,
-        &crate::ui::narrate_page::read_state().entries,
-        line,
-    )
-}

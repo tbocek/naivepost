@@ -192,14 +192,6 @@ pub fn frame_dir_for(window: &adw::ApplicationWindow, card_path: &str) -> PathBu
     }
 }
 
-/// F2.12 S3 (`the file's own length`): this window's own probe door, the one the program calls. Handing a
-/// window rather than a bare function means the length a form opens with and the frames it renders are asked
-/// of the same file, and a test can point the same door at a file it drew itself.
-pub fn probe_card_seconds(window: &adw::ApplicationWindow, path: &str) -> Option<f64> {
-    let _ = window;
-    probe_seconds(FFPROBE, path)
-}
-
 /// The card's own frames, on the panel. Answers the sentence the page prints, or `None` when the line is on
 /// footage — the caller then shows the session's own frame as it always has.
 pub fn show_card_frame(window: &adw::ApplicationWindow, cut_: &Cut, t: f64) -> Option<CardFrame> {
