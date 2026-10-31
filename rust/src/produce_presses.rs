@@ -20,14 +20,12 @@
 //! for nothing at all. Each of those is a count on the returned [`Outcome`], not a comment.
 
 use crate::produce_runs as runs;
-use crate::produce_upload::{self as upload, DrawnJob};
+use crate::produce_upload::{self as upload};
 
 /// A leg that answers with words: which kind is being asked (`"texts"`/`"title"`), the words of that kind.
 pub type WordsOf = Box<dyn Fn(&str) -> Vec<String>>;
 /// A leg that changes something on the page and on disk and may refuse: §F5.7's "clears `own`" is the one.
 pub type ClearOwn = Box<dyn Fn() -> Result<(), String>>;
-/// sd.cpp submit: the request body in, the accepted job out.
-pub type AskDraw = Box<dyn Fn(&serde_json::Value) -> Result<DrawnJob, String>>;
 /// An argv-shaped subprocess: what [`crate::produce_tag_page::MakePoster`] takes, so one spawner serves both.
 pub type RunArgv = Box<dyn Fn(&[String]) -> Result<(), String>>;
 /// A file operation with no encoder in it — ⤓ Save video's copy, kept apart from `RunArgv` so a test cannot
@@ -50,25 +48,8 @@ pub struct Legs {
     pub words_of: WordsOf,
     /// The edit instruction the picture is drawn from. Empty is refused rather than sent.
     pub instruction: Box<dyn Fn() -> String>,
-    /// The reference images after the base, in order.
-    pub references: Box<dyn Fn() -> Vec<String>>,
-    /// The vertical band the title prints across, as the box's centre fraction — [`upload::Band::of`] reads
-    /// it the same way for the draw prompt's "keep the <band> calm" tail.
-    pub title_band: Box<dyn Fn() -> f64>,
-    /// The brief a re-word sends. Built by the caller (`produce_upload::brief` over the live cut), because
-    /// only the page holds the segments, the events and the narration lines together.
-    pub brief: Box<dyn Fn() -> String>,
-    /// sd.cpp submit: the request body in, the job out. One call per redraw, never two.
-    pub ask_draw: AskDraw,
-    /// One poll of a draw job, repeated until it reports done.
-    pub poll: Box<upload::Poll>,
-    /// Put the drawn picture's bytes on disk as the plain picture (§F5.6 S6), the same leg the run's words half
-    /// saves through. Without it the reprint after a redraw had nothing to print onto.
-    pub save_picture: Box<upload::SavePicture>,
     /// Print one pass of words onto the picture. Costs a decode, never a GPU run.
     pub print: Box<upload::PrintWords>,
-    /// The model leg: the brief in, the raw reply out. One call for a re-word, none anywhere else.
-    pub ask_model: Box<upload::AskModel>,
     /// ffmpeg for ↻ Transcode. argv-shaped, like [`crate::produce_tag_page::MakePoster`].
     pub encode: RunArgv,
     /// Copy the rendered video out to a chosen path — a file operation with no encoder in it, kept apart
@@ -80,10 +61,7 @@ pub struct Legs {
     pub jpeg_sizes: Box<JpegLadder>,
     /// Was the run stopped (⊘ Cancel) rather than did a leg fail? Decides *"stopped"* vs *"failed — see log"*.
     pub was_stopped: Box<dyn Fn() -> bool>,
-    /// §F5.7's "clears `own`": ↻ over the thumbnail hands the picture back to the model, so the record must
-    /// stop saying it is the user's own — otherwise the draw paints a new picture and decision 34 still
-    /// refuses to reprint the title onto it. The page's leg clears its held state AND writes `publish.json`,
-    /// because a flag only repainted would be set again by the next opening of the project.
+    /// §F5.7's "clears `own`": a finished ↻ hands the picture back to the model.
     pub clear_own: ClearOwn,
     /// Whether this press counts its reprint passes onto [`Outcome::prints`]. The page sets it true; the
     /// F5.6 words half leaves it false, because that walk already reports its own passes and double-counting
@@ -99,7 +77,7 @@ pub struct Outcome {
     pub calls: Vec<String>,
     /// sd.cpp calls. A redraw is exactly 1; a re-word, a set-from-image, an export and a transcode are 0.
     pub sd_calls: usize,
-    /// LLM calls that rewrite text. A re-word is 1; a ticked redraw is 0.
+    /// LLM calls that rewrite text. A re-word is 1.
     pub llm_calls: usize,
     /// Reprint passes made (the marked texts and the title are each one pass). Costs a decode, never a GPU run.
     pub prints: u32,
@@ -125,102 +103,39 @@ impl Outcome {
 
 // ---- ↻ over the thumbnail ---------------------------------------------------------
 
-/// S1: ↻ over the thumbnail — redraw from the images and the instruction as they stand, always drawing.
-/// Unticked adds the one LLM call that re-asks for the words; either way there is exactly **one** sd.cpp
-/// call, because a second draw would be a second picture rather than a redraw of this one.
-///
-/// The draw/poll loop is deliberately NOT a copy of `produce_upload::walk`'s: that walk owns F5.6's order
-/// (brief → publish → draw → print) and takes the model's answers as input. This press has no answers
-/// unless the box is unticked, so it drives the same two legs directly instead of dragging the whole
-/// words half along behind one button.
+/// S1: ↻ over the thumbnail: draw from the images and the instruction as they stand. `draw` is the run's own walk,
+/// so a redraw sends what ▶ sends. A failed draw changes nothing; only a finished one takes `own` away.
 pub fn press_redraw_thumbnail(
-    only_thumbnail: bool,
     legs: &Legs,
+    draw: impl FnOnce() -> Result<(), String>,
     mut log: impl FnMut(&str),
 ) -> Outcome {
     let mut out = Outcome::default();
     if !(legs.has_cut)() {
         return Outcome::refusal(runs::REDRAW_NO_CUT);
     }
-    // Open before doing: the announcement lands even if the very first leg fails.
+    if (legs.instruction)().trim().is_empty() {
+        return Outcome::refusal(upload::NO_INSTRUCTION);
+    }
     log(runs::DRAW_AGAIN_LOG);
-
-    // §F5.7: "redraw from current images and instruction (clears `own`; always draws)". Cleared here, after
-    // the refusal (a press that did nothing must change nothing) and before the draw, so the picture the model
-    // is about to paint is already the app's rather than the user's — which is what lets the reprint below,
-    // and every later title change, reach it (decision 34 stops re-printing on a hand-edited picture).
+    if let Err(why) = draw() {
+        return fail(out, "the thumbnail", &why, legs);
+    }
+    out.sd_calls = 1;
+    out.calls.push("draw".to_string());
     if let Err(why) = (legs.clear_own)() {
         return fail(out, "the thumbnail", &why, legs);
     }
     out.calls.push("clear-own".to_string());
-
-    // Unticked: the words are asked for again — one LLM call, and BEFORE the draw so the new instruction
-    // is what gets painted. Ticked skips it entirely (`runs::redraw(true).rewrites == 0`).
-    if !only_thumbnail {
-        match (legs.ask_model)(&(legs.brief)()) {
-            Ok(_) => {
-                out.llm_calls = 1;
-                out.calls.push("model".to_string());
-            }
-            Err(why) => return fail(out, "the thumbnail", &why, legs),
-        }
-    }
-
-    // An empty instruction is refused rather than sent: sd.cpp would paint noise and charge for it.
-    let instruction = (legs.instruction)();
-    if instruction.trim().is_empty() {
-        return Outcome::refusal(upload::NO_INSTRUCTION);
-    }
-    let body = upload::request_body(
-        &upload::draw_prompt(&instruction, upload::Band::of((legs.title_band)())),
-        None,
-        runs::WIDTH,
-        runs::HEIGHT,
-        &(legs.references)(),
-    );
-    let job = match (legs.ask_draw)(&body) {
-        Ok(job) => job,
-        Err(why) => return fail(out, "the thumbnail", &why, legs),
-    };
-    out.sd_calls = 1;
-    out.calls.push("draw".to_string());
-    let png = loop {
-        match (legs.poll)(&job) {
-            Ok(state) => {
-                log(&upload::poll_line(&state.status, state.ahead));
-                if state.done {
-                    out.calls.push("poll".to_string());
-                    break state.png;
-                }
-            }
-            Err(why) => return fail(out, "the thumbnail", &why, legs),
-        }
-    };
-    // The drawn bytes land as the plain picture the reprint prints onto, as in the run's words half (§F5.6 S6).
-    // The first rewrite went straight to the reprint: with a real sd.cpp it always failed on "nothing has been
-    // drawn to print onto" (a scripted draw had laid the file itself, so no test saw it).
-    if png.is_empty() {
-        let why = format!("the drawing server finished job {} with no image", job.id);
-        return fail(out, "the thumbnail", &why, legs);
-    }
-    if let Err(why) = (legs.save_picture)(&job, &png) {
-        return fail(out, "the thumbnail", &why, legs);
-    }
-    out.calls.push("picture".to_string());
-
-    // Then the words go back over the fresh picture — a reprint costs a decode, never a GPU run.
-    if let Err(why) = print_words(legs, &mut out) {
-        return fail(out, "the thumbnail", &why, legs);
-    }
     out.status = runs::ending("the thumbnail", runs::REDRAW_DONE, true, false);
     out
 }
 
 // ---- ↻ beside Title ---------------------------------------------------------------
 
-/// S2: ↻ beside Title — rewrite the title, the instruction and the description, and NOTHING else. In
+/// S2: ↻ beside Title: rewrite the title and the description, and NOTHING else. In
 /// particular no draw: the picture stays exactly as it is, which is what makes the press cheap and why
-/// `ask_draw` must never be reached here.
+/// no draw leg is reachable here.
 pub fn press_reword(
     legs: &Legs,
     words: impl FnOnce() -> Result<(), String>,

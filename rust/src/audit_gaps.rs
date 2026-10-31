@@ -230,7 +230,6 @@ impl Defect {
             }
             Self::TitlePrintedOnce => {
                 "audit_gaps::reprint_title_on_change, mirroring \
-                                     produce_details::prints_words_first and \
                                      youtube_title_redraws_picture"
             }
             Self::AtThreeReadings => {

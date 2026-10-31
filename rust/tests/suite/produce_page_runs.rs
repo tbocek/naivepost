@@ -21,8 +21,7 @@ const ITEM: &str = "F5.7";
 
 /// The spec's own wording for the two runs that rewrite something — quoted so a paraphrase in the code cannot
 /// pass as the item it implements.
-const SPEC_REWORD: &str =
-    "Ask again for the title and description — one LLM call, two \
+const SPEC_REWORD: &str = "Ask again for the title and description — one LLM call, two \
 answers, nothing else rewritten (not even the picture it prints)";
 
 /// One row of the catalogue's Produce section, by id.
@@ -225,61 +224,17 @@ fn f5_7_s6_the_rung_picker_takes_the_first_that_fits_and_otherwise_the_last() {
 // ---- S1: ⊙ Thumbnail only ---------------------------------------------------------
 
 #[test]
-fn f5_7_s1_thumbnail_only_costs_one_sd_call_and_rewrites_nothing() {
-    assert_eq!(ITEM, "F5.7");
-    let ticked = runs::redraw(true);
-    // One sd.cpp call: a second draw would be a second picture, not a redraw of this one.
-    assert_eq!(ticked.sd_calls, 1);
-    // And no text rewrite at all — which is the whole content of the tick.
+fn f5_7_s1_a_redraw_costs_one_sd_call_and_keeps_the_words() {
+    let redraw = runs::redraw();
+    assert_eq!(redraw.sd_calls, 1);
     assert_eq!(
-        ticked.rewrites, 0,
-        "the tick means: do not ask for the words again"
+        redraw.keeps,
+        ["title", "description", "publish record", "chapter times"]
     );
-
-    // The keeps list is the spec's own four things, in the order the sentence names them.
-    assert_eq!(
-        ticked.keeps,
-        ["title", "description", "publish record", "chapter times"],
-        "a redraw that rewrote any of these is a reword"
-    );
-
-    // The log line says what it cost before anything has had time to fail.
     assert_eq!(
         runs::DRAW_AGAIN_LOG,
         "publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten"
     );
-}
-
-#[test]
-fn f5_7_s1_leaving_the_box_unticked_asks_for_the_words_too() {
-    assert_eq!(ITEM, "F5.7");
-    let unticked = runs::redraw(false);
-    // Still exactly one picture: unticking adds an LLM call, never a second draw.
-    assert_eq!(unticked.sd_calls, 1);
-    assert_eq!(
-        unticked.rewrites, 1,
-        "unticked re-asks the words — that is all it does"
-    );
-    // The same keeps either way: the box decides whether the words are asked for, never what survives.
-    assert_eq!(ticked_keeps(), unticked.keeps);
-
-    // The label and its tooltip: the inventory's own `⊙ Thumbnail only`, and a sentence that names what ticking
-    // costs rather than what it saves, because ticking is the deliberate act.
-    assert_eq!(runs::ONLY_THUMBNAIL, "⊙ Thumbnail only");
-    let tip = runs::ONLY_THUMBNAIL_TIP;
-    assert!(tip.starts_with("Ticked"), "{tip}");
-    assert!(
-        tip.contains("re-asks for the words too"),
-        "the tick's cost is the point: {tip}"
-    );
-
-    // And the words box arrives prefilled with what it printed last time rather than empty.
-    assert_eq!(runs::WORDS_ASK_AGAIN, "Words: <previous text>");
-}
-
-/// The keeps list of a ticked redraw, spelled out so the unticked case compares against a value it does not share.
-fn ticked_keeps() -> &'static [&'static str] {
-    runs::redraw(true).keeps
 }
 
 // ---- S2: Reword -------------------------------------------------------------------
@@ -444,7 +399,7 @@ fn f5_7_s3_the_copy_is_recorded_and_reopening_finds_it() {
     assert_eq!(reopened.title, "an old title", "S3 rewrites no text");
 
     // S1's redraw keeps exactly that: nothing in its keeps list is a field this press touched.
-    for kept in runs::redraw(true).keeps {
+    for kept in runs::redraw().keeps {
         assert!(!kept.is_empty(), "{kept} is a keep with no name");
     }
 }

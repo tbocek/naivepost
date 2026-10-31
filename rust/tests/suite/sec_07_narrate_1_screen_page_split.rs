@@ -30,6 +30,8 @@ static RAN_GROWTH: AtomicBool = AtomicBool::new(false);
 /// How far a measured edge may miss §A.1's number before it stops being "opened at" it. A paned position is a
 /// request GTK may answer within its children's minimums, so this pins the clause without pinning GTK's rounding.
 const OPEN_TOLERANCE_PX: f32 = 8.0;
+/// The column's own margin inside the 560 px the divider gives it.
+const COLUMN_MARGIN_PX: f32 = 12.0;
 
 /// The scratch session folder, so nothing this file writes lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
@@ -334,7 +336,7 @@ fn check_extra_width_goes_right(app: &adw::Application) {
     let narrow_lines = bounds(&narrow, "narrate-lines").width();
     println!("at 1600: left column {narrow_left:.1} px, lines column {narrow_lines:.1} px");
     assert!(
-        (narrow_left - 560.0).abs() <= OPEN_TOLERANCE_PX,
+        (narrow_left + COLUMN_MARGIN_PX - 560.0).abs() <= OPEN_TOLERANCE_PX,
         "§A.1 opens the left column 560 px wide: measured {narrow_left:.1}"
     );
     narrow.close();
@@ -351,7 +353,7 @@ fn check_extra_width_goes_right(app: &adw::Application) {
     let tight_lines = bounds(&tight, "narrate-lines").width();
     println!("at 1240: left column {tight_left:.1} px, lines column {tight_lines:.1} px");
     assert!(
-        (tight_left - 560.0).abs() <= OPEN_TOLERANCE_PX,
+        (tight_left + COLUMN_MARGIN_PX - 560.0).abs() <= OPEN_TOLERANCE_PX,
         "the left column keeps its 560 px opening when the window narrows: {tight_left:.1} px",
     );
     assert!(

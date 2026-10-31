@@ -191,18 +191,27 @@ fn f5_7_where_it_runs_a_press_returns_busy_then_lands() {
         );
         assert!(button.is_sensitive(), "and the button is pressable again");
         let page = ui::produce_page::read_state();
-        assert_eq!(page.title, "a title from the model", "the answer reached the page");
+        assert_eq!(
+            page.title, "a title from the model",
+            "the answer reached the page"
+        );
         assert_eq!(
             page.thumb_title, "a title from the model",
             "the new title replaces the line on the picture, whatever it said"
         );
-        assert_eq!(page.description, "The model also wrote this paragraph about the video.");
+        assert_eq!(
+            page.description,
+            "The model also wrote this paragraph about the video."
+        );
         assert_eq!(
             page.instruction, "an instruction already on the page",
             "the press leaves the instruction alone, whatever the answer named"
         );
         let saved = naivepost::publish::load(&_tree).expect("the record was written");
-        assert_eq!(saved.title, "a title from the model", "and the record on disk");
+        assert_eq!(
+            saved.title, "a title from the model",
+            "and the record on disk"
+        );
         assert!(
             arrivals.load(Ordering::SeqCst) >= 1,
             "the model the settings name was asked"
@@ -214,6 +223,28 @@ fn f5_7_where_it_runs_a_press_returns_busy_then_lands() {
         assert_eq!(
             opened, 1,
             "the press made while the first one walked was ignored: one re-word opened"
+        );
+
+        // ↻ over the thumbnail with the drawing server down: the chosen picture stays chosen.
+        let mut page = ui::produce_page::read_state();
+        page.own = true;
+        page.frames = vec!["frame:3.0".to_string()];
+        ui::produce_page::set_state(page);
+        let redraw = ui::line_step_button(&window, "thumbnail-redraw").expect("§1 item 6");
+        redraw.emit_by_name::<()>("clicked", &[]);
+        assert!(ui::background::settle_for_test(Duration::from_secs(120)));
+        assert!(
+            common::status_text(&window).starts_with("the thumbnail failed"),
+            "{}",
+            common::status_text(&window)
+        );
+        assert!(
+            ui::produce_page::read_state().own,
+            "the page keeps its choice"
+        );
+        assert!(
+            naivepost::publish::load(&_tree).expect("the record").own,
+            "and so does the record"
         );
         RAN.store(true, Ordering::SeqCst);
         window.close();

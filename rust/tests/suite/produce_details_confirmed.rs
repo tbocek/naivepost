@@ -831,13 +831,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s8_publ
         "something the draw reads moved"
     );
 
-    // The chosen-picture branch prints its words before the text-only gate, so ↻ Suggest picking a frame still
-    // gets its title; a printing failure keeps the plain picture rather than losing the frame too.
-    assert!(details::prints_words_first(true, false));
-    assert!(
-        !details::prints_words_first(true, true),
-        "no chosen frame means the gate applies"
-    );
+    // A printing failure keeps the plain picture rather than losing the frame too.
     assert!(details::print_failed_keeps_plain(true));
 
     // The title band is a box only while the picture carries words; Remove keeps it off for good; and the

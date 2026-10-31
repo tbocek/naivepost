@@ -14,10 +14,6 @@ use gtk4 as gtk;
 
 /// The run bar's controls, wrapped in a horizontal scroller that never asks for width of its own.
 ///
-/// `hscrollbar_policy = External` rather than `Automatic`: a scrollbar drawn along the bottom of a
-/// 34 px-tall row would be a second strip nobody asked for, and GTK still lets the pointer wheel or
-/// drag move the content inside. `vexpand(false)` keeps the row its own height.
-///
 /// The controls keep their own named box (`run-controls`) INSIDE this scroller: every door and test that
 /// finds ▶ / 🎲 / ⏹ by name walks the tree, so they are reached through the scroller unchanged. The
 /// The scroller is what carries the name `run-controls`: the row's direct children stay exactly
@@ -26,7 +22,8 @@ use gtk4 as gtk;
 pub fn wrap_controls(controls: gtk::Widget) -> gtk::ScrolledWindow {
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_widget_name("run-controls");
-    scroller.set_hscrollbar_policy(gtk::PolicyType::External);
+    // `Never` makes the buttons this row's floor, so long readouts beside them cannot squeeze them to nothing.
+    scroller.set_hscrollbar_policy(gtk::PolicyType::Never);
     scroller.set_vscrollbar_policy(gtk::PolicyType::Never);
     scroller.set_child(Some(&controls));
     // EXPANDS, but only as the filler for whatever else in the row does not: `hand_the_free_width_to` gives

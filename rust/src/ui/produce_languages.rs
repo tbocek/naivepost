@@ -301,14 +301,20 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
         && publish.prompt.trim().is_empty()
         && publish.frames.is_empty()
         && !tree.thumbnail_png().is_file();
-    let answers = if crate::publish::is_written(&tree) && !nothing_to_make {
+    let no_words = publish.title.trim().is_empty() && publish.description.trim().is_empty();
+    let answers = if crate::publish::is_written(&tree) && !nothing_to_make && !no_words {
         crate::ui::window::log_line(UPLOAD_TEXT_KEPT_LOG);
         crate::produce_upload::Answers::default()
     } else {
         let reply = (legs.ask_model)(&brief)?;
         answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at))
     };
-    let mats = upload_mats(&legs, run);
+    let mut mats = upload_mats(&legs, run);
+    // A picture the person already chose stands: it may be any slot's, and only a newly picked frame replaces it.
+    let keep_standing = |_: &crate::project::Publish| Ok(());
+    if publish.own && answers.picked_frame.is_none() && tree.thumbnail_plain_png().is_file() {
+        mats.own_picture = &keep_standing;
+    }
     let outcome = crate::produce_upload::walk(
         &brief,
         &publish,
@@ -346,6 +352,36 @@ pub fn reword_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     let texts = next.texts.clone();
     let print = print_leg(title_band_of(&next), move || texts.clone());
     print("title", std::slice::from_ref(&next.thumb_title))
+}
+
+/// ↻ over the thumbnail: the run's walk with the stamp forgotten, so it always draws. The record goes back as it was
+/// if the draw fails: a server that is down must not cost a chosen picture.
+pub fn redraw_half(run: &crate::produce_flow::Run) -> Result<(), String> {
+    let tree = session_tree();
+    let found = publish_of_run(run);
+    let publish = crate::project::Publish {
+        own: false,
+        ..found.clone()
+    };
+    let legs = upload_legs(&tree, run);
+    let mut mats = upload_mats(&legs, run);
+    mats.stored_stamp = None;
+    let outcome = crate::produce_upload::walk(
+        "",
+        &publish,
+        &crate::produce_upload::Answers::default(),
+        &mats,
+        |line: &str| {
+            if !line.is_empty() {
+                crate::ui::window::log_line(line);
+            }
+        },
+    );
+    let Some(why) = outcome.error else {
+        return Ok(());
+    };
+    (legs.save_publish)(&found)?;
+    Err(why)
 }
 
 /// The clip starts on the SESSION clock, in the cut's order — the numbers `frame: clip n +s` resolves against
@@ -779,27 +815,37 @@ pub fn upload_ask(
         )?;
         // The conversation wrote the record directly; hand back the text form `answers_from` reads, so
         // prose and tools land through the same parser and cannot drift apart.
-        Ok(render_answers(&collected))
+        Ok(render_answers(&publish, &collected))
     })
 }
 
-/// The record a finished call left behind, in the labelled-line form `peel`/`answers_from` read.
-fn render_answers(collected: &crate::produce_upload_call::Collected) -> String {
+/// What a finished call changed on the record `base`, in the labelled-line form `peel`/`answers_from` read. What it
+/// left alone is not an answer: replayed, the printed line would become the title and a row entry the instruction.
+pub fn render_answers(
+    base: &crate::project::Publish,
+    collected: &crate::produce_upload_call::Collected,
+) -> String {
     let publish = &collected.publish;
     let mut lines = Vec::new();
-    if !publish.thumb_title.trim().is_empty() {
+    if publish.title != base.title {
+        lines.push(format!("TITLE: {}", publish.title));
+    } else if publish.thumb_title != base.thumb_title {
         lines.push(format!("TITLE: {}", publish.thumb_title));
     }
-    if publish.own {
+    if publish.own && publish.frames != base.frames {
         if let Some(frame) = publish.frames.first() {
             lines.push(format!("THUMBNAIL: {frame}"));
         }
-    } else if !publish.prompt.trim().is_empty() {
+    } else if publish.prompt != base.prompt && !publish.prompt.trim().is_empty() {
         lines.push(format!("THUMBNAIL: {}", publish.prompt));
     }
-    // §3.9's prose shape is "the three labelled lines, then the description as plain text": a fourth label
-    // would not be peeled at all (`peel_labels` takes at most three), so the body rides unlabelled.
-    lines.extend(publish.description.lines().map(str::to_string));
+    if publish.description != base.description {
+        lines.extend(publish.description.lines().map(str::to_string));
+    }
+    // The model wrote and repeated what stood: an answer all the same, unlike a call that wrote nothing.
+    if lines.is_empty() && collected.wrote {
+        lines.push(format!("TITLE: {}", publish.title));
+    }
     lines.join("\n")
 }
 
@@ -815,7 +861,6 @@ pub fn legs(
     has_cut: impl Fn() -> bool + 'static,
     rendering: impl Fn() -> bool + 'static,
     container: impl Fn() -> String + 'static,
-    spans: impl Fn() -> Vec<(f64, f64)> + 'static,
 ) -> crate::produce_presses::Legs {
     use crate::produce_presses::Legs;
     // Each reader is shared through an `Rc` before it is captured: an `impl Fn` argument moves into the first
@@ -823,7 +868,6 @@ pub fn legs(
     let video_container = std::rc::Rc::new(container);
     let for_video = Rc::clone(&video_container);
     let for_copy = video_container;
-    let clip_spans = std::rc::Rc::new(spans);
     // The page's held state is read through `read_state` directly rather than passed in: it is a thread-local
     // clone, so every closure below can take its own copy of the reader without one move fighting another.
     Legs {
@@ -848,34 +892,10 @@ pub fn legs(
                 .collect(),
         }),
         instruction: Box::new(move || crate::ui::produce_page::read_state().instruction),
-        // Everything after the base, in order — the same split `publish::references` makes.
-        references: Box::new(move || {
-            crate::ui::produce_page::read_state()
-                .frames
-                .iter()
-                .skip(1)
-                .cloned()
-                .collect()
-        }),
-        // The band the title prints across comes from the record's own box when it has one; 0.25 (the upper
-        // third) is the app's default, matching `details::thumbnail_box_without_aspect`.
-        title_band: Box::new(|| stored_title_band().cy),
-        brief: Box::new(move || upload_brief((*clip_spans)())),
-        ask_draw: draw_leg(),
-        poll: poll_leg(),
-        save_picture: Box::new(save_drawn),
-        // §S3: a press with no run in front of it still reads the record on disk, which is what "the page left
-        // it" means for a door that snapshots nothing (↻ redraw and ↻ suggest build their own legs).
+        // §S3: a press with no run in front of it still reads the record on disk, which is what "the page left it" means.
         print: print_leg(stored_title_band(), || {
             crate::ui::produce_page::read_state().texts
         }),
-        ask_model: upload_ask(
-            &session_tree(),
-            &crate::publish::load(&session_tree()).unwrap_or_default(),
-            Vec::new(),
-            Vec::new(),
-            true,
-        ),
         encode: Box::new(spawn_argv),
         copy: Box::new(move |file: &str| copy_video_out(file, &for_copy())),
         jpeg_sizes: Box::new(|path: &str| crate::ui::produce_languages::jpeg_export(path).0),
@@ -891,34 +911,6 @@ pub fn legs(
         // page's presses turn this on in `produce_page::press_legs`.
         count_prints: false,
     }
-}
-
-/// The re-word's brief: the same [`crate::produce_upload::brief`] the run's words half sends, over the
-/// spans the page holds. `at_output` accumulates in the order given, because the produced clock is the only
-/// clock the brief speaks. The events and transcript are left out; ▶ and ↻ beside Title send the full brief
-/// ([`upload_brief_for`]).
-fn upload_brief(spans: Vec<(f64, f64)>) -> String {
-    let clips: Vec<crate::produce_upload::BriefClip> = spans
-        .into_iter()
-        .enumerate()
-        .map(|(index, (start, end))| crate::produce_upload::BriefClip {
-            number: index + 1,
-            at_output: start,
-            seconds: (end - start).max(0.0),
-            session: format!(
-                "{}\u{2013}{}",
-                crate::tools::mm_ss(start),
-                crate::tools::mm_ss(end)
-            ),
-            seen: vec![],
-            said: vec![],
-            // The re-word's brief is a title question over spans the page holds, with no cut segment behind
-            // each one: nothing to read a rate off and nothing to mark, so the header keeps S1's plain form.
-            rate: 1.0,
-            marked: vec![],
-        })
-        .collect();
-    crate::produce_upload::brief(&clips, &[], crate::produce_upload::BRIEF_MAX_CHARS)
 }
 
 /// Spawn an argv-shaped command through the page's spawner, so a transcode goes through the same door the

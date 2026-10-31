@@ -130,9 +130,7 @@ pub fn gather(
 /// the page is what holds it — reading `publish.json` instead would describe what an earlier run left rather
 /// than what the person has on screen now (which, on a fresh session, is an empty image row and no title).
 ///
-/// The three fields no page row spells (`crop`, `title_box` and `frames`' crop half) keep their defaults: a
-/// page field that does not exist cannot be published, and the crop the page draws a box from is
-/// `base_shape`/`video_shape`, which a press may not write into the record it hands the render.
+/// `crop` has no page row and keeps its default: the merge below takes it from the record.
 ///
 /// This is the row→record mapping the snapshot needs. It lives here rather than beside the rows in
 /// [`crate::ui::produce_page`] because this file owns what a run carries and that one is at its size budget.
@@ -206,7 +204,7 @@ fn footage_file(snap: &Snapshot, at: f64) -> Option<(String, f64)> {
         .recordings
         .iter()
         .find(|rec| rec.start <= at + 1e-6 && at < rec.end)
-        .or_else(|| snap.recordings.iter().filter(|rec| rec.start <= at).last());
+        .or_else(|| snap.recordings.iter().rfind(|rec| rec.start <= at));
     if let Some(rec) = recording {
         if let Some(source) = snap
             .sources

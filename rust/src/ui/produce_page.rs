@@ -721,13 +721,12 @@ pub fn press_export_thumbnail(window: &adw::ApplicationWindow) -> String {
     crate::ui::produce_press_wiring::export_thumbnail(window)
 }
 
-/// **6** ↻ redraw: one sd.cpp call, nothing rewritten when the words are left alone.
-pub fn press_redraw_thumbnail(window: &adw::ApplicationWindow, only_thumbnail: bool) -> String {
-    crate::ui::produce_press_wiring::redraw_thumbnail(window, only_thumbnail)
+/// **6** ↻ redraw: one sd.cpp call, nothing rewritten.
+pub fn press_redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
+    crate::ui::produce_press_wiring::redraw_thumbnail(window)
 }
 
-/// **8** ↻ suggest: the only thing on this page that asks a model to rewrite text, and it rewrites all
-/// three written things at once so they cannot disagree about what the video is. No draw: the picture stays.
+/// **8** ↻ suggest: the only thing on this page that asks a model to rewrite text. No draw: the picture stays.
 pub fn press_suggest(window: &adw::ApplicationWindow) -> String {
     crate::ui::produce_press_wiring::reword(window)
 }
@@ -1097,18 +1096,24 @@ fn keep_settings() {
 /// picture survives closing the window without a run. Kept in the project's own `publish` record, not in
 /// `publish.json`, which is what a RUN wrote and whose existence says the upload text was written.
 pub(crate) fn keep_page_publish() {
+    keep_record();
+    reprint_picture();
+}
+
+/// The page onto the project's record, which wins when the project opens: it never may fall behind the page. `own`
+/// is the page's outright, because the merge only ever adds it.
+fn keep_record() {
     let Some(session) =
         crate::ui::window::PLAY_SESSION.with(|slots| slots.borrow().last().cloned())
     else {
         return;
     };
     let page = crate::ui::produce_snapshot::publish_of_state(&read_state());
+    let own = page.own;
     let held = session.borrow().publish.clone().unwrap_or_default();
-    session.borrow_mut().publish = Some(crate::ui::produce_snapshot::merge_publish(
-        Some(page),
-        &held,
-    ));
-    reprint_picture();
+    let mut merged = crate::ui::produce_snapshot::merge_publish(Some(page), &held);
+    merged.own = own;
+    session.borrow_mut().publish = Some(merged);
 }
 
 /// The page's words printed onto `thumbnail.png` again from the plain picture, after every edit of a box (the
@@ -1195,7 +1200,9 @@ pub fn load_page(tree: &crate::layout::Tree) -> ProduceState {
         if publish.texts.is_empty() {
             publish.texts = written.texts;
         }
-        publish.own = publish.own || written.own;
+        if project.publish.is_none() {
+            publish.own = written.own;
+        }
         publish.title_seeded = publish.title_seeded || written.title_seeded;
         if publish.title_box.is_none() {
             publish.title_box = written.title_box;
@@ -1326,13 +1333,17 @@ fn subtitles_name(s: Subtitles) -> &'static str {
 
 /// The page's row as the settings struct the transcode log reads. Built here rather than read off the
 /// project because the page holds the row's truth until a run saves it.
-/// Mark the thumbnail as the user's own picture, with the current title as its printed line. The state half
-/// of `produce_press_wiring::set_thumbnail`, kept here because the fields are this page's.
+/// Mark the standing picture as the user's own thumbnail. The title is printed on it unless a line is there already:
+/// a ✎ reword or removal stays.
 pub fn set_own_thumbnail() {
     mutate(|st| {
         st.own = true;
-        st.thumb_title = st.title.clone();
+        if !st.title_seeded {
+            st.thumb_title = st.title.clone();
+            st.title_seeded = true;
+        }
     });
+    keep_record();
 }
 
 /// The other half of §F5.7's ↻ over the thumbnail: the picture goes back to the model, so it stops being the
@@ -1443,6 +1454,7 @@ pub fn set_text_field(field: &str, text: &str) -> String {
         true
     });
     if stored {
+        keep_record();
         "".to_string()
     } else {
         "no such text box on this page".to_string()
@@ -1495,7 +1507,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
                     crate::ui::produce_choosers::open_export_dialog(&w);
                 }
                 "thumbnail-redraw" => {
-                    crate::ui::produce_press_wiring::redraw_from_button(&w, true);
+                    crate::ui::produce_press_wiring::redraw_from_button(&w);
                 }
                 "transcode-save" => {
                     crate::ui::produce_choosers::open_save_video_dialog(&w);
@@ -1834,6 +1846,7 @@ pub(crate) fn take_written_publish(window: &adw::ApplicationWindow) {
             s.texts = written.texts.clone();
         }
     });
+    keep_record();
     refresh(window);
 }
 
@@ -1843,7 +1856,10 @@ fn snapshot_run(
     project: &crate::project::Project,
     cut: &crate::cut::Cut,
     settings: &crate::project::Produce,
-) -> (crate::ui::produce_snapshot::Snapshot, crate::produce_flow::Run) {
+) -> (
+    crate::ui::produce_snapshot::Snapshot,
+    crate::produce_flow::Run,
+) {
     let snap = crate::ui::produce_snapshot::gather(
         &session_tree(),
         cut,
@@ -1877,8 +1893,8 @@ fn snapshot_run(
     (snap, run)
 }
 
-/// The run ↻ beside Title asks over, `None` with no cut or no readable project.
-pub(crate) fn reword_run(window: &adw::ApplicationWindow) -> Option<crate::produce_flow::Run> {
+/// The run a page press walks, `None` with no cut or no readable project.
+pub(crate) fn press_run(window: &adw::ApplicationWindow) -> Option<crate::produce_flow::Run> {
     let cut = crate::ui::window::review_cut_of(window);
     if cut.segs.is_empty() {
         return None;

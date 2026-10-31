@@ -45,11 +45,44 @@ fn seeding() -> bool {
     PICKER_SEEDING.with(|seeding| seeding.get())
 }
 
+fn row_factory(ellipsize: gtk::pango::EllipsizeMode) -> gtk::SignalListItemFactory {
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(move |_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let label = gtk::Label::new(None);
+        label.set_xalign(0.0);
+        label.set_ellipsize(ellipsize);
+        item.set_child(Some(&label));
+    });
+    factory.connect_bind(|_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let text = item
+            .item()
+            .and_then(|row| row.downcast::<gtk::StringObject>().ok());
+        if let (Some(label), Some(text)) = (
+            item.child()
+                .and_then(|child| child.downcast::<gtk::Label>().ok()),
+            text,
+        ) {
+            label.set_text(&text.string());
+        }
+    });
+    factory
+}
+
 /// The picker at rest: no rows yet — `follow` fills them from the published voice on the first refresh,
 /// so an untouched dropdown shows nothing rather than a speaker nobody chose.
 pub(crate) fn build() -> gtk::DropDown {
     let picker = gtk::DropDown::from_strings(&[]);
     picker.set_widget_name("voice-picker");
+    // The closed face ellipsizes: a long take name must not hold the column past its 560 px. The open list keeps
+    // the whole name.
+    picker.set_list_factory(Some(&row_factory(gtk::pango::EllipsizeMode::None)));
+    picker.set_factory(Some(&row_factory(gtk::pango::EllipsizeMode::End)));
     picker.set_tooltip_text(Some(&narrate_screen::sample_tip()));
     // The row shown is the chosen voice's, spelled by [`crate::narrate_rules::picker_row`] rather than
     // hardcoded: the spec's shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its

@@ -585,16 +585,13 @@ fn sec_08_produce_5_rules_s3_publish_json_goes_down_before_the_picture() {
 #[test]
 fn sec_08_produce_5_rules_s3_a_press_over_the_thumbnail_always_draws() {
     assert_eq!(ITEM, "§08-produce#5-rules");
-    // ↻ over the thumbnail: one sd.cpp call whatever the box says, and the text it is not about stays alone.
-    for ticked in [false, true] {
-        let again = runs::redraw(ticked);
-        assert_eq!(
-            again.sd_calls, 1,
-            "a second draw would be a second picture, not a redraw"
-        );
-        assert_eq!(again.rewrites, usize::from(!ticked), "{again:?}");
-        assert!(again.keeps.contains(&"title"), "{again:?}");
-    }
+    // ↻ over the thumbnail: one sd.cpp call, and the text stays alone.
+    let again = runs::redraw();
+    assert_eq!(
+        again.sd_calls, 1,
+        "a second draw would be a second picture, not a redraw"
+    );
+    assert!(again.keeps.contains(&"title"), "{again:?}");
     assert!(runs::DRAW_AGAIN_LOG.contains("one sd.cpp call, nothing rewritten"));
 
     // A chosen frame survives ▶: the copy lives in the app's own images folder, not in `produce/`, so the
@@ -658,14 +655,6 @@ fn sec_08_produce_5_rules_s3_the_title_is_seeded_once_and_reprinting_words_costs
     assert!(long.size < short.size, "{} vs {}", long.size, short.size);
     assert_eq!(short.lines.len(), 1, "{:?}", short.lines);
     assert!(!long.lines.is_empty());
-
-    // The tick that re-asks for the words is the only thing that makes a redraw cost an LLM call.
-    assert!(
-        runs::ONLY_THUMBNAIL_TIP.contains("re-asks for the words"),
-        "{}",
-        runs::ONLY_THUMBNAIL_TIP
-    );
-    assert_eq!(runs::WORDS_ASK_AGAIN, "Words: <previous text>");
 }
 
 // ---- bullet 4: nothing shared touches the same file --------------------------------------

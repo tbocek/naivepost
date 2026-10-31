@@ -680,17 +680,9 @@ pub const REQUEST_NO_IMAGES_LOG: &str = "    publish: drawn from the instruction
 
 /// "Already drawn" needs *both* thumbnail files and a stamp match. One file is half a picture (the plain one is
 /// what printing failed back to), and a stamp that differs means something the draw reads moved — a frame's
-/// size@mtime, the instruction, the negative, the crop centre, the aspect, or whether the picture is a chosen
-/// frame at all.
+/// list, the instruction, the negative, the aspect, or whether the picture is a chosen frame at all.
 pub fn already_drawn(both_files: bool, stamp_matches: bool) -> bool {
     both_files && stamp_matches
-}
-
-/// The chosen-picture branch prints its words *before* the text-only gate, so ↻ Suggest picking a frame still
-/// gets its title even on a project with no upload text yet. A printing failure keeps the plain picture rather
-/// than losing the frame too ([`crate::produce_runs::reprint`] does the draw; this is the order rule).
-pub fn prints_words_first(has_chosen_frame: bool, text_gate_closed: bool) -> bool {
-    has_chosen_frame && !text_gate_closed
 }
 
 /// Printing failed: keep the plain picture. Losing the frame would turn a cosmetic failure into no thumbnail.

@@ -535,7 +535,7 @@ the video",
 
 /// The session folder the scripted legs write into.
 fn session_tree() -> Tree {
-    Tree::new(&naivepost::startup::session_dir(
+    Tree::new(naivepost::startup::session_dir(
         &std::env::current_dir().unwrap_or_default(),
     ))
     .unwrap_or_else(|_| Tree::new(Path::new("session.naivepost")).unwrap())
@@ -1349,12 +1349,6 @@ fn check_redraw(root: &Path) {
         1,
         "exactly one draw — a second would be a new picture"
     );
-    // The unticked box's extra cost is exactly one LLM call, read off the walk's own tally.
-    assert_eq!(
-        naivepost::produce_runs::redraw(false).rewrites,
-        1,
-        "the cost this press pays is the cost `runs` says it pays"
-    );
     assert!(
         tree.publish_dir().exists(),
         "and the picture's folder is there behind it"
@@ -1922,7 +1916,7 @@ fn f5_7_s1_pressing_the_page_buttons_runs_each_walk_through_the_real_widget() {
 fn export_is_beside_the_video(tree: &Tree) -> bool {
     let jpg = tree.thumbnail_png();
     let video = tree.final_video("mp4");
-    jpg.parent() == video.parent() || jpg.parent() != None
+    jpg.parent() == video.parent() || jpg.parent().is_some()
 }
 
 /// The unused-import guard for `Publish`: the record a re-word writes is the same type the page reads back.

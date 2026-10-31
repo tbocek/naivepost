@@ -558,8 +558,8 @@ pub fn apply_text(publish: &Publish, answers: &Answers) -> Publish {
         next.title = title.clone();
     }
     // The first title to exist is also the one printed on the picture, and nothing seeds it twice (the prototype's
-    // `TitleSeeded`): after that the thumbnail's words are the person's, set and placed on the page, and a
-    // reworded video title leaves them alone. The first rewrite never seeded it, so the title box never appeared
+    // `TitleSeeded`): after that the thumbnail's words are the person's, set and placed on the page, and ▶
+    // leaves them alone (↻ beside Title clears the seed first). The first rewrite never seeded it, so the title box never appeared
     // on the picture.
     if !next.title_seeded && !next.title.trim().is_empty() {
         next.thumb_title = next.title.trim().to_string();
@@ -829,7 +829,8 @@ pub fn walk(
         let words: Vec<String> = match *kind {
             "texts" => marked.clone(),
             _ => {
-                if reprint && !printed_title.trim().is_empty() {
+                // The texts pass prints from the plain picture, so with marks the title has to go back on too.
+                if (reprint || !marked.is_empty()) && !printed_title.trim().is_empty() {
                     vec![printed_title.clone()]
                 } else {
                     Vec::new()

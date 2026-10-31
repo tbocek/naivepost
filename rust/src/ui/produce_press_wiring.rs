@@ -30,9 +30,9 @@ fn frames_of(stems: &[String]) -> Vec<(f64, std::path::PathBuf)> {
     let tree = crate::ui::produce_languages::session_tree();
     let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
     let zero = crate::frames_run::session_zero(&tree);
-    for base in stems.iter().cloned() {
+    for base in stems {
         out.extend(crate::produce_upload_media::listed_frames(
-            &tree.frames_dir(&base),
+            &tree.frames_dir(base),
             zero,
         ));
     }
@@ -54,7 +54,7 @@ pub fn frame_source_stems() -> Vec<String> {
         .collect()
 }
 
-/// **3** Set Thumbnail from a slot: record the choice (`own`, so a later ↻ does not paint over it), put that
+/// **3** Set Thumbnail from a slot: record the choice (`own`, so ▶ keeps it), put that
 /// picture's cropped pixels where the print pass reads them (§F5.6 S3: the chosen frame IS the thumbnail,
 /// no model, no GPU), then let the shared print pass letter the picture that now stands.
 pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
@@ -114,7 +114,15 @@ fn set_thumbnail_walk(
         high,
         crate::ui::window::log_line,
     ) {
+        // With an earlier picture standing the words still go on; with none there is nothing to report as taken.
         crate::ui::window::log_line(&format!("!!! {why}"));
+        if !tree.thumbnail_plain_png().is_file() {
+            return crate::produce_presses::Outcome {
+                status: runs::ending("the thumbnail", "", false, false),
+                error: Some(why),
+                ..Default::default()
+            };
+        }
     }
     crate::produce_presses::press_set_thumbnail(path, legs, crate::ui::window::log_line)
 }
@@ -202,36 +210,39 @@ pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
     report(window, out.status)
 }
 
-/// **6** ↻ redraw: one sd.cpp call, nothing rewritten when the words are left alone.
-pub fn redraw_thumbnail(window: &adw::ApplicationWindow, only_thumbnail: bool) -> String {
+/// **6** ↻ redraw: one sd.cpp call, nothing rewritten.
+pub fn redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
+    let run = produce_page::press_run(window);
     let out = crate::produce_presses::press_redraw_thumbnail(
-        only_thumbnail,
         &legs(),
+        || with_run(run.as_ref(), crate::ui::produce_languages::redraw_half),
         crate::ui::window::log_line,
     );
-    crate::ui::produce_languages::report(&out);
-    produce_page::refresh(window);
-    report(window, out.status)
+    land_written(window, out)
 }
 
 /// **8** ↻ beside Title: the title and the description, together so they cannot disagree about what the video
 /// is. The images, the instruction and the picture stay as they are.
 pub fn reword(window: &adw::ApplicationWindow) -> String {
-    let run = produce_page::reword_run(window);
+    let run = produce_page::press_run(window);
     let out = crate::produce_presses::press_reword(
         &legs(),
-        || reword_words(run.as_ref()),
+        || with_run(run.as_ref(), crate::ui::produce_languages::reword_half),
         crate::ui::window::log_line,
     );
-    land_reword(window, out)
+    land_written(window, out)
 }
 
-fn reword_words(run: Option<&crate::produce_flow::Run>) -> Result<(), String> {
-    run.map_or(Ok(()), crate::ui::produce_languages::reword_half)
+/// With no run the press has already refused on its missing cut.
+fn with_run(
+    run: Option<&crate::produce_flow::Run>,
+    walk: impl FnOnce(&crate::produce_flow::Run) -> Result<(), String>,
+) -> Result<(), String> {
+    run.map_or(Ok(()), walk)
 }
 
-/// A failed print still wrote the text first, so a re-word lands on the page whichever way it ended.
-fn land_reword(window: &adw::ApplicationWindow, out: crate::produce_presses::Outcome) -> String {
+/// What the press left in `publish.json` onto the page, whichever way it ended: a failed print still wrote the text.
+fn land_written(window: &adw::ApplicationWindow, out: crate::produce_presses::Outcome) -> String {
     crate::ui::produce_languages::report(&out);
     produce_page::take_written_publish(window);
     report(window, out.status)
@@ -333,38 +344,23 @@ fn legs() -> crate::produce_presses::Legs {
             })
         },
         produce_page::container_word,
-        produced_spans,
     );
     // This page reports its own reprint passes; the F5.6 words half counts its own elsewhere.
     pressed.count_prints = true;
     // §F5.7: ↻ over the thumbnail clears `own` — in the page's held state and in `publish.json`, so the
     // picture is the app's again after the press rather than only on screen.
-    pressed.clear_own = Box::new(clear_own);
+    pressed.clear_own = Box::new(|| {
+        produce_page::clear_own_thumbnail();
+        Ok(())
+    });
     pressed
 }
 
-/// §F5.7's "clears `own`": in the page's held state and in `publish.json`.
-fn clear_own() -> Result<(), String> {
-    produce_page::clear_own_thumbnail();
-    let tree = crate::ui::produce_languages::session_tree();
-    // The held state merged over the file, then the flag cleared: the file also carries what no page row
-    // holds (the crop, the title box), and writing the rows alone would drop them.
-    let mut publish = crate::ui::produce_snapshot::merge_publish(
-        Some(crate::ui::produce_snapshot::publish_of_state(
-            &produce_page::read_state(),
-        )),
-        &crate::publish::load(&tree).unwrap_or_default(),
-    );
-    publish.own = false;
-    crate::ui::produce_languages::save_publish(&tree, &publish)
-}
-
 /// What a press's legs read off the window, taken there before the press walks on its worker (§03-shell §1):
-/// the live cut, the run bar and the produced spans are the window's, not the worker's.
+/// the live cut and the run bar are the window's, not the worker's.
 struct Found {
     has_cut: bool,
     rendering: bool,
-    spans: Vec<(f64, f64)>,
 }
 
 /// Take [`Found`] on the window thread, asking exactly what [`legs`] asks at call time.
@@ -375,11 +371,7 @@ fn found() -> Found {
     let rendering = produce_page::held_window().is_some_and(|w| {
         crate::ui::window_doors::running_step(&w) == Some(crate::run::Step::Produce)
     });
-    Found {
-        has_cut,
-        rendering,
-        spans: produced_spans(),
-    }
+    Found { has_cut, rendering }
 }
 
 /// [`legs`] on the worker: the window's answers are the ones [`found`] took, the page's state is the copy
@@ -391,23 +383,19 @@ fn worker_legs(
     crate::produce_presses::Legs,
     std::rc::Rc<std::cell::Cell<bool>>,
 ) {
-    let Found {
-        has_cut,
-        rendering,
-        spans,
-    } = found;
+    let Found { has_cut, rendering } = found;
     let mut pressed = crate::ui::produce_languages::legs(
         move || has_cut,
         move || rendering,
         produce_page::container_word,
-        move || spans.clone(),
     );
     pressed.count_prints = true;
     let cleared = std::rc::Rc::new(std::cell::Cell::new(false));
     let noted = std::rc::Rc::clone(&cleared);
     pressed.clear_own = Box::new(move || {
         noted.set(true);
-        clear_own()
+        produce_page::clear_own_thumbnail();
+        Ok(())
     });
     (pressed, cleared)
 }
@@ -446,39 +434,38 @@ fn land_outcome(window: &adw::ApplicationWindow, out: crate::produce_presses::Ou
 
 /// **8** ↻ beside Title, as the button fires it: [`reword`] on a worker.
 pub fn reword_from_button(window: &adw::ApplicationWindow) {
-    let run = produce_page::reword_run(window);
+    let run = produce_page::press_run(window);
     on_worker(
         window,
         "title-suggest",
         move |legs| {
             crate::produce_presses::press_reword(
                 legs,
-                || reword_words(run.as_ref()),
+                || with_run(run.as_ref(), crate::ui::produce_languages::reword_half),
                 crate::ui::window::log_line,
             )
         },
         |window, out| {
-            land_reword(window, out);
+            land_written(window, out);
         },
     );
 }
 
 /// **6** ↻ redraw, as the button fires it: [`redraw_thumbnail`] on a worker.
-pub fn redraw_from_button(window: &adw::ApplicationWindow, only_thumbnail: bool) {
+pub fn redraw_from_button(window: &adw::ApplicationWindow) {
+    let run = produce_page::press_run(window);
     on_worker(
         window,
         "thumbnail-redraw",
         move |legs| {
             crate::produce_presses::press_redraw_thumbnail(
-                only_thumbnail,
                 legs,
+                || with_run(run.as_ref(), crate::ui::produce_languages::redraw_half),
                 crate::ui::window::log_line,
             )
         },
         |window, out| {
-            crate::ui::produce_languages::report(&out);
-            produce_page::refresh(window);
-            report(window, out.status);
+            land_written(window, out);
         },
     );
 }
@@ -522,27 +509,6 @@ pub fn transcode_from_button(window: &adw::ApplicationWindow) {
         },
         land_outcome,
     );
-}
-
-/// Each kept segment as (start, end) on the produced clock — the numbers ↻ beside Title speaks of, and the
-/// same accumulation the run's brief uses.
-fn produced_spans() -> Vec<(f64, f64)> {
-    let Some(window) = produce_page::held_window() else {
-        return Vec::new();
-    };
-    let mut spans = Vec::new();
-    let mut at = 0.0;
-    for seg in crate::ui::window::review_cut_of(&window).segs {
-        let raw = if seg.dur > 0.0 {
-            seg.dur
-        } else {
-            (seg.e - seg.s).max(0.0)
-        };
-        let kept = crate::narration::output_seconds(raw, seg.rate);
-        spans.push((at, at + kept));
-        at += kept;
-    }
-    spans
 }
 
 /// Put one press's sentence on the status line AND in the log, the page's two output channels: the ending

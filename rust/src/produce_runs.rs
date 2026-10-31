@@ -19,24 +19,11 @@
 
 use crate::project::{Container, Produce, TitleBox};
 
-// ---- S1: Thumbnail only -----------------------------------------------------------
+// ---- S1: Redraw ------------------------------------------------------------------
 
-/// The checkbox's label (`spec/inventory/produce.md`: `⊙ Thumbnail only`).
-pub const ONLY_THUMBNAIL: &str = "⊙ Thumbnail only";
-
-/// Its tooltip. Written from the ticked side because that is what the box is for: ticking it is the deliberate
-/// act, and the sentence has to say what the tick *saves*.
-pub const ONLY_THUMBNAIL_TIP: &str =
-    "Ticked: the next run draws the picture again and re-asks for the words \
-too. Leave it ticked to redraw from the instruction as it stands.";
-
-/// What a press with the box ticked costs and keeps, in the log.
+/// What a redraw costs and keeps, in the log.
 pub const DRAW_AGAIN_LOG: &str =
     "publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten";
-
-/// The words box when a redraw is about to ask for them again: the previous text is offered back rather than an
-/// empty field, because the usual reason for a second run is that the picture was wrong, not the words.
-pub const WORDS_ASK_AGAIN: &str = "Words: <previous text>";
 
 /// The redraw's own no-cut answer. It differs from [`crate::cut::NO_CUT_YET`] because the thumbnail has a
 /// second way to exist — the cut's own frames — so this sentence tells the reader which of the two they are
@@ -54,8 +41,7 @@ pub const REWORD_NO_CUT: &str = crate::cut::NO_CUT_YET;
 
 /// …and its ending, naming both things it rewrote so the line answers "did the description change too?"
 /// without a second press.
-pub const REWORD_DONE: &str =
-    "title and description rewritten \u{2014} \u{25b6} renders the video";
+pub const REWORD_DONE: &str = "title and description rewritten \u{2014} \u{25b6} renders the video";
 
 /// S3's own sentence: the chosen picture arrives with the words printed on it, and ↻ is what takes them off
 /// again. Kept separate from [`take_from_image`]'s log because that one records the *copy* (size, source
@@ -135,19 +121,14 @@ pub fn jpeg_rung(sizes: &[u64]) -> Option<usize> {
 pub struct Redraw {
     /// sd.cpp calls — one, whatever the box says. A second draw would be a second picture, not a redraw.
     pub sd_calls: usize,
-    /// LLM calls that rewrite text. Ticked asks for the words again; the picture never comes from the LLM.
-    pub rewrites: usize,
     /// What survives the press unchanged.
     pub keeps: &'static [&'static str],
 }
 
-/// S1: `⊙ Thumbnail only` ticked means one sd.cpp call and no rewritten text. Unticked, the same press also
-/// re-asks for the title, the instruction and the description — which is [`reword`]'s single LLM call, so the
-/// box's whole job is to skip it.
-pub fn redraw(only_thumbnail: bool) -> Redraw {
+/// S1: one sd.cpp call and no rewritten text.
+pub fn redraw() -> Redraw {
     Redraw {
         sd_calls: 1,
-        rewrites: if only_thumbnail { 0 } else { 1 },
         keeps: &["title", "description", "publish record", "chapter times"],
     }
 }
@@ -156,8 +137,7 @@ pub fn redraw(only_thumbnail: bool) -> Redraw {
 
 /// The one-LLM-call run's log line. Naming the two answers is the point: a reader of the log can tell this
 /// press from a redraw without knowing which button was pressed.
-pub const REWORD_LOG: &str =
-    "publish: rewriting the title and description — one LLM call";
+pub const REWORD_LOG: &str = "publish: rewriting the title and description — one LLM call";
 
 /// What a re-word costs and keeps.
 #[derive(Debug, Clone, PartialEq, Eq)]

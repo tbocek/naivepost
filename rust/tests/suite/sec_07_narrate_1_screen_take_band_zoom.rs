@@ -96,10 +96,9 @@ fn sec_07_narrate_1_screen_the_take_band_zooms_inside_itself_in_recording_second
         let (rgb, w, _, _, pps) =
             ui::narrate_band::painted_pixels_for_test(lane_w, 56).expect("the lane paints");
         let row = (naivepost::narrate_screen::BAND_RULER_PX as usize) - 2;
-        let inked = |x: usize| {
-            let at = (row * w as usize + x) * 3;
-            rgb[at] > 100 && rgb[at + 1] > 100 && rgb[at + 2] > 100
-        };
+        // Against the row's own ground: a tick between two pixels is drawn dimmer than the ruler's colour.
+        let ground = rgb[(row * w as usize + 5) * 3];
+        let inked = |x: usize| rgb[(row * w as usize + x) * 3] > ground.saturating_add(30);
         let ticks = (1..w as usize)
             .filter(|&x| inked(x) && !inked(x - 1))
             .count();

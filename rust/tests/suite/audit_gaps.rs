@@ -293,8 +293,7 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s7_title_reprints_and_at_has_one_cl
         !gaps::reprint_title_on_change("first", "second", true),
         "the hand got there first"
     );
-    // Cross-checked against the live predicates. `prints_words_first` is the order rule (words print
-    // before a chosen frame only when the text gate is open), and `youtube_title_redraws_picture` is
+    // `youtube_title_redraws_picture` is
     // deliberately false — a YouTube title is metadata, so fixing its typo must not reprint the
     // picture. Both are why §5's defect is about the *thumbnail's own* title changing, which is what
     // `reprint_title_on_change` above decides; neither live predicate contradicts F5.6.
@@ -302,8 +301,6 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s7_title_reprints_and_at_has_one_cl
         !produce_details::youtube_title_redraws_picture(),
         "a metadata edit never redraws"
     );
-    assert!(produce_details::prints_words_first(true, false));
-    assert!(!produce_details::prints_words_first(false, false));
 
     // One clock, read once: lands_at is output_seconds whatever the rate.
     for (at, rate) in [(2.0, 1.0), (2.0, 4.0), (10.0, 2.5), (1.5, 0.0)] {
