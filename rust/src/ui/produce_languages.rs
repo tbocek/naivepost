@@ -292,10 +292,6 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     // ONE dial per press (F5.6 S1's "one LLM call"): the legs carry the real leg, so the half asks THAT and
     // hands `walk` the answers it produced rather than making the walk dial a second time for the same brief.
     let legs = upload_legs(&tree, run);
-    // ▶ writes the upload text ONCE per project (the prototype's `needText = !written`): the gate is the record on
-    // disk, not the boxes, because a title you emptied or a frame you chose is a decision, and ↻ beside the title
-    // is the button that asks again. It asks anyway when there is nothing to make a thumbnail from at all. The
-    // first rewrite asked on every press, and the model's answer replaced the person's frame and title.
     let nothing_to_make = !publish.own
         && publish.prompt.trim().is_empty()
         && publish.frames.is_empty()

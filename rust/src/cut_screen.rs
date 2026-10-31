@@ -220,8 +220,6 @@ pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wh
         }
         WheelOver::Tracks => {
             if shift || dx.abs() > dy.abs() {
-                // Shift turns the notch sideways the way a scrolled list does: down (away from the
-                // session's start) pans later, up pans earlier. The first rewrite had it reversed.
                 let direction = if dx < 0.0 {
                     -1.0
                 } else if dx > 0.0 {

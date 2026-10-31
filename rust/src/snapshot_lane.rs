@@ -58,8 +58,6 @@ pub fn write_png(cut: &Cut, dir: &Path, out: &Path) -> Result<String, String> {
         eprintln!("snapshot: 06-lane wave cache | {why}");
     }
     let mut scene = scene(cut);
-    // What the band may show, listed through the painter's own door. Empty when nothing is there, which draws no
-    // pictures rather than inventing black (§1's prototype note).
     scene.thumbs = staged_tree(dir)
         .ok()
         .map(|tree| vec![(base.to_string(), cut_tracks::frame_paths(&tree, base))])

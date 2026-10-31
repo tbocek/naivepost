@@ -415,12 +415,6 @@ pub fn paint(
         // the held state: the white outline, the line walked to the band's start, and the
         // "Zoom picked up" sentence the lane prints.
         ui::press_effect_bar(window, 0, 100.0, 200.0, 20.0, false);
-        // The plate needs a real frame under it and the line to stand on it: the demo fixture ships no
-        // extracted frames, so one PNG is written where the page lists them (the door `05-cut`, `06-preview`
-        // and `06-text` use). Without it the panel paints its dimmed camera rect over an empty plate and the
-        // held zoom has nothing to frame -- the shot's whole point. The line is the pick-up's own second
-        // (the band's start, 5.0 s), NOT the pre-pick-up 140.0 above: S1 walks the line to the band's start,
-        // and a held effect whose band no longer covers the line would be dropped by the very next refresh.
         crate::snapshot_face::seed_snapshot_frame(dir, "session-tape", 5.0);
         ui::cut_picture::set_preview_camera_base("session-tape");
         ui::cut_picture::set_snapshot_dir(dir);

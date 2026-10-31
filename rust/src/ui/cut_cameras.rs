@@ -382,9 +382,6 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
 
             let gutter = gtk::ToggleButton::new();
             gutter.set_widget_name(&format!("gutter-switch-{lane}"));
-            // §1's gutter shows each lane's sound switch as a ROUND speaker button at its row's left edge
-            // (`spec/img/05-cut.png`, badge 29), so the rail carries the same glyph the row plate does and
-            // the CSS below gives it the round ground. The `▬` bar it used to wear read as a slider handle.
             gutter.set_label(SPEAKER_GLYPH);
             gutter.add_css_class("round");
             // OFF (not pressed) when the lane is silent EVERYWHERE, on while any scene still hears it —
@@ -520,10 +517,6 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             "this row still has footage \u{2014} nothing to remove here"
         }));
 
-        // F2.11 S2 (`a cut lane's \u{2715} removes the lane, its pins, shift, pictures and sound`):
-        // one cross per cut lane, named by the lane so a test fires the lane it is looking at. Built
-        // once per lane name and never re-appended; a lane removed by a press simply stops being redrawn
-        // because its name no longer comes from `cut.lanes`.
         for lane in &lanes {
             let cross =
                 match find_widget_by_name(rows_box.upcast_ref(), &format!("lane-cross-{lane}"))
@@ -551,8 +544,6 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                         fresh
                     }
                 };
-            // The cross goes with its lane: still listed -> still pressable; gone from `cut.lanes` (the
-            // press took it) -> insensitive rather than left firing at a lane that no longer exists.
             cross.set_sensitive(cut_.lanes.iter().any(|kept| &kept.name == lane));
         }
         // NOT re-appended: `holder` is already inside `rows_box` — it was put there when first built.
@@ -572,8 +563,6 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             let found = find_widget_by_name(rows_box.upcast_ref(), &name)
                 .and_then(|found| found.downcast::<gtk::Button>().ok());
             if !mine {
-                // Put it away when the scene moved off this row or left the cut, so a greyed ✕ never sits on
-                // a row that no longer shows that scene.
                 if let Some(stale) = found {
                     if let Some(parent) = stale
                         .parent()
@@ -839,10 +828,6 @@ pub fn hand_preview_back(window: &adw::ApplicationWindow) -> Option<String> {
 /// F2.10: the box holding this window's camera rows, by its stable name — `None` on a page that drew
 /// none. Every F2.10 press repaints through it, and Task 2 of this item builds its contents here.
 pub fn camera_rows_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
-    // Scoped to this window's OWN content, exactly as [`fold_badges_box`] is. Searching from the window
-    // object can walk into a previously closed window's tree (GTK does not destroy it on `close()`), and
-    // then a refresh appends a row into that other window's box — the
-    // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL' failed` this guards against.
     let content = window.content()?;
     find_widget_by_name(&content, "camera-rows")?
         .downcast()

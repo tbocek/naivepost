@@ -168,23 +168,6 @@ fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
     let badges_floor = find_in(row, "run-controls-inner")
         .map(|w| w.measure(gtk::Orientation::Horizontal, -1).0.max(0))
         .unwrap_or_default();
-    // BADGE 12'S ROOM, counted here rather than forced on the scroller. A `gtk::ScrolledWindow` reports MINIMUM 0
-    // whatever it holds, so GTK squeezes `run-controls` below its own buttons whenever the row's natural total
-    // exceeds its width — measured at §1's minimum size it was given 209 px for badges needing 224, badge **12**
-    // was drawn under the progress bar, absent from `shots/03-window.png`, and still found by name: which is why
-    // every tree-based test passed while the shot had no ⏹. The bar's own `set_size_request` is a FLOOR too, so an
-    // ask bigger than the row can serve is served by shaving a scroller instead of stretching the bar.
-    // THE FIX IS ONE NUMBER: the bar asks for what is left once the badges have their own minimum, counted from
-    // the contents' minima and never from an allocation. Three other shapes were tried and measured
-    // wrong: charging the scroller's ALLOCATION (GTK starved `run-controls` to 209/244 px and drew over ⏹);
-    // leaving the badges' minimum out of it (the leftovers went negative, so the floor held GTK to 413 px and
-    // nothing moved); and shrinking the ask further still (GTK splits the leftover between two expanding boxes
-    // regardless — the bar landed at x=132). Counting from minima costs
-    // the shell nothing (a scroller's own minimum stays 0) and cannot starve a badge: where the row has no room for
-    // everything, the bar falls to [`PROGRESS_MIN_PX`] — §1's "what no longer fits
-    // scrolls … instead of holding the window wide". (`window_run_bar_fit` separately floors the controls scroller
-    // at this same minimum; a `set_min_content_width` put HERE was measured to move the SHELL's minimum from §1's
-    // 1240 to 1258, because this door also runs before anything is allocated.)
     let controls_w = badges_floor;
     // The readouts' own ask, and the row's gaps: the bar gets whatever is left once every other part of the row
     // has been served. `row.width()` answers 1 px before the window is allocated, which clamps the answer to
@@ -200,24 +183,8 @@ fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
         .map(|child| child.measure(gtk::Orientation::Horizontal, -1).1.max(0))
         .sum();
     let gaps = 6 * children_of(row).len() as i32;
-    // …and the ask itself: what is left once the badges have their minimum and the readouts theirs.
-    // Matched to the row's real leftovers, GTK has nothing to shave.
-    // …and the FLOOR goes on the scroller, not only on the bar. A `set_size_request` on the bar is a floor GTK
-    // honours by shaving whatever else can shrink: with only three badges left in the row this ask (≈800 px)
-    // exceeded what the row could serve, so GTK starved `run-controls` to 125 px and drew the track over ⏹.
-    // Flooring the scroller at its buttons' minimum fixes that clip, but ONLY where the row actually has room:
-    // written unconditionally it travels into the SHELL's own minimum (measured: §1's 1240 became 1311), because
-    // this door also runs before anything is allocated. So the floor is asked for when the row is wider than
-    // everything in it — the case badge 12 needs — and skipped while the row is still unallocated or genuinely
-    // too narrow, where §1's answer is "what no longer fits scrolls" instead of holding the window wide.
     if let Some(scroller) = find_in(row, "run-controls") {
         if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
-            // The floor is asked for ONLY where the row has already been laid out and can serve it. Written
-            // unconditionally it travels into the SHELL's own minimum — measured: §1's 1240 became 1311 — because
-            // a ScrolledWindow reports its `min_content_width` as its MINIMUM whatever it holds, and this door
-            // also runs while the row is still unallocated (GTK answers 1 px). Where the row genuinely cannot fit
-            // everything, the floor stays 0 and §1's answer rules instead: "what no longer fits scrolls … instead
-            // of holding the window wide".
             let others = controls_w + readouts + gaps;
             let serves_it = row.width() > 1 && row.width() >= others;
             scroller.set_min_content_width(if serves_it { controls_w.max(0) } else { 0 });

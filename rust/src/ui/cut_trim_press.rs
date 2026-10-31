@@ -603,22 +603,11 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
     cut_.shift = shift.clone();
     cut_.segs = segs.clone();
     if let Some(row) = row {
-        // F2.10 (the Prototype paragraph): a drag pins ONLY the recording it took — [`cut_cam::pin_for_drag`]
-        // — so `rows_for` re-runs and gives the overlap the drag made a row of its own. The prototype pinned
-        // every recording sharing the row, which left both on one row with the earlier one's overlapped
-        // seconds unseen and unpickable. A drag that moved scenes or a whole row pins nothing: no single file
-        // was taken, and pinning the row's neighbours would be the bug this replaces.
         if let Some(base) = dragged {
             cut_.rows = crate::cut_cam::pin_for_drag(base, *row, &cut_.rows);
             cut_.nrows = (*row as i32 + 1).max(cut_.nrows);
         }
     }
-    // (c) the folds — S2's "folds near the grab open for the drag, refold after", and refolding is what
-    // makes them belong to THIS gesture rather than to the user. The cut's own fold list is the measure:
-    // an index that no longer names a fold (a second update, or nothing folded where the drag travelled)
-    // is no gesture at all, so it neither opens nor closes anything. The drag therefore never persists the
-    // act of opening: the fold the person saved is written back whole on release, so a page that reloads
-    // mid-gesture, or a gesture that goes nowhere, cannot be left holding a fold nobody chose.
     let opened = fold_spans(&cut_, open);
     if opened.is_empty() {
         DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());

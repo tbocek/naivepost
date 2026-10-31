@@ -471,10 +471,6 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             + PANED_HANDLE_GAP_PX
             + 2 * crate::ui::margins::DIVIDER_GAP_PX,
     );
-    // ...and the upper pane used to ask for more than its own content (the old `UPPER_PANE_MIN_H`, 410 px) so
-    // GTK would settle the divider on §A's opening rather than on the picture's 304 px natural height. That
-    // request is GONE: at §1's minimum the page band cannot hold 410 + 196, and a page that overflows its band
-    // scrolls as a whole, which §1 forbids. The position above plus vexpand on both panes is what opens it now.
     let bottom = gtk::Box::new(gtk::Orientation::Vertical, 4);
     bottom.set_widget_name("cut-bottom");
     // NOT `vexpand`: §1 opens this pane at the page's leftover (the divider sits at 380 px), and a Paned
@@ -530,21 +526,9 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     {
         bottom.append(&bar);
     }
-    // The lower pane used to carry a hard request ([`LOWER_PANE_MIN_H`]) so GTK would settle the divider on
-    // §A's opening instead of on the two panes' natural heights. That request is GONE: §1 fixes the window's
-    // MINIMUM at 1240×900 and says no page scrolls as a whole at that size, so the page band (~700 px after
-    // header, run bar and log) has to hold BOTH panes, and the old 410 + 196 pair summed past it — measured
-    // 101 px of travel in `page-scroll-Cut`. The openings are positions + vexpand now, so the floor stays at
-    // §1's number and `tests/suite/window_shrinks.rs` measures zero travel here.
-    // Only the UPPER pane expands (§A's "above the minimum the layout grows with the window": the extra height
-    // belongs to the picture). With both expanding the paned split its leftover between them and ignored the
-    // position entirely — see [`SELF_SPLIT_TOP_PX`]'s opening note and the `cut-bottom` valign above.
     vsplit.set_shrink_start_child(true);
     // Height the window gains goes to the picture; the bottom half keeps what its three rows need.
     vsplit.set_resize_end_child(false);
-    // The bottom half never goes under its own minimum (the toolbar, the tape's rows and the scrollbar, see
-    // `bottom`'s floor): the picture gives way instead, and a drag stops there. The first rewrite let it shrink,
-    // so a handle dragged down, or a log made taller, cut the wave rows off the tape and hid the scrollbar.
     vsplit.set_shrink_end_child(false);
     // Now the upper pane has real height (the window minus the divider's opening), hand it to the picture:
     // §A's preview is "contain-fit, min height 160", and the reference draws it filling the whole upper
@@ -552,9 +536,6 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     // sit as a small plate under a wall of empty plate. Ask through the panel's own door so the picture,
     // the camera rect and every overlay are measured against the same box.
     if let Some(panel) = preview.as_ref() {
-        // Only the floors: the panel fills its pane by expanding, and the openings are the two handles' positions.
-        // The first rewrite asked the openings here too (660 x about 300), and an ask is a minimum: the left/right
-        // handle could not go left of 660 px, nor the top/bottom one up without cropping the picture.
         crate::ui::cut_preview_panel::grow_to(
             panel
                 .downcast_ref::<gtk::Widget>()
@@ -647,9 +628,6 @@ pub fn rest_scroll_once(scroller: &gtk::ScrolledWindow) {
 /// answers 1 px tall, so an ask made earlier lands on the clamp.
 pub fn rest_opening_once(divider: &gtk::Paned) {
     crate::ui::settle::once_sized("the Cut page's split at its opening", divider, |divider| {
-        // As far down as the bottom half's minimum lets it go, and never above §A's opening: the lower half is
-        // as tall as the toolbar, the tracks and the scrollbar, the picture has the rest, and nothing empty opens
-        // under the tape. The first rewrite opened at a fixed 380 px, which on any taller page was blank space.
         divider.set_position(divider.height().max(SELF_SPLIT_TOP_PX));
     });
 }

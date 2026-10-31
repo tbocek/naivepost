@@ -434,9 +434,6 @@ pub(crate) fn run_narrate_with(
                 // S6's half-way fact the ⏹ handler can ask for: whether this run's first job closed, i.e.
                 // whether lines were written before the stop (§F4.1 S7).
                 NARRATE_WROTE.set(written > 0);
-                // The lines written are the page's rows now: published and drawn at once, not only on the next
-                // tab switch (the first rewrite updated the held narration alone, so ▶ looked like it wrote
-                // nothing until the page was rebuilt).
                 crate::ui::narrate_page::publish_lines(record.entries.clone());
                 if let Some(held) = ui::HELD_NARRATION.with(|held| held.borrow().last().cloned()) {
                     *held.borrow_mut() = record;
@@ -599,7 +596,6 @@ fn narrate_on_worker(
         };
     }
     ui::log_line(&narrate_run::spoken_log(run.spoken, run.cached));
-    // S7: the ending goes on the STATUS LINE, which is where the prototype never put it.
     NarrateEnd {
         said: narrate_run::Outcome::Spoken {
             written: written.len(),

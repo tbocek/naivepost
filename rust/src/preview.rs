@@ -86,8 +86,6 @@ pub fn press_recording(player: &mut Player, runs: &[(f64, f64)]) -> Press {
                 started: None,
             };
         }
-        // Paused, the switch also starts the recording from the line: switching is why a play button was
-        // pressed and not ⏸ (the prototype's `playAs`); the first rewrite only switched, and ▶ took two presses.
         let Some(from) = player
             .playhead
             .or_else(|| runs.first().map(|(start, _)| *start))

@@ -26,9 +26,6 @@ fn output_length(seg: &Seg) -> f64 {
 /// three per clip would show the start of the video three times over on a session that keeps one long take.
 /// Empty when nothing was kept, which is the caller's signal to draw from words alone.
 pub fn spread_moments(segs: &[Seg]) -> Vec<f64> {
-    // Spread evenly over the FINISHED video, but answered on the SESSION clock: a `frame:` entry is a session
-    // second (the frames on disk are named by one, and every reader resolves it so). The first rewrite answered
-    // the produced second, which named a different moment of the session the further into the video it was.
     let kept: Vec<(&Seg, f64)> = segs
         .iter()
         .filter(|seg| seg.ins.is_empty())

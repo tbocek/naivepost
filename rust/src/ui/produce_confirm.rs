@@ -94,8 +94,6 @@ pub fn ask_overwrite(
         produce_flow::ANSWER_OVERWRITE,
         adw::ResponseAppearance::Destructive,
     );
-    // Enter answers the default, and the encode has no undo (the question says so): the default is Cancel. The
-    // first rewrite made the destructive Overwrite the default, so Enter replaced the render.
     dialog.set_default_response(Some(produce_flow::ANSWER_CANCEL));
     remember(Some(&dialog));
     dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {

@@ -267,8 +267,6 @@ pub fn context_text(
 /// One line of the ask: numbered as the model will send it back, with its times and speaker. The text
 /// keeps its own tabs — §6's rows are split on the first three, so a tab inside a word is part of it.
 pub fn ask_text(context: &str, lines: &[Line]) -> String {
-    // The prototype's rows: start, end, speaker, text and nothing else. The job says "no line numbers", and the
-    // first rewrite put one in front of every row anyway.
     let mut rows = String::new();
     for line in lines {
         rows.push_str(&format!(
@@ -418,9 +416,6 @@ pub fn fix_block<F>(lines: &[Line], context: &str, mut ask: F) -> Result<BlockOu
 where
     F: FnMut(&str) -> Result<Vec<Reply>, String>,
 {
-    // The model is shown the message built from these rows and the grounding around them (`context_text`), so a
-    // refusal, which is about that message, is appended to it here. The first rewrite built it with the context
-    // and threw it away, and asked with "Context around these lines:" empty.
     let message = ask_text(context, lines);
     let mut block = Block::new(
         lines
@@ -439,8 +434,6 @@ where
 
     for try_number in 1..=BLOCK_TRIES {
         let ask_with = match refusals.last() {
-            // The model is told what it got wrong. Re-asking the identical question, as the prototype
-            // did, only earns the same answer twice.
             Some(err) => format!("{message}\nThe previous answer was refused: {err}"),
             None => message.clone(),
         };
@@ -455,8 +448,6 @@ where
             refusals.push(why.to_string());
             continue;
         }
-        // A wire answer is the block's rows as the model wrote them; held against the block here, where the
-        // block is known. A count, a time or a speaker that moved refuses the answer, as the prototype did.
         let rows: Vec<AnsweredRow> = reply
             .iter()
             .filter_map(|call| match call {

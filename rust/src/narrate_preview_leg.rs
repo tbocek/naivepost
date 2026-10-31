@@ -591,11 +591,6 @@ pub fn step(
     now: f64,
     spawn: &mut Spawn,
 ) -> Stepped {
-    // §6 (`Preview`) before anything else: a picture that ran to its own end ENDS the narration too. Left
-    // unchecked, the take's player keeps speaking over a frame that stopped moving seconds ago, and the tick
-    // goes on asking about seconds the picture is no longer playing. Answering `Paused` is what makes this
-    // ending identical to walking off the last clip: the caller stops both players and tells the page its
-    // preview is over (§5's `started` half), whether the cut ended or its player simply did.
     if preview.picture_finished() {
         preview.forget_picture();
         if let Some(pid) = preview.end_voice() {
@@ -792,8 +787,6 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                             Stepped::Same
                         }
                         None => {
-                            // The line went away while its take was being asked for: drop the wait so
-                            // the timer does not sit paused on a row that no longer exists.
                             clear_waiting();
                             Stepped::Same
                         }

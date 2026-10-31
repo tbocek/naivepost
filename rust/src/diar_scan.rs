@@ -162,10 +162,6 @@ where
                 )
             })
             .collect();
-        // The answer's zero is the anchor file's start: what lies inside the anchor is the reference, heard and
-        // placed by pass 1 already, and what lies past it is this span, `width` seconds later on the file than on
-        // the recording. The first rewrite added the anchor's start and width to every turn instead, which puts
-        // a span anywhere but right after the anchor on the wrong seconds, and kept the reference's turns too.
         let width = (anchor.seconds() * SAMPLE_RATE as f64) as u64;
         let span_start = (span.0 * SAMPLE_RATE as f64) as u64;
         for turn in heard {
@@ -197,9 +193,6 @@ fn slot_claims(heard: &[Turn], anchor: &Anchor) -> Vec<(u32, f64, f64)> {
     let width = anchor.seconds();
     let mut claims: Vec<(u32, f64, f64)> = Vec::new();
     for turn in heard {
-        // Only what the slot said INSIDE the anchor is a claim on it. A turn past the anchor, clamped to its
-        // end, stretched the claim over every later block: the first rewrite let a voice heard again in the
-        // new audio claim the next voice's block, and that voice came back as a stranger.
         if turn.start_sample as f64 / SAMPLE_RATE as f64 >= width {
             continue;
         }

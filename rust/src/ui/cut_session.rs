@@ -73,9 +73,6 @@ pub fn session_recordings(
             &crate::layout::resolve(root, project_dir, &source.path),
             &name,
         ) else {
-            // Not measured yet (asked on a worker; the landing repaints the page) or not measurable (said once,
-            // when ffprobe answered with nothing). The first rewrite said "ffprobe gave no length" here for
-            // every row still being measured, so every open logged a failure that was not one.
             continue;
         };
         let shift = cut_.shift.get(&name).copied().unwrap_or(0.0);

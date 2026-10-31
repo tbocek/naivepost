@@ -226,8 +226,6 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         }
         return show_frame(window, Some(&frame));
     }
-    // F2.1: once ▶ has played through the built-in player, the picture IS that player's (the prototype's way):
-    // the line it stands on is sought in it, and the extracted frames come back only when it cannot follow.
     if video_shown()
         && crate::ui::cut_record_play::follow_in_video(window, ui::line_position(window).t)
     {
@@ -308,11 +306,6 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         .and_then(crate::clock::read_frame)
         .unwrap_or(0.0);
     let found = cut_tracks::frame_near(&paths, zero + at);
-    // §9 (`With cameras of different shapes, both MUST use the first footage clip's frame`):
-    // the panel used to measure its plate against whichever camera was playing while the
-    // render measured against the first footage clip for the whole video. `source_frame` is
-    // that one rule — the same call `produce_render::plan_clips` makes through `frame_box` —
-    // and the shape it picks is what the plate and every overlay on it are now fitted to.
     let agreed = crate::effect_overlap::source_frame(
         first_footage_shape(window),
         shown_shape(found.as_deref()),

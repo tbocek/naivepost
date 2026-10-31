@@ -39,7 +39,6 @@ const DAY: &str = "2026-09-16";
 /// converts them to its 1-based rows, so a row that ticks nothing would show `0/2`.
 fn camera_rows() -> Vec<Source> {
     [
-        // hour-minute-second stamps, as the prototype named its takes.
         ("18-43-01", true, 1),
         ("18-39-36", false, 0),
         ("18-38-33", false, 0),

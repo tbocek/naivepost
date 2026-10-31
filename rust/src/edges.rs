@@ -444,8 +444,6 @@ pub fn place_edges<'a>(
         .into_iter()
         .map(|mut mark| {
             if !words.is_empty() {
-                // The words fence both edges and the sound chooses inside the fence. The envelope alone
-                // cannot tell a breath from a word, and every deep breath heard at a join used to be kept.
                 if let Some(w) = last_word(words, mark.s).filter(|w| w.e < mark.s) {
                     let before = mark.s;
                     let mut s = (w.e + WORD_PAD).min(before);

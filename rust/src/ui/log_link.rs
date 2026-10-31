@@ -194,9 +194,6 @@ pub fn install_with(view: &gtk::TextView, open: Opener) {
         }
     });
     view.add_controller(keys);
-    // A click on a link line opens it too (§1 "every path the log names is a link to it", §7's page line):
-    // the first rewrite opened links from Enter alone, so a person clicking the blue line got nothing. One
-    // primary-button click on the line, released where it was pressed; a drag that selects text is not one.
     let click = gtk::GestureClick::new();
     click.set_button(gtk::gdk::BUTTON_PRIMARY);
     let click_view = view.clone();
@@ -259,9 +256,6 @@ pub fn activate_line(
     let table = buffer.tag_table();
     let tag = table.lookup(LINK_TAG)?;
     let start = buffer.iter_at_line(line)?;
-    // A link anywhere on the line: §7's page line is tagged whole, but a named path only over the path, and a
-    // path in mid-line (`wrote /…/prepare`) starts untagged. The first rewrite asked only the line's first
-    // character, so such a link never opened, by Enter or by click.
     let mut toggle = start;
     let linked =
         start.has_tag(&tag) || (toggle.forward_to_tag_toggle(Some(&tag)) && toggle.line() == line);
@@ -334,10 +328,6 @@ pub fn open(uri: &str) -> Result<(), String> {
         BLOCKED_OPENS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         return Ok(());
     }
-    // A local file or folder goes through GTK's FILE launcher (the URI launcher is for web pages, and a
-    // `file://` folder handed to it through the desktop portal opened nothing and said nothing). A launch the
-    // desktop refuses lands in the completion with an error: then the named fallback, and if that fails too, a
-    // log line. The first rewrite ignored the completion, so a refused launch was silent.
     if let Ok((path, _)) = glib::filename_from_uri(uri) {
         let owned = uri.to_string();
         gtk::FileLauncher::new(Some(&gio::File::for_path(&path))).launch(

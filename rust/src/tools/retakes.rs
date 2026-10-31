@@ -177,8 +177,6 @@ impl Marks {
             ));
         }
 
-        // Overlapping marks merge. The prototype merged in silence; here the ok says it happened,
-        // because a model that sees two stretches become one knows its second mark was redundant.
         let mut trimmed = trim.lead > 0.0 || trim.tail > 0.0;
         let mut merged = false;
         let mut into: Option<usize> = None;

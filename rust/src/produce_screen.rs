@@ -96,7 +96,6 @@ pub fn defaults() -> [(&'static str, &'static str); 13] {
     [
         ("Container", "mp4"),
         ("Codec", "h264"),
-        // The spec's default; §A records that the prototype shipped veryslow.
         ("Preset", "slow"),
         ("Resolution", "1080p"),
         ("Frame rate", "30"),

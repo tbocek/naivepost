@@ -52,13 +52,6 @@ pub fn install(
         .expect("the log is an expander")
         .clone();
     divider.set_shrink_start_child(false);
-    // THE BAND MAY BE SQUEEZED, DOWN TO WHAT IT ASKS FOR and no further: §1 wants the page to be wholly on
-    // screen at the minimum (which needs the page half NON-shrinkable, so GTK cannot crush it to 342 px and
-    // dump the rest on the band) while the band is squeezed to the two rows §1 counts. The handle does that:
-    // `rest_split` puts it at `total − band_px(…)` and the paned then allocates the end child exactly that.
-    // The band never goes under its minimum, whatever the page asks: the first rewrite let it, and on a page that
-    // needs its height the run bar's buttons and the log header were cut off at the window's edge. An open log
-    // gives way first, and collapses when too little of it is left (`collapse_without_room`).
     divider.set_shrink_end_child(false);
     // §1's split of the EXTRA height: the page takes it, the band keeps its own. `resize_start_child` is what
     // makes a growing window give its new pixels to the page instead of stretching the log half.
@@ -170,11 +163,6 @@ fn connect_first_allocation(divider: &gtk::Paned) {
 /// has no `height` or `width` property to watch: the `notify::height` handlers this replaces never fired, on
 /// Xvfb or anywhere, so a window that grew kept its handle where the first map put it.
 fn connect_every_layout(divider: &gtk::Paned) {
-    // §1: "the log take[s] the extra height" and "splits keep their proportions". While the log is open the band
-    // keeps the share of the height it last settled at (opened, or dragged to), never less than its open ask; a
-    // collapsed band keeps its own height and the page takes the rest. The share is read whenever the handle
-    // moves at a height the window already had, so GTK's own move in the middle of a resize is not taken for a
-    // drag. The first rewrite snapped the open band back to its 220 px ask at every resize, so the log never grew.
     let seen = std::rc::Rc::new(std::cell::Cell::new(0));
     let share = std::rc::Rc::new(std::cell::Cell::new(0.0_f64));
     divider.connect_position_notify({

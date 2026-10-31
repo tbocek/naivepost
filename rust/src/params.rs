@@ -1201,7 +1201,6 @@ pub fn produce() -> Vec<Param> {
             num(produce_subtitles::MIN_SECONDS),
             "produce_subtitles::MIN_SECONDS",
         ),
-        // --- one translation request's size (§10: new; the prototype sent the whole track) ---------------
         param(
             "P.machine.translateBatch",
             produce_subtitles::BATCH.to_string(),
@@ -1241,9 +1240,6 @@ pub fn produce() -> Vec<Param> {
             blur_sigma_spelled(),
             "produce_render::blur_sigma",
         ),
-        // --- §08 §4's thumbnail: its size, its band, and how many frames the row holds ---------------------
-        // (`P.eng.narrationMaxTempo` used to sit here: §07's §4 names it too, so it now has one home in
-        // `narrate()`, still pointing at `produce_render::MAX_TEMPO`.)
         param(
             "P.machine.thumbnailLongSide",
             produce_screen::THUMB_LONG_SIDE.to_string(),

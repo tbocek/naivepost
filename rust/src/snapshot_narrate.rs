@@ -114,10 +114,6 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
                 ..Default::default()
             },
         ];
-        // The clips these lines hang on, copied from the entries' own bounds: `shell::refit`, which
-        // runs when the page is entered, orphans a line whose clip no longer exists (and an orphaned
-        // line reads as one the cut threw away). A snapshot that wants four rows therefore has to show
-        // four kept clips, which is what §1's image shows too.
         state.length = state
             .entries
             .iter()

@@ -313,8 +313,6 @@ pub fn write_own_picture(
         .ok_or("no frame to take as the thumbnail")?;
     let file = entry_file(tree, &entry, frames)
         .ok_or_else(|| format!("{entry} is not a picture this session has"))?;
-    // One crop rule for the whole file: `crop_to_shape` makes the output folder before it runs ffmpeg, which
-    // this leg used to skip — and a session whose `publish/` does not exist yet cannot receive a picture.
     crop_to_shape(
         &file,
         &tree.thumbnail_plain_png(),

@@ -81,12 +81,6 @@ pub fn spoken_log(spoken: usize, cached: usize) -> String {
     format!("    narrate: {spoken} line(s) spoken, {cached} already in the cache")
 }
 
-// --- S7: the final statuses ---------------------------------------------------------------------
-//
-// These belong ON THE STATUS LINE. The prototype wrote them to the progress bar's hidden text, where
-// nobody saw them (§F4.1 S7's bug note), which is why they are returned as strings for the caller to
-// put where they are read rather than being pushed into a bar field.
-
 /// S7: narrated, spoken, ready to hear.
 pub const DONE_SPOKEN: &str =
     "narration ready and spoken \u{2014} \u{25b6} the preview hears it in place";

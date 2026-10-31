@@ -103,9 +103,6 @@ pub fn glued(source: &str, tokens: &[Token]) -> Vec<Word> {
         // A space is a boundary before the next word; anything else measured against the word in front.
         let boundary_before = boundary;
         if bare(text).is_empty() {
-            // Text and not sound: it belongs to the word in front, which is what the subtitles read back.
-            // A token of nothing but space marks where a word begins — remembered rather than dropped, or
-            // the next piece welds onto the word before (the prototype measured "1 word" that way twice).
             if text.is_empty() {
                 boundary = true;
             } else if !boundary_before && !out.is_empty() {
@@ -470,19 +467,11 @@ pub fn list(
         // asked for at its first word, so a line never covers the same word twice.
         let mut at = 0usize;
         while at < mine.len() {
-            // The line is the one the word's middle falls in, the same test that ends a window: a word straddling two
-            // lines belongs to one of them, or the next line's text would say it again. A word in a gap between lines
-            // keeps its spelling and the walk goes on. The first rewrite stopped here, and every later word of the
-            // recording stayed as heard.
             let middle = (mine[at].start + mine[at].end) / 2.0;
             let Some((end, line)) = fixed(source, middle, middle) else {
                 at += 1;
                 continue;
             };
-            // The window ends where the LINE ends. The first rewrite ended it at its first word's end, so
-            // every window was one word, the rest of the line was hung on it as "what the words did not
-            // say", and each word of the session list carried its whole sentence (the join model was shown
-            // one sentence eighteen times over).
             let span = mine[at..]
                 .iter()
                 .position(|word| (word.start + word.end) / 2.0 > end + 0.01)
@@ -678,10 +667,6 @@ fn gather(
         }
         let tokens = timed
             .into_iter()
-            // The aligner counts from the recording's own first sample; the list is on the SESSION clock
-            // (§F1.13), so each word moves by where its recording sits. The first rewrite stored the
-            // recording's own seconds, every take starting near 0, and the joins' marks came out ending
-            // before they began (07-news, 2026-10-26: "62.09 → 1.54"), so no stumble ever left the cut.
             .map(|word| Token {
                 word: word.word,
                 start: off + word.start_sample as f64 / hz,

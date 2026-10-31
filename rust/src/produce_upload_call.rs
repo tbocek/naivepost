@@ -368,11 +368,6 @@ where
             }
         }
     }
-    // The prose the model spoke, kept on `spoken` because a quiet round's text never enters the loop's messages
-    // (see above); only when nothing was heard at all is the conversation read instead. It is the answer the job
-    // asks for (§3.9's three parts; the prototype read nothing else), so whatever it names wins over what a tool
-    // set: the first rewrite read it only when no tool had answered, then only when none had written, and a model
-    // that looked at frames or picked one before answering in prose lost its title and description each time.
     let text = if spoken_ref.borrow().trim().is_empty() {
         state.content_of(&run).unwrap_or_default()
     } else {
@@ -437,11 +432,6 @@ impl State {
                         self.publish.frames = vec![format!("frame:{:.1}", picked.taken)];
                         self.wrote = true;
                         self.answers.push(picked.answer.clone());
-                        // §12 #33, the half that belongs to THIS arm: naming a frame takes the thumbnail away
-                        // from the drawer, so an edit instruction standing on the record is now about a
-                        // thumbnail that will not be made. The prototype simply dropped the row; the model is
-                        // told instead, and the instruction itself is left alone (§#33's other half) — the
-                        // person typed it, and a frame named in answer to a question is not a reason to lose it.
                         if !self.publish.prompt.trim().is_empty() {
                             let answer = format!(
                                 "{} — the edit instruction ({}) still stands but nothing will be drawn; \
@@ -583,8 +573,6 @@ fn peel_into(publish: &mut Publish, reply: &str, starts: &[f64], frames: &[f64])
         // folding rule lives in `details`, and a frame still beats an instruction here).
         match crate::produce_details::frame_line(thumbnail.trim()) {
             Some(FrameAt::Clip(clip, offset)) => {
-                // Through the call's own clips and frames, as the `pick_frame` tool is: the first rewrite asked
-                // with none, so "frame: clip 1 +0" found no clip 1 and the picked frame was lost.
                 if let Ok(picked) = upload::pick_frame(clip, offset, starts, frames) {
                     publish.own = true;
                     publish.frames = vec![format!("frame:{:.1}", picked.taken)];

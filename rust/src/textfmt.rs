@@ -352,7 +352,6 @@ pub fn read_retakes(path: &Path) -> Result<Vec<Retake>, String> {
         if f.len() < 3 {
             continue;
         }
-        // The prototype parses the first three and drops the line if any fails.
         let (Ok(s), Ok(e), Ok(again)) = (
             f[0].parse::<f64>(),
             f[1].parse::<f64>(),

@@ -223,9 +223,6 @@ pub fn ask_at(
             }
         }
     };
-    // §3.5: one ask, no tools: the answer is the quoted words, read in one place (`joins::answer_join`). The
-    // first rewrite offered drop_words/keep_join beside a prompt that asked for the joined text, and the model,
-    // told two things at once, answered nothing usable at 125 of 127 asks.
     let sent = match crate::llm_retry_leg::chat(
         joins::STEP,
         tree,
@@ -251,12 +248,6 @@ pub fn ask_at(
     let reply = answer_of(&sent.content_type, &sent.body);
     let outcome = judge(&reply, before, after);
     if outcome.usable() {
-        // Cached only when usable (§F1.10): a refusal must go out again rather than be replayed from the slot
-        // it failed in. What is filed is the answer itself, which the cache branch above reads through `judge`.
-        // Filed under the join's own input, the first ask's request, whichever try earned it: a rerun asks that
-        // first, and is answered by it, judged again as every cached answer is. The first rewrite filed a retry's
-        // answer under the retry's own slot, which no rerun reads, so a join answered on its retry was asked
-        // again on every run.
         let first = joins::request(user_context, k, n, wide, before, after, None);
         let first = seam_parts(&system, &first, &model, 0);
         llm_cache::store(tree, joins::STEP, &first, reply.as_str());
@@ -521,9 +512,6 @@ pub fn run_seams(
     // The seconds actually spoken, which F1.11 asks for when it decides whether a retake's onset is
     // clear of speech — read off the same word list the marks came from so the two never disagree.
     let spoken: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
-    // S4: a saying doubled straight across a cut loses its earlier copy. The notes come back in the
-    // prototype's wording (`seconds: "text" said again...`); the pass re-says each one with its own prefix
-    // so every line this pass speaks is greppable as its own (§12's dedupe row: named in the log).
     let written: Vec<String> = words.iter().map(|word| word.written.clone()).collect();
     let sources: Vec<String> = words.iter().map(|word| word.source.clone()).collect();
     for note in joins::dedupe_across(&written, times, &mut kept) {

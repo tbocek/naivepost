@@ -228,10 +228,6 @@ pub fn place_line_press(
     hit: cut_line::Hit,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
-    // F2.4 S1: a click on a track places the line, an empty cut or not. F2.2 S2's "picture click" that
-    // refuses an empty cut is a click on the PREVIEW picture (a way into playback); the first rewrite read it as
-    // a click on the tracks' picture rows, so on a session with no cut yet every click on the pictures was
-    // refused in silence and the line never moved.
     let outcome = cut_line::click_outcome_in_row(
         hit.at,
         hit.on_picture,
@@ -268,7 +264,6 @@ pub fn step_the_line(
 ) -> Step {
     let frames = cut_line::step_frames(shift) * if backward { -1 } else { 1 };
     if let Some(held) = held {
-        // The first rewrite answered `Nudged` here and moved nothing: a held edge or clip stayed where it was.
         nudge_held(window, held, frames, fps);
         return Step::Nudged { frames };
     }
@@ -424,8 +419,6 @@ pub(crate) fn wire_line_step(button: &gtk::Button, window: &adw::ApplicationWind
 /// Move the line by a signed number of frames and pause (F2.4 S2). The seam the buttons use; the rate
 /// comes from [`crate::cut_fps`] (the real ffprobe over the footage file), not a constant.
 pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
-    // F2.4 S2: with an edge, clip or effect held the buttons nudge THAT (the first rewrite's buttons always moved
-    // the line, whatever was in hand).
     if let Some(held) = ui::held_now() {
         nudge_held(window, held, frames, crate::cut_fps::session_fps(window));
         return Step::Nudged { frames };
@@ -487,7 +480,6 @@ pub(crate) fn wire_line_keys(window: &adw::ApplicationWindow) {
         let response = match key {
             gtk::gdk::Key::Left => arrow_steps(&win, shift, true, held, fps, now_ms()),
             gtk::gdk::Key::Right => arrow_steps(&win, shift, false, held, fps, now_ms()),
-            // `,` is ‹f and `.` is f›: the first rewrite stepped both forward.
             gtk::gdk::Key::comma => step_the_line(&win, shift, true, held, fps, now_ms()),
             gtk::gdk::Key::period => step_the_line(&win, shift, false, held, fps, now_ms()),
             gtk::gdk::Key::space => {

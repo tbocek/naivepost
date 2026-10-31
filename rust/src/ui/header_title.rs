@@ -84,10 +84,6 @@ fn build_label() -> gtk::Label {
     label.set_widget_name(WIDGET_NAME);
     label.add_css_class("dim-label");
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    // The label must never be the thing that holds the window wide (§1: what no longer fits gives way
-    // instead of pinning the shell), so its MINIMUM is one character. But a `gtk::Label` with a small
-    // `width-chars` also caps how much it asks for, which is why the natural width is asked for here and
-    // the ellipsis only ever trims it: without this the header showed "…" at any window size.
     label.set_max_width_chars(-1);
     // EXPANDS, but never asks for more than it must: with the header's title widget held dead centre
     // (`CenteringPolicy::Strict` in `window.rs`) the START group's natural width is what decides where the

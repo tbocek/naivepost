@@ -236,9 +236,6 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                     mark.set_has_frame(false);
                     mark.set_can_target(true);
                     mark.set_size_request(fx_band::KILL_MIN_PX as i32, slot);
-                    // Wired here, when the button is made, and never again: the refresh finds this same button
-                    // every time, and connecting on each refresh (the first rewrite) stacked one more removal
-                    // on a single press for every repaint since the page opened.
                     mark.connect_clicked(move |_| {
                         // F2.7 ✕ badges: the effect's cross is the `effect` badge, so it fires through the one
                         // badge door; the door forwards to `remove_effect_at`, whose sentence the fold rounds
@@ -267,8 +264,6 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 existing.unparent();
             }
         }
-        // A record that went away (an undo) takes its bar with it: drop any bar whose index is no longer
-        // in this cut's list, from the row that holds it.
         let live: Vec<String> = bars
             .iter()
             .map(|bar| format!("fx-bar-{}", bar.index))
@@ -481,8 +476,6 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     form.set_halign(gtk::Align::Fill);
     form.set_hexpand(true);
     form.set_column_homogeneous(false);
-    // One column pair only -- key, then value. The Aspect ratio dropdown used to be attached in a THIRD
-    // column, which is what held every other row's value ~95 px short of the column's right edge (measured).
     form.set_column_spacing(8);
     // What the readings show for a page with no cut yet: zeros. The real values arrive with the rounds that
     // own them; this fills the rows so none is blank.

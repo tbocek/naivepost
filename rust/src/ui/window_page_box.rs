@@ -63,30 +63,8 @@ pub(crate) fn page_box(
     let view = adw::ToolbarView::new();
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    // The page's own content scrolls. Every page stacks tall parts (Prepare: sources list + frame
-    // controls + the prompt bench; Cut: preview paned + toolbar + tape; Narrate and Produce: their own
-    // surfaces), and a plain Box reports the SUM of their minimums as the window's floor — measured at
-    // 968 px tall, which is why the shell could not be shrunk (`tests/suite/window_shrinks.rs`). §1 wants "the
-    // page and bottom bar [as] two halves of a draggable divider": the divider can only give the page
-    // less room if the page can scroll inside what it is given.
-    //
-    // At §1's MINIMUM size this scroller has nothing to scroll — `window_shrinks.rs` measures zero travel on
-    // every tab — so it is no longer the thing that keeps the window shrinkable; each part whose content can
-    // outgrow its band (the sources list, the prompt bench, the Cut form column, Produce's settings grid,
-    // Narrate's line rows) carries its own scroller for that. It stays because a person who drags the
-    // shell's divider down onto the page still gets a readable page instead of crushed widgets, and because
-    // `src/snapshot_rows.rs` drives it to shoot rows that sit below the painted band.
     let page_scroller = gtk::ScrolledWindow::new();
     page_scroller.set_widget_name(&format!("page-scroll-{page}"));
-    // The vertical bar is `never`, not `automatic`: an automatic bar lets a scroller answer a 0 px minimum
-    // height, which is what used to hide a page taller than the window — it scrolled as a whole behind the
-    // shell's back. §1 fixes the window's MINIMUM at the size every page fits (§10's window row), so no page
-    // may be taller than the band it is given; if one is, it now overflows visibly and
-    // `tests/suite/window_shrinks.rs` measures the fact (zero travel on every tab).
-    //
-    // The HORIZONTAL policy stays `automatic` and is set below together with its own rule: the pages' two-
-    // column paneds hand a narrow column a width smaller than some rows ask for, and those parts scroll
-    // sideways inside themselves. That axis never hid a whole-page overflow, so it keeps its behaviour.
     page_scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
     // The page keeps a usable height band rather than collapsing to nothing beside a huge log.
     page_scroller.set_min_content_height(PAGE_MIN_H);
@@ -257,25 +235,7 @@ pub(crate) fn page_box(
         box_.append(&produce);
     }
 
-    // The Cut page's own children are re-seated by `cut_page_layout::arrange`, which reads the FIRST child of
-    // this box as the row above the paned. It used to be a per-page heading (title + ⓘ); §1 lists no such
-    // heading and its picture starts at the page's first control, so the toolbar is that first child now —
-    // the arrangement keeps working without a placeholder widget §1 does not name.
     if page == Page::Cut.label() {
-        // §05-cut#1-screen: the toolbar is ONE row of six groups, in `cut_screen::TOOLBAR_GROUPS`'
-        // order — transport, volume, verbs, effects, history, zoom — each group a linked Box filled from
-        // its own table so the control set and its order live in one place that a test can read. The
-        // widgets keep the names every flow's tests already find them by; what changed is that they are
-        // grouped rather than stacked, and that the groups the earlier rounds had not reached (effects,
-        // history, zoom) are now on the page at all.
-        //
-        // The six groups sit in ONE row — §A's single bar. Each group fills its share of the bar and
-        // scrolls inside itself when the bar is narrower than the group (see `cut_tool_group`), so the
-        // row no longer pins the window's width; measured with `tests/suite/window_shrinks.rs`, an
-        // unscaled row of these groups asked for 2709 px and
-        // made the shell impossible to shrink.
-        // 6 px between the groups, the prototype's bar (`go/cut.go` `gtk.NewBox(Horizontal, 6)`): inside a group
-        // the buttons are linked, so this gap is what tells one group from the next.
         let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, cut_screen::TOOLBAR_GAP_PX);
         toolbar.set_widget_name("cut-toolbar");
         // §A's ONE row of six groups is ~484 px wider than the bar at §1's 1240 px floor (the six groups'
@@ -330,15 +290,6 @@ pub(crate) fn page_box(
         volume.set_size_request(120, -1);
         volume.set_halign(gtk::Align::Start);
         volume.set_value(cut_hear::VOLUME_DEFAULT * 100.0);
-        // The trough alone read as an anonymous blue line: only a hover tooltip said what it was, where
-        // the prototype's speaker glyph makes it obvious at a glance. §A group 2 asks for "icon + 0..100,
-        // 120 px, shared tooltip", so the icon is `cut_cameras::SPEAKER_GLYPH` — the app's OWN glyph, the one
-        // the row speaker badges already print, not a themed icon (no icon theme exists in the headless
-        // snapshot, which is why an earlier round left the slider standing alone). It goes AFTER the word
-        // label and BEFORE the slider: `cut_hear_mix_widgets` pins the row's first child as the word.
-        // Value text off: the number means nothing to a person where the tooltip says what the control does.
-        // Inventory §A group 2: "icon + 0..100, 120 px, shared tooltip" -- the theme's speaker, as the prototype
-        // draws it (`audio-volume-high-symbolic`), not an emoji glyph and no word beside it.
         let volume_icon = gtk::Image::from_icon_name(cut_screen::VOLUME_ICON);
         volume_icon.set_widget_name("preview-volume-icon");
         volume_icon.set_tooltip_text(Some(cut_hear::VOLUME_TIP));
@@ -535,14 +486,6 @@ pub(crate) fn page_box(
         label_form.set_visible(false);
         box_.insert_child_after(&label_form, Some(&volume_form.upcast::<gtk::Widget>()));
 
-        // F2.8: the surface that carries trim and move presses. It is a PRESS surface only and is NOT
-        // painted: §1's tracks are ONE stack — ruler, selection band, picture rows with their wave strips,
-        // then the separate recordings' lanes, then the scrollbar — and `track-layers` below draws all of it.
-        // This widget used to draw its own placeholder ruler + kept bar + lane band, which put a SECOND set
-        // of time labels in the middle of the page (the answered question on this item). The gestures stay
-        // wired here (`wire_track_strip`, after `set_content`) and convert in TRAVELLED pixels at
-        // `cut_view::strip_pps()`, so hiding the paint moves no press geometry: a drag's offset cancels the
-        // scroll on both sides. `strip_clip_boxes_for_test` reads the same zoom, so F2.8's tests still fire.
         let strip = gtk::DrawingArea::new();
         strip.set_widget_name("track-strip");
         strip.set_size_request(STRIP_WIDTH, STRIP_HEIGHT);
@@ -608,13 +551,6 @@ pub(crate) fn page_box(
         // then toolbar, tracks, scrollbar). This re-orders the widgets just built; see the module doc.
         crate::ui::cut_page_layout::arrange(&box_, window);
     }
-
-    // F2.11 S1 — the whole-cut fold badge lives on the band's own gutter rail (`gutter-badges`, built in
-    // `cut_tracks::build`), which is §B's seat for it; the page used to append an empty `fold-all-holder`
-    // box here while the badge sat elsewhere, and that plate of nothing is gone. The PER-GAP −/+ badges are
-    // children of the same overlay (`fold-badges`), each over the bar whose gap it folds. Placement stays
-    // single-sourced in `cut_fold`: `FOLD_MIN_PX` (no badge over a gap with no room) and `BADGE_INSIDE_PX`
-    // (just inside the neighbouring bar, never mid-gap), both applied by `cut_fold::badges`.
 
     view.set_content(Some(&page_scroller));
     // The page's half of `main-divider` is this `AdwToolbarView`, not the scroller inside it, so the expand
@@ -707,8 +643,6 @@ pub(crate) fn cut_tool_group(
     row.add_css_class("linked");
     for tool in tools {
         let button = gtk::Button::with_label(tool.label);
-        // The prototype's symbolic icon where it draws one; the buttons whose face a refresh rewrites (▶ ⏸,
-        // Insert/Edit) and the frame steps keep their words.
         if let Some(icon) = cut_screen::tool_icon(tool.name) {
             button.set_icon_name(icon);
         }

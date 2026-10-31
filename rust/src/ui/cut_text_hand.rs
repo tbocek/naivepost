@@ -503,8 +503,6 @@ pub fn text_drag_ended_with_source(
         .map(|band| (band.start, band.end));
     match fx_text::place(choice, line, selection, source) {
         Some(fx) => {
-            // `show_text_form` wires the buttons it draws; wiring them again here (the first rewrite) ran
-            // every Apply twice, the second pass refusing over the first one's sentence.
             show_text_form(window, &fx);
             format!(
                 "{} \u{2014} type the words and \u{25b8} Apply puts them on the picture",

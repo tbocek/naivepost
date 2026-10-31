@@ -675,9 +675,6 @@ pub fn prompt_file_ok(key: &str) -> Result<(), String> {
 
 /// The prompt to send: the open project's profile section for the step, else the shipped wording.
 pub fn prompt_text(paths: &Paths, key: &str, shipped: &str) -> Result<String, String> {
-    // §03-shell §5b: a step's wording is the open project's profile section for that step when it has one (the
-    // profile holds the whole prompt), else the shipped prompt. Machine-level edits (`prompts/<key>.txt`, the old
-    // bench rows) are no longer read: a profile is the one place the prompts are configured.
     Ok(crate::profile::active_section(paths, key).unwrap_or_else(|| shipped.to_string()))
 }
 

@@ -101,9 +101,6 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut
                 let _ = batch.translate_line(number, &text);
             }
         }
-        // S3: ONE re-ask, naming only the lines still missing **with the numbers they were given the
-        // first time** — `ask_again_text` says so outright, and renumbering is what made the
-        // prototype's repair calls land on the wrong lines.
         if !batch.complete() {
             let again: Vec<usize> = batch.missing();
             // §6's sentence, said before the call so the second round is explained while it runs.

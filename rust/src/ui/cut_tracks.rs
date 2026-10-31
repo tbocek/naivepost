@@ -634,9 +634,6 @@ pub fn build(height: i32, width: i32) -> Band {
         column.add_css_class("cut-gutter-col");
     }
     install_gutter_css_once();
-    // The band draws its own marks and answers presses on them (`cut_band_marks`), as §1 and the prototype
-    // have it. These holders keep the named controls the page's doors and refreshes find, unseen: shown, they
-    // were grey button plates over the bars and the gutter.
     for holder in [
         badges.upcast_ref::<gtk::Widget>(),
         gutter_badges.upcast_ref(),
@@ -903,13 +900,6 @@ pub fn paint(cr: &cairo::Context, scene: &Scene, width: f64, height: f64) {
 pub fn paint_at(cr: &cairo::Context, scene: &Scene, width: f64, height: f64, thumb_px: u32) {
     fill(cr, GROUND, 0.0, 0.0, width, height, 1.0);
     let rows = rows(scene, thumb_px);
-    // The tape is drawn scrolled: translated by `-origin`, the scroll the scrollbar, a zoom and a restored line
-    // set, and the same one a press (`cut_line_press::press`) and the playhead subtract. The band used to paint
-    // from 0:00 whatever the scroll, so a scrolled page moved its red line and its clicks while the tape stood
-    // still, and the picture rows (which skip what lies left of the scroll) drew nothing at all.
-    // The tape's painted width: the surface's own, so the ruler's ground, the wave strips and the lane rows
-    // reach the page's right edge instead of stopping at a constant; in the tape's own (unscrolled) pixels its
-    // right edge is the scroll plus that width.
     let tape = width.max(BAND_WIDTH_PX as f64) + scene.origin;
     let _ = cr.save();
     cr.translate(-scene.origin, 0.0);
@@ -1403,10 +1393,6 @@ fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
         if b.x >= tape || b.x + b.w < 0.0 {
             continue;
         }
-        // An OVERWRITE card replaced these seconds outright, so the footage under it is GONE (§F2.12 S5
-        // "replaces exactly those seconds", the same as － Remove). Paint that first — the dropped-gap grey,
-        // full row height — or the violet band would sit on footage that is no longer in the cut and the two
-        // modes would be indistinguishable on the surface the page actually shows.
         if scene.segs[b.index].is_overwrite_insert() {
             fill(
                 cr,

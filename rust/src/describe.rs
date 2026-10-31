@@ -134,11 +134,6 @@ pub fn is_every_frame(frames: &[f64], grid: f64) -> bool {
     if frames.len() < 2 || grid <= 0.0 {
         return false;
     }
-    // Every-frame is FINER than the grid: the video's own frames, a frame rate apart (33 ms at 30 fps). A folder
-    // on the grid is what Prepare writes and what describe picks from. The first rewrite asked for steps of one
-    // grid, so it refused exactly the folders it said it needed ("describe needs the 250 ms grid"): every
-    // recording went undescribed, every clip reached the upload text as "nothing was seen", and the model could
-    // not find the title slide it was asked to use as the thumbnail. The prototype had no such refusal.
     frames.windows(2).all(|pair| pair[1] - pair[0] < grid / 2.0)
 }
 
@@ -403,9 +398,6 @@ fn stamp_text(at: f64) -> String {
 /// what may be kept everywhere.
 pub fn cache_key(system: &str, content: &str, images: &[Vec<u8>], model: &str) -> String {
     let request = crate::llm_cache::Request {
-        // The system message the chunk is asked under: the house rules, the profile's `## describe` wording and
-        // the precedence rule. A changed prompt asks again; the first rewrite left it out ("describe sends ONE
-        // user message", which stopped being true), so a reworded describe prompt replayed the old answers.
         system,
         user: content,
         state: "",
@@ -718,10 +710,6 @@ pub fn stage_log(
     if is_every_frame(frames_on_disk, grid) {
         return vec![every_frame_refusal(base)];
     }
-    // No frames on disk yet: this is said at ▶, before the frames stage has run, so an empty folder
-    // is a source this run is about to extract, not an error, and it says nothing. The describe stage
-    // itself refuses a folder still empty when it reaches it (`describe_call`). The first rewrite said
-    // "no frames to describe -- the frames folder is empty" here for every source of a fresh project.
     if frames_on_disk.is_empty() {
         return Vec::new();
     }

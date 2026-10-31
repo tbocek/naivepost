@@ -863,9 +863,6 @@ pub fn ruler_ticks(rec_end: f64, pps: f64, every_seconds: f64) -> Vec<(f64, Stri
     if rec_end <= 0.0 || pps <= 0.0 || every_seconds <= 0.0 {
         return Vec::new();
     }
-    // A step under a second labels each tick with its tenth (`00:00.5`), or two neighbouring ticks would
-    // read the same second (`00:00 00:00 00:01 00:01`, the first rewrite at a 0.5 s step). Ticks are counted,
-    // not summed, so a 0.2 s step does not drift off its own seconds.
     let sub_second = every_seconds < 1.0;
     let mut ticks = Vec::new();
     let mut n = 0u64;

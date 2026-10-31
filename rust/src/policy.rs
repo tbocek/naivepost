@@ -128,9 +128,6 @@ pub fn derived_fields() -> [CatalogueRow; 7] {
             id: "P.policy.decorationsPass",
             values: ON_OFF,
         },
-        // P.policy.targetLengthSeconds — §12 entry 21. A number, so no `values`: the derivation writes the seconds
-        // and the derivation writes what the User Context's own words say (or a model's proposal), instead of
-        // the prototype's regex that silently left 0 = none.
         CatalogueRow {
             field: "targetLengthSeconds",
             id: "P.policy.targetLengthSeconds",
@@ -469,9 +466,6 @@ pub fn derive(
             ..Derived::default()
         };
     }
-    // §12 entry 21 first, before any model is asked: a length written in plain words is arithmetic, and the
-    // prototype got it wrong by reading it with a regex that had no fallback. Read here rather than in the
-    // window so every door (the debounce and the next ▶) derives the same number.
     let mut out = read_target_length(policy, context);
     let req = request(context);
     for _ in 0..DERIVE_ROUNDS {

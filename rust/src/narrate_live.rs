@@ -295,8 +295,6 @@ pub fn ask_round(
         crate::ui::window::log_line(line);
     }
 
-    // A content answer with no tool calls at all: the prototype's own shape, handed on untouched so
-    // `drive`'s forward-only ±0.5 s match is what decides, exactly as for a scripted reply.
     if !used_tools {
         return Ok(Round {
             answer: last_answer,

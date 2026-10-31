@@ -125,9 +125,6 @@ pub(crate) fn wire_play(
                             && refusal.is_none()
                             && !bar.borrow().status.is_empty(),
                     },
-                    // A run still open says whether its log is open; a closed one leaves the log as the
-                    // person has it (`paint_closed`'s rule): the first rewrite folded it at every run's end,
-                    // and the log on screen stopped there.
                     bar.borrow()
                         .running
                         .as_ref()
@@ -432,9 +429,6 @@ pub(crate) fn wire_play(
                         }
                         super::prepare_worker::Note::Queue(walked, stage) => {
                             *queue.borrow_mut() = walked;
-                            // §1: the Inputs/Outputs readouts count what the run has written so far, recounted
-                            // as each stage begins (on a worker, `paint_readouts`), not only at the run's end:
-                            // the first rewrite showed "0 lines" through a whole run that had transcribed them.
                             if stage != counted_at {
                                 counted_at = stage.clone();
                                 let session = ui::PLAY_SESSION
@@ -566,8 +560,6 @@ pub(crate) fn wire_stop(
             if held.reviewing {
                 crate::ui::cut_review_play::clear();
             }
-            // The media stops with the page's state, all of it: the player, the cut's spare, the lanes.
-            // The first rewrite only flipped the flag, so ⏹ left the video playing behind a ▶ face.
             crate::ui::cut_cut_play::pause_media();
             crate::lane_hear::halt_all();
             crate::ui::cut_record_play::paint_transport(&window);

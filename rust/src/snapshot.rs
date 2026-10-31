@@ -173,22 +173,6 @@ pub fn run(
             // pre-seed list. (F2.10: `camera-rows`, its name plates, lens badge and per-lane badges.)
             ui::refresh_camera_rows(&window);
         }
-        // F2.10's own picture is TWO cameras at once (`spec/img/05-rows.png`), which no fixture on disk
-        // carries -- staged in its own module below, with the other self-staging Cut-page screens.
-        // F2.11's own picture (`spec/img/05-fold.png`) is a WIDE dropped stretch folded to a seam. The
-        // demo fixture cannot show one: its `cut/cut.json` keeps 0-9.5, 10-30 and 40-70 out of a tape
-        // whose only filmed gap is 0.5 s = 2 px at the snapshot zoom, under `cut_fold::FOLD_MIN_PX`, so
-        // no badge would be drawn at all. Laid out here instead -- the shared fixture file untouched:
-        // the session filmed 0-120 as one take (that is what gives head/hole/tail anywhere to exist, see
-        // `ui::page_recordings`), two clips are kept, the 30-40 hole is FOLDED so the bars meet at a
-        // seam with a `+` on it, and the 60-120 tail is left open wearing a `-`.
-        // §F2.5's own picture (`spec/img/05-lanes.png`) is the SAME page staged the way its
-        // caption says the prototype was: "the lecture has no separate recordings, so 45 s of
-        // another day's recording was added to a clip" — i.e. one lane overlapping the footage,
-        // and one scene that has it silenced. The `05-cut` staging above already lays a lane
-        // down; this arm restages it for the lanes shot so the plate, the camera row's own sound
-        // strip (badge **1**) and the recorders' band (badge **2**) are all on screen together,
-        // and drives the silence through the page's own door rather than faking a painted band.
         if screen == "05-lanes" {
             // 45 s of a separate recording, placed to overlap two scenes, the way the caption
             // stages it: the second scene silences it, the first does not.
@@ -856,15 +840,6 @@ pub fn run(
                 window.set_default_size(if wide { 2400 } else { 1280 }, crate::shell::WINDOW_MIN_H);
             }
             if subject.is_none() {
-                // The shell's page/bottom-bar split is NOT forced here any more, and the reason is a number:
-                // this used to call `divider.set_position(shell::PAGE_BAND_PX)` (560), which in an 844 px
-                // divider asked for 560 + the collapsed band and got clamped to "page = everything", so the
-                // run-bar row landed on the window's last pixel and the log header fell below the bottom edge —
-                // the shot with no bottom bar at all. §1 says the resting split is whatever leaves the band
-                // "exactly as tall as the run bar row plus the log expander's header", and `window_divider`
-                // now re-asks that at the paned's first real allocation, which is the same rule a person's drag
-                // obeys. A snapshot must not override it: overriding the rule is how the shot looked right while
-                // the program drew the wrong thing.
             }
             window.present();
         }
@@ -1133,12 +1108,6 @@ const FORM_UNDER_PX: i32 = 380;
             // divider was built but painted nothing. Same doors a person's drag fires (`snapshot_layout`).
             crate::snapshot_layout::rest_page_splits(&window);
             crate::snapshot_face::pump_context(16);
-            // §1's screenshot IS the window at 1240×900, so the PNG is asked for at that size whatever the
-            // headless window ended up ALLOCATED. `write_png` shoots the widget's own box, and under xvfb
-            // that box lands a hair under the floor (§1's numbers are the window's, frame and WM decoration
-            // excluded), so the shot used to come out 1230×890 — the same page, 10 px short on each axis,
-            // which is enough to shift what fits in the header and the run-bar row when it is compared
-            // pixel-for-pixel with `spec/img`.
             crate::snapshot_face::set_shot_size(want_w, want_h);
         }
         // The band's resting split, asked at the size the PNG is taken at (see `snapshot_band::rest_band`).

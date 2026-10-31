@@ -353,9 +353,6 @@ pub fn dial(
             // as the check above, reached from inside the wait instead of before it.
             Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
         };
-        // The prototype's queue line, kept: a step that queued behind ANOTHER step's call says who had it.
-        // Its own earlier call is silence — `slot_gate::waited_log`'s caller decides that, because only the
-        // holder list can tell the two apart.
         if waited > 0.0 {
             if let Some(other) = other_holder(step, &crate::slot_gate::holders(&endpoint.url)) {
                 log(&crate::slot_gate::waited_log(step, &other));

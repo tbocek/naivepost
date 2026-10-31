@@ -428,9 +428,6 @@ pub fn paint(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
 pub fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     let fit = frame.fit;
     let (x, y, w, h) = camera_rect_px(&seen.camera, fit);
-    // A stop standing at the line's second holds its frame while the clock runs, and the paused half used to show
-    // none of that: the same borrowed box and the same inked still as the playing half, under the dim so the
-    // camera's own framing still reads around it (§2 puts the still on the footage's transform, not above the crop).
     if let Some(still) = stop_px(&frame.cut.fx, frame.t, fit) {
         paint_still(cr, still, crate::ui::cut_picture::frame_shown().as_deref());
     }

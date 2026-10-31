@@ -21,8 +21,6 @@ pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
     // The dashed boxes themselves live over the plate, in their own holder, and are rebuilt by the same
     // door so a removed mark loses its box too.
     crate::ui::produce_paint::clear_overlay_boxes();
-    // The title is a box like the others while the picture prints it, and its ✎ edits the picture's line only,
-    // never the video's title (the prototype's `editTitle`).
     if s.title_seeded && !s.thumb_title.trim().is_empty() {
         let chip = gtk::Button::with_label(&format!("\u{270e} {}", s.thumb_title));
         chip.set_widget_name("words-chip-title");

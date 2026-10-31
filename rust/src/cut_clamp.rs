@@ -102,7 +102,6 @@ fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
         return inside.then(|| fx.clone());
     }
 
-    // S2: only footage the cut no longer keeps can shorten a band; a scene border or a Split inside it is nothing.
     let mut stretches: Vec<(f64, f64)> = segs
         .iter()
         .filter(|seg| !seg.is_insert())

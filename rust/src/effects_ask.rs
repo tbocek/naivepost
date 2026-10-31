@@ -473,9 +473,6 @@ pub fn ask_at_over(
         }
     };
     if reply.tool_calls.is_empty() {
-        // A server that no longer gets a `tools` field (§2 S5 remembered its refusal, so the body went out
-        // without one) cannot be blamed for answering in prose: the document is the only shape left to it.
-        // The sole exception, and silent -- the refusal was already said once, on the round that earned it.
         if crate::llm_tools_offer::tools_for(&endpoint.url, &offered).is_none() {
             let text = reply.answer().to_string();
             if !text.trim().is_empty() {

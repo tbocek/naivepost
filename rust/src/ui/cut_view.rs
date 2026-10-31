@@ -143,8 +143,6 @@ pub fn floor_pps(view: f64) -> f64 {
 /// stored zoom drive the layout rather than sit beside it. `view` comes from the caller that already knows
 /// its own width; [`live_pps_in`] takes it, because a headless window has no allocation to ask.
 pub fn live_pps(view: f64) -> f64 {
-    // A session so short that fitting it on screen wants more than the zoom's ceiling sits at the ceiling. The
-    // first rewrite clamped with the floor above the ceiling, which panics: a 1 s session crashed the Cut page.
     pps().clamp(
         floor_pps(view).min(cut_screen::ZOOM_MAX),
         cut_screen::ZOOM_MAX,

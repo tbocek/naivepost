@@ -164,7 +164,6 @@ pub(crate) fn sync_overlay_stack(
         .iter()
         .map(|(index, _, _)| format!("preview-overlay-{index}"))
         .collect();
-    // Remove children whose name is no longer wanted, from the holder.
     let mut node = stack.first_child();
     while let Some(child) = node {
         let next = child.next_sibling();

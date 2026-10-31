@@ -158,11 +158,6 @@ pub fn session_wall() -> f64 {
 /// Read from the newest review cut so a press and a paint never disagree about where a clip is.
 pub(crate) fn trim_boxes_for_strip() -> Vec<cut_trim::Box_> {
     let cut_ = ui::newest_review_cut();
-    // Deliberately UNFOLDED: `clip_boxes` multiplies the scene's own seconds by the zoom and never reads
-    // `cut.folds`, and that is the rule, not an oversight (§B: "a fold is a view, never used to measure a
-    // drag"). A gesture measured through a seam would move a border to a second the person never touched,
-    // because the pixels they grabbed are on the far side of a stretch that is only hidden. The band PAINTS
-    // folded (`cut_tracks::band_x`); the hand measures unfolded.
     cut_trim::clip_boxes(&cut_.segs, strip_pps())
 }
 /// F2.8 S1/S2: what a right-press at `press_x` takes. A border grabbed within [`cut_trim::EDGE_GRAB_PX`]
@@ -377,7 +372,6 @@ fn hand_file(hand: &cut_copy::Hand, sources: &[String]) -> Option<String> {
 /// copied recording's project path, and the file second the span starts at — then writes the mutated cut
 /// back and mirrors the hand so a refusal keeps the copy.
 pub fn press_paste(window: &adw::ApplicationWindow) -> String {
-    let at = paste_line(window);
     let mut hand = copy_hand();
     let sources = ui::session_sources(window);
     let path = hand

@@ -90,10 +90,6 @@ pub fn attach(window: &adw::ApplicationWindow) {
     lane.add_controller(drag.clone());
     DRAG.with(|slot| *slot.borrow_mut() = Some(drag));
 
-    // ONE vertical wheel controller: plain notches zoom, Shift pans an eighth of the view, the way the wheel
-    // turned. GTK hands a mouse notch over as dy = ±1, so one notch is one zoom step (the prototype's
-    // `1.25^-dy`); the first rewrite divided by 50 as if dy were pixels, and a notch zoomed by 0.4 %, which
-    // reads as a wheel that does nothing.
     let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     wheel.set_name(Some("wheel-take-band"));
     let scroll_win = window.clone();
@@ -161,9 +157,6 @@ pub fn note_lane_size(window: &adw::ApplicationWindow) {
     if viewport <= 0.0 {
         return;
     }
-    // At fit the lane asks for its floor and fills what the column gives; zoomed in it asks for the whole
-    // recording at the zoom, and the scroller shows one view of it with a scrollbar. The scroller itself never
-    // asks for that width: the first rewrite set it as the scroller's minimum, so a zoom widened the window.
     let wanted = if zoom() <= 1.0 {
         LANE_MIN_PX as i32
     } else {
@@ -674,9 +667,6 @@ fn envelope(
     let (size, mtime) = stamp(source)?;
     let wave = crate::wave::read(tree, lane, size, mtime)?
         .ok_or_else(|| format!("{}: no envelope cached", source.display()))?;
-    // §00's "failure is specific and local": these are the lines the decode and the wave build printed on
-    // their way to an answer. They used to be dropped here, which left a band that said only "reading the
-    // recording…" forever with nothing anywhere saying why — so they now ride out with the refusal.
     let detail = if said.is_empty() {
         String::new()
     } else {
@@ -749,9 +739,6 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     });
     // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
     plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
-    // The take walk's own playhead, where the sound is (§1 "playhead while ▶ walks"). The preview has none: the red
-    // bar goes with it. The first rewrite drew a white line at the session second as if it were a band second, and
-    // the two clocks part at every stretch the cut took out, so it stood minutes from the bar.
     let head = WALK_HEAD.with(|slot| slot.get());
     plan.playhead_px = (head >= 0.0).then(|| band::second_to_px(head, offset(), pps));
 
@@ -768,9 +755,6 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         draw_envelope(cr, &peaks.1, width, lane_top, lane_h);
     }
 
-    // 2. The ruler, on the Cut page's tick ladder (the prototype's `tickStep`): the first step at least 70 px
-    // apart at this zoom, every tick labelled. The first rewrite ticked every 30 s whatever the zoom, so a
-    // recording under half a minute had a bare ruler, and zooming in never added a mark.
     cr.set_source_rgb(0.55, 0.58, 0.62);
     cr.set_line_width(1.0);
     cr.move_to(0.0, RULER_PX);

@@ -275,10 +275,6 @@ fn paint_closed(
     log: &gtk::Expander,
     log_view: &gtk::TextView,
 ) {
-    // A run's lines stay where the run put them: the log keeps whatever openness it had, because nothing
-    // in §F0.5 or in the prototype closes it when a run ends (S1 opens it, and the user folds it), and
-    // the body is repainted from the log sink so lines written after the last mid-run repaint -- the
-    // audio housekeeping line above all -- are shown rather than dropped by a repaint of an empty buffer.
     let kept = log.is_expanded();
     let main = window::main_window();
     let (Some(play), Some(stop_)) = (window::play_button(&main), window::stop_button(&main)) else {

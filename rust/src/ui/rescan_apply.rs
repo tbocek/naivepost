@@ -58,9 +58,6 @@ pub(crate) fn apply(
     // refresh below is NOT behind this test -- a normal press with nothing vanishing still refreshes.
     if crate::shell::lock(shell.borrow().page, scanned).is_some() {
         let (scan_tree, cut, mut narration) = window::session_reads();
-        // The scan rewrote the folder, so the window's held lines are re-seeded from it here: a refit
-        // over narration that no longer belongs to this project would write someone else's words back
-        // over the ones just scanned.
         if let Some(held) = window::held_narration() {
             *held.borrow_mut() = narration.clone();
         }

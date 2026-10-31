@@ -220,7 +220,6 @@ pub fn badges(folds: &[[f64; 2]], runs: &[(f64, f64)], segs: &[Seg], span: &Span
     let mut out = Vec::new();
     for gap in dropped_gaps(runs, segs) {
         let folded = is_folded(folds, gap);
-        // A fold is never used to measure a drag (§B), so this answers where a badge is and stops there.
         if folded {
             // The seam: the x the tape resumes at after the fold. `x_of` answers that for the fold's own start,
             // because every second of a folded cell shares it; clamped so the + stays pressable at the front edge.

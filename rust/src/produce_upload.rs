@@ -559,10 +559,6 @@ pub fn apply_text(publish: &Publish, answers: &Answers) -> Publish {
     if let Some(title) = &answers.title {
         next.title = title.clone();
     }
-    // The first title to exist is also the one printed on the picture, and nothing seeds it twice (the prototype's
-    // `TitleSeeded`): after that the thumbnail's words are the person's, set and placed on the page, and ▶
-    // leaves them alone (↻ beside Title clears the seed first). The first rewrite never seeded it, so the title box never appeared
-    // on the picture.
     if !next.title_seeded && !next.title.trim().is_empty() {
         next.thumb_title = next.title.trim().to_string();
         next.title_seeded = true;
@@ -663,10 +659,6 @@ pub fn walk(
         log(take_three_log());
     }
 
-    // S6's other door: with no edit instruction there is nothing to draw, so nothing is drawn. The first image
-    // of the row IS the thumbnail, taken as it is (cropped to the video's shape, the title printed onto it), the
-    // way a picked frame is: a context that asks to pick a picture, not to make one, is answered without a GPU.
-    // The first rewrite refused here ("nothing to tell the image model") and the run went out with no thumbnail.
     if !next.own && next.prompt.trim().is_empty() && !next.frames.is_empty() {
         next.own = true;
         out.own = true;
@@ -717,9 +709,6 @@ pub fn walk(
                     }
                 }
                 out.calls.push("own-frame".to_string());
-                // A picture taken this run carries no words yet: its title is printed onto it whoever chose the
-                // frame (the prototype takes the frame and prints the title onto it). The first rewrite counted
-                // an earlier run's picked frame as "edited by hand" and printed nothing on the new picture.
                 reprint = true;
             }
             Err(why) => {

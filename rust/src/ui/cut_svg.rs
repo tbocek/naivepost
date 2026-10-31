@@ -282,8 +282,6 @@ pub fn svg_drag_ended_with_source(
         .map(|band| (band.start, band.end));
     match fx_svg::place(choice, &file, line, sel, source) {
         Some(fx) => {
-            // `show_svg_form` wires the buttons it draws; wiring them again here (the first rewrite) ran every
-            // Apply twice and opened two choosers for one ⋯ Choose.
             show_svg_form(window, &fx);
             let said = format!(
                 "{} \u{2014} press \u{25b8} Apply puts the drawing on the picture",

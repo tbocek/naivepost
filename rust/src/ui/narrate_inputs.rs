@@ -28,10 +28,6 @@ pub fn tooltip(tree: Option<&crate::layout::Tree>, s: &NarrateState) -> String {
         entries: s.entries.clone(),
         silent: silent_of(tree),
     };
-    // §6's two counts, computed here rather than carried in state: a clip is unwritten when no entry sits
-    // on it AND it was not deliberately silenced (a silent clip needs a caption but no line of its own is
-    // not staleness the person caused), and a line is off the cut when it stands on video the cut no longer
-    // has. Both come from the rules' own functions so one change moves the row, the tooltip and ▶ together.
     let unwritten = narrate_rewrite::indexes_without_line(&clips, &narration)
         .iter()
         .filter(|index| !narration.is_silent(clips[**index].0, clips[**index].1))

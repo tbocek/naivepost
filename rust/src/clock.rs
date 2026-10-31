@@ -34,10 +34,6 @@ static TS_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// (`RPReplay_Final1723456789.mp4`) carries. Ten digits bounded by non-digits, pinned to
 /// 2017..2033 so an arbitrary number has to look like the present decade before it counts.
 static EPOCH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    // Ten digits pinned to 2017..2033, and not part of a longer run. The left bound is consumed
-    // rather than asserted — this engine builds no look-around — which is what makes an
-    // eleven-digit glued name (`RPReplay_Final1723456789.mp4`, the shape the prototype names)
-    // read as no stamp here; see the note in [`name_stamp`].
     Regex::new(r"(?:^|[^0-9])(1[5-9][0-9]{8})(?:$|[^0-9])").expect("the epoch pattern compiles")
 });
 
@@ -100,8 +96,6 @@ fn parse_stamp(caps: &regex::bytes::Captures) -> Option<f64> {
             hour = 0;
         }
     }
-    // The calendar check the prototype gets from `time.Parse`, which refuses month 13 and hour
-    // 25 rather than rolling them into a date nobody recorded.
     if !valid(year, month, day, hour, minute, second) {
         return None;
     }

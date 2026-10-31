@@ -635,12 +635,6 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         .map(|(index, clip)| {
             let stem = stem_at(index, &stamp);
             let file = scratch.join(format!("{stem}.{}", container_ext(settings)));
-            // The picture's own file goes in as `[0:v]`/`[0:a]`, the inputs the filter graph names.
-            // Clip 0 gets no `-ss` at all because `encode_command` omits it when `seg_s == 0.0`, which is
-            // right and not something a test should expect to find there.
-            // The sound that joins the clip's own, as files: each heard lane's recording read from the second it
-            // is at when the clip starts, and each spoken line's take. The first rewrite planned the mix and handed
-            // the encode no file to mix, so the narration and the lanes never reached the video.
             let mut clip = clip.clone();
             clip.lane_files = mats
                 .lanes

@@ -492,9 +492,6 @@ pub fn delete_verb(
     scene_under_line: Option<&Seg>,
     segs: &[Seg],
 ) -> Outcome {
-    // Every branch answers the WHOLE list the cut is left with, and the page writes it when it differs from
-    // the one it has. The first rewrite answered the sentence and an empty list, which the page reads as
-    // "nothing to write", so a real ⌦ said "removed" over a cut that kept every second it had.
     let without = |gone: &Seg| -> Vec<Seg> {
         let mut left = segs.to_vec();
         if let Some(at) = left.iter().position(|seg| same_seg(seg, gone)) {

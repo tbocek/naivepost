@@ -228,10 +228,6 @@ pub fn build() -> gtk::Widget {
     vsplit.set_start_child(Some(&upper));
     vsplit.set_end_child(Some(&lower));
 
-    // **1** the game audio level, at the top right of the column: how loud the recording plays under a spoken
-    // line, the narration's own number (it used to sit among Produce's encoder rows). There is no Narration
-    // tick: the page is always live, and a video is narrated when its narration has lines (§1; first rewrite:
-    // a tick here switched the narration off).
     let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
@@ -380,9 +376,6 @@ pub fn build() -> gtk::Widget {
     let take_add = gtk::Button::from_icon_name(narrate_screen::ADD_LINE_ICON);
     take_add.set_widget_name("take-add");
     take_add.set_tooltip_text(Some(narrate_details::take_add_hint()));
-    // §1's Prototype note: the − is an icon, not U+FF0D — that sign is CJK-only and draws as a missing-glyph
-    // box without one, like the ＋ beside it. The tooltip keeps the prototype's wording (§6 spells its
-    // sentences with those glyphs), so the icon name lives here rather than in that string.
     let take_remove = gtk::Button::from_icon_name(narrate_screen::TAKE_REMOVE_ICON);
     take_remove.set_widget_name("take-remove");
     take_remove.set_tooltip_text(Some(narrate_details::take_remove_hint()));

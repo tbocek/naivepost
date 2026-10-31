@@ -213,8 +213,6 @@ fn clock_start(tree: &Tree, index: usize) -> f64 {
         .iter()
         .map(|source| source.path.rsplit('/').next().unwrap_or(&source.path))
         .collect();
-    // The recording's own instant: the session's zero plus where the row sits on the session clock. The
-    // first rewrite named frames by the offset alone, so every folder read `1970-01-01_00-…`.
     let clock = crate::clock::clock(&names);
     if index >= names.len() {
         return clock.zero;

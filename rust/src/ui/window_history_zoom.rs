@@ -241,9 +241,6 @@ pub(crate) fn amend_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
 /// session fits (`cut_view::floor_pps`) rather than the placeholder strip's constant, so a session of any
 /// length stops at “all of it on screen”.
 pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
-    // The band the person looks at, measured the way the wheel measures it (`wheel_gestures_view`), so the
-    // buttons and the wheel step one scale over one floor. The first rewrite measured the floor over the old
-    // 480 px placeholder strip, and wrote the result into a second number nothing painted with.
     let view = crate::ui::cut_view::wheel_gestures_view(window);
     let runs = crate::timeline::filmed_runs(&page_recordings());
     let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
@@ -259,9 +256,6 @@ pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
         crate::ui::cut_view::total_px(filmed, before),
         view,
     );
-    // §A: the buttons zoom about the red line, so it stays in view: where it stood when it was on screen, in
-    // the middle of the view when it was not. The prototype (and the first rewrite) zoomed about the middle of
-    // the view, and a line near an edge was pushed off screen by a few presses of +.
     let on_screen = line_x >= gutter && line_x <= gutter + view;
     let wanted_x = if on_screen {
         line_x

@@ -145,8 +145,6 @@ pub fn ask_at(
                 parts: vec![Part::Text(user.clone())],
             },
         ];
-        // §4 lists captions as thinking-OFF, so the mode comes from the prompt table rather than a named
-        // `Mode` here: this call used to send `Mode::Thinking` for a job §4 says does not think.
         Ok(llm_request::body(
             STEP,
             &model,
@@ -188,10 +186,6 @@ pub fn ask_at(
         Err(reason) => return failed(format!("{STEP}: {reason}")),
     };
     if reply.tool_calls.is_empty() {
-        // A server that no longer gets a `tools` field (§2 S5 remembered its refusal, so the body went out
-        // without one) CANNOT be blamed for answering in prose: the document is the only shape left to it, and
-        // `build(None)` is what §2 S5's own resend looks like. This is the sole exception, and it is silent --
-        // the refusal was already said once, on the round that earned it.
         if crate::llm_tools_offer::tools_for(&endpoint.url, &offered).is_none() {
             return match parse_captions(reply.answer()) {
                 Ok(calls) => Asked {
@@ -202,12 +196,6 @@ pub fn ask_at(
                 Err(problem) => failed(problem),
             };
         }
-        // §3's answered question about these three passes: the tools ARE on the wire, and a reply that carries a
-        // JSON document instead of calling `add_caption` is UNREADABLE, not an answer. This branch used to read
-        // such a document (and repair an unparseable one); both are gone, because a model that was offered
-        // `add_caption` and answered with prose has not answered. Asking again, with the correction in the
-        // conversation, is what §3's repair is for: ONE extra request, never two, and a second prose answer is
-        // this pass's failure, said by name rather than quietly placed.
         let went_out = std::time::Instant::now();
         let dial = |body: &str| {
             crate::llm_retry_leg::chat(

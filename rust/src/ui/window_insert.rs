@@ -138,7 +138,6 @@ pub(crate) fn show_insert_form(
             let picker = gtk::Button::with_label("Logo\u{2026}");
             picker.set_widget_name(&format!("insert-logo-{}", field.key));
             picker.set_tooltip_text(Some("pick a mark to sit beside the title"));
-            // The first rewrite drew this button and wired nothing to it.
             let (win, key) = (window.clone(), field.key.clone());
             picker.connect_clicked(move |_| open_logo_chooser(&win, &key));
             row.append(&picker);
@@ -410,8 +409,6 @@ pub fn save_seed_for_test(window: &adw::ApplicationWindow, cut_: &Cut) {
 /// chooser, so nothing more happens here; the seam a widget test drives past the chooser is
 /// [`insert_chosen`], which is what the chooser's callback calls.
 pub fn press_insert(window: &adw::ApplicationWindow) -> String {
-    // S6 first: a held card is edited, not replaced. A card that went away while its dialog was open says so
-    // rather than opening a form for something that is no longer there.
     if let Some(held) = ui::held_segment() {
         let cut_ = ui::newest_review_cut();
         if held.is_insert() && cut_insert::find_card(&cut_, &held.ins, held.s).is_none() {

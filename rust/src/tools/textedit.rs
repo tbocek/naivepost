@@ -182,10 +182,6 @@ impl Join {
     /// The sentence left reading across the join, which is what the model is really being asked to
     /// approve.
     pub fn sentence(&self) -> String {
-        // `saturating_sub` on both sides: a join that gave way on one side past what the other side
-        // holds has no words left at all, and a subtraction that wraps here used to panic inside a tool
-        // reply — the one failure mode a model's own bad call must not cause (§3.2 S6: a tool failing is
-        // information, never a crash).
         let before_all = self.all(Side::Before);
         let after_all = self.all(Side::After);
         let mut out: Vec<&str> = before_all
@@ -342,12 +338,6 @@ pub fn dedupe_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -
                 .map(|&idx| words[idx].as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
-            // The EARLIER copy's own start second, as the prototype stamps it (`mmss(...)` of the
-            // first dropped word): the note reads as the line the reader looks up by. `dedupe_note`'s
-            // docstring says "the later copy begins", which disagrees; the wording of that string is
-            // another item's ground, so only the call site records which second is passed here.
-            // No clipping either: n <= JOIN_REACH_WORDS = 3 words can never reach the prototype's
-            // 60-byte `shortWords` bound, so adding a second tunable would guard nothing.
             notes.push(dedupe_note(times[go[0]].0, &text));
             break; // one fix per join, the longest match only
         }

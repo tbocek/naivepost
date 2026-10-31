@@ -83,14 +83,6 @@ pub fn draw_picture_rows(
             1.0,
         );
     }
-    // A film strip: each recording's stretch of its row tiled with cells at the picture's own shape (the row's
-    // height × 16:9), each showing the frame at the second the cell stands on. The second comes from the band's
-    // own span (folds included), and the frame from its name: a frame is named on its FILE's clock, so the file's
-    // first frame plus the second inside the file is the name looked up, the same rule the preview uses
-    // (`cut_picture::refresh`). Cells one frame-step wide (4 px at 1 s and 4 px/s), stretched to the row's
-    // height, read as a barcode; and only the first recording's list used to be drawn at all.
-    // The cell is the FILM part of the row: the wave strip owns its bottom (`Rows::wave_top`), and drawing under
-    // it would have the two painters disagree about who owns those pixels — the strip is painted next.
     let film_h = (rows.row_h - cut_tracks::row_wave_px()).max(1.0);
     let cell_w = (film_h * 16.0 / 9.0).max(8.0);
     let span = cut_tracks::band_span(scene);

@@ -31,9 +31,6 @@ pub fn recording_exists(tree: &layout::Tree, project: &Project, voice: &str) -> 
 /// length ([`crate::ui::narrate_band::recording_seconds`]), the one thing left to select from. `None` only when
 /// there is neither.
 pub fn band_seconds(tree: &layout::Tree, project: &Project, voice: &str) -> Option<f64> {
-    // The RECORDING's own seconds first: the wave, the takes, the red bar and ▶ are all seconds of the
-    // recording, and the first rewrite measured the ruler from the built reference instead, so a band over a
-    // ten-minute recording mapped its bar onto the reference's few seconds and ▶ played from somewhere else.
     let length = tape(tree, project, voice).length();
     if length > 0.0 && length.is_finite() {
         return Some(length);

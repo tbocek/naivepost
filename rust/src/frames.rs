@@ -96,8 +96,6 @@ pub fn scene_pass_plan(threshold: f64) -> Vec<String> {
         "-an".to_string(),
         "-f".to_string(),
         "null".to_string(),
-        // The output: ffmpeg refuses a command with none ("At least one output file must be specified"), and
-        // the first rewrite left it off, so the scene pass failed on every real recording (its tests stub ffmpeg).
         "-".to_string(),
     ]
 }
@@ -387,8 +385,6 @@ where
         written += extract(&taken)?;
     }
 
-    // S5: the marker last, after every frame exists. Written earlier it would be a resume marker for
-    // work that was never done — and unlike the prototype's `.interval`, this one promises scenes too.
     requests::write_frames_marker(tree, source, grid, threshold)?;
     out.frames = seconds.iter().map(|at| frame_file(start, *at)).collect();
     out.logs.push(done_log(base, written, changes.len()));

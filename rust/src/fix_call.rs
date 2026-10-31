@@ -237,8 +237,6 @@ fn ask_once(
     message: &str,
 ) -> Result<Vec<Reply>, String> {
     let system = fix_system(paths);
-    // The session note goes first, as the prototype's `ctxBlockFor("fix")`: a script in it is where the
-    // spellings of names come from ("Use the script's spelling for names"), and the job says so.
     let context = crate::project::load(tree.dir())
         .map(|project| project.context)
         .unwrap_or_default();

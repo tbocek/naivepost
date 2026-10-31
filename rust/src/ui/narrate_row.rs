@@ -101,8 +101,6 @@ pub fn build(
         button.set_tooltip_text(Some(tip));
         header.append(&button);
     }
-    // §1's note on the prototype: the row's ＋ was the full-width sign U+FF0B, which only CJK fonts carry and
-    // which draws as a missing-glyph box anywhere else. The rewrite uses the list-add icon.
     let below = gtk::Button::from_icon_name(narrate_screen::ADD_LINE_ICON);
     below.set_widget_name(&format!("line-add-below-{index}"));
     below.set_tooltip_text(Some("Add a line below this one"));

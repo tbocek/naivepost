@@ -492,11 +492,6 @@ fn run_chunk(
                 missing: answered,
             });
         }
-        // The reply's text is read first and its calls after, so a call that records a frame wins and the text
-        // fills the frames the calls left without one. The user's model writes every frame as text and calls
-        // `record_event` beside it with the frame's SECONDS as its number (`frame: 22` in a batch of four,
-        // 08-dex 19-30-48): the call is refused and the text is the answer. The first rewrite read the calls
-        // alone, refused the chunk for three frames without an event, and failed Prepare.
         let calls: Vec<(String, serde_json::Value)> = describe::prose_calls(&reply.content, batch)
             .into_iter()
             .chain(calls)

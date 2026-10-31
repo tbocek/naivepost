@@ -190,9 +190,6 @@ fn speech_stage(project: &Project) -> Stage {
     let tasks = project
         .sources
         .iter()
-        // Every recording is heard, a video's own sound too (03-shell §4: "Every file here is transcribed"):
-        // its words are the film's. The first rewrite heard only the rows that were not footage, so a
-        // project of videos alone got no transcript at all and its fix wrote empty files.
         .map(|source| Task {
             label: format!(
                 "transcribing {}",
@@ -239,9 +236,6 @@ pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
 /// by position. Each stage gets its own phase's slice — separation 0–10 % when asked, ingest to 30 %,
 /// understand 30–100 % — and a stage outside those phases keeps the whole bar.
 pub fn phase_slices(stages: &[Stage], separation_asked: bool) -> Vec<(f64, f64)> {
-    // A phase's width is split evenly among the stages planned in it, in plan order, so the bar only moves
-    // forward: the text gate, describe and fix each fill a third of understand's 70 % rather than each
-    // sweeping the whole of it (the first rewrite sent the bar back to 30 % at every stage).
     let phases: Vec<Option<prepare_run::Phase>> = stages
         .iter()
         .map(|stage| phase_of_stage(stage.name))
@@ -534,9 +528,6 @@ where
         let mut requests_total: usize = planned.iter().sum();
         let mut requests_done = 0usize;
         for (index, task) in stage.tasks.iter().enumerate() {
-            // The status line says where the queue is, not only which task runs: "37 of 97, describing <file>".
-            // The first rewrite showed the label alone, so a person saw the phase ("describe 2/2") and no count
-            // of the tasks done or still to come; the count was in the tooltip only.
             let label = if total > 1 {
                 format!("{} of {total}, {}", index + 1, task.label)
             } else {

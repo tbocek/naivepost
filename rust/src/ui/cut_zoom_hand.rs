@@ -62,11 +62,6 @@ pub fn preview_press(
             return Pressed::Held { status: said };
         }
     }
-    // Clear of every box: a new rectangle, framed by the box the drag drew. `fx_zoom::preview_press` is the
-    // rule-side door (nothing armed or held, paused); nothing is held here, and the transport answers the second.
-    // The camera in force does not gate it: a drag past the threshold is someone drawing, and the box they drew is
-    // the framing. (The first rewrite framed on a click, from the camera's own box, and only where no zoom held
-    // the camera; under a placed zoom the same press was a refusal.)
     let paused = !window::preview_player(win).transport.playing;
     match fx_zoom::preview_press(true, paused, true, None) {
         Some(fx_zoom::PressPreview::DrawsNew) => {}
@@ -477,12 +472,6 @@ pub fn zoom_drag_ended_with_source(
     to: (f64, f64),
     source: (f64, f64),
 ) -> String {
-    // §F3.1's paragraph after S5 and §05 F2.1 S2: with nothing armed or held, a CLICK on the picture (press and
-    // release inside GTK's drag threshold) only plays and pauses, whatever is placed under it; framing starts only
-    // once the pointer has travelled while pressed. This is where the panel's ONE button-1 release arrives (the
-    // painted frame lies over the picture's button, so the button never sees a pointer click), which makes it
-    // the one place a click and a drag are told apart. The first rewrite ran the framing press on a click as well
-    // as the toggle, so a click over a placed zoom started play AND took the zoom or opened a zoom form.
     if !zoom_armed() {
         if ui::held_effect().is_some() {
             return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();

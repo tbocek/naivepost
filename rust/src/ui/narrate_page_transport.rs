@@ -117,8 +117,6 @@ pub(crate) fn publish_transport() {
     );
     // The page's own ▶ shows the same answer as the bar: ⏸ while the preview plays (§1's "▶/⏸").
     narrate_page::paint_play_face(&window, s.playing);
-    // And the bar itself: ⏹ is live while a preview stands (F4.5 S6). The first rewrite published the transport
-    // without painting the bar, so ⏹ stayed grey under a playing preview.
     crate::ui::window_bench::repaint_run_bar(&window);
 }
 
@@ -139,8 +137,6 @@ pub fn press_preview_stop(window: &adw::ApplicationWindow) -> String {
     let (stopped, killed) = narrate_preview_leg::stop_running();
     narrate_page::mutate(|state| {
         state.playing = false;
-        // ⏹ ENDS the preview rather than pausing it: with `started` left up, `bar_serves_the_preview`
-        // would keep the bar answering for a preview that no longer exists and ⏹ would stay sensitive.
         state.started = false;
         // A row's take still out on a worker is given up: it is filed when it lands, and not played.
         state.busy = false;

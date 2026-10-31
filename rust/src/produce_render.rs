@@ -746,14 +746,6 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
         settings.vfr,
     ));
     if settings.blurred_edges {
-        // §4's "blurred": a blown-up, blurred copy of the picture centred behind the frame. The sigma
-        // is derived here by [`blur_sigma`] from the finished height — [`BLUR_SIGMA_FRACTION`] of it,
-        // floored at [`BLUR_SIGMA_MIN`] — so one rule owns both numbers and the catalogue reads them
-        // off the same pair. (It does not come from `render_fx`: nothing there derives a sigma.)
-        //
-        // `overlay` lays its SECOND input over its first, so the backdrop goes first and the sharp copy, fitted
-        // into the frame, second (the prototype's `bdrop.chain`). The first rewrite wrote `[fg][bg]overlay` and
-        // never fitted the picture: the blurred copy covered it, and every video came out one smear.
         let (wide, high) = clip.frame;
         chain.push("split=2[bdb][bdf]".into());
         chain.push(format!(
@@ -846,9 +838,6 @@ fn audio_parts(
             "volume=0:eval=frame:enable='between(t,{from:.3},{to:.3})'"
         ));
     }
-    // `duration=first` pins every mix to the clip's own sound, so a lane or a line that stops early does not end
-    // the clip; `normalize=0` keeps everything at its own level. The first rewrite wrote these `amix` steps into
-    // one chain with nothing labelled to mix, and ffmpeg refused it ("Cannot find an unused audio input stream").
     let lane_mix = (lanes > 0).then(|| mix(lanes + 1));
     // §4's volume cues: ONE `volume=<expr>:eval=frame` per cue, chained in turn so overlapping ones multiply, after
     // the bed and before the narration. `produce_fx_chain` builds them and the seam dips (a read head's two, where
@@ -866,8 +855,6 @@ fn audio_parts(
         )
     });
     let layout = if settings.mono { "mono" } else { "stereo" };
-    // `aformat`, the AUDIO format filter: `format` is the video one, has no `sample_fmts`, and ffmpeg refused the
-    // whole graph with "Option not found" (the first rewrite's every clip with sound).
     let tail = vec![
         LIMITER.to_string(),
         format!("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"),
@@ -1103,8 +1090,6 @@ pub fn encode_command_with(
         argv.push(SEEK_FLAG.into());
         argv.push(format!("{seek:.3}"));
     }
-    // Footage is read for as long as the clip takes of it, on the input (the prototype's `-ss … -t … -i`): the
-    // first rewrite gave plain 1x footage no length at all, so a clip ran on to the end of its recording.
     let footage = clip.source.is_empty() || clip.source.starts_with("copy:");
     if footage && clip.rate > 0.0 {
         argv.push("-t".into());
@@ -1354,12 +1339,6 @@ pub const MUX_FRACTION: f64 = 0.96;
 /// chose "track in file", and never for webm, which has no text track: that is decided by
 /// [`crate::produce_screen::apply_container_rules`] rather than guessed again here, so the settings row and
 /// the command cannot disagree about what webm carries.
-// The mp4-only tail of the mux, named because §08 §4 lists "faststart flags" among the engineering values this
-// page uses: a row in `params::produce()` spells these two consts, so the catalogue cannot drift from the argv.
-// So the file streams from the front instead of waiting for the moov atom at the end, and (`negative_cts_offsets`)
-// the decode delay goes in the sample table so the video track genuinely starts at zero. Both are MOVFLAGS: the
-// first rewrite passed `-negative_cts_offsets on` as an option of its own, which ffmpeg refuses ("Unrecognized
-// option"), so every mp4 mux failed (the prototype's `-movflags +faststart+negative_cts_offsets`).
 pub const MP4_STREAM_FLAGS: [&str; 2] = ["-movflags", "+faststart+negative_cts_offsets"];
 
 // No edit list, so there is no start offset for players to read two ways (browsers and VLC disagree about them,
@@ -1387,9 +1366,6 @@ pub fn mux_command(
         settings.codec,
         settings.subtitles,
     );
-    // Every input first, then what goes into the output: an option written before an `-i` belongs to that input.
-    // The first rewrite put the subtitle files' `-i` after `-c:s` and the maps, so the subtitle codec was read as
-    // the INPUT's decoder, and it opened the joined file twice for one video and its own sound.
     let mut argv = vec!["ffmpeg".into(), "-i".into(), video.display().to_string()];
     let audio_input = if audio == video {
         0
@@ -1425,10 +1401,6 @@ pub fn mux_command(
         if settings.mono { "1" } else { "2" }.into(),
     ]);
     for (index, (code, _)) in tracks.iter().enumerate() {
-        // Each .srt is its own input, mapped to its own subtitle stream and tagged with its ISO-639-2 code and
-        // name (§6: "so players name them"): `language` is what a player's language menu reads, `title` its track
-        // list, and an untitled track shows as "Subtitle 1". Per-stream metadata is `-metadata:s:s:<n>`; the
-        // first rewrite wrote `-metadata s:<n>:language=…`, a global tag no player reads.
         let (tag, name) = crate::produce_details::language_tag(code, languages);
         argv.extend([
             "-map".into(),

@@ -457,10 +457,6 @@ fn control_for(form: &Rc<Form>, field: &Field, value: &str) -> gtk::Widget {
                 let (start, end) = buffer.bounds();
                 store(buffer.text(&start, &end, false).to_string());
             });
-            // At least a third of the window tall, and every pixel the form leaves below it besides (the form's
-            // viewport is at least as tall as the page, and the text areas are what take the rest), scrolling
-            // inside itself so a pasted script never grows the box past the page. The first rewrite held it at
-            // exactly a third, and a short form left the rest of the page empty under a script that scrolled.
             let scroller = gtk::ScrolledWindow::new();
             scroller.set_widget_name(&format!("{name}-box"));
             scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);

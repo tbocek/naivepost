@@ -82,9 +82,6 @@ pub fn ensure(
         .unwrap_or(0.0);
     let mut scaled = 0usize;
     for at in &todo {
-        // The stored name is the take's clock start, plus where its first picture sits, plus the picked
-        // second: `frames_on_disk` measured `at` from that first picture. The first rewrite left `start` out, so
-        // every recording but the session's first asked for a frame named from 1970 and failed.
         let input = stored.join(frames::frame_file(start + zero, *at));
         if !input.exists() {
             return Err(format!(

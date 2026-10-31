@@ -141,9 +141,6 @@ impl<'a> Input<'a> {
             ),
             ("aspect", hash_text(self.aspect)),
             ("voice", hash_text(self.voice)),
-            // A constant where the first rewrite's narration switch stood ("on" for every narrated project):
-            // kept so a video rendered before the switch went still reads up to date. A narration without
-            // lines is already in the hash through `lines`.
             ("narration", hash_text("on")),
             // Appended after the flowchart's seven: the three things the render reads that the diagram's
             // wording folds into "the segments" — the effects drawn over them, the beds mixed under them and

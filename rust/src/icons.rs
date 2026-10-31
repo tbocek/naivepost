@@ -102,7 +102,6 @@ pub const NAMED_SYMBOLIC_ICONS: &[&str] = &[
     "user-trash-symbolic",
     "folder-templates-symbolic",
     "view-refresh-symbolic",
-    // The Cut toolbar's own (`cut_screen::tool_icon`, `cut_screen::VOLUME_ICON`), the prototype's choices.
     "audio-volume-high-symbolic",
     "edit-copy-symbolic",
     "edit-paste-symbolic",

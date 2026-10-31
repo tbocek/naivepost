@@ -275,10 +275,6 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
         box_.append(&warn);
     }
 
-    // 🗣 split-the-voice toggle. Greyed on a split product (§4), never dropped: a row without it would
-    // pull the trash to a different x than its neighbours. The prototype's ✂ is NOT reused, because on
-    // Cut ✂ means Split; the face is [`SEPARATE_ICON`], a loudspeaker — see its note: it must not read as
-    // the narrator's microphone standing after the file name.
     let separate = icon_toggle(
         SEPARATE_ICON,
         &format!("separate-{index}"),

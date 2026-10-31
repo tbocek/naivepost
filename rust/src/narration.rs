@@ -82,7 +82,6 @@ const OWN_VOICE: &str = "own";
 /// in one order, so a roll and a voice together read `25e0.85|2#aria|…`.
 fn key_body(entry: &Entry, voice: Option<&str>, emotion: &str) -> String {
     let mut body = format!("{}|{}", entry.text, emotion);
-    // `narrator1` is the first rewrite's spelling of slot 1, the same voice as `own`: the same key.
     if let Some(voice) = voice.filter(|v| *v != OWN_VOICE && *v != "narrator1") {
         body = format!("{voice}|{body}");
     }
@@ -179,8 +178,6 @@ fn format_vector(vector: &[f64; 8]) -> String {
     vector
         .iter()
         .map(|v| {
-            // Round half away from zero, as the prototype's math.Round does: Rust's
-            // f64::round already differs from Go's on the halves this can land on.
             let rounded = (v * 1000.0).round() / 1000.0;
             if rounded == 0.0 {
                 // -0.0 would print as "-0", and a zero axis has no sign.

@@ -173,9 +173,6 @@ pub(crate) fn follow(
 /// keeps a page whose state carries no voice at all quiet: "" names no slot and matches no file, so it is
 /// said once and never repeated while nothing has been picked.
 fn say_why_missing(window: &adw::ApplicationWindow, voice: &str, chosen: Option<usize>) {
-    // "no voice picked yet" is not a missing voice: an empty id is what a page that has never been given a
-    // voice holds, and saying `voice "" is no longer in DIR` on every page open would shout over whatever
-    // the arrival at this step actually reported. The picker stays empty for it all the same.
     if voice.is_empty() {
         return;
     }

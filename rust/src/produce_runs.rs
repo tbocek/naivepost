@@ -505,7 +505,6 @@ pub fn transcode_args(source: &str, out: &str, settings: &Produce) -> Vec<String
     // `track in file` is deliberately not consulted: the render's mux adds a caption track from sidecars this
     // transcode has never written, and a file picked off disk has no transcript beside it to mux.
     if settings.container == Container::Mp4 {
-        // The render's own mp4 flags: the first rewrite spelled them again here, with the same refused option.
         argv.extend(
             crate::produce_render::MP4_STREAM_FLAGS
                 .iter()

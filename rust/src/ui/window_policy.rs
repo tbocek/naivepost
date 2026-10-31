@@ -324,10 +324,6 @@ pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
             std::time::Duration::from_millis(policy::DEBOUNCE_MS),
             move || {
                 POLICY_DEBOUNCE.with(|p| p.borrow_mut().clear());
-                // A test's installed answer lives on this thread (`Rc`), so it is asked here; the live one
-                // dials a model, which takes seconds to minutes, and goes to a worker so the window keeps
-                // painting and taking keystrokes (the first rewrite asked on this thread and froze the window,
-                // "not responding", for as long as the model took).
                 if POLICY_SENDERS.with(|senders| senders.borrow().is_empty()) {
                     derive_in_background(&held);
                 } else {

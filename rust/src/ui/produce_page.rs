@@ -528,9 +528,6 @@ fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
     // The fresh controls carry no handlers until this runs: rebuilding the grid would otherwise leave
     // every row decorative.
     wire_settings(window);
-    // F0.14 S9: a profile's rows are where the project's encoder settings START; the rows here are the
-    // project's own and always editable (the first rewrite greyed them and sent the person to Profiles, where a
-    // change reached nothing). The tooltip says which profile set them.
     let set_by = encoder_profile();
     settings.set_sensitive(true);
     settings.set_tooltip_text(
@@ -1264,7 +1261,6 @@ pub fn load_page(tree: &crate::layout::Tree) -> ProduceState {
             .sources
             .iter()
             .filter(|source| !source.footage)
-            // The stem, as the prototype's `baseName` spells it.
             .filter_map(|source| {
                 std::path::Path::new(&source.path)
                     .file_stem()
@@ -1915,9 +1911,6 @@ fn encode_and_finish(
     gate: crate::produce_flow::Gate,
 ) -> String {
     let language = project.policy.language.value.clone();
-    // S2's skip leaves out the RENDER and nothing else: the snapshot is taken, the words half (F5.6) runs and the
-    // tag page (F5.5 S5) is rewritten, as the flowchart draws it. The first rewrite returned after the tag page,
-    // so a video that was up to date never got its title, description or thumbnail.
     let skip = gate == crate::produce_flow::Gate::Skip;
     // S3: EVERYTHING the two halves read is gathered here, once, on the GUI thread. From this line on the
     // run asks `snap` and never the page: a render walks subprocesses for minutes, and a leg that re-read

@@ -502,9 +502,6 @@ fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox]) {
         if text.is_empty() {
             continue;
         }
-        // The SAME lettering `thumbnail.png` is printed with (the prototype's one `drawFxText`), fitted to the box
-        // as it sits on the plate, so what the page shows is what the upload gets. The first rewrite drew its own
-        // white letters with a soft shadow here, at a size scaled off the print's.
         crate::produce_upload_print::draw_text_box(cr, text, *x, *y, *bw, *bh, 1.0);
     }
 }

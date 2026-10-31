@@ -340,9 +340,6 @@ impl RunBar {
             };
         };
 
-        // S3: bring the run down. Unpause first — a stop is not a pause, and leaving `paused` true
-        // would let a resumed run look like it was still only paused (prototype stores false into
-        // `pauseFlag` for the same reason). Then cancel the context and hand off the children.
         run.paused = false;
         self.stop_flag = true;
         self.cancelled = true;

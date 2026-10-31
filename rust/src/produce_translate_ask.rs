@@ -196,9 +196,6 @@ pub fn parse_numbered(answer: &str, numbers: &[usize]) -> BTreeMap<usize, String
         if line.is_empty() {
             continue;
         }
-        // Tab first (what the prompt asks for), then the first space: servers have been seen to answer
-        // `1. text` or `1 text`, and renumbering a line to make it fit is what the prototype's repair
-        // calls got wrong.
         let split = line.find('\t').or_else(|| line.find(' '));
         let (head, text) = match split {
             Some(at) => (&line[..at], line[at + 1..].trim()),

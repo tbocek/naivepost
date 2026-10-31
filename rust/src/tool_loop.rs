@@ -398,10 +398,6 @@ pub fn run(
                     // round's `after_round` reads, and a second quiet round must fall through to Finished.
                     silent_rounds += 1;
                     asked_finish = true;
-                    // The nudge exists only because §1's `finish` home may act in the same conversation: the
-                    // model is told what is still wrong with the WHOLE and answers it here. Gate on that
-                    // predicate rather than assuming it — if the audit ever stopped letting this home act, the
-                    // nudge would be asking for a fix the model is no longer allowed to make.
                     let finish_home = decision_audit::Home::FinishAnswer;
                     if decision_audit::change_is_announced(finish_home)
                         && finish_home.may_act_in_same_conversation()

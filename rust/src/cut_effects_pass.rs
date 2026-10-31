@@ -54,8 +54,6 @@ pub fn brief_over(
         if captions > 0 {
             line.push_str(&format!(", {captions} caption(s) -- runs at 1"));
         }
-        // `{rate:g}` in the prototype's sense: a whole rate loses its decimals (2 → "2x"), a fraction keeps them
-        // (1.5 → "1.5x"). A rate of 1 or none says nothing about the picture, so it is not mentioned at all.
         if let Some((_, rate)) = speeds.iter().find(|(n, _)| *n == clip.n) {
             if *rate > 0.0 && *rate != 1.0 {
                 line.push_str(&format!(", plays at {}", trim_number(*rate)));
@@ -148,8 +146,6 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
         }
     }
 
-    // The tool's own state, cloned so this stays a function of its arguments: the caller's clips keep their captions,
-    // speeds and previously placed effects, and the clamping reads the lengths it was given.
     let mut batch = clips.clone();
     let mut answers = Vec::new();
     let mut effects = Vec::new();

@@ -92,7 +92,6 @@ pub fn on_screen(seg: &Seg) -> f64 {
 /// footage's own clock and says nothing, so it is not mentioned.
 pub fn plays(seg: &Seg) -> String {
     if seg.rate > 0.0 && seg.rate != 1.0 {
-        // `{}` on a whole f64 prints "2", which is what "at 2x" reads as; the prototype's %g does the same.
         let rate = if seg.rate == seg.rate.trunc() {
             format!("{}", seg.rate as i64)
         } else {
@@ -608,8 +607,6 @@ pub fn get_lines(rows: &[SessionLine], anchor: f64, from: f64, to: f64, narrator
     let truncated = hits.len() > GET_LINES_MAX_ROWS;
     hits.truncate(GET_LINES_MAX_ROWS);
     if hits.is_empty() {
-        // Said out loud, because an empty string cannot tell "your window was too small" from "nobody
-        // spoke here" — the exact complaint §12 #9 makes about the prototype.
         return crate::tools::ok(&serde_json::json!({
             "from": from,
             "to": to,

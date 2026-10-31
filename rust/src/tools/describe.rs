@@ -432,8 +432,6 @@ pub fn parse_event_line(line: &str, interval: f64, frames: &[f64]) -> ParseOutco
         Placement::TooFar(_) => return ParseOutcome::Dropped(DropReason::TooFarFromEveryFrame),
     };
 
-    // One answer written over several lines is one answer. The prototype flattened it; the flattening
-    // stays because a two-line event reads as two events in the log the cut reads.
     let multi = text.contains('\n');
     let text = flatten(text);
     if multi {

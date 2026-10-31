@@ -119,9 +119,6 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
         let kept_playing = player.transport.playing;
         player.cut_only = true;
         player.transport.started = true;
-        // The switch plays: what was playing plays on as the cut, and a paused preview starts from the line.
-        // Switching is why a play button was pressed and not ⏸ (the prototype's `playAs`); the first rewrite
-        // only switched a paused preview, so ▶✂ after ▶ took two presses to start.
         player.transport.playing = true;
         let snapped = snap_to_kept(&cut.segs, player.playhead.unwrap_or(0.0));
         player.playhead = Some(snapped);

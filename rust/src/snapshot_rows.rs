@@ -389,11 +389,6 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     if let Some(band) = find_widget_by_name(window.upcast_ref(), "track-band") {
         band.set_size_request(-1, SHOT_TRACKS_H);
     }
-    // The placeholder strip is no longer part of the shot's stack (§1's tracks are ONE stack now), so it
-    // costs nothing above the camera rows and needs no height ask of its own.
-    // And the divider moves up. `arrange` opens it at §A's 380 px AND hands the leftover to the upper pane
-    // (`resize_start_child`), so shrinking the widgets inside the panes is not enough -- GTK keeps 380 px above
-    // the line whatever lives there. This is the drag a user would make.
     if let Some(paned) = find_widget_by_name(window.upcast_ref(), "cut-page-split")
         .and_then(|widget| widget.downcast::<gtk::Paned>().ok())
     {

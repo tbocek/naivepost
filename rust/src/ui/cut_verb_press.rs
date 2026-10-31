@@ -94,7 +94,6 @@ pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
         &segs,
     );
     report_verb(window, &outcome);
-    // A clip ⌦ took out of the cut is no longer anything to hold: a second ⌦ must not answer for it again.
     if matches!(outcome, cut_verbs::Outcome::Applied { .. })
         && ui::held_effect().is_none()
         && ui::held_segment().is_some()

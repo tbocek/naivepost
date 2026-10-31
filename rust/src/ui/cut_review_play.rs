@@ -77,8 +77,6 @@ pub fn answer_press(
         // S5: pausing ends the review, and says so with the module's own short line.
         cut_review::Pressed::PausedAndEnded { status } => {
             clear();
-            // The pause is the media's too, as ▶✂'s is (F2.2 S4): the first rewrite only cleared the page's
-            // state, so the face went back to ▶ while the video played on.
             crate::ui::cut_cut_play::pause_media();
             status_line.set_text(status)
         }

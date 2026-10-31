@@ -418,8 +418,6 @@ pub fn paste(
         return Ok(pasted_status(length, from, at, cut_length(cut), was));
     }
     let recording = held.recording().unwrap_or_default().to_string();
-    // Asked before anything is laid: a copy of a file the session no longer has must leave the cut as it was
-    // AND stay in hand, so the person can still aim it at a recording that does exist.
     if !session.iter().any(|base| base == &recording) {
         return Err(no_source(&recording));
     }

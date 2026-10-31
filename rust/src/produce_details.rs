@@ -52,11 +52,6 @@ pub const DESCRIPTION_HEADING_CHARS: usize = 40;
 /// a form, not a sentence (`machine.`; §10's `P.policy.publishFrames` counts images, not labels).
 pub const LABELLED_LINES_MAX: usize = 3;
 
-// ---- S1: clip planning refusals ------------------------------------------------------
-//
-// Each is one line of the render log and each names its own clip, because a person reads these after the video
-// came out shorter than the cut and has to find the moment in the timeline. Wording is the prototype's.
-
 /// "clip N copies footage at T s that falls in no recording — skipped": a pasted stretch points at session
 /// seconds, and session seconds with no file behind them cannot be decoded.
 pub fn copy_in_no_recording_log(no: usize, at: f64) -> String {

@@ -139,9 +139,6 @@ pub fn rows() -> Vec<Param> {
             num(narrate_pass::WORDS_PER_SECOND),
             "narrate_pass::WORDS_PER_SECOND",
         ),
-        // --- what one line is spoken with -----------------------------------------------------------------------
-        // §10 spells this default as "project language", so the row spells that; the constant named is the
-        // fallback the prototype hard-coded, which is all a project without a language can be given.
         param(
             "P.policy.ttsLanguage",
             "project language".to_string(),

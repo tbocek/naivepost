@@ -32,9 +32,6 @@ pub fn height_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
         .label_widget()
         .map(|label| label.measure(gtk::Orientation::Vertical, -1).0)
         .unwrap_or_default();
-    // ONE sum, not `row.max(header) + header`: §1 counts the run-bar row AND the header, so a header taller
-    // than the row used to be charged twice and left a blank strip under the band. Plus the bar's own
-    // spacing (§1's margins: above, between and below the two rows), which `window_divider` puts on it.
     (row + header + crate::ui::margins::BAR_SPACING_PX).max(1)
 }
 

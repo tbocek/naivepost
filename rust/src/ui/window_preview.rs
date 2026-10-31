@@ -225,10 +225,6 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
         panic!("the window has no preview player");
     };
     let pressed = cut_play::pressed(&mut player.borrow_mut(), cut);
-    // F2.10 S3: ▶ is what takes the preview back from a watched row. The release runs FIRST and its
-    // sentence wins over `cut_play`'s own, because "▶ plays the cut — <row> no longer watched" answers
-    // the click the user just made; a press that released nothing leaves the status as `cut_play`
-    // answered it. (It used to run before the match below and be overwritten by it.)
     let released = hand_preview_back(window);
     if let Some(back) = &released {
         status.set_text(back);

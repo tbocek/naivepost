@@ -288,9 +288,6 @@ pub fn build_window_at(
     // nothing spawns yet, so this stays empty until the runner's round arrives.
     let procs = Rc::new(RefCell::new(run::Subprocesses::default()));
 
-    // The tab row is a click; the stack is where that click is decided. `guard` keeps the bounce's
-    // own write-back from re-entering this handler, which would otherwise recurse through two more
-    // notify signals (the prototype does the same with tabGuard, go/main.go:1209-1224).
     let guard = Rc::new(std::cell::Cell::new(false));
     WINDOW_SWITCH_LATCH.with(|latch| *latch.borrow_mut() = Some(Rc::clone(&guard)));
 
@@ -435,9 +432,6 @@ pub fn build_window_at(
     log.set_widget_name("log-expander");
     log.set_label_widget(Some(&log_header));
     log.set_child(Some(&log_scroller));
-    // The open log fills its half: whatever height the band is given (the handle dragged up, a taller window)
-    // goes to the text box. The first rewrite left the expander at its 220 px ask, so a band dragged taller
-    // showed the log at the top and blank space under it.
     log.set_vexpand(true);
     log.set_expanded(false);
     // A collapsed expander must claim nothing, or the band it belongs to is charged a body that is never drawn.
@@ -940,9 +934,6 @@ the Produce settings",
         cut_history(window).borrow_mut().note_change(landed);
         cut_history(window).borrow_mut().suggested(landed);
         refresh_history_buttons(window);
-        // The page shows the cut that landed, at once: what Undo refreshes after it replaces the cut (the
-        // effects lane, the timeline readouts), and the band and its scrollbar. The first rewrite stored the
-        // cut and repainted nothing, so a suggestion appeared only when the window was next resized.
         crate::ui::refresh_effects_lane(window);
         crate::ui::window_bench::refresh_cut_readouts(window);
         crate::ui::cut_view::repaint_page(window);
