@@ -4,14 +4,14 @@ use naivepost::{
     decision_homes::{self, Home},
     params::{self, Family},
     project::{self, Origin},
-    project_settings, prompts, settings,
+    prompts, settings,
 };
 
 const ITEM: &str = "§11-flow-index#5-where-each-kind-of-decision-lives-directive-a";
 
 /// Every id this build catalogues, from all five sections plus the project tab's rows.
 fn catalogued() -> Vec<&'static str> {
-    let mut ids: Vec<&'static str> = params::prepare()
+    let ids: Vec<&'static str> = params::prepare()
         .into_iter()
         .chain(params::cut())
         .chain(params::effects())
@@ -19,7 +19,6 @@ fn catalogued() -> Vec<&'static str> {
         .chain(params::produce())
         .map(|p| p.id)
         .collect();
-    ids.extend(project_settings::listed().into_iter().map(|p| p.id));
     ids
 }
 
