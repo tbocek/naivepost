@@ -342,6 +342,7 @@ mod produce_cards_bake;
 mod produce_data_files;
 mod produce_details_confirmed;
 mod produce_embed;
+mod produce_narrated_run;
 mod produce_page_runs;
 mod produce_parameters;
 mod produce_presses_clear_own;

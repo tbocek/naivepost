@@ -11,6 +11,7 @@
 //! `ins` spelling decides insert vs pasted stretch everywhere else in the render (`Seg::insert_asset`,
 //! `Materials::source_file`).
 
+use crate::narrate_screen::SPEECH_CHARS_PER_SECOND;
 use crate::narration::Entry;
 use crate::produce_render::{Clip, Placed};
 use crate::produce_subtitles::{self as subs, Source};
@@ -82,7 +83,7 @@ pub fn words_for(
 ///   this wiring is tested against.
 /// - the seconds need converting back: `Placed.at` is clip-relative OUTPUT time and `subs::Cue` works in
 ///   the clip's own recording seconds until `on_clock` moves the track onto the video. A line with no
-///   take keeps the half-second floor so `tidy` cannot fold a silent caption out of the sheet.
+///   take keeps a floor so `tidy` cannot fold a silent caption out of the sheet.
 ///
 /// `placed` is the render's per-line placement for this clip; `entries` is the whole narration record,
 /// indexed by `Placed::entry_index`; `words` are the clip's aligned words on its own recording clock,
@@ -103,9 +104,17 @@ pub fn build(
         .filter_map(|line| {
             // `Placed` carries seconds only; the words and the placement live on the narration entry.
             let source = entries.get(line.entry_index)?;
+            // No take to time it, as with a caption: up for as long as it takes to read, inside the clip.
+            let read = source.text.chars().count() as f64 / SPEECH_CHARS_PER_SECOND;
+            let room = (clip.on_screen - line.at).max(subs::MIN_SECONDS);
+            let shown = if line.speech > 0.0 {
+                line.speech
+            } else {
+                read.min(room)
+            };
             Some(Entry {
                 s: line.at * scale,
-                e: (line.at + line.speech.max(subs::MIN_SECONDS)) * scale,
+                e: (line.at + shown.max(subs::MIN_SECONDS)) * scale,
                 text: source.text.clone(),
                 pos: source.pos.clone(),
                 ..Default::default()
