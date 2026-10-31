@@ -1566,3 +1566,29 @@ fn f5_6_s7_the_title_lands_on_the_picture() {
     assert!(why.contains("nope.png"), "{why}");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// A title the model wrote without its label, as it answered on a real project.
+#[test]
+fn f5_6_a_title_with_no_label_above_the_thumbnail_is_the_title() {
+    let reply =
+        "Distributed Systems - In the News\n\nTHUMBNAIL: frame: clip 1 +48\n\nThe video reports.";
+    let (title, thumb, desc) = up::peel(reply);
+    assert_eq!(title.as_deref(), Some("Distributed Systems - In the News"));
+    assert_eq!(thumb.as_deref(), Some("frame: clip 1 +48"));
+    assert_eq!(desc.as_deref(), Some("The video reports."));
+}
+
+#[test]
+fn f5_6_an_unlabelled_title_keeps_an_instruction_as_the_thumbnail() {
+    let (title, thumb, _) = up::peel("A title\nTHUMBNAIL: brighten the slide\nWords.");
+    assert_eq!(title.as_deref(), Some("A title"));
+    assert_eq!(thumb.as_deref(), Some("brighten the slide"));
+}
+
+#[test]
+fn f5_6_talk_above_the_labels_is_not_a_title() {
+    let (title, _, _) = up::peel("Let me answer:\nTHUMBNAIL: frame: clip 1 +2\nWords.");
+    assert_eq!(title, None);
+    let (title, _, _) = up::peel("Draft\nTITLE: The real one\nTHUMBNAIL: frame: clip 1 +2\nWords.");
+    assert_eq!(title.as_deref(), Some("The real one"));
+}

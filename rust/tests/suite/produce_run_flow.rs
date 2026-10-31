@@ -835,7 +835,7 @@ fn f5_1_s6_done_logs_the_finished_line() {
     // The bar's progress text is the same numbers in its own shape.
     assert_eq!(
         flow::progress_text("produce/final.mp4", 187.5, "41 MB"),
-        "produced produce/final.mp4 \u{2014} 187.5 s, 41 MB"
+        "produced produce/final.mp4 \u{2014} 41 MB, took 187.5 s"
     );
     assert_eq!(
         ending.progress,

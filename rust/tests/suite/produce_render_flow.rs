@@ -785,7 +785,7 @@ fn f5_2_s10_checkpoints_and_the_stamp() {
     assert_eq!(r::STAGE_DONE, "done");
     assert_eq!(
         r::finished_log("final.mp4", 12.34, "18 MB"),
-        ">>> final.mp4  (12.3 s, 18 MB)"
+        ">>> final.mp4  (18 MB, took 12.3 s)"
     );
     assert_eq!(r::failure_log(), "production failed \u{2014} see log");
     assert_eq!(r::stopped_log(), "production stopped");

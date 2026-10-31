@@ -1071,14 +1071,46 @@ pub fn finish_needs(title: &str, description: &str) -> Vec<&'static str> {
 /// The prose fallback (§3.9): peel the labelled lines off a reply that used no tools at all. Returns
 /// `(title, thumbnail_line, description)` with any part absent as `None`.
 ///
+/// A model that wrote the title and forgot its label: no `TITLE:` anywhere, and one short line standing directly above
+/// `THUMBNAIL:`. A line ending in a colon is the model talking about what comes next.
+fn bare_title(reply: &str) -> Option<String> {
+    let text = details::strip_whole_fence(reply);
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let [first, second, ..] = lines.as_slice() else {
+        return None;
+    };
+    let is_label = |line: &str, label: &str| {
+        line.get(..label.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(label))
+    };
+    (is_label(second, "THUMBNAIL:")
+        && !lines.iter().any(|line| is_label(line, "TITLE:"))
+        && !first.ends_with(':')
+        && first.chars().count() <= 120)
+        .then(|| first.to_string())
+}
+
 /// All the peeling rules stay in `details` — at most three labels, quotes stripped, a whole-reply fence
 /// removed first, a short first description line ending in ":" dropped as a heading. A `THUMBNAIL:` line
 /// that folds a `frame:` into itself comes back as the frame line so the caller sets a frame rather than
 /// an instruction.
 pub fn peel(reply: &str) -> (Option<String>, Option<String>, Option<String>) {
     let (labels, rest) = details::peel_labels(reply);
+    let bare = bare_title(reply);
+    // Its own line is the title, so the one label is the thumbnail, whatever it says.
     let mut title = None;
     let mut thumbnail = None;
+    let labels = if bare.is_some() {
+        thumbnail = labels.first().cloned();
+        title = bare;
+        Vec::new()
+    } else {
+        labels
+    };
     for label in labels {
         // `thumbnail_line_is_frame` reads a WHOLE labelled line (`THUMBNAIL: frame: clip 2 +12`), so the
         // frame test runs on the line as it was written, not on the peeled value.

@@ -1516,7 +1516,7 @@ pub const STAGE_DONE: &str = "done";
 /// the parenthesis because that is how the prototype writes it and people read these lines side by side in a
 /// log after comparing two runs.
 pub fn finished_log(file: &str, seconds: f64, size: &str) -> String {
-    format!(">>> {file}  ({seconds:.1} s, {size})")
+    format!(">>> {file}  ({size}, took {seconds:.1} s)")
 }
 
 /// The status line for a run that failed: the log has the reason, and this page does not repeat it.

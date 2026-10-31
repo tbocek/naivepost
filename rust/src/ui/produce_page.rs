@@ -1973,6 +1973,11 @@ fn encode_and_finish(
         move |ending| {
             open.set(false);
             take_written_publish(&w);
+            // The run wrote files and perhaps the upload text: the row under the bar says so now.
+            let dir = crate::startup::open_dir();
+            if let Ok(project) = crate::project::load(&dir) {
+                crate::ui::window::paint_readouts_for(&w, &project, &dir);
+            }
             let Some(ending) = ending else {
                 crate::ui::run_close::close_window_run();
                 say(&w, crate::produce_flow::SKIP_LOG);

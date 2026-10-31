@@ -391,7 +391,7 @@ pub fn finish(halves: &Halves) -> Ending {
 /// shows this while the log keeps [`render::finished_log`]'s two-space form; both are derived from the
 /// same numbers so they cannot disagree.
 pub fn progress_text(file: &str, seconds: f64, size: &str) -> String {
-    format!("produced {file} \u{2014} {seconds:.1} s, {size}")
+    format!("produced {file} \u{2014} {size}, took {seconds:.1} s")
 }
 
 /// S6 with the file named: the done line leads with the produced file, in [`render::finished_log`]'s own
