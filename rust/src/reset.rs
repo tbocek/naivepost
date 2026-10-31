@@ -13,7 +13,9 @@ use crate::shell::Page;
 /// The model answers each page's steps cached, by the step's own folder under `cache/llm/`.
 fn cached_steps(page: Page) -> &'static [&'static str] {
     match page {
-        Page::Prepare => &["policy", "textgate", "describe", "fix", "retakes", "textedit"],
+        Page::Prepare => &[
+            "policy", "textgate", "describe", "fix", "retakes", "textedit",
+        ],
         Page::Cut => &["cut", "captions", "speed", "effects"],
         Page::Narrate => &["narrate", "speak"],
         Page::Produce => &["translate", "youtube", "thumbnail"],

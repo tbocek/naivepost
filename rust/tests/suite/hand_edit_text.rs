@@ -27,7 +27,7 @@ fn temp(tag: &str) -> PathBuf {
 }
 
 fn tree(tag: &str) -> Tree {
-    Tree::new(&temp(tag)).unwrap()
+    Tree::new(temp(tag)).unwrap()
 }
 
 /// `final.txt` and `retakes.tsv` sit in the transcript folder, which is the app's to create — a test

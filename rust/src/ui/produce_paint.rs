@@ -751,7 +751,7 @@ pub fn repaint_plates() {
 fn session_dir() -> std::path::PathBuf {
     open_project()
         .or_else(crate::ui::save_apply::open_dir)
-        .unwrap_or_else(|| crate::startup::open_dir())
+        .unwrap_or_else(crate::startup::open_dir)
 }
 
 thread_local! {

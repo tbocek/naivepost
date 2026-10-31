@@ -254,7 +254,7 @@ fn sec_05_cut_1_screen_s11_the_seven_verbs_are_in_spec_order_with_insert_between
             .collect::<Vec<_>>(),
         "Add/Split/Remove keep cut_verbs' names"
     );
-    let copies: Vec<&str> = vec![
+    let copies: Vec<&str> = [
         cut_screen::VERB_BUTTONS[3],
         cut_screen::VERB_BUTTONS[4],
         cut_screen::VERB_BUTTONS[6],

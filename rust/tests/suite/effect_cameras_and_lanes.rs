@@ -391,7 +391,7 @@ fn sec_06_effects_9_where_recordings_overlap_s8_text_svg_and_the_label_have_neit
         // All or nothing: the whole thing is drawn over the clip or not at all, so there is no partial case here and
         // nothing to split — `render_fx::split_pictures` splits on rates alone, and none of these carry one.
         assert!(overlap::acts_on_scene(&fx, &card()));
-        let over_card = render_fx::split_pictures(&[fx.clone()], &card());
+        let over_card = render_fx::split_pictures(std::slice::from_ref(&fx), &card());
         assert_eq!(over_card.len(), 1, "{name} leaves the card one picture");
         assert_eq!(over_card[0].rate, 1.0);
     }

@@ -365,7 +365,7 @@ fn f3_7_s5_placed_it_is_marked_never_rendered() {
         e: 60.0,
         ..Default::default()
     }];
-    let brief = narrate_pass::brief(&segs, &[], &[tag.clone()], "Narrator 1");
+    let brief = narrate_pass::brief(&segs, &[], std::slice::from_ref(&tag), "Narrator 1");
     assert!(
         brief.contains("MARKED"),
         "the brief carries the mark: {brief}"

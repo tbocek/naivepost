@@ -254,7 +254,7 @@ fn f4_2_s6_speech_is_heard_only_when_a_scene_that_has_a_say_over_it_keeps_its_la
     let scene = seg(0.0, 20.0);
 
     assert!(
-        pass::speech_heard(&[scene.clone()], &spoken, ""),
+        pass::speech_heard(std::slice::from_ref(&scene), &spoken, ""),
         "a scene that keeps the lane plays it"
     );
 
@@ -286,11 +286,11 @@ fn f4_2_s6_speech_is_heard_only_when_a_scene_that_has_a_say_over_it_keeps_its_la
     // as a path and the project names it by its basename, and either spelling is the same recording.
     let mine = [row(10.0, 12.0, "project:mic.mkv", "Nina", "my own voice")];
     assert!(
-        !pass::speech_heard(&[scene.clone()], &mine, "mic.mkv"),
+        !pass::speech_heard(std::slice::from_ref(&scene), &mine, "mic.mkv"),
         "the narrator's mic is not speech in the video"
     );
     assert!(
-        pass::speech_heard(&[scene.clone()], &mine, ""),
+        pass::speech_heard(std::slice::from_ref(&scene), &mine, ""),
         "with no microphone named it is somebody else's"
     );
 

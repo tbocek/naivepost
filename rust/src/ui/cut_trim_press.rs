@@ -750,9 +750,12 @@ pub fn press_border_move(
     first: bool,
 ) -> f64 {
     let mut cut_ = crate::ui::window::newest_review_cut();
-    let (rec_start, rec_end) = cut_.segs.get(index).map_or((0.0, window::TRACK_REC_END), |seg| {
-        crate::ui::window_trim_strip::clip_wall(seg.s, seg.e)
-    });
+    let (rec_start, rec_end) = cut_
+        .segs
+        .get(index)
+        .map_or((0.0, window::TRACK_REC_END), |seg| {
+            crate::ui::window_trim_strip::clip_wall(seg.s, seg.e)
+        });
     let clamped = cut_trim::clamp_edge(&cut_.segs, index, border, to, rec_start, rec_end);
     match border {
         cut_trim::Border::Start => {

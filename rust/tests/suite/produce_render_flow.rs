@@ -91,7 +91,7 @@ fn f5_2_s2_captions_speak_nothing_otherwise_every_missing_line() {
 
     // A real voice: every line with words and no wav, in the record's order. An empty line is a deliberate
     // silence and is never spoken — the same seam narration::lines_to_speak applies.
-    let spoken = vec!["the first line".to_string()];
+    let spoken = ["the first line".to_string()];
     let answer = r::speak_job(false, &lines, |line| spoken.contains(&line.text));
     assert_eq!(
         answer,

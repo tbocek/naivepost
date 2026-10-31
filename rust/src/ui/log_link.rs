@@ -262,7 +262,7 @@ pub fn activate_line(
     // A link anywhere on the line: §7's page line is tagged whole, but a named path only over the path, and a
     // path in mid-line (`wrote /…/prepare`) starts untagged. The first rewrite asked only the line's first
     // character, so such a link never opened, by Enter or by click.
-    let mut toggle = start.clone();
+    let mut toggle = start;
     let linked =
         start.has_tag(&tag) || (toggle.forward_to_tag_toggle(Some(&tag)) && toggle.line() == line);
     if !linked {

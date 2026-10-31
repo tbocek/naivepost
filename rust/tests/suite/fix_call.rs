@@ -212,7 +212,7 @@ impl Scene {
     }
 
     fn tree(&self) -> naivepost::layout::Tree {
-        naivepost::layout::Tree::new(&self.session()).expect("the session is a project")
+        naivepost::layout::Tree::new(self.session()).expect("the session is a project")
     }
 
     /// Fix this scene's transcript the way the stage does, with the scene's own tree and settings
@@ -393,21 +393,36 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_session_note
 /// USDC, the script says DAI; 3 of 8 asks kept USDC with the script, 8 of 8 without). The rest of the note still
 /// does, and since the script is no longer part of the question, changing it asks nothing again.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_fixer_is_not_shown_the_script() {
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_fixer_is_not_shown_the_script()
+{
     let fake = Fake::start(rows_answer(&[]));
     let scene = Scene::new("no-script", &fake.url);
     let with_script = |script: &str| naivepost::project::Project {
-        context: format!("A lecture by Thomas Bocek.\n\n****SCRIPT START****\n{script}\n****SCRIPT STOP****\n"),
+        context: format!(
+            "A lecture by Thomas Bocek.\n\n****SCRIPT START****\n{script}\n****SCRIPT STOP****\n"
+        ),
         ..Default::default()
     };
-    naivepost::project::save(&with_script("DAI kostet 1 Dollar."), &scene.session()).expect("the project file");
-    scene.fix(&conf_at(&fake.url), &mut |_| {}).expect("the fix ran");
+    naivepost::project::save(&with_script("DAI kostet 1 Dollar."), &scene.session())
+        .expect("the project file");
+    scene
+        .fix(&conf_at(&fake.url), &mut |_| {})
+        .expect("the fix ran");
     let user = user_text(&fake.waited(1)[0]);
-    assert!(user.contains("A lecture by Thomas Bocek."), "the note still leads: {user}");
-    assert!(!user.contains("DAI") && !user.contains("SCRIPT"), "the script stays out: {user}");
+    assert!(
+        user.contains("A lecture by Thomas Bocek."),
+        "the note still leads: {user}"
+    );
+    assert!(
+        !user.contains("DAI") && !user.contains("SCRIPT"),
+        "the script stays out: {user}"
+    );
 
-    naivepost::project::save(&with_script("USDC kostet 1 Dollar."), &scene.session()).expect("the project file");
-    scene.fix(&conf_at(&fake.url), &mut |_| {}).expect("the second fix ran");
+    naivepost::project::save(&with_script("USDC kostet 1 Dollar."), &scene.session())
+        .expect("the project file");
+    scene
+        .fix(&conf_at(&fake.url), &mut |_| {})
+        .expect("the second fix ran");
     assert_eq!(
         fake.asks.lock().expect("the record lock").bodies.len(),
         1,
@@ -767,12 +782,17 @@ fn sec_09_llm_and_tools_6_cache_a_block_the_server_never_answered_is_not_filed()
     let scene = Scene::new("no-answer", &url);
     let conf = conf_at(&url);
     scene.fix(&conf, &mut |_| {}).expect("the walk carries on");
-    assert!(!scene.fixed().is_empty(), "the block keeps its lines for this run");
+    assert!(
+        !scene.fixed().is_empty(),
+        "the block keeps its lines for this run"
+    );
     let dir = scene
         .tree()
         .dir()
         .join("cache/llm")
         .join(naivepost::fix_transcripts::FIX_STEP);
-    let slots = std::fs::read_dir(&dir).map(|found| found.count()).unwrap_or(0);
+    let slots = std::fs::read_dir(&dir)
+        .map(|found| found.count())
+        .unwrap_or(0);
     assert_eq!(slots, 0, "nothing is filed for a block nobody answered");
 }

@@ -102,7 +102,10 @@ fn remove(
                 status.set_text(&if removed.failed.is_empty() {
                     format!("{} reset", page.label())
                 } else {
-                    format!("{} reset, but some files would not go -- see the log", page.label())
+                    format!(
+                        "{} reset, but some files would not go -- see the log",
+                        page.label()
+                    )
                 });
             }
         },

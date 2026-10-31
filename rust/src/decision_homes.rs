@@ -84,9 +84,7 @@ impl Home {
 /// cannot be routed by the `P.*` prefix rule and need their own check. The list is read from the store
 /// itself, so a key added there is a machine setting here too.
 pub fn is_machine_setting(conf_key: &str) -> bool {
-    settings::Conf::key_names()
-        .iter()
-        .any(|key| *key == conf_key)
+    settings::Conf::key_names().contains(&conf_key)
 }
 
 /// Which home an id belongs to, `None` when the id names nothing the app knows.

@@ -35,7 +35,11 @@ pub fn rest_page_splits(window: &adw::ApplicationWindow) {
     else {
         return;
     };
-    vsplit.set_position(vsplit.height().max(crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX));
+    vsplit.set_position(
+        vsplit
+            .height()
+            .max(crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX),
+    );
     // …and the left/right divider, at §A's 660 px of preview, once its own pane has a width to be clamped by.
     if let Some(hsplit) = crate::ui::find_source_widget(window, "cut-top")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())

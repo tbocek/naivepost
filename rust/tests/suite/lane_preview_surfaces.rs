@@ -193,7 +193,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s12_paused_scene_dims_and_lists_vis
         tout: 1.0,
         ..fx(EffectKind::Text, 10.0, 10.0)
     };
-    let scene = lane::paused_scene(&[caption.clone()], 11.0, None, false);
+    let scene = lane::paused_scene(std::slice::from_ref(&caption), 11.0, None, false);
     assert_eq!(
         scene.dim_alpha, 0.45,
         "outside the camera rect dimmed black 0.45"
@@ -207,7 +207,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s12_paused_scene_dims_and_lists_vis
     assert!((scene.overlays[0].2 - 0.5).abs() < 1e-9);
 
     // Invisible is still listed: the view hides by opacity rather than by removing a widget mid-refresh.
-    let late = lane::paused_scene(&[caption.clone()], 25.0, None, false);
+    let late = lane::paused_scene(std::slice::from_ref(&caption), 25.0, None, false);
     assert_eq!(
         late.overlays.len(),
         1,

@@ -427,7 +427,11 @@ fn sec_04_prepare_5_rules_b7_a_finished_event_log_survives_the_next_play() {
         matches!(&unarmed, prepare_run::Start::Started { cleared, .. } if cleared.quiet()),
         "a press with no stop behind it clears nothing"
     );
-    assert_eq!(survivors(&tree), before, "and the event log stands for the resume");
+    assert_eq!(
+        survivors(&tree),
+        before,
+        "and the event log stands for the resume"
+    );
 
     stop_legs::arm_describe_restart();
     let armed = prepare_run::begin(&project, &tree);
@@ -440,7 +444,10 @@ fn sec_04_prepare_5_rules_b7_a_finished_event_log_survives_the_next_play() {
         !left.contains(&"events.tsv".to_string()) && !left.contains(&"state.txt".to_string()),
         "the describing's two files went: {left:?}"
     );
-    assert!(left.contains(&"scaled frame".to_string()), "and the scaled frames stayed: {left:?}");
+    assert!(
+        left.contains(&"scaled frame".to_string()),
+        "and the scaled frames stayed: {left:?}"
+    );
 }
 
 // ---- the round, and the #[test] that starts it ----------------------------------------

@@ -848,7 +848,7 @@ fn temp_tree(tag: &str) -> Tree {
 fn f1_10_s6_final_txt_marks_only_where_the_recording_changes() {
     let tree = temp_tree("markers");
     let words = split("one two three four five six seven eight");
-    let sources: Vec<String> = vec![
+    let sources: Vec<String> = [
         "take-a", "take-a", "take-a", "take-a", "take-b", "take-b", "take-b", "take-b",
     ]
     .iter()
@@ -897,7 +897,7 @@ fn f1_10_s6_final_txt_marks_only_where_the_recording_changes() {
 fn f1_10_s6_a_whole_take_transition_writes_the_longer_marker() {
     let tree = temp_tree("whole");
     let words = split("keep one gone-a gone-b tail word");
-    let sources: Vec<String> = vec!["a", "a", "b", "b", "c", "c"]
+    let sources: Vec<String> = ["a", "a", "b", "b", "c", "c"]
         .iter()
         .map(|s| s.to_string())
         .collect();

@@ -381,7 +381,7 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s6_line_renders_the_notation() {
         web: false,
         cached: true,
     };
-    assert_eq!(both.line(), format!("describe \u{d7}10 \u{b7} cached"));
+    assert_eq!(both.line(), "describe \u{d7}10 \u{b7} cached".to_string());
     assert!(
         both.line().contains("describe")
             && both.line().contains("10")

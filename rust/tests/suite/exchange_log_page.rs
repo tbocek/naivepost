@@ -766,7 +766,15 @@ fn a_streamed_answer_that_is_json_stays_on_the_page() {
     let stream = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"read it\"}}]}\n\
                   data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"drop_before\\\":\\\"\\\"}\"}}]}\n\
                   data: [DONE]\n";
-    let call = naivepost::exchange_leg::call_of("textedit", "m", "{}", stream, "text/event-stream", 1, None);
+    let call = naivepost::exchange_leg::call_of(
+        "textedit",
+        "m",
+        "{}",
+        stream,
+        "text/event-stream",
+        1,
+        None,
+    );
     assert_eq!(call.reply, r#"{"drop_before":""}"#);
     assert_eq!(call.reasoning.as_deref(), Some("read it"));
 }

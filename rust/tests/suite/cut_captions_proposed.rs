@@ -391,7 +391,7 @@ fn f3_9_s6_a_batch_that_keeps_failing_is_dropped_and_said_so() {
     // captions and exactly one line; its neighbour answers properly on the first try and keeps its caption. That is
     // what "the cut stands without them" means in code: failure is specific and local.
     // `kept` is whatever the batch that answers returns, so it is declared here and bound where it is decided.
-    let kept: Vec<Fx>;
+
     let mut log: Vec<String> = Vec::new();
 
     // The session as the pass sees it: fifteen clips, which S1 says are asked about in three batches.
@@ -418,10 +418,10 @@ fn f3_9_s6_a_batch_that_keeps_failing_is_dropped_and_said_so() {
     // the model sent. The whole cut goes in as well as the batch, because that is where a clip's seconds come from:
     // given the batch alone, which has no memory of what preceded it, the same caption would sit at 1.0.
     let second_batch: Vec<(u32, f64)> = all[10..].to_vec();
-    match captions::place(&all, &[call(11, 1.0, 3.0, "words")]) {
-        Reply::Accepted(fxs) => kept = fxs,
+    let kept: Vec<Fx> = match captions::place(&all, &[call(11, 1.0, 3.0, "words")]) {
+        Reply::Accepted(fxs) => fxs,
         Reply::Rejected(reason) => panic!("a reply inside its batch was rejected: {reason}"),
-    }
+    };
     assert_eq!(
         second_batch.first(),
         Some(&(11, 10.0)),

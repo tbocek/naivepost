@@ -275,7 +275,9 @@ fn record_dial(
     // calls on the finished section. A call that ended without one (refused, given up mid-stream) shows the words the
     // hook decoded, or, with none, the body as it arrived, which for those endings is the server's own message.
     let streamed_words = live.streamed_words();
-    let partial = streamed && !streamed_words.is_empty() && !crate::llm_request::is_event_stream(content_type);
+    let partial = streamed
+        && !streamed_words.is_empty()
+        && !crate::llm_request::is_event_stream(content_type);
     let shown_reply = if partial {
         streamed_words.as_str()
     } else {

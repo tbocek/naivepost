@@ -245,7 +245,7 @@ fn sec_09_llm_and_tools_6_cache_s3_only_a_usable_answer_is_stored() {
     let refused = {
         #[derive(serde::Serialize)]
         struct Wrapper(Unencodable);
-        match serde_json::to_value(&Wrapper(Unencodable)) {
+        match serde_json::to_value(Wrapper(Unencodable)) {
             Ok(value) => panic!("expected the encode to fail, got {value}"),
             Err(_) => Value::String("placeholder".into()),
         }
@@ -383,7 +383,6 @@ fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities()
         !subs::cached(false),
         "a partial batch would be partial forever"
     );
-
 }
 
 // --- S6: a hit comes ahead of the gate and the page ------------------------------------------------------

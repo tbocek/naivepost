@@ -336,7 +336,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s5_one_volume_filter_p
     }
 
     // Under a speed effect a cue stretches with the sound it rides.
-    let stretched = render::gain_cues(&[duck.clone()], 0.0, 2.0, 30.0);
+    let stretched = render::gain_cues(std::slice::from_ref(&duck), 0.0, 2.0, 30.0);
     assert_eq!(stretched[0].to - stretched[0].from, 2.0);
 
     assert_eq!(

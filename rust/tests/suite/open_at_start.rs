@@ -60,7 +60,7 @@ fn f0_6_s1_a_handed_file_beats_what_was_remembered() {
     let handed = project_folder(&root.join("feb.naivepost"));
 
     let conf = remembering(&root, &remembered);
-    let opened = startup::decide(&root, &conf, &[handed.clone()]);
+    let opened = startup::decide(&root, &conf, std::slice::from_ref(&handed));
     assert_eq!(opened, Opened::Desktop { path: handed });
 
     fs::remove_dir_all(&root).unwrap();
@@ -79,7 +79,7 @@ fn f0_6_s1_a_handed_file_wins_even_when_it_is_not_there() {
     let gone = root.join("moved-away.naivepost");
 
     let conf = remembering(&root, &remembered);
-    let opened = startup::decide(&root, &conf, &[gone.clone()]);
+    let opened = startup::decide(&root, &conf, std::slice::from_ref(&gone));
     assert_eq!(
         opened,
         Opened::Desktop { path: gone },

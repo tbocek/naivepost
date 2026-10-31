@@ -123,7 +123,7 @@ fn f4_6_s1_switching_keeps_the_synthesized_audio_of_the_old_voice() {
     let root = std::env::temp_dir().join(format!("np-f46-key-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost")).expect("session");
-    let tree = naivepost::layout::Tree::new(&root.join("session.naivepost")).expect("tree");
+    let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
     let one = narrate_data::sample_path(&tree, "narrator1", &before);
     let two = narrate_data::sample_path(&tree, "narrator2", &after);
     assert_ne!(one, two, "two voices get two sample files");
@@ -518,7 +518,7 @@ fn f4_6_s3_a_ref_without_a_base_is_renamed_to_the_base() {
     let root = std::env::temp_dir().join(format!("np-f46-rename-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost/narrate")).expect("narrate/");
-    let tree = naivepost::layout::Tree::new(&root.join("session.naivepost")).expect("tree");
+    let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
     let served = narrate_data::served_reference(&tree);
     let base = narrate_data::base_reference(&tree);
     std::fs::write(&served, wav_bytes(1, 48_000)).expect("write a ref with no base");
@@ -556,7 +556,7 @@ fn f4_6_s3_the_build_runs_the_configured_binary_and_names_it_when_it_fails() {
     let root = std::env::temp_dir().join(format!("np-f46-leg-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost/narrate")).expect("narrate/");
-    let tree = naivepost::layout::Tree::new(&root.join("session.naivepost")).expect("tree");
+    let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
     let fake = root.join("fake-ffmpeg.sh");
     let log = root.join("argv.log");
     // A script that records argv and writes whatever output path was passed last, which is how both
@@ -640,7 +640,7 @@ fn f4_6_s4_changing_takes_pitch_or_voice_drops_the_shifted_reference() {
     let root = std::env::temp_dir().join(format!("np-f46-drop-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost/narrate")).expect("narrate/");
-    let tree = naivepost::layout::Tree::new(&root.join("session.naivepost")).expect("tree");
+    let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
     let base = narrate_data::base_reference(&tree);
     let served = narrate_data::served_reference(&tree);
     std::fs::write(&base, b"base").expect("base");
@@ -684,7 +684,7 @@ fn f4_6_s5_the_sample_is_cached_per_voice_and_text() {
     let root = std::env::temp_dir().join(format!("np-f46-sample-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("session.naivepost")).expect("session");
-    let tree = naivepost::layout::Tree::new(&root.join("session.naivepost")).expect("tree");
+    let tree = naivepost::layout::Tree::new(root.join("session.naivepost")).expect("tree");
 
     let key_a = "warm|This is the voice the narration will be spoken in.";
     let key_b = "warm|A different sentence in the same voice.";

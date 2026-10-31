@@ -732,7 +732,8 @@ fn report_within(
     within: f64,
     words: &str,
 ) {
-    let at = stage_at(stage, done) + within.clamp(0.0, 1.0) * (stage_at(stage, done + 1) - stage_at(stage, done));
+    let at = stage_at(stage, done)
+        + within.clamp(0.0, 1.0) * (stage_at(stage, done + 1) - stage_at(stage, done));
     queue.prog(stage.track, at, &format!("{label} -- {words}"));
     on_queue(queue, stage.name);
 }

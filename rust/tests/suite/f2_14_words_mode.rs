@@ -188,7 +188,10 @@ fn retake(s: f64, e: f64) -> Retake {
 fn assert_spans(got: &[(f64, f64)], want: &[(f64, f64)], why: &str) {
     assert_eq!(got.len(), want.len(), "{why}: {got:?}");
     for (g, w) in got.iter().zip(want) {
-        assert!((g.0 - w.0).abs() < 1e-3 && (g.1 - w.1).abs() < 1e-3, "{why}: {got:?}, want {want:?}");
+        assert!(
+            (g.0 - w.0).abs() < 1e-3 && (g.1 - w.1).abs() < 1e-3,
+            "{why}: {got:?}, want {want:?}"
+        );
     }
 }
 
@@ -204,10 +207,18 @@ fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].span, (0.0, 30.0), "the run is the filmed span");
     assert_eq!(runs[0].first_spoken, 3.0, "where the first word starts");
-    assert!((runs[0].last_spoken - 9.3).abs() < 1e-3, "where the last word ENDS: {}", runs[0].last_spoken);
+    assert!(
+        (runs[0].last_spoken - 9.3).abs() < 1e-3,
+        "where the last word ENDS: {}",
+        runs[0].last_spoken
+    );
     // No envelope here, so the word pad stands in; the trimmed span is what §S2a says to build.
     let made = naivepost::suggest::words_cut(&runs, &[], &[]);
-    assert_spans(&made.segs, &[(2.92, 9.38)], "just before the first, just after the last");
+    assert_spans(
+        &made.segs,
+        &[(2.92, 9.38)],
+        "just before the first, just after the last",
+    );
     // And never outside the run: words whose reach crosses the run's own end stay inside it.
     let clamped = Project_::fresh("clamp").with_words("cam0", &[spoken(29.9)]);
     let clamped_runs = words_run::runs_of(&clamped.tree, &cam_cut(0.0, 30.0));
@@ -236,7 +247,11 @@ fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
     );
     // ...and the run is CLAMPED to its own footage: the tape's later words (session 24) are outside the
     // scene this cut keeps, so §S2a trims to what the run actually shows.
-    assert!((slid_runs[0].last_spoken - 21.3).abs() < 1e-3, "{}", slid_runs[0].last_spoken);
+    assert!(
+        (slid_runs[0].last_spoken - 21.3).abs() < 1e-3,
+        "{}",
+        slid_runs[0].last_spoken
+    );
     RAN_TRIM.store(true, Ordering::SeqCst);
 }
 
@@ -437,17 +452,26 @@ fn f2_14_s2a_a_first_word_stamped_ahead_of_its_sound_moves_onto_it() {
         sound_of(&[(0.65, 0.95, 25), (1.10, 1.30, 63), (1.30, 2.34, 40)]),
     )
     .expect("the word is in the gap");
-    assert!((dass.0 - 1.10).abs() < 0.011, "from where the sound starts: {dass:?}");
+    assert!(
+        (dass.0 - 1.10).abs() < 0.011,
+        "from where the sound starts: {dass:?}"
+    );
     assert_eq!(dass.1, 1.30, "up to the next word");
 
     let silent_gap = [(3.01, 3.41), (3.65, 3.9), (3.9, 4.4)];
     assert_eq!(
-        moved(&silent_gap, sound_of(&[(3.01, 3.41, 73), (3.41, 3.65, 5), (3.65, 4.4, 52)])),
+        moved(
+            &silent_gap,
+            sound_of(&[(3.01, 3.41, 73), (3.41, 3.65, 5), (3.65, 4.4, 52)])
+        ),
         None,
         "a gap with nothing in it"
     );
     assert_eq!(
-        moved(&words, sound_of(&[(0.65, 0.95, 40), (1.10, 1.30, 45), (1.30, 2.34, 40)])),
+        moved(
+            &words,
+            sound_of(&[(0.65, 0.95, 40), (1.10, 1.30, 45), (1.30, 2.34, 40)])
+        ),
         None,
         "sound in the gap no louder than the word itself"
     );
@@ -456,7 +480,11 @@ fn f2_14_s2a_a_first_word_stamped_ahead_of_its_sound_moves_onto_it() {
         None,
         "no gap"
     );
-    assert_eq!(moved(&words, |_, _| None), None, "nothing measured moves nothing");
+    assert_eq!(
+        moved(&words, |_, _| None),
+        None,
+        "nothing measured moves nothing"
+    );
 }
 
 /// The envelope of a second is the recording playing then, however the project lists its sources: 08-dex lists
@@ -466,8 +494,19 @@ fn f2_14_s2a_the_envelope_of_a_second_does_not_depend_on_the_order_of_the_source
     use naivepost::edges::{finder, Edges, Lane};
     let lane = |off: f64| {
         (
-            Lane { key: format!("at-{off}"), off, size: 0, mtime: 0 },
-            Edges::new(naivepost::wave::Wave { hz: 200.0, chans: vec![vec![off as u8 + 1; 2000]] }, off),
+            Lane {
+                key: format!("at-{off}"),
+                off,
+                size: 0,
+                mtime: 0,
+            },
+            Edges::new(
+                naivepost::wave::Wave {
+                    hz: 200.0,
+                    chans: vec![vec![off as u8 + 1; 2000]],
+                },
+                off,
+            ),
         )
     };
     let newest_first = vec![lane(100.0), lane(50.0), lane(0.0)];
@@ -478,5 +517,8 @@ fn f2_14_s2a_the_envelope_of_a_second_does_not_depend_on_the_order_of_the_source
         assert_eq!(find(55.0).expect("a lane").off, 50.0);
         assert_eq!(find(101.0).expect("a lane").off, 100.0);
     }
-    assert!(finder(&newest_first)(-1.0).is_none(), "before the first take nothing plays");
+    assert!(
+        finder(&newest_first)(-1.0).is_none(),
+        "before the first take nothing plays"
+    );
 }

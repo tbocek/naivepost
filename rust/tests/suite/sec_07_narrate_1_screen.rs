@@ -997,8 +997,16 @@ fn the_wave_draws_one_bar_per_pixel_column() {
     let pps = 900.0 / seconds;
     let columns = band::peak_columns(200.0, &peaks, 0.0, pps, 900.0);
     assert_eq!(columns.len(), 900);
-    let loud: Vec<f64> = columns.iter().filter(|(_, peak)| *peak == 250).map(|(x, _)| *x).collect();
-    assert_eq!(loud, vec![(2000.0 * pps).floor()], "the one loud peak shows in its own column");
+    let loud: Vec<f64> = columns
+        .iter()
+        .filter(|(_, peak)| *peak == 250)
+        .map(|(x, _)| *x)
+        .collect();
+    assert_eq!(
+        loud,
+        vec![(2000.0 * pps).floor()],
+        "the one loud peak shows in its own column"
+    );
 
     // Zoomed in past the peaks, every column still has its bar, and the wave stops where the recording does.
     let zoomed = band::peak_columns(200.0, &[10, 20], 0.0, 1000.0, 50.0);

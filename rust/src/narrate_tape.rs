@@ -134,8 +134,8 @@ impl Tape {
                 .iter()
                 .filter_map(|stretch| stretch.session.map(|start| (stretch, start)))
         };
-        if let Some((stretch, start)) = placed()
-            .find(|(stretch, start)| session >= *start && session < start + stretch.len())
+        if let Some((stretch, start)) =
+            placed().find(|(stretch, start)| session >= *start && session < start + stretch.len())
         {
             return Some(stretch.at + session - start);
         }
@@ -154,7 +154,7 @@ impl Tape {
             .filter_map(|stretch| {
                 let s = span.0.max(stretch.at);
                 let e = span.1.min(stretch.at + stretch.len());
-                (e > s).then(|| {
+                (e > s).then_some({
                     (
                         stretch,
                         stretch.from + s - stretch.at,

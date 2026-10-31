@@ -344,7 +344,7 @@ fn f6_1_web_s5_a_browser_that_outlives_its_budget_is_killed_and_says_so() {
 fn f6_1_web_s5_firefox_is_found_by_setting_then_path_then_install_paths() {
     let root = fixture("find");
     let named = root.join("my-firefox");
-    common::write_script(&named, "#!/bin/sh\nexit 0\n".to_string()).expect("a named binary");
+    common::write_script(&named, "#!/bin/sh\nexit 0\n").expect("a named binary");
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&named, std::fs::Permissions::from_mode(0o755))

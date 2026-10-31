@@ -12,7 +12,6 @@ mod harness;
 use harness::*;
 
 use naivepost::captions_ask;
-use naivepost::llm_retry;
 
 /// \u00a73's short retry is a real 2 s wait; the scale seam (`llm_retry_leg::nap_duration`) divides it so the
 /// check sits through it in milliseconds. The log still names the seconds \u00a73 spells.

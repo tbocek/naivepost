@@ -192,9 +192,8 @@ fn check_s1_greyed_with_no_clips(app: &adw::Application) {
         // The page builds the button sensitive; the rule that greys it is `cut_screen::can_play_cut`,
         // which is the same question `cut_play::empty` asks. Assert they agree rather than asserting a
         // painted sensitivity that a theme could override.
-        assert_eq!(
-            naivepost::cut_screen::can_play_cut(&Cut::default()),
-            false,
+        assert!(
+            !naivepost::cut_screen::can_play_cut(&Cut::default()),
             "an empty cut greys ▶✂ -- and refuses it, one rule"
         );
         assert!(

@@ -565,7 +565,7 @@ fn f0_1_s7_produce_refreshes_readouts_and_the_publish_panel() {
     // 08-produce.md — the file's existence IS "the text is written").
     assert!(!publish::is_written(&tree));
     let panel = shell::PublishPanel::refresh(&tree).expect("no file is a state, not an error");
-    assert_eq!(panel.text_written, false);
+    assert!(!panel.text_written);
     assert_eq!(panel.base, None);
     assert_eq!(panel.references, 0);
 

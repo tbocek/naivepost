@@ -202,11 +202,9 @@ fn check_unlocked_tab(app: &adw::Application) {
 /// `gtk::Widget` asserts on the first non-widget child (a GtkConstraint, …).
 fn widgets(root: &gtk4::Widget) -> Vec<gtk4::Widget> {
     let mut out = vec![root.clone()];
-    for child in root.observe_children().iter::<glib::Object>() {
-        if let Ok(child) = child {
-            if let Ok(widget) = child.downcast::<gtk4::Widget>() {
-                out.extend(widgets(&widget));
-            }
+    for child in root.observe_children().iter::<glib::Object>().flatten() {
+        if let Ok(widget) = child.downcast::<gtk4::Widget>() {
+            out.extend(widgets(&widget));
         }
     }
     out

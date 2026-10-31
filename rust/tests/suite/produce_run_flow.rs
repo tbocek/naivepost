@@ -82,7 +82,7 @@ fn run_over(cut: Cut, publish_written: bool) -> flow::Run {
         vec![],
         Default::default(),
         &project_with_footage(),
-        publish_written.then(|| Publish::default()),
+        publish_written.then(Publish::default),
         String::new(),
     )
 }
@@ -492,7 +492,7 @@ fn f5_1_s3_snapshot_is_taken_from_what_is_handed_in() {
         run.clips, 2,
         "clips counted at the press, from the cut handed in"
     );
-    assert_eq!(run.publish_written, false, "no publish record was passed");
+    assert!(!run.publish_written, "no publish record was passed");
     assert_eq!(run.voice, "voice-a");
     // Sources come through F0.x's own snapshot rather than being re-derived here.
     let expected = run::snapshot_sources(&project);

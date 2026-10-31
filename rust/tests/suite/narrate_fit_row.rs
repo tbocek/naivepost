@@ -86,12 +86,9 @@ fn f4_3_s3_growing_the_clip_within_the_extend_bound_still_reads_as_fitting() {
         Fit::Tight { speech, .. } => assert_eq!(speech, 5.0),
         other => panic!("expected Tight, got {other:?}"),
     }
-    assert_eq!(
-        narrate_screen::fit_warning(fit)
-            .unwrap()
-            .contains("sped up"),
-        false
-    );
+    assert!(!narrate_screen::fit_warning(fit)
+        .unwrap()
+        .contains("sped up"));
     // 30 chars at the page's default rate is 2 s of speech on a 1 s clip: 0.5 s over, inside the extend
     // bound, and again nothing about tempo.
     let page_lines = [(0usize, 0.3f64, spoken(30))];

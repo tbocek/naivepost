@@ -121,7 +121,7 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s7_tran
         speaker: "SPEAKER_00".into(),
         text: "hello".into(),
     };
-    let srt = transcribe::srt_text(&[known.clone()]);
+    let srt = transcribe::srt_text(std::slice::from_ref(&known));
     assert!(srt.contains("[SPEAKER_00] hello"), "{srt}");
 
     let unknown = Line {

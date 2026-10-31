@@ -83,7 +83,10 @@ impl Walk {
     }
 
     /// Pass 2's ask: every span answered with `answer`, recording what it was offered.
-    fn place(&self, answer: Vec<Turn>) -> impl FnMut((f64, f64), &diarize::Anchor) -> PlacementAnswer + '_ {
+    fn place(
+        &self,
+        answer: Vec<Turn>,
+    ) -> impl FnMut((f64, f64), &diarize::Anchor) -> PlacementAnswer + '_ {
         move |span, anchor: &diarize::Anchor| {
             self.placed.borrow_mut().push((span, anchor.seconds()));
             Ok(answer.clone())
@@ -282,7 +285,11 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
     // The first rewrite added the anchor's start and width instead, and kept the reference's turn.
     let seconds = |sample: u64| sample as f64 / SAMPLE_RATE as f64;
     let spans = walk.placements();
-    assert_eq!(placed.len(), 2 * spans.len(), "two turns past the anchor per span: {placed:?}");
+    assert_eq!(
+        placed.len(),
+        2 * spans.len(),
+        "two turns past the anchor per span: {placed:?}"
+    );
     for (pair, ((from, _), _)) in placed.chunks(2).zip(&spans) {
         let got: Vec<(f64, f64)> = pair
             .iter()

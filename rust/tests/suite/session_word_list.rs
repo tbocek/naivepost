@@ -470,7 +470,10 @@ fn f1_13_s6_one_list_for_the_whole_session_and_its_parameters() {
         token(" welt", 14.0, 14.1),
     ];
     let mic = vec![token("and", 0.0, 0.2), token("here", 0.3, 0.5)];
-    let sources = vec![(format!("camera.mkv"), camera), (format!("mic.wav"), mic)];
+    let sources = vec![
+        ("camera.mkv".to_string(), camera),
+        ("mic.wav".to_string(), mic),
+    ];
 
     let loud = |source: &str, start: f64, _end: f64| match source {
         "camera.mkv" if start > 13.9 => Some(8),

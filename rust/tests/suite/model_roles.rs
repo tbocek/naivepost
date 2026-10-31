@@ -455,7 +455,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s13_the_table_row_b
         job::Job::Thumbnail,
     ] {
         assert!(!job::thinking(which), "{which:?}");
-        assert_eq!(job::answers_after_tts(which), false, "{which:?}");
+        assert!(!job::answers_after_tts(which), "{which:?}");
     }
     // And exactly one row ends in a TTS call.
     let spoken: Vec<_> = all

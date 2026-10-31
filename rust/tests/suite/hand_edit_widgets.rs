@@ -167,7 +167,7 @@ fn check_remake_through_the_widgets(app: &adw::Application) {
     // The wire reads cwd at press time, so point it at the root holding session.naivepost.
     std::env::set_current_dir(&_root).unwrap();
 
-    let model = naivepost::project::load(&tree.dir()).expect("the saved project loads");
+    let model = naivepost::project::load(tree.dir()).expect("the saved project loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     go_to_cut(&window);
@@ -252,7 +252,7 @@ fn check_refusal_reaches_the_status_line(app: &adw::Application) {
     let (_root, tree, _) = seed("refused", kept);
     std::env::set_current_dir(&_root).unwrap();
 
-    let model = naivepost::project::load(&tree.dir()).expect("the saved project loads");
+    let model = naivepost::project::load(tree.dir()).expect("the saved project loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     go_to_cut(&window);
@@ -299,7 +299,7 @@ fn check_marked_text_and_never_said_word_through_the_widgets(app: &adw::Applicat
     stamp(&tree.retakes_tsv(), Duration::from_secs(60));
     std::env::set_current_dir(&_root).unwrap();
 
-    let model = naivepost::project::load(&tree.dir()).expect("the saved project loads");
+    let model = naivepost::project::load(tree.dir()).expect("the saved project loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     go_to_cut(&window);

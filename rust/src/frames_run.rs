@@ -361,7 +361,7 @@ fn extract_chunk(
                             // the file's existence is the only proof the frame exists.
                             if Path::new(&out).exists() {
                                 count += 1;
-                            } else if near_the_end(&plan, end) {
+                            } else if near_the_end(plan, end) {
                                 // Past the last picture by less than a second (a video stream that stops a
                                 // frame short of the sweep's last score): no picture there, said, not failed.
                                 lines.push(format!(
@@ -376,7 +376,7 @@ fn extract_chunk(
                                 break;
                             }
                         }
-                        Err(_) if near_the_end(&plan, end) => {
+                        Err(_) if near_the_end(plan, end) => {
                             lines.push(format!(
                                 ">>> [{lane_name}] no picture at the very end -- skipped"
                             ));

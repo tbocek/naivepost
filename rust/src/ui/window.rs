@@ -81,8 +81,7 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
 pub(crate) use crate::ui::window_bench::{
-    depth, has_label, paint_readouts, paint_tabs, paint_tabs_for, refresh_cut_readouts,
-    tab_buttons,
+    depth, has_label, paint_readouts, paint_tabs, paint_tabs_for, refresh_cut_readouts, tab_buttons,
 };
 pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
 /// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
@@ -1365,8 +1364,8 @@ pub(crate) use crate::ui::window_history_zoom::{
 };
 pub use crate::ui::window_history_zoom::{
     history_key_controller, note_edit, press_clear_cut, press_redo, press_revert, press_thumb,
-    press_undo, press_wave, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc, reopen_history_on,
-    zoom_gesture,
+    press_undo, press_wave, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc,
+    reopen_history_on, zoom_gesture,
 };
 
 /// F2.2 S5: this window's side of the ▶✂ tick loop, over the SAME player and cut slots the buttons use.

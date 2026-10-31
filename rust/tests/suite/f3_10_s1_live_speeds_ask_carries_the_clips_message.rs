@@ -145,7 +145,7 @@ fn f3_10_s1_live_speeds_ask_carries_the_clips_message_to_the_llm() {
             .contains(&format!("nearer than {} s apart", gap.spelled)),
         "the merge gap the pass will apply is the gap the ask quoted ({}), got {:?}",
         gap.spelled,
-        &seen.body
+        seen.body
     );
     assert!(
         seen.body.contains("Only rates above 1"),

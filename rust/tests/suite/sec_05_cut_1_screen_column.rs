@@ -290,7 +290,8 @@ fn column_opens_at_top(window: adw::ApplicationWindow, where_: &str) {
         adjust.value(),
         adjust.lower()
     );
-    for name in ["aspect-choice"] {
+    {
+        let name = "aspect-choice";
         let widget =
             common::find_named(&window, name).unwrap_or_else(|| panic!("{name} is on the column"));
         crate::common::wait_until(

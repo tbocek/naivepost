@@ -247,18 +247,34 @@ fn check_a_wheel_zoom_stays_on_the_line(window: &adw::ApplicationWindow) {
     naivepost::ui::set_playhead(window, 100.0);
     cut_view::set_origin(800.0 - view * 0.6, cut_view::total_px(600.0, 8.0), view);
     let on_screen = 800.0 - cut_view::origin();
-    cut_view::apply_wheel_at(window, WheelOver::Tracks, false, -1.0, 0.0, view - 20.0, |_| {}).expect("a zoom");
+    cut_view::apply_wheel_at(
+        window,
+        WheelOver::Tracks,
+        false,
+        -1.0,
+        0.0,
+        view - 20.0,
+        |_| {},
+    )
+    .expect("a zoom");
     assert!(cut_view::pps() > 8.0, "the notch zoomed");
     let after = 100.0 * cut_view::pps() - cut_view::origin();
-    assert!((after - on_screen).abs() < 1.0, "the line stays at {on_screen} px, not {after}");
+    assert!(
+        (after - on_screen).abs() < 1.0,
+        "the line stays at {on_screen} px, not {after}"
+    );
 
     cut_view::set_pps(8.0);
     let far = cut_view::set_origin(3000.0, cut_view::total_px(600.0, 8.0), view);
     let pointer = cut_view::gutter_px() + 100.0;
     let under = (far + 100.0) / 8.0;
-    cut_view::apply_wheel_at(window, WheelOver::Tracks, false, -1.0, 0.0, pointer, |_| {}).expect("a zoom");
+    cut_view::apply_wheel_at(window, WheelOver::Tracks, false, -1.0, 0.0, pointer, |_| {})
+        .expect("a zoom");
     let now = (cut_view::origin() + 100.0) / cut_view::pps();
-    assert!((now - under).abs() < 0.5, "off screen the second under the pointer stays: {under} -> {now}");
+    assert!(
+        (now - under).abs() < 0.5,
+        "off screen the second under the pointer stays: {under} -> {now}"
+    );
 }
 
 /// The opening: the line is scrolled to on a tape the cut implied, then the real takes land with gaps between them.
@@ -290,7 +306,11 @@ fn check_the_line_stays_on_screen_when_the_takes_land(window: &adw::ApplicationW
     naivepost::ui::set_session_recordings(&seed);
     let away = cut_view::set_origin(at * 8.0 + view * 2.0, total, view);
     cut_view::keep_line_through_layout(window, || naivepost::ui::set_session_recordings(&gapped));
-    assert_eq!(cut_view::origin(), away, "a line scrolled away from leaves the view alone");
+    assert_eq!(
+        cut_view::origin(),
+        away,
+        "a line scrolled away from leaves the view alone"
+    );
     naivepost::ui::set_session_recordings(&tape(600.0));
 }
 
@@ -383,6 +403,14 @@ fn cut_screen_open() -> f64 {
 fn the_view_follows_the_line_through_gaps_and_folds() {
     let runs = [(0.0, 100.0), (300.0, 400.0)];
     assert_eq!(cut_view::line_px(&runs, &[], 2.0, 50.0), 100.0);
-    assert_eq!(cut_view::line_px(&runs, &[], 2.0, 350.0), 300.0, "the gap takes no width");
-    assert_eq!(cut_view::line_px(&runs, &[[10.0, 60.0]], 2.0, 350.0), 200.0, "nor does a fold");
+    assert_eq!(
+        cut_view::line_px(&runs, &[], 2.0, 350.0),
+        300.0,
+        "the gap takes no width"
+    );
+    assert_eq!(
+        cut_view::line_px(&runs, &[[10.0, 60.0]], 2.0, 350.0),
+        200.0,
+        "nor does a fold"
+    );
 }

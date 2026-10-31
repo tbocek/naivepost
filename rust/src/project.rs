@@ -15,6 +15,7 @@ pub const PROJECT_FILE: &str = "naivepost.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Project {
     pub sources: Vec<Source>,
     /// Inverted on purpose: absent = copy sources into the project.
@@ -68,22 +69,6 @@ impl Default for Source {
             narrator: 1,
             sepvoice: false,
             tracks: Vec::new(),
-        }
-    }
-}
-
-impl Default for Project {
-    fn default() -> Self {
-        Self {
-            sources: Vec::new(),
-            reference_sources: false,
-            vid_dir: None,
-            aud_dir: None,
-            context: String::new(),
-            policy: Policy::default(),
-            produce: Produce::default(),
-            publish: None,
-            profile: None,
         }
     }
 }

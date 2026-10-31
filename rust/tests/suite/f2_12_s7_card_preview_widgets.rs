@@ -130,7 +130,7 @@ fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
     common::pin_private_cwd();
     let dir = project_dir();
     // A card three seconds long, over a cut that films 0–120 as one take.
-    let sting = make_video(&dir, CARD_STEM, 3.0);
+    let sting = make_video(dir, CARD_STEM, 3.0);
     let seeded = cut::Cut {
         segs: vec![clip(0.0, 100.0), card(30.0, 3.0, &sting)],
         ..Default::default()

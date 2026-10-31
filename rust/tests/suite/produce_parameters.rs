@@ -390,10 +390,10 @@ fn sec_08_produce_4_parameters_used_s6_the_encoder_settings_are_stored_state() {
     let facts_fn = facts;
     let wav_fn = wav;
     assert_ne!(
-        first.stamp_of(&wav_fn, &facts_fn),
-        second.stamp_of(&wav_fn, &facts_fn)
+        first.stamp_of(wav_fn, facts_fn),
+        second.stamp_of(wav_fn, facts_fn)
     );
-    let named = stamp::parts(&first, &wav_fn, &facts_fn)
+    let named = stamp::parts(&first, wav_fn, facts_fn)
         .into_iter()
         .map(|(name, _)| name)
         .collect::<Vec<_>>();

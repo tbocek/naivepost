@@ -555,7 +555,8 @@ fn f1_8_s3_a_block_is_cached_under_its_own_rows() {
 /// first-try answer (§6's old "second irregularity"), and the user's model, which often answers a block's first
 /// ask with the text alone, paid two asks per such block on every run (08-dex, 2026-10-29).
 #[test]
-fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_an_answer_by_its_input_whichever_try_earned_it() {
+fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_an_answer_by_its_input_whichever_try_earned_it()
+{
     let tree = tree("by-input");
     textfmt::write_lines(&lines(2), &tree.transcript_tsv(BASE)).unwrap();
     let sources = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
@@ -577,8 +578,19 @@ fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_an_answer_by_its_input_which
             fix::Reply::Done,
         ])
     };
-    run_with(&tree, &sources, MarkingPass::None, "the fix wording", refuse_then_fix, || Ok(Vec::new()));
-    assert_eq!(asks.get(), 2, "the first run paid the refusal and the retry");
+    run_with(
+        &tree,
+        &sources,
+        MarkingPass::None,
+        "the fix wording",
+        refuse_then_fix,
+        || Ok(Vec::new()),
+    );
+    assert_eq!(
+        asks.get(),
+        2,
+        "the first run paid the refusal and the retry"
+    );
     let first = std::fs::read_to_string(tree.transcript_fixed_tsv(BASE)).unwrap();
     assert!(first.contains("number 0 about the widget"), "{first}");
 
@@ -1046,9 +1058,14 @@ fn f1_8_s7_a_marking_failure_leaves_the_timeline_unmarked_not_lost() {
     textfmt::write_lines(&lines(2), &tree.transcript_tsv(BASE)).unwrap();
     let placed = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
 
-    let outcome = run_with(&tree, &placed, MarkingPass::Retakes, "", respeller(), || {
-        Err("the marker is off".to_string())
-    });
+    let outcome = run_with(
+        &tree,
+        &placed,
+        MarkingPass::Retakes,
+        "",
+        respeller(),
+        || Err("the marker is off".to_string()),
+    );
 
     assert!(outcome
         .logs
@@ -1067,13 +1084,20 @@ fn f1_8_s7_a_marking_failure_leaves_the_timeline_unmarked_not_lost() {
         .contains("number 0 about the widget"));
 
     // And a pass that works marks: the fold reaches session.txt.
-    let outcome = run_with(&tree, &placed, MarkingPass::Retakes, "", respeller(), || {
-        Ok(vec![fix::Mark {
-            start: 0.0,
-            end: 10.0,
-            again: Some(20.0),
-        }])
-    });
+    let outcome = run_with(
+        &tree,
+        &placed,
+        MarkingPass::Retakes,
+        "",
+        respeller(),
+        || {
+            Ok(vec![fix::Mark {
+                start: 0.0,
+                end: 10.0,
+                again: Some(20.0),
+            }])
+        },
+    );
     assert!(outcome.marked);
     assert_eq!(outcome.marks, 1);
     assert!(std::fs::read_to_string(tree.session_txt())

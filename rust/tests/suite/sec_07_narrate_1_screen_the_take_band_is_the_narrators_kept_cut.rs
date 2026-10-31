@@ -128,7 +128,11 @@ fn a_band_second_names_its_session_second() {
     assert_eq!(tape.session_at(16.0), Some(71.0));
     assert_eq!(tape.session_at(20.0), None);
     let whole = narrate_tape::whole(PathBuf::from("/s/a.mkv"), 30.0);
-    assert_eq!(whole.session_at(3.0), None, "one whole file has no place in the cut");
+    assert_eq!(
+        whole.session_at(3.0),
+        None,
+        "one whole file has no place in the cut"
+    );
     assert_eq!(whole.band_at(3.0), None);
     // And back: the preview's second on the band, a removed stretch standing at the next kept start.
     assert_eq!(tape.band_at(7.0), Some(2.0));

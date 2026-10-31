@@ -183,14 +183,20 @@ fn check_a_border_past_the_first_hour_moves(app: &adw::Application) {
         ui::window::review_cut_of(&window).segs[0].e
     };
     assert!((end(3690.0) - 3690.0).abs() < 1e-9, "the end grows");
-    assert!((end(3650.0) - 3650.0).abs() < 1e-9, "and shrinks only as far as the hand went");
+    assert!(
+        (end(3650.0) - 3650.0).abs() < 1e-9,
+        "and shrinks only as far as the hand went"
+    );
 
     ui::set_session_recordings(&[naivepost::timeline::Recording {
         base: "take".to_string(),
         start: 3630.0,
         end: 3700.0,
     }]);
-    assert!((end(3800.0) - 3700.0).abs() < 1e-9, "with the takes known, its recording's end is the wall");
+    assert!(
+        (end(3800.0) - 3700.0).abs() < 1e-9,
+        "with the takes known, its recording's end is the wall"
+    );
     window.close();
 }
 

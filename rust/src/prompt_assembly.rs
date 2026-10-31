@@ -390,7 +390,8 @@ pub fn carries_speech_rule(key: &str) -> bool {
 /// kept the spoken USDC and 1 answer had the right format; without it 8 and 8, and across 12 name-heavy blocks the
 /// fixer kept 96 % of the spoken words and spelled the names the same. A context with no such block is unchanged.
 pub fn without_script(context: &str) -> String {
-    let Ok(block) = regex::Regex::new(r"(?s)\*+\s*SCRIPT START\s*\*+.*?\*+\s*SCRIPT STOP\s*\*+") else {
+    let Ok(block) = regex::Regex::new(r"(?s)\*+\s*SCRIPT START\s*\*+.*?\*+\s*SCRIPT STOP\s*\*+")
+    else {
         return context.to_string();
     };
     block.replace_all(context, "").into_owned()

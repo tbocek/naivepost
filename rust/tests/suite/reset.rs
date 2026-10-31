@@ -113,9 +113,15 @@ fn f0_15_each_reset_removes_its_own_files_and_nothing_else() {
     assert!(stay.contains(&"cut/cut.json"), "{stay:?}");
 
     let (gone, stay) = after_reset("reset-cut", Page::Cut);
-    assert_eq!(gone, ["cut/cut.json", "cache/llm/cut/k", "cache/llm/speed/k"]);
+    assert_eq!(
+        gone,
+        ["cut/cut.json", "cache/llm/cut/k", "cache/llm/speed/k"]
+    );
     assert!(stay.contains(&"prepare/word_list.json"), "{stay:?}");
-    assert!(stay.contains(&"cut/line.json"), "the red line is where the page stands: {stay:?}");
+    assert!(
+        stay.contains(&"cut/line.json"),
+        "the red line is where the page stands: {stay:?}"
+    );
 
     let (gone, stay) = after_reset("reset-narrate", Page::Narrate);
     assert_eq!(
@@ -143,7 +149,12 @@ fn f0_15_each_reset_removes_its_own_files_and_nothing_else() {
             "cache/llm/translate/k",
         ]
     );
-    for kept in ["naivepost.json", "sources/a.mkv", "llm/0101-000000-fix.html", "requests.tsv"] {
+    for kept in [
+        "naivepost.json",
+        "sources/a.mkv",
+        "llm/0101-000000-fix.html",
+        "requests.tsv",
+    ] {
         assert!(stay.contains(&kept), "{kept}: {stay:?}");
     }
 }
@@ -204,28 +215,45 @@ fn check_the_button(app: &adw::Application) {
     assert!(cut_json.exists() && cached.exists(), "Cancel leaves it all");
 
     button.emit_clicked();
-    ui::window_reset::open_question().expect("it asks again").response("reset");
-    assert!(ui::background::settle_for_test(std::time::Duration::from_secs(20)));
+    ui::window_reset::open_question()
+        .expect("it asks again")
+        .response("reset");
+    assert!(ui::background::settle_for_test(
+        std::time::Duration::from_secs(20)
+    ));
     common::wait_for_stable_layout(&window);
-    assert!(!cut_json.exists() && !cached.exists(), "the Cut's own files went");
+    assert!(
+        !cut_json.exists() && !cached.exists(),
+        "the Cut's own files went"
+    );
     assert!(words.exists(), "what Prepare made stayed");
     assert!(
         ui::cut_view::band_scene_for(&window).segs.is_empty(),
         "and the band no longer draws the cut"
     );
-    let status = ui::find_status(window.upcast_ref()).expect("the status").text();
+    let status = ui::find_status(window.upcast_ref())
+        .expect("the status")
+        .text();
     assert_eq!(status, "Cut reset");
     assert!(
-        ui::window_logs().iter().any(|line| line.starts_with(">>> reset Cut: removed ")),
+        ui::window_logs()
+            .iter()
+            .any(|line| line.starts_with(">>> reset Cut: removed ")),
         "the log says what went"
     );
 
     let tree = Tree::new(&session).expect("the tree");
     let left = reset::plan(&tree, Page::Cut);
     let body = std::fs::read_to_string(&cut_json).unwrap_or_default();
-    assert!(left.is_empty(), "nothing left to reset: {left:?} cut.json holds {body:?}");
+    assert!(
+        left.is_empty(),
+        "nothing left to reset: {left:?} cut.json holds {body:?}"
+    );
     button.emit_clicked();
-    assert!(ui::window_reset::open_question().is_none(), "nothing left, nothing to ask");
+    assert!(
+        ui::window_reset::open_question().is_none(),
+        "nothing left, nothing to ask"
+    );
     window.close();
     RAN.store(true, Ordering::SeqCst);
 }
@@ -242,7 +270,10 @@ fn f0_15_the_button_asks_then_removes_and_the_page_rereads() {
 #[test]
 fn f0_15_a_test_binary_never_opens_anything_on_the_desktop() {
     let before = ui::log_link::blocked_opens_for_test();
-    assert_eq!(ui::log_link::open("file:///tmp/naivepost-never-opened"), Ok(()));
+    assert_eq!(
+        ui::log_link::open("file:///tmp/naivepost-never-opened"),
+        Ok(())
+    );
     assert_eq!(ui::log_link::open("https://example.invalid/"), Ok(()));
     assert_eq!(ui::log_link::blocked_opens_for_test(), before + 2);
 }

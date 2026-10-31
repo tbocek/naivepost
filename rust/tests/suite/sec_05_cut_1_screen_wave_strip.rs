@@ -185,11 +185,19 @@ fn sec_05_cut_1_screen_the_line_above_the_sound_strip_is_a_grip_and_the_bottom_e
         Some(tracks::Grip::Wave),
         "every row's line is a grip"
     );
-    assert_eq!(tracks::grip_at(&scene, line - 10.0), None, "the pictures are not");
+    assert_eq!(
+        tracks::grip_at(&scene, line - 10.0),
+        None,
+        "the pictures are not"
+    );
 
     // The thinnest strip: its line and the row's bottom edge are both in reach of one height.
     tracks::set_row_wave_px(0.0);
-    assert_eq!(tracks::row_wave_px(), tracks::WAVE_MIN_PX, "the strip keeps its least");
+    assert_eq!(
+        tracks::row_wave_px(),
+        tracks::WAVE_MIN_PX,
+        "the strip keeps its least"
+    );
     let thin = tracks::rows_for_press(&scene);
     let shared = thin.wave_top(0) + tracks::ROW_GRIP_PX;
     assert_eq!(
@@ -212,7 +220,10 @@ fn sec_05_cut_1_screen_the_line_above_the_sound_strip_is_a_grip_and_the_bottom_e
     // A row made shorter takes the height back from the strip, and giving it back restores what was asked.
     let open = tracks::thumb_px();
     tracks::set_thumb_px(40);
-    assert_eq!(tracks::row_wave_px(), 40.0 + tracks::PICTURE_ROW_EXTRA_PX - tracks::FILM_MIN_PX);
+    assert_eq!(
+        tracks::row_wave_px(),
+        40.0 + tracks::PICTURE_ROW_EXTRA_PX - tracks::FILM_MIN_PX
+    );
     tracks::set_thumb_px(open);
     tracks::set_row_wave_px(tracks::ROW_WAVE_PX);
 }

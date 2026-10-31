@@ -571,7 +571,12 @@ pub fn cached_block(tree: &Tree, prompt: &str, lines: &[Line]) -> Option<Vec<Rep
 /// through [`fix_block`]). The first rewrite filed only a first-try answer (§6's old "second irregularity"),
 /// so a block answered right only on its retry, or refused on every try, was asked again on every run although
 /// nothing about it had changed (08-dex 18-41-59: a text-only first answer, then one speaker label miscopied).
-pub fn store_block(tree: &Tree, prompt: &str, lines: &[Line], fixed: &[Line]) -> Result<(), String> {
+pub fn store_block(
+    tree: &Tree,
+    prompt: &str,
+    lines: &[Line],
+    fixed: &[Line],
+) -> Result<(), String> {
     let text: String = fixed
         .iter()
         .map(|line| format!("{}\n", line.text))

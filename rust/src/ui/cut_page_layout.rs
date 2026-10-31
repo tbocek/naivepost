@@ -466,7 +466,10 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     // 32 px too short, and GTK clipped the wave rows off the bottom of the band's `DrawingArea`.
     vsplit.set_size_request(
         -1,
-        SELF_SPLIT_TOP_PX + pane_floor_px + PANED_HANDLE_GAP_PX + 2 * crate::ui::margins::DIVIDER_GAP_PX,
+        SELF_SPLIT_TOP_PX
+            + pane_floor_px
+            + PANED_HANDLE_GAP_PX
+            + 2 * crate::ui::margins::DIVIDER_GAP_PX,
     );
     // ...and the upper pane used to ask for more than its own content (the old `UPPER_PANE_MIN_H`, 410 px) so
     // GTK would settle the divider on §A's opening rather than on the picture's 304 px natural height. That

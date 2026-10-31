@@ -551,7 +551,12 @@ fn f1_13_a_word_between_two_lines_does_not_stop_the_respelling() {
     };
     let sources = vec![(
         "take".to_string(),
-        vec![token("eins", 0.0), token("zwischen", 2.0), token("und", 3.0), token("ithers", 4.0)],
+        vec![
+            token("eins", 0.0),
+            token("zwischen", 2.0),
+            token("und", 3.0),
+            token("ithers", 4.0),
+        ],
     )];
     let (words, _) = naivepost::word_list::list(
         &sources,

@@ -454,7 +454,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_a_drop_is_refused_bef
     // The shown set is capped at the reach, so the ceiling counts against what was given.
     // P.machine.seamReachWords
     assert_eq!(textedit::SEAM_REACH_WORDS, 140);
-    assert_eq!(long.shown_count(Side::Before), 140.min(60));
+    assert_eq!(long.shown_count(Side::Before), 60);
 }
 
 /// `keep_join` is a whole answer that removes nothing; `get_words` reads past the shown cap.

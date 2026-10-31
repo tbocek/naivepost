@@ -116,8 +116,7 @@ fn f0_10_s3_renaming_onto_a_folder_that_has_work_in_it_fails_and_the_files_stay(
     fs::write(taken.join("somebody-elses.mp4"), b"not ours").unwrap();
 
     let err = save_as::save_as(&session(), &jan, "taken")
-        .err()
-        .expect("a folder with work in it is not overwritten");
+        .expect_err("a folder with work in it is not overwritten");
     assert!(
         err.starts_with("!!! could not move the output folder to "),
         "{err}"

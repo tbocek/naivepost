@@ -607,7 +607,11 @@ pub fn placement_ask(
     to: f64,
     anchor: &crate::diarize::Anchor,
 ) -> Result<Vec<Turn>, String> {
-    let mut pieces: Vec<(f64, f64)> = anchor.slots.iter().map(|slot| (slot.from, slot.to)).collect();
+    let mut pieces: Vec<(f64, f64)> = anchor
+        .slots
+        .iter()
+        .map(|slot| (slot.from, slot.to))
+        .collect();
     pieces.push((from, to));
     let chunk = format!("p{:04}.wav", (from * 10.0) as i64);
     diar_file_ask(tree, paths, source, model, &chunk, &joined_plan(&pieces))
@@ -619,7 +623,9 @@ fn joined_plan(pieces: &[(f64, f64)]) -> Vec<String> {
     let labels: String = (0..pieces.len()).map(|i| format!("[s{i}]")).collect();
     let mut graph = format!("[0:a]asplit={}{labels}", pieces.len());
     for (i, (from, to)) in pieces.iter().enumerate() {
-        graph.push_str(&format!(";[s{i}]atrim=start={from}:end={to},asetpts=PTS-STARTPTS[p{i}]"));
+        graph.push_str(&format!(
+            ";[s{i}]atrim=start={from}:end={to},asetpts=PTS-STARTPTS[p{i}]"
+        ));
     }
     let parts: String = (0..pieces.len()).map(|i| format!("[p{i}]")).collect();
     graph.push_str(&format!(";{parts}concat=n={}:v=0:a=1[out]", pieces.len()));
@@ -645,7 +651,14 @@ pub fn diar_window_ask<'a>(
 ) -> impl Fn(f64, f64) -> Result<Vec<Turn>, String> + 'a {
     move |from: f64, to: f64| {
         let chunk = format!("d{:04}.wav", (from * 10.0) as i64);
-        let turns = diar_file_ask(tree, paths, source, model, &chunk, &crate::asr::cut_plan(from, to))?;
+        let turns = diar_file_ask(
+            tree,
+            paths,
+            source,
+            model,
+            &chunk,
+            &crate::asr::cut_plan(from, to),
+        )?;
         // A window's answer is in that window's own seconds; the ladder's arithmetic is all on the
         // recording's clock, so every turn is moved back before anyone looks at it.
         Ok(turns

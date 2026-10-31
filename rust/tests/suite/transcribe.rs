@@ -244,7 +244,7 @@ fn f1_3_s4_a_failed_alignment_stands_on_the_asr_times_when_it_has_them() {
         words: words_at(&[("hello", 0.0, 0.4)]),
     };
     assert_eq!(
-        transcribe::align_outcome(Some("nope".into()), !doc.words.is_empty(), &doc.text),
+        transcribe::align_outcome(Some("nope"), !doc.words.is_empty(), &doc.text),
         transcribe::Alignment::Stood
     );
 }
@@ -287,11 +287,11 @@ fn f1_3_s4_a_failed_alignment_without_word_times_is_a_plain_error() {
 #[test]
 fn f1_3_s4_no_transcript_means_nothing_to_align() {
     assert_eq!(
-        transcribe::align_outcome(Some("nope".into()), false, ""),
+        transcribe::align_outcome(Some("nope"), false, ""),
         transcribe::Alignment::Skipped
     );
     assert_eq!(
-        transcribe::align_outcome(Some("nope".into()), false, "   \n"),
+        transcribe::align_outcome(Some("nope"), false, "   \n"),
         transcribe::Alignment::Skipped
     );
     // No error at all is the ordinary answer.

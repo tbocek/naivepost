@@ -273,17 +273,19 @@ fn check_the_picture_follows_the_divider(window: &adw::ApplicationWindow) {
     let at = |position: i32| {
         split.set_position(position);
         // The column's own margin comes off the width the divider gives it.
-        common::wait_until(
-            "the column to take the width the divider gives it",
-            || (bounds(window, "produce-left").width() - (position - 12) as f32).abs() < 2.0,
-        );
+        common::wait_until("the column to take the width the divider gives it", || {
+            (bounds(window, "produce-left").width() - (position - 12) as f32).abs() < 2.0
+        });
         let plate = bounds(window, "thumbnail-picture");
         (plate.width(), plate.height())
     };
     let (narrow_w, narrow_h) = at(520);
     let (wide_w, wide_h) = at(760);
     println!("{ITEM}: plate {narrow_w}x{narrow_h} at 520, {wide_w}x{wide_h} at 760");
-    assert!(wide_w > narrow_w + 200.0, "the plate widens with the column");
+    assert!(
+        wide_w > narrow_w + 200.0,
+        "the plate widens with the column"
+    );
     assert!(
         narrow_h > 180.0,
         "the plate takes the column's spare height, not only its 180 px floor: {narrow_h}"
@@ -295,9 +297,12 @@ fn check_the_picture_follows_the_divider(window: &adw::ApplicationWindow) {
 
 fn check_a_long_description_keeps_the_page_small(window: &adw::ApplicationWindow) {
     let right = widget(window, "produce-right");
-    let view: gtk::TextView = widget(window, "description-box").downcast().expect("a text view");
+    let view: gtk::TextView = widget(window, "description-box")
+        .downcast()
+        .expect("a text view");
     let least = right.measure(gtk::Orientation::Vertical, -1).0;
-    view.buffer().set_text(&"one line of a long description\n".repeat(200));
+    view.buffer()
+        .set_text(&"one line of a long description\n".repeat(200));
     common::settle();
     assert_eq!(right.measure(gtk::Orientation::Vertical, -1).0, least);
     view.buffer().set_text("");

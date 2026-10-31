@@ -83,10 +83,7 @@ fn p_eng_preloadleadseconds_s4_the_tolerance_marks_now() {
     // Exactly at the tolerance is still "now": the bound is strict on the far side.
     assert_eq!(preview::next_jump_ahead(&[(t + tol, 30.0)], t), None);
     // The same second, seen from a run that has not started yet, is ahead of us.
-    assert_eq!(
-        preview::next_jump_ahead(&[(beyond, 30.0)], t).is_some(),
-        true
-    );
+    assert!(preview::next_jump_ahead(&[(beyond, 30.0)], t).is_some());
 }
 
 // --- S5: the same question from the current clip's end ----------------------------------------

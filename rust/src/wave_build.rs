@@ -84,7 +84,9 @@ pub fn read_wav_samples(path: &Path) -> Result<Vec<i16>, String> {
                 ));
             }
             return Ok(body
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
                 .collect());
         }

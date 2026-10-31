@@ -285,7 +285,7 @@ fn ask_once(
             WIRE_FAILED.with(|failed| failed.set(true));
             return Ok(vec![Reply::Unreadable(format!(
                 "the fixer could not be asked: {why}"
-            ))])
+            ))]);
         }
     };
     let reply = llm_request::reply_from(&sent.content_type, &sent.body)

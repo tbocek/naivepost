@@ -155,7 +155,7 @@ fn sec_10_parameters_4_prompts_s9_speeds_ask_is_thinking_off() {
             .contains(&format!("nearer than {} s apart", gap.spelled)),
         "the merge gap the pass will apply is the gap the ask quoted ({}), got {:?}",
         gap.spelled,
-        &seen.body
+        seen.body
     );
     assert!(
         seen.body.contains("Only rates above 1"),

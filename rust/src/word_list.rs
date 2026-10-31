@@ -164,7 +164,10 @@ pub fn retimed(
         };
         // The first word has no word before it to be timed against; stamped on a breath ahead of itself, it
         // moves onto the sound it is, or the cut starts on the breath and the subtitles run ahead of the voice.
-        let spans: Vec<(f64, f64)> = mine.iter().map(|&i| (words[i].start, words[i].end)).collect();
+        let spans: Vec<(f64, f64)> = mine
+            .iter()
+            .map(|&i| (words[i].start, words[i].end))
+            .collect();
         if let Some((from, to)) =
             crate::edges::misplaced_first_word(&spans, |a, b| peak(source.as_str(), a, b))
         {

@@ -84,7 +84,10 @@ pub fn set_thumb_px(px: u32) {
 /// a row made shorter takes it back, down to [`FILM_MIN_PX`] of pictures.
 pub fn row_wave_px() -> f64 {
     let room = thumb_px() as f64 + PICTURE_ROW_EXTRA_PX - FILM_MIN_PX;
-    WAVE_PX.with(std::cell::Cell::get).min(room).max(WAVE_MIN_PX)
+    WAVE_PX
+        .with(std::cell::Cell::get)
+        .min(room)
+        .max(WAVE_MIN_PX)
 }
 
 /// Set the sound strip's height, kept between [`WAVE_MIN_PX`] and what leaves the pictures [`FILM_MIN_PX`].

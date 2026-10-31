@@ -250,7 +250,7 @@ fn p_eng_seplopsideddb_s5_wiring_and_neighbours_by_home_not_by_number() {
     // Never interchangeable: a -35 dB rest under a -40 dB mix has both stems sitting below the silence
     // threshold, yet the gap is only 5 dB, so nothing is lop-sided and no note is made.
     assert!(
-        asr::QUIET_DB >= -35.0 && asr::QUIET_DB <= -35.0,
+        asr::QUIET_DB == -35.0,
         "both fixtures here are at or under the silence level"
     );
     assert!(

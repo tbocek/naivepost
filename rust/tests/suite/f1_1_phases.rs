@@ -316,15 +316,12 @@ fn f1_1_s6_the_status_line_counts_the_rows_of_the_stage() {
     let stages = vec![rows("describe", 3), rows("fix", 1)];
     let mut queue = Queue::new();
     let mut seen: Vec<String> = Vec::new();
-    run_stages::drive_walk_watched_for_test(
-        &stages,
-        &mut queue,
-        |_| {},
-        &[],
-        &mut |queue, _| seen.push(queue.text_and_tip().0),
-    );
+    run_stages::drive_walk_watched_for_test(&stages, &mut queue, |_| {}, &[], &mut |queue, _| {
+        seen.push(queue.text_and_tip().0)
+    });
     assert!(
-        seen.iter().any(|line| line == "describe 1/2: 2 of 3, describe 1"),
+        seen.iter()
+            .any(|line| line == "describe 1/2: 2 of 3, describe 1"),
         "the second of three rows says its place in the queue: {seen:?}"
     );
     assert!(

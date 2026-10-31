@@ -139,8 +139,8 @@ fn session_tree() -> Tree {
 fn run_round(app: &adw::Application) {
     let root = std::env::temp_dir().join(format!("np-keyvec-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root.join("config")).expect("config root");
-    std::fs::create_dir_all(&root.join("data")).expect("data root");
+    std::fs::create_dir_all(root.join("config")).expect("config root");
+    std::fs::create_dir_all(root.join("data")).expect("data root");
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
     unsafe {
         std::env::set_var("XDG_CONFIG_HOME", root.join("config"));

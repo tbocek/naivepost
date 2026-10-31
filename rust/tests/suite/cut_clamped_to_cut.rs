@@ -53,7 +53,7 @@ fn f3_12_s1_an_effect_inside_kept_footage_is_untouched() {
     assert_eq!(clamp::MIN_SURVIVING_SECONDS, 1.0); // P.eng.effectMinSurvivingSeconds
 
     let inside = fx_faded("zoom", 12.0, 4.0, 1.0, 0.5);
-    let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 30.0)], &[inside.clone()]));
+    let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 30.0)], std::slice::from_ref(&inside)));
     assert_eq!(out.dropped, 0);
     assert_eq!(out.kept, vec![inside]);
 
@@ -355,7 +355,7 @@ fn f3_12_s9_a_label_is_trimmed_and_an_unknown_kind_is_left_alone() {
 
     // An unknown kind: kept as proposed rather than dropped for having no trim rule.
     let odd = fx("marker", 8.0, 6.0);
-    let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 10.0)], &[odd.clone()]));
+    let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 10.0)], std::slice::from_ref(&odd)));
     assert_eq!(out.dropped, 0);
     assert_eq!(one(&out.kept), &odd);
 }

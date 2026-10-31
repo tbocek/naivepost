@@ -191,13 +191,18 @@ fn check_every_page_keeps_the_same_margins(app: &adw::Application) {
         std::fs::create_dir_all(&session).expect("session folder");
         (seed, session)
     };
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
     fn walk(widget: &gtk::Widget, seen: &mut Vec<gtk::Widget>) {
         seen.push(widget.clone());
         let kids = widget.observe_children();
         for index in 0..kids.n_items() {
-            if let Some(child) = kids.item(index).and_then(|c| c.downcast::<gtk::Widget>().ok()) {
+            if let Some(child) = kids
+                .item(index)
+                .and_then(|c| c.downcast::<gtk::Widget>().ok())
+            {
                 walk(&child, seen);
             }
         }
@@ -214,22 +219,44 @@ fn check_every_page_keeps_the_same_margins(app: &adw::Application) {
         common::wait_for_stable_layout(&window);
         let (x, _, _, h) = drawn(&window, top);
         let (_, y, _, _) = drawn(&window, top);
-        assert_eq!(x, 12.0, "{page}: the page keeps 12 px from the window's left edge");
+        assert_eq!(
+            x, 12.0,
+            "{page}: the page keeps 12 px from the window's left edge"
+        );
         let main = divider(&window);
         let (_, main_y, _, _) = drawn(&window, "main-divider");
         let foot = main_y + f64::from(main.position()) - (y + h);
-        assert!((foot - 12.0).abs() <= 1.0, "{page}: 12 px above the divider under the page, not {foot}");
+        assert!(
+            (foot - 12.0).abs() <= 1.0,
+            "{page}: 12 px above the divider under the page, not {foot}"
+        );
         let mut seen = Vec::new();
         walk(window.content().expect("content").upcast_ref(), &mut seen);
         for widget in seen.iter().filter(|w| w.is_mapped()) {
             let kind = widget.type_().name();
             if kind == "GtkPanedHandle" {
-                assert_eq!(widget.width().min(widget.height()), 1, "{page}: a divider is one line");
+                assert_eq!(
+                    widget.width().min(widget.height()),
+                    1,
+                    "{page}: a divider is one line"
+                );
             }
-            if kind == "GtkButton" && widget.height() > 0 && widget.ancestor(adw::HeaderBar::static_type()).is_none() && widget.widget_name() != "preview-picture-button" {
+            if kind == "GtkButton"
+                && widget.height() > 0
+                && widget.ancestor(adw::HeaderBar::static_type()).is_none()
+                && widget.widget_name() != "preview-picture-button"
+            {
                 // The drawn box, not `height()`: that one leaves out the padding, so a 34 px icon button reads 24.
-                let drawn_h = widget.compute_bounds(widget).expect("a mapped button has bounds").height();
-                assert_eq!(drawn_h, 34.0, "{page}: {} is one height", widget.widget_name());
+                let drawn_h = widget
+                    .compute_bounds(widget)
+                    .expect("a mapped button has bounds")
+                    .height();
+                assert_eq!(
+                    drawn_h,
+                    34.0,
+                    "{page}: {} is one height",
+                    widget.widget_name()
+                );
             }
         }
         let plate = match page {
@@ -239,7 +266,10 @@ fn check_every_page_keeps_the_same_margins(app: &adw::Application) {
         };
         if let Some(name) = plate {
             let widget = common::find_named(&window, name).expect("the video preview");
-            assert!(widget.has_css_class("video-plate"), "{page}: {name} stands on the one video plate");
+            assert!(
+                widget.has_css_class("video-plate"),
+                "{page}: {name} stands on the one video plate"
+            );
         }
         // An open log gives way; the run bar and the log header stay inside the window, on every page.
         let log: gtk::Expander = ui::find_source_widget(&window, "log-expander")
@@ -266,7 +296,10 @@ fn check_every_page_keeps_the_same_margins(app: &adw::Application) {
             let (_, split_y, _, _) = drawn(&window, "cut-page-split");
             let (_, toolbar_y, _, _) = drawn(&window, "cut-toolbar");
             let under = toolbar_y - (split_y + f64::from(cut_split.position()));
-            assert!((under - 13.0).abs() <= 1.0, "the toolbar sits 12 px under the line: {under}");
+            assert!(
+                (under - 13.0).abs() <= 1.0,
+                "the toolbar sits 12 px under the line: {under}"
+            );
             // The openings are not minimums: the handle goes left of the preview's 660 px opening.
             let top: gtk::Paned = ui::find_source_widget(&window, "cut-top")
                 .expect("the left/right divider")
@@ -274,7 +307,11 @@ fn check_every_page_keeps_the_same_margins(app: &adw::Application) {
                 .expect("a paned");
             top.set_position(300);
             common::wait_for_stable_layout(&window);
-            assert!(top.position() <= 300, "the preview gets smaller: {}", top.position());
+            assert!(
+                top.position() <= 300,
+                "the preview gets smaller: {}",
+                top.position()
+            );
             let (_, tape_y, _, tape_h) = drawn(&window, "track-layers");
             let (_, bottom_y, _, bottom_h) = drawn(&window, "cut-bottom");
             assert!(
@@ -300,7 +337,9 @@ fn check_the_sound_strip_grip_sizes_the_strip(app: &adw::Application) {
     std::env::set_current_dir(&root).expect("cwd pinned to the scratch root");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
     let window = ui::build_window(app, &seed, "Cut");
@@ -313,14 +352,31 @@ fn check_the_sound_strip_grip_sizes_the_strip(app: &adw::Application) {
     let rows = cut_tracks::rows_for_press(&scene);
     let x = 600.0;
     let line = rows.wave_top(0);
-    assert_eq!(ui::band_cursor_at(&window, x, line), Some("row-resize"), "the line offers the grip");
-    assert_ne!(ui::band_cursor_at(&window, x, line - 10.0), Some("row-resize"), "the pictures do not");
+    assert_eq!(
+        ui::band_cursor_at(&window, x, line),
+        Some("row-resize"),
+        "the line offers the grip"
+    );
+    assert_ne!(
+        ui::band_cursor_at(&window, x, line - 10.0),
+        Some("row-resize"),
+        "the pictures do not"
+    );
 
-    let status = || ui::find_status(window.upcast_ref()).expect("the status line").text().to_string();
+    let status = || {
+        ui::find_status(window.upcast_ref())
+            .expect("the status line")
+            .text()
+            .to_string()
+    };
     let was = cut_tracks::row_wave_px();
     let now = window::press_wave(&window, was + 10.0);
     assert_eq!(now, was + 10.0, "the drag's height is the strip's");
-    assert_eq!(cut_tracks::row_wave_top(&window, 0), line - 10.0, "and the line moved with the hand");
+    assert_eq!(
+        cut_tracks::row_wave_top(&window, 0),
+        line - 10.0,
+        "and the line moved with the hand"
+    );
     assert_eq!(status(), format!("sound strip {} px", now.round()));
     window::press_wave(&window, 10_000.0);
     assert!(status().contains("at its largest"), "{}", status());
@@ -343,7 +399,9 @@ fn check_the_cut_bottom_half_keeps_its_floor(app: &adw::Application) {
     std::env::set_current_dir(&root).expect("cwd pinned to the scratch root");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
     let window = ui::build_window(app, &seed, "Cut");
@@ -399,7 +457,6 @@ fn sec_03_shell_1_the_window_s1h_above_the_minimum_the_preview_grows_with_the_ro
         "the growth round never ran"
     );
 }
-
 
 /// §1: "text boxes, lists and the log take the extra height" and "splits keep their proportions". With the log
 /// OPEN, a window that grows keeps the band's share of the height, so the log grows with it; a handle dragged up

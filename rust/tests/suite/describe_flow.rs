@@ -594,7 +594,8 @@ fn f1_7_s4_the_key_covers_the_content_and_the_images() {
         "changed wording is a different question"
     );
     assert_ne!(
-        describe::cache_key("", 
+        describe::cache_key(
+            "",
             "ask about four frames",
             &[b"frame-A".to_vec(), b"frame-b".to_vec()],
             "qwen-vl"

@@ -61,10 +61,7 @@ fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
         naivepost::seam_retries::ask_slot("base", 1),
         "the retry keys elsewhere than the refusal it is retrying"
     );
-    let mut join = Join::new(
-        &TAKE_A.iter().map(|w| *w).collect::<Vec<&str>>(),
-        &TAKE_B.iter().map(|w| *w).collect::<Vec<&str>>(),
-    );
+    let mut join = Join::new(&TAKE_A.to_vec(), &TAKE_B.to_vec());
     let before: Vec<String> = TAKE_A.iter().map(|w| w.to_string()).collect();
     let after: Vec<String> = TAKE_B.iter().map(|w| w.to_string()).collect();
     match joins::answer_join(&mut join, &answer("is live today", ""), &before, &after) {

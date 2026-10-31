@@ -392,7 +392,7 @@ fn f2_9_s2_a_sound_with_no_picture_under_it_is_refused_and_stays_in_hand() {
 
     assert_eq!(
         cp::no_footage_status(50.0),
-        format!("the cut keeps no footage at 00:50 \u{2014} a sound needs a picture under it")
+        "the cut keeps no footage at 00:50 \u{2014} a sound needs a picture under it".to_string()
     );
     assert_eq!(
         cp::paste(
@@ -460,7 +460,7 @@ fn f2_9_s2_pasting_consumes_the_copy_once() {
         &[REC.to_string()],
     )
     .expect("a line was placed");
-    assert!(matches!(hand.as_ref(), None), "the paste consumed it");
+    assert!(hand.as_ref().is_none(), "the paste consumed it");
 
     let second = cp::paste(
         &mut cut,
@@ -496,7 +496,7 @@ fn f2_9_s2_pasting_consumes_the_copy_once() {
 fn f2_9_s3_esc_drops_the_copy() {
     let mut hand: Option<cp::Hand> = Some(taken(&sound_selection(12.0, 20.0)));
     assert!(cp::drop(&mut hand), "the copy in hand was dropped");
-    assert!(matches!(hand.as_ref(), None));
+    assert!(hand.as_ref().is_none());
     assert!(
         !cp::drop(&mut None),
         "with nothing in hand there is nothing to drop"

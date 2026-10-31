@@ -57,7 +57,7 @@ fn dbfs(peak: u8) -> f64 {
 /// A quiet run of 4× the floor, 2 s of noise, another quiet run. Starts at the lane's `at`.
 fn envelope_wave() -> Wave {
     let mut peaks = vec![QUIET; RUN_BUCKETS];
-    peaks.extend(std::iter::repeat(LOUD).take((NOISE_SECONDS * HZ) as usize));
+    peaks.extend(std::iter::repeat_n(LOUD, (NOISE_SECONDS * HZ) as usize));
     peaks.extend(vec![QUIET; RUN_BUCKETS]);
     Wave {
         hz: HZ,

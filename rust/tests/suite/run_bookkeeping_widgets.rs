@@ -219,7 +219,7 @@ fn play_walks_the_stage_onto_the_bar(app: &adw::Application) {
     // the queue above; the needle only has to have been driven from it.
     let shown = ui::progress_bar(&window).expect("progress bar").fraction();
     assert!(
-        shown >= 0.0 && shown <= 1.0,
+        (0.0..=1.0).contains(&shown),
         "the bar drew a real fraction off the walked queue: {shown}"
     );
     assert!(

@@ -262,7 +262,7 @@ fn f4_5_s3_sound_equals_the_render_and_speed_applies_at_seeks() {
         rate: 2.0,
         ..Default::default()
     };
-    assert_eq!(view::seek_rate(&[fast.clone()], 13.0), 2.0);
+    assert_eq!(view::seek_rate(std::slice::from_ref(&fast), 13.0), 2.0);
     assert_eq!(view::seek_rate(&[fast], 17.0), 1.0);
     assert_eq!(view::seek_rate(&[], 13.0), 1.0);
 }

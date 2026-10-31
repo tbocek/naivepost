@@ -225,7 +225,6 @@ mod window_bench;
 /// the repaint from the answer. Split out of `window.rs`, which is past its size budget. Its doors
 /// are re-exported through `window`.
 mod window_history_zoom;
-pub mod window_reset;
 mod window_holds;
 /// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply. Split out of
 /// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
@@ -244,6 +243,7 @@ pub(crate) mod window_outputs;
 /// F0.7's policy doors and F0.13's gear: the User Context tracker and the debounced derivation.
 /// Split out of `window.rs`, which is past its size budget.
 mod window_policy;
+pub mod window_reset;
 /// §1's run-bar row, made to fit at the minimum size: the job buttons get a box of their own. Split out of
 /// `window.rs`, which is at its size budget.
 pub mod window_run_bar_fit;

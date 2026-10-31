@@ -210,13 +210,13 @@ fn sec_10_parameters_4_prompts_s4_thinking_agrees_with_the_job_table_where_both_
     for job in thinking_jobs {
         let keyed = prompts::KEYS
             .iter()
-            .filter(|k| prompts::job(*k) == Some(job))
+            .filter(|k| prompts::job(k) == Some(job))
             .count();
         assert!(keyed >= 1, "{job:?} thinks but no prompt key names it");
         assert!(
             prompts::KEYS
                 .iter()
-                .any(|k| prompts::job(*k) == Some(job) && prompts::thinking(k)),
+                .any(|k| prompts::job(k) == Some(job) && prompts::thinking(k)),
             "{job:?} thinks but its prompt says off"
         );
     }

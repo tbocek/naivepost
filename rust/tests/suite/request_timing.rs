@@ -405,7 +405,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s7_the_run_ends_with_one_line
     assert_eq!(line, expected, "\ngot:      {line}\nexpected: {expected}");
 
     // Zero wait gets no clause: printing it everywhere buries the one service that waited.
-    let no_wait = rt::tally(&vec![Request {
+    let no_wait = rt::tally(&[Request {
         on_wire_s: Some(12.0),
         ..base(Service::Web, "youtube", "read")
     }]);
@@ -416,7 +416,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s7_the_run_ends_with_one_line
     // Duration spellings: exact minutes match llm_liveness::duration_spelling's "Xm0s", sub-minute
     // is bare seconds, hours drop the minutes when they are zero.
     let spelled = |wire: f64| {
-        let t = rt::tally(&vec![Request {
+        let t = rt::tally(&[Request {
             on_wire_s: Some(wire),
             ..base(Service::Audio, "align", "align")
         }]);

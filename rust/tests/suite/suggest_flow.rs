@@ -100,14 +100,28 @@ fn f2_14_s2a_a_piece_with_no_word_in_it_is_not_kept() {
         span: (0.0, 70.0),
         first_spoken: 1.0,
         last_spoken: 66.56,
-        words: vec![(1.0, 1.5), (65.44, 65.92), (65.92, 66.08), (66.08, 66.24), (66.24, 66.56)],
+        words: vec![
+            (1.0, 1.5),
+            (65.44, 65.92),
+            (65.92, 66.08),
+            (66.08, 66.24),
+            (66.24, 66.56),
+        ],
         placed: Some((0.8, 66.638)),
     };
     let made = suggest::words_cut(std::slice::from_ref(&run), &[(65.92, 66.56)], &[]);
-    assert_eq!(made.segs, vec![(0.8, 65.92)], "the scrap after the mark is gone");
+    assert_eq!(
+        made.segs,
+        vec![(0.8, 65.92)],
+        "the scrap after the mark is gone"
+    );
 
     let short = suggest::drop_wordless(&[(65.5, 65.8)], std::slice::from_ref(&run));
-    assert_eq!(short, vec![(65.5, 65.8)], "a short piece holding a word stays");
+    assert_eq!(
+        short,
+        vec![(65.5, 65.8)],
+        "a short piece holding a word stays"
+    );
 
     let unknown = suggest::SpokenRun::default();
     assert_eq!(

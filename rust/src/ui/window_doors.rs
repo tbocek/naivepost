@@ -139,7 +139,7 @@ pub fn paint_project_title() {
     let Some(title) = project_title_of() else {
         return;
     };
-    let dir = crate::ui::save_apply::open_dir().unwrap_or_else(|| crate::startup::open_dir());
+    let dir = crate::ui::save_apply::open_dir().unwrap_or_else(crate::startup::open_dir);
     let tab = ui::WINDOW_SHELLS
         .with(|shells| shells.borrow().last().cloned())
         .map(|shell| shell.borrow().page.label().to_string())

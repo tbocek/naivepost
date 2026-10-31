@@ -306,7 +306,7 @@ fn sec_02_services_1_the_four_servers_s7_settings_are_reread_per_request() {
         None
     }
     assert_eq!(
-        svc::endpoint_for(&paths, svc::Server::Audio, &none).url,
+        svc::endpoint_for(&paths, svc::Server::Audio, none).url,
         "http://first:8765"
     );
 
@@ -316,7 +316,7 @@ fn sec_02_services_1_the_four_servers_s7_settings_are_reread_per_request() {
     })
     .expect("write second server url");
     assert_eq!(
-        svc::endpoint_for(&paths, svc::Server::Audio, &none).url,
+        svc::endpoint_for(&paths, svc::Server::Audio, none).url,
         "http://second:8765"
     );
 
@@ -328,7 +328,7 @@ fn sec_02_services_1_the_four_servers_s7_settings_are_reread_per_request() {
     // And a file that cannot be read resolves to the default rather than failing the request.
     std::fs::remove_file(paths.conf_path()).expect("remove conf");
     assert_eq!(
-        svc::endpoint_for(&paths, svc::Server::Llm, &none).url,
+        svc::endpoint_for(&paths, svc::Server::Llm, none).url,
         svc::llm_default()
     );
 }
@@ -687,7 +687,7 @@ fn sec_02_services_1_the_four_servers_s14_model_choice_survives_the_settings_fil
     })
     .expect("write model choice");
 
-    let raw = std::fs::read_to_string(&paths.conf_path()).expect("read the file");
+    let raw = std::fs::read_to_string(paths.conf_path()).expect("read the file");
     for line in [
         "AUDIOCPP_SERVER=\"gpu:8765\"",
         "AUDIOCPP_API_KEY=\"audio-key\"",

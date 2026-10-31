@@ -224,11 +224,15 @@ fn check_a_source_without_frames_is_silent_at_the_press(app: &adw::Application) 
 
     let logs = ui::window_logs();
     assert!(
-        !logs.iter().any(|line| line.contains("no frames to describe")),
+        !logs
+            .iter()
+            .any(|line| line.contains("no frames to describe")),
         "a folder not extracted yet is not reported as empty: {logs:?}"
     );
     assert!(
-        !logs.iter().any(|line| line.contains("[gonedeck] describe:")),
+        !logs
+            .iter()
+            .any(|line| line.contains("[gonedeck] describe:")),
         "and no plan is said for frames that do not exist: {logs:?}"
     );
     assert_eq!(

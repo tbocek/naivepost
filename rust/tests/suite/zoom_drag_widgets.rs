@@ -635,7 +635,7 @@ fn f3_1_s5_apply_places_the_zoom_and_says_so(app: &adw::Application) {
     assert_eq!(placed.dur, want.dur, "dur is what the module settled");
     assert_eq!(placed.trans, want.trans, "fade in likewise");
     assert_eq!(placed.tout, want.tout, "and fade out");
-    assert_eq!(placed.stay, false, "pull back, as the form showed");
+    assert!(!placed.stay, "pull back, as the form showed");
     assert_eq!(
         status_text(&window),
         zoom::placed_status(42.0, false),

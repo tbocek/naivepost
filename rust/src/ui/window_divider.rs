@@ -241,7 +241,9 @@ fn collapse_without_room(divider: &gtk::Paned) {
 /// The band's run-bar row and log expander, when the log is open: the two widgets an open band is measured by.
 fn open_log(divider: &gtk::Paned) -> Option<(gtk::Widget, gtk::Expander)> {
     let bottom = divider.end_child()?;
-    let log = find_in(&bottom, "log-expander")?.downcast::<gtk::Expander>().ok()?;
+    let log = find_in(&bottom, "log-expander")?
+        .downcast::<gtk::Expander>()
+        .ok()?;
     if !log.is_expanded() {
         return None;
     }

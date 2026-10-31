@@ -90,14 +90,7 @@ fn f2_8_s1_an_end_stops_at_a_seconds_worth_the_next_clip_and_the_recordings_end(
         "one second short of the wall is not an edit against it"
     );
 
-    let tail = trim::clamp_edge(
-        &vec![clip(10.0, 30.0)],
-        0,
-        trim::Border::End,
-        140.0,
-        0.0,
-        100.0,
-    );
+    let tail = trim::clamp_edge(&[clip(10.0, 30.0)], 0, trim::Border::End, 140.0, 0.0, 100.0);
     assert_eq!(
         tail, 100.0,
         "and the recording's end is the last second there is"

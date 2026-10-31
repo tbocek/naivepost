@@ -84,7 +84,12 @@ fn p_eng_wordpadseconds_s1_the_pad_is_0_08_and_catalogued_once() {
 fn p_eng_wordpadseconds_s2_the_start_opens_past_the_word_that_stays() {
     // P.eng.wordPadSeconds: a word ending at 1.5 leaves 0.08 of room, so the cut starts at 1.58.
     let w = word("stays", 1.0, 1.5);
-    let (marks, _) = edge::place_edges(vec![mark(3.0, 4.0, 0.0, 4.0)], &[w.clone()], none, &[]);
+    let (marks, _) = edge::place_edges(
+        vec![mark(3.0, 4.0, 0.0, 4.0)],
+        std::slice::from_ref(&w),
+        none,
+        &[],
+    );
     assert_eq!(marks[0].s, 1.58, "a pad after the last word that stays");
 
     // Asked directly, the same room on the far side of the word — but only where there is a FENCE to open.

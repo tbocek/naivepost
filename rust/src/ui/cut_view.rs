@@ -145,7 +145,10 @@ pub fn floor_pps(view: f64) -> f64 {
 pub fn live_pps(view: f64) -> f64 {
     // A session so short that fitting it on screen wants more than the zoom's ceiling sits at the ceiling. The
     // first rewrite clamped with the floor above the ceiling, which panics: a 1 s session crashed the Cut page.
-    pps().clamp(floor_pps(view).min(cut_screen::ZOOM_MAX), cut_screen::ZOOM_MAX)
+    pps().clamp(
+        floor_pps(view).min(cut_screen::ZOOM_MAX),
+        cut_screen::ZOOM_MAX,
+    )
 }
 
 /// How far the view starts, in pixels: 0 shows the session from its first filmed second.

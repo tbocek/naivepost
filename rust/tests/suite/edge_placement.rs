@@ -80,7 +80,12 @@ fn f1_11_s1_without_an_envelope_a_hair_past_the_word_is_all_there_is() {
     assert_eq!(edge::WORD_PAD, 0.08);
     let w = word("stays", 1.0, 1.5);
 
-    let (marks, notes) = edge::place_edges(vec![mark(3.0, 4.0, 0.0, 4.0)], &[w.clone()], none, &[]);
+    let (marks, notes) = edge::place_edges(
+        vec![mark(3.0, 4.0, 0.0, 4.0)],
+        std::slice::from_ref(&w),
+        none,
+        &[],
+    );
     assert_eq!(marks[0].s, 1.58, "a pad after the last word that stays");
     assert_eq!(
         notes,

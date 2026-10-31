@@ -158,7 +158,12 @@ pub fn keep_for_good(
     let system = join_system(user_context);
     let first = joins::request(user_context, k, n, wide, before, after, None);
     let parts = seam_parts(&system, &first, &model, 0);
-    llm_cache::store(tree, joins::STEP, &parts, r#"{"drop_before":"","drop_after":""}"#);
+    llm_cache::store(
+        tree,
+        joins::STEP,
+        &parts,
+        r#"{"drop_before":"","drop_after":""}"#,
+    );
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.

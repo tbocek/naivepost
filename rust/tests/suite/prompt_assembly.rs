@@ -969,8 +969,17 @@ fn sec_09_llm_and_tools_8_prompt_assembly_the_script_block_can_be_taken_out_of_t
     ] {
         let context = format!("Before.\n\n{start}\nSaid here.\nAnd here.\n{stop}\n\nAfter.");
         let left = asm::without_script(&context);
-        assert!(left.contains("Before.") && left.contains("After."), "{left}");
-        assert!(!left.contains("Said here") && !left.contains("SCRIPT"), "{left}");
+        assert!(
+            left.contains("Before.") && left.contains("After."),
+            "{left}"
+        );
+        assert!(
+            !left.contains("Said here") && !left.contains("SCRIPT"),
+            "{left}"
+        );
     }
-    assert_eq!(asm::without_script("No script at all."), "No script at all.");
+    assert_eq!(
+        asm::without_script("No script at all."),
+        "No script at all."
+    );
 }

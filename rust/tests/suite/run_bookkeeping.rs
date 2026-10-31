@@ -559,7 +559,10 @@ fn f1_1_the_merge_row_has_most_of_the_fix_stages_bar() {
     tasks.push(task(naivepost::fix_session::SESSION_TASK));
     let fix = stage(tasks);
     assert_eq!(stage_at(&fix, 0), 0.0);
-    assert!((stage_at(&fix, 99) - (1.0 - MERGE_ROW_SHARE)).abs() < 1e-9, "the blocks fill only their part");
+    assert!(
+        (stage_at(&fix, 99) - (1.0 - MERGE_ROW_SHARE)).abs() < 1e-9,
+        "the blocks fill only their part"
+    );
     assert_eq!(stage_at(&fix, 100), 1.0, "the row's end is the stage's end");
     let even = stage(vec![task("ask"); 4]);
     assert_eq!(stage_at(&even, 1), 0.25);

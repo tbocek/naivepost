@@ -259,17 +259,13 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s4_ever
     let windows = vec![(0.0, 90.0)];
     let mut turns = speaks(0, 2.0, 20.0, 15.0, 4);
     extend(&mut turns, &speaks(1, 5.0, 12.0, 7.0, 4));
-    let anchor_seconds;
-    let place;
-    match diarize::plan(600.0, 90.0, &windows, &[turns]) {
+
+    let (anchor_seconds, place) = match diarize::plan(600.0, 90.0, &windows, &[turns]) {
         Scan::Planned {
             place: p, anchor, ..
-        } => {
-            anchor_seconds = anchor.seconds();
-            place = p;
-        }
+        } => (anchor.seconds(), p),
         other => panic!("expected a plan, got {other:?}"),
-    }
+    };
     // The one second of slack is what keeps the anchor and the window from meeting mid-word.
     let span = 90.0 - anchor_seconds - diarize::WINDOW_SLACK_SECONDS;
     assert!(

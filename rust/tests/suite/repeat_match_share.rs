@@ -104,8 +104,8 @@ fn p_eng_repeatshare_s3_four_of_five_passes_and_three_does_not() {
     // The two fixtures differ ONLY in how many tail words turned up — same tail, same leading words, one fewer
     // present — which is what makes the bar the thing that decided rather than any difference in shape.
     assert_eq!(tail.len(), 5);
-    assert_eq!((4 as f64 / 5.0) >= pd::TAIL_MATCH_MIN, true);
-    assert_eq!((3 as f64 / 5.0) >= pd::TAIL_MATCH_MIN, false);
+    assert!((4_f64 / 5.0) >= pd::TAIL_MATCH_MIN);
+    assert!(!((3_f64 / 5.0) >= pd::TAIL_MATCH_MIN));
 }
 
 /// S4: the ceil raises the bar above the stated share for a short tail — and this bound is not the two

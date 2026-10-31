@@ -363,7 +363,7 @@ impl Scene {
     }
 
     fn tree(&self) -> naivepost::layout::Tree {
-        naivepost::layout::Tree::new(&self.session()).expect("the session is a project")
+        naivepost::layout::Tree::new(self.session()).expect("the session is a project")
     }
 
     /// Describe this scene's footage source the way the stage does, but with the scene's own tree and
@@ -452,7 +452,7 @@ impl Scene {
 
     fn events(&self) -> String {
         std::fs::read_to_string(
-            naivepost::layout::Tree::new(&self.session())
+            naivepost::layout::Tree::new(self.session())
                 .expect("the tree")
                 .events_tsv("lecture"),
         )
@@ -461,7 +461,7 @@ impl Scene {
 
     fn state(&self) -> String {
         std::fs::read_to_string(
-            naivepost::layout::Tree::new(&self.session())
+            naivepost::layout::Tree::new(self.session())
                 .expect("the tree")
                 .describe_state("lecture"),
         )
@@ -482,7 +482,11 @@ impl Scene {
         let mut log = Vec::new();
         let mut ran = 0usize;
         for task in &stage.tasks {
-            naivepost::describe_call::run_task(task, &mut |line| log.push(line.to_string()), &mut |_, _| {})?;
+            naivepost::describe_call::run_task(
+                task,
+                &mut |line| log.push(line.to_string()),
+                &mut |_, _| {},
+            )?;
             ran += 1;
         }
         Ok((ran, log))
@@ -843,7 +847,11 @@ fn sec_02_services_3_tool_catalogue_s3_2_describe_reads_a_prose_reply_beside_a_b
     ));
     let scene = Scene::new("prose", 4, &fake.url);
     walk(&scene, &mut |_line| {}).expect("a reply describing every frame in its text is an answer");
-    assert_eq!(fake.waited(1).len(), 1, "answered on the first ask, not refused");
+    assert_eq!(
+        fake.waited(1).len(),
+        1,
+        "answered on the first ask, not refused"
+    );
     let events = scene.events();
     let texts: Vec<&str> = events
         .lines()
@@ -891,7 +899,11 @@ fn sec_02_services_3_tool_catalogue_s3_2_describe_text_fills_what_the_calls_did_
     ));
     let scene = Scene::new("mixed", 4, &fake.url);
     walk(&scene, &mut |_line| {}).expect("every frame is described in the text");
-    assert_eq!(fake.waited(1).len(), 1, "answered on the first ask, not refused");
+    assert_eq!(
+        fake.waited(1).len(),
+        1,
+        "answered on the first ask, not refused"
+    );
     let texts = |events: String| -> Vec<String> {
         events
             .lines()
@@ -905,7 +917,11 @@ fn sec_02_services_3_tool_catalogue_s3_2_describe_text_fills_what_the_calls_did_
         "Slide 17 with the demo bullets.",
         "same",
     ];
-    assert_eq!(texts(scene.events()), want, "the text, and the one call naming a frame of the batch");
+    assert_eq!(
+        texts(scene.events()),
+        want,
+        "the text, and the one call naming a frame of the batch"
+    );
 
     // The replay: the chunk's rows gone, its cached reply read back without a socket.
     let describe_dir = Path::new(&scene.session()).join("prepare/describe/lecture");
@@ -913,7 +929,11 @@ fn sec_02_services_3_tool_catalogue_s3_2_describe_text_fills_what_the_calls_did_
     let _ = std::fs::remove_file(describe_dir.join("state.txt"));
     walk(&scene, &mut |_line| {}).expect("the cached reply answers the chunk");
     assert_eq!(fake.waited(1).len(), 1, "the replay made no ask");
-    assert_eq!(texts(scene.events()), want, "the replay writes the same words, not \"same\"");
+    assert_eq!(
+        texts(scene.events()),
+        want,
+        "the replay writes the same words, not \"same\""
+    );
 }
 
 /// §03-shell §2: the describe stage's line counts its requests over the whole stage, what there is and how
@@ -954,7 +974,9 @@ fn sec_03_shell_2_the_run_bar_the_describe_line_counts_the_stages_requests() {
     for done in 0..=3 {
         let want = format!("-- {done} of 3 requests");
         assert!(
-            lines.iter().any(|line| line.starts_with("describe") && line.ends_with(&want)),
+            lines
+                .iter()
+                .any(|line| line.starts_with("describe") && line.ends_with(&want)),
             "the line says `{want}` at some point: {lines:?}"
         );
     }
@@ -968,7 +990,12 @@ fn sec_03_shell_2_the_run_bar_the_describe_line_counts_the_stages_requests() {
 fn sec_02_services_3_tool_catalogue_s3_2_describe_reads_a_later_chunks_prose_by_its_own_seconds() {
     let at = |index: usize| index as f64 * SCENE_INTERVAL;
     let lines: Vec<String> = (0..6)
-        .map(|index| format!("EVENT [+{:.1}s]: Slide {index} fills the screen.", at(index)))
+        .map(|index| {
+            format!(
+                "EVENT [+{:.1}s]: Slide {index} fills the screen.",
+                at(index)
+            )
+        })
         .collect();
     let content = format!("{}\\nSTATE: The slides go by.", lines.join("\\n"));
     let fake = Fake::start(format!(
@@ -983,8 +1010,13 @@ fn sec_02_services_3_tool_catalogue_s3_2_describe_reads_a_later_chunks_prose_by_
         .filter(|line| !line.is_empty())
         .map(|line| line.rsplit('\t').next().unwrap_or("").to_string())
         .collect();
-    let want: Vec<String> = (0..6).map(|index| format!("Slide {index} fills the screen.")).collect();
-    assert_eq!(texts, want, "the second chunk's frames are its own lines, not \"same\"");
+    let want: Vec<String> = (0..6)
+        .map(|index| format!("Slide {index} fills the screen."))
+        .collect();
+    assert_eq!(
+        texts, want,
+        "the second chunk's frames are its own lines, not \"same\""
+    );
 }
 
 /// `speech_around` answers with every recording's words over the span, not the capped two-per-side extract

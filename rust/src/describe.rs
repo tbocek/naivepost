@@ -473,11 +473,15 @@ pub fn cached_note(cached: usize) -> String {
 pub fn prose_calls(reply: &str, stamps: &[f64]) -> Vec<(String, serde_json::Value)> {
     let mut calls = Vec::new();
     let (rest, state) = match reply.find("STATE:") {
-        Some(at) => (&reply[..at], Some(flatten_line(&reply[at + "STATE:".len()..]))),
+        Some(at) => (
+            &reply[..at],
+            Some(flatten_line(&reply[at + "STATE:".len()..])),
+        ),
         None => (reply, None),
     };
-    let stamped = regex::Regex::new(r"(?m)EVENT\s*\[\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*s?\s*\]\s*:\s*(.*)$")
-        .expect("a fixed pattern");
+    let stamped =
+        regex::Regex::new(r"(?m)EVENT\s*\[\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*s?\s*\]\s*:\s*(.*)$")
+            .expect("a fixed pattern");
     for line in stamped.captures_iter(rest) {
         let Ok(at) = line[1].parse::<f64>() else {
             continue;
@@ -741,7 +745,12 @@ pub fn stage_log(
 pub fn picked_for(tree: &Tree, lane: &str, frames_on_disk: &[f64]) -> Vec<f64> {
     let changes = read_changes(tree, lane);
     let duration = frames_on_disk.last().copied().unwrap_or(0.0) + GRID;
-    sorted(&pick_frames(&changes, duration, GRID, crate::text_gate::HEARTBEAT_S))
+    sorted(&pick_frames(
+        &changes,
+        duration,
+        GRID,
+        crate::text_gate::HEARTBEAT_S,
+    ))
 }
 
 /// How many requests describing one footage source takes, read off disk: its chunks, four picked frames a

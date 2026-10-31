@@ -61,7 +61,13 @@ pub fn runs_of(tree: &Tree, cut: &Cut) -> Vec<SpokenRun> {
     };
     // The envelopes the edges are placed on, as the marks' are (F1.11). A recording with none takes the word pad.
     let sources: Vec<String> = crate::project::load(tree.dir())
-        .map(|project| project.sources.iter().map(|source| source.path.clone()).collect())
+        .map(|project| {
+            project
+                .sources
+                .iter()
+                .map(|source| source.path.clone())
+                .collect()
+        })
         .unwrap_or_default();
     let held = crate::edges::load(tree, &crate::hand_edit::session_lanes(tree, &sources));
     let edge_of = crate::edges::finder(&held);

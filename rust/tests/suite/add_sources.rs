@@ -163,8 +163,8 @@ fn f0_12_s2_copy_on_lands_in_sources_and_stores_the_one_path_rule() {
     )
     .unwrap();
 
-    assert_eq!(fs::read(&dir.join("sources/cam.mkv")).unwrap().len(), 5);
-    assert_eq!(fs::read(&dir.join("sources/mic.wav")).unwrap().len(), 3);
+    assert_eq!(fs::read(dir.join("sources/cam.mkv")).unwrap().len(), 5);
+    assert_eq!(fs::read(dir.join("sources/mic.wav")).unwrap().len(), 3);
     assert_eq!(
         found.paths,
         vec!["project:sources/cam.mkv", "project:sources/mic.wav"]
@@ -227,7 +227,8 @@ fn f0_12_s2_a_file_already_inside_the_project_is_added_in_place() {
     fs::write(&own, b"already here").unwrap();
 
     let mut project = Project::default();
-    let found = add_sources::add(&mut project, &root, &dir, &[own.clone()], true).unwrap();
+    let found =
+        add_sources::add(&mut project, &root, &dir, std::slice::from_ref(&own), true).unwrap();
 
     assert_eq!(found.paths, vec!["project:sources/own.wav"]);
     assert_eq!(fs::read_to_string(&own).unwrap(), "already here");
@@ -252,7 +253,14 @@ fn f0_12_s2_copy_off_references_in_place() {
     let picked = file(&card, "cam.mkv", 6);
 
     let mut project = Project::default();
-    let found = add_sources::add(&mut project, &root, &dir, &[picked.clone()], false).unwrap();
+    let found = add_sources::add(
+        &mut project,
+        &root,
+        &dir,
+        std::slice::from_ref(&picked),
+        false,
+    )
+    .unwrap();
 
     assert_eq!(
         found.paths,
@@ -423,7 +431,8 @@ fn f0_12_s5_the_sentences_are_the_ones_the_spec_writes() {
     let wav = file(&card, "mic.wav", 1);
 
     let mut project = Project::default();
-    let one = add_sources::add(&mut project, &root, &dir, &[wav.clone()], false).unwrap();
+    let one =
+        add_sources::add(&mut project, &root, &dir, std::slice::from_ref(&wav), false).unwrap();
     assert_eq!(one.status, format!("added {} source(s)", one.added));
 
     fs::remove_dir_all(&root).ok();

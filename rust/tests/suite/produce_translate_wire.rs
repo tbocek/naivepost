@@ -625,12 +625,11 @@ fn f5_4_s3_wire_only_a_complete_answer_is_cached() {
         2,
         "the cached answer is the whole answer: {again:?}"
     );
-    assert_eq!(
+    assert!(
         subs::cached(true),
-        true,
         "a complete batch is the cacheable one (§F5.4 S3)"
     );
-    assert_eq!(subs::cached(false), false, "a partial one never is");
+    assert!(!subs::cached(false), "a partial one never is");
 }
 
 /// One check of the real leg, in its own scenario: the settings address and `cache/llm` are

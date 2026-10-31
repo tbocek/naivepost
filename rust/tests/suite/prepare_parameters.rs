@@ -70,7 +70,7 @@ fn sec_04_prepare_4_parameters_used_s1_every_parameter_the_section_names_is_cata
         assert!(ids.contains(&id), "{id} missing from the catalogue");
     }
     // In order, and no row twice — a duplicate would mean two homes for one bound.
-    let first: Vec<&str> = named.iter().copied().collect();
+    let first: Vec<&str> = named.to_vec();
     assert_eq!(&ids[..named.len()], &first[..]);
     let unique: std::collections::HashSet<&str> = ids.iter().copied().collect();
     assert_eq!(unique.len(), ids.len(), "one row per parameter");

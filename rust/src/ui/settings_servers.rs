@@ -235,9 +235,8 @@ pub(crate) fn wire(lent: Lent, conf: &crate::settings::Conf) {
                         return;
                     }
                     let gone = with_state(|state| {
-                        server_entries::delete(state.servers.group_mut(section), &name).map(|next| {
+                        server_entries::delete(state.servers.group_mut(section), &name).inspect(|_next| {
                             state.dirty = true;
-                            next
                         })
                     })
                     .unwrap_or_else(|| Err("the dialog is closed".to_string()));

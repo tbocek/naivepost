@@ -94,7 +94,7 @@ pub fn planned_requests(task: &crate::run_stages::Task) -> usize {
     let Some(source) = task.args.first() else {
         return 0;
     };
-    match Tree::new(&session_dir()) {
+    match Tree::new(session_dir()) {
         Ok(tree) => describe::planned_requests(&tree, &crate::audio_task::source_lane(source)),
         Err(_) => 0,
     }
@@ -420,7 +420,12 @@ fn run_chunk(
         // and saying which picture is missing is the honest answer (§Failure-is-specific).
         Err(reason) => return Err(format!("{lane}: {reason}")),
     };
-    let key = describe::cache_key(&system_message(paths, user_context), &message, &images, &conf.model);
+    let key = describe::cache_key(
+        &system_message(paths, user_context),
+        &message,
+        &images,
+        &conf.model,
+    );
     // §F1.7 S2's resume rule read through [`describe::starts_already_logged`], and one rung past it:
     // a chunk whose START is already in the event log is answered without a request, whether the text
     // comes back from `cache/llm/describe/` or only from what is on disk. Answers `None` when the
@@ -894,10 +899,11 @@ fn apply_and_write(
 ) -> Result<usize, String> {
     // A stored reply is the call list the tool path filed, or the prose a prose reply was; a reply that is
     // not a call list is prose, read by §3.2's floor against the frames as the request stamped them.
-    let calls: Vec<(String, serde_json::Value)> = match serde_json::from_str::<Vec<serde_json::Value>>(reply) {
-        Ok(stored) => stored.iter().filter_map(stored_call).collect(),
-        Err(_) => describe::prose_calls(reply, batch),
-    };
+    let calls: Vec<(String, serde_json::Value)> =
+        match serde_json::from_str::<Vec<serde_json::Value>>(reply) {
+            Ok(stored) => stored.iter().filter_map(stored_call).collect(),
+            Err(_) => describe::prose_calls(reply, batch),
+        };
     let mut held = batch_of(batch, interval, history);
     for (name, args) in &calls {
         describe::apply_tool(&mut held, name, args);
