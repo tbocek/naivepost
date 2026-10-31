@@ -403,6 +403,8 @@ impl Tracker {
 /// What one derivation did.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Derived {
+    /// The model could not be reached, so this context is still not derived and the next ▶ asks again.
+    pub model_fault: bool,
     /// S1: the context was empty, so the defaults stand and the model was never asked.
     pub used_defaults: bool,
     /// §12 entry 21: whether a target length was READ from the User Context's words and stored. A read that
@@ -487,6 +489,7 @@ pub fn derive(
             if !out.refusals.contains(&fault) {
                 out.refusals.push(fault);
             }
+            out.model_fault = true;
             // One dead model is one fault: asking again would spend §3's patience ladder per round over a
             // server that was missing on the first try and is no more reachable now.
             break;
@@ -574,6 +577,18 @@ pub fn target_length_log(derived: &Derived) -> Option<String> {
          \u{2014} the target length stays none"
             .to_string()
     })
+}
+
+/// What a derivation could not settle, each said once. Silence here read as a policy the model chose.
+pub fn refused_log(derived: &Derived) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for refusal in &derived.refusals {
+        let line = format!("!!! policy: {refusal} \u{2014} that field keeps its default");
+        if !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+    lines
 }
 
 /// S4: one line per value this derivation STORED, spelling the field, the value and the `because` that

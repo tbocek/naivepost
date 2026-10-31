@@ -132,3 +132,30 @@ fn f0_7_s4_an_empty_context_logs_nothing_because_nothing_was_set() {
         "a defaults-only derivation has nothing to report"
     );
 }
+
+#[test]
+fn what_could_not_be_derived_is_said_and_a_dead_model_is_asked_again() {
+    let mut policy = Policy::default();
+    let mut unknown =
+        |_: &policy::DerivationRequest, _: &[String]| vec![proposal("noSuchField", "1", "")];
+    let derived = policy::derive(&mut policy, "some context", &mut unknown);
+    let lines = policy::refused_log(&derived);
+    assert_eq!(
+        lines.len(),
+        1,
+        "a refusal repeated each round is one line: {lines:?}"
+    );
+    assert!(lines[0].starts_with("!!! policy:") && lines[0].contains("noSuchField"));
+    assert!(!derived.model_fault, "the model answered");
+
+    let mut dead = |_: &policy::DerivationRequest, _: &[String]| {
+        vec![proposal(
+            naivepost::policy_call::FAULT_FIELD,
+            "",
+            "the model is down",
+        )]
+    };
+    let derived = policy::derive(&mut policy, "some context", &mut dead);
+    assert!(derived.model_fault);
+    assert!(policy::refused_log(&derived)[0].contains("the model is down"));
+}

@@ -153,10 +153,7 @@ pub fn session_wall() -> f64 {
 /// F2.8 S2/S3: a right-drag moved. [`cut_trim::right_gesture`] answers the whole gesture; this applies
 /// the answer — the shift map, the row change, the folds to open — and prints the sentence.
 ///
-/// S3 holds here absolutely: nothing on this path touches the red line. `cut_trim::right_press_moves_line()`
-/// is `false`, and there is deliberately no `set_playhead` / `ui::move_line_and_save` call anywhere in this
-/// function or in the button-3 gesture that reaches it, so the page cannot drift into moving the line
-/// while the right hand is doing arithmetic on the clock.
+/// S3: nothing on this path or in the button-3 gesture that reaches it moves the red line.
 /// F2.8 S2: the boxes `track-strip` paints for this window's cut, in the same px space a press arrives in.
 /// Read from the newest review cut so a press and a paint never disagree about where a clip is.
 pub(crate) fn trim_boxes_for_strip() -> Vec<cut_trim::Box_> {

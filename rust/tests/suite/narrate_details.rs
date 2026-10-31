@@ -581,6 +581,4 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_prev
     assert!(stopped.picture_paused && stopped.voice_paused);
     assert!(!stopped.started);
     assert_eq!(stopped.play_button, "\u{25b6}");
-    assert!(screen::speaks_alone_off_the_tick(true));
-    assert!(!screen::speaks_alone_off_the_tick(false));
 }

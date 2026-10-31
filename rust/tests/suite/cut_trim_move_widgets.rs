@@ -127,10 +127,6 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
         line_before,
         "a right drag never moves the line"
     );
-    assert!(
-        !trim::right_press_moves_line(),
-        "the guard the page leans on says the right press never moves the line"
-    );
 
     mover.emit_by_name::<()>("drag-end", &[&40.0f64, &0.0f64]);
     settle();

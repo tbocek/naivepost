@@ -105,9 +105,6 @@ fn sec_05_cut_7_rules_s2_a_border_belongs_to_both_buttons() {
     // Mid-clip there is no border to grab at all — that press selects or moves instead.
     assert_eq!(cut_trim::grab_border(120.0, start_px, end_px), None);
 
-    // Moving is the right button's verb: it never drags the playhead out from under the preview.
-    assert!(!cut_trim::right_press_moves_line());
-
     // A selection is of what it was drawn on: a row's footage, or one recording's sound.
     let pictures = cut_select::draw(Surface::PictureRow(1), None, 10.0, 20.0)
         .expect("a row selects its footage");

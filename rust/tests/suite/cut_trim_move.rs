@@ -592,10 +592,6 @@ fn f2_8_s2_the_status_says_which_way_the_clock_moved() {
 #[test]
 fn f2_8_s3_an_unmoved_press_is_a_click_and_a_right_click_never_moves_the_line() {
     assert!(trim::is_click(0.0, false), "nothing moved, nothing asked");
-    assert!(
-        !trim::right_press_moves_line(),
-        "\"a right click never moves the line\""
-    );
 }
 
 // --- F2.8 S2: the strip's bands, read from the press's y -----------------------------------------------

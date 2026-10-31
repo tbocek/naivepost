@@ -21,22 +21,6 @@ fn output_length(seg: &Seg) -> f64 {
     crate::narration::output_seconds(raw, seg.rate)
 }
 
-/// The kept FOOTAGE stretches on the produced clock, as `(start, end)` pairs: inserts contribute no
-/// footage (§F5.6 S1's brief rule, reused here), and a stretch of no length contributes nothing either, so
-/// a freeze frame cannot be one of the three pictures of the video.
-pub fn kept_footage(segs: &[Seg]) -> Vec<(f64, f64)> {
-    let mut spans = Vec::with_capacity(segs.len());
-    let mut at = 0.0;
-    for seg in segs {
-        let kept = output_length(seg);
-        if seg.ins.is_empty() && kept > 0.0 {
-            spans.push((at, at + kept));
-        }
-        at += kept;
-    }
-    spans
-}
-
 /// The `SPREAD_COUNT` moments evenly spread over the kept footage: the middles of three equal bands over the
 /// whole kept span, which is what "evenly spread" means for a video whose clips have different lengths —
 /// three per clip would show the start of the video three times over on a session that keeps one long take.

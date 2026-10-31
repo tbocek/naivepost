@@ -887,36 +887,27 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
     let s = read_state();
     match narrate_screen::add_at_playhead(s.session, &s.segs, &s.entries) {
         Ok(at) => {
-            // `add_at_playhead` answers with the clip's start, which is what the marker question and
-            // the status sentence are both about.
-            // §F4.7's free add lands where the playhead stands, so the entry's clip-relative `at` is the
-            // gap between the two: `s`/`e` stay the clip's bounds (§C.1), `at` carries the placement.
-            let said = if narrate_edit::silent_marker_on(at, &s.entries).is_some() {
-                // §F4.7: when the clip's only entry is the empty "deliberately silent" marker, THAT
-                // entry moves to the playhead and becomes the line — no second row. The spec gives no
-                // sentence of its own here, so the page says what happened plainly rather than reusing
-                // "a line starts at", which would hide that nothing was added.
-                mutate(|state| {
-                    if let Some(index) = narrate_edit::silent_marker_on(at, &state.entries) {
-                        state.entries[index].at = (s.session - at).max(0.0);
-                    }
-                });
+            // `s`/`e` stay the clip's bounds (§C.1); `at` is the place inside it.
+            let clip = s
+                .segs
+                .iter()
+                .find(|seg| seg.s <= at && at < seg.e)
+                .cloned()
+                .unwrap_or_default();
+            let offset = (at - clip.s).max(0.0);
+            let said = if let Some(index) = narrate_edit::silent_marker_on(clip.s, &s.entries) {
+                // §F4.7: the clip's lone "deliberately silent" marker moves here and becomes the line.
+                mutate(|state| state.entries[index].at = offset);
                 format!(
                     "the silent marker became this line at {}",
-                    narrate_screen::time_field(s.session)
+                    narrate_screen::time_field(at)
                 )
             } else {
                 mutate(|state| {
-                    let clip = state
-                        .segs
-                        .iter()
-                        .find(|seg| seg.s <= at && at < seg.e)
-                        .cloned()
-                        .unwrap_or_default();
                     state.entries.push(Entry {
                         s: clip.s,
                         e: clip.e,
-                        at: (at - clip.s).max(0.0),
+                        at: offset,
                         ..Default::default()
                     });
                     crate::narration::sort_entries(&mut state.entries);

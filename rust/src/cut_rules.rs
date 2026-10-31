@@ -7,7 +7,6 @@
 //! * one Undo per drag, an unmoved press is a click, a border belongs to both buttons, moving is the right
 //!   button's verb — [`crate::cut_trim`]'s [`pushes_undo`](crate::cut_trim::pushes_undo),
 //!   [`is_click`](crate::cut_trim::is_click), [`grab_border`](crate::cut_trim::grab_border),
-//!   [`right_press_moves_line`](crate::cut_trim::right_press_moves_line),
 //!   [`merge_pair`](crate::cut_trim::merge_pair), [`trimmable`](crate::cut_trim::trimmable);
 //! * what a press holds and where the line goes — [`crate::cut_line::Held`] and
 //!   [`crate::cut_line::click_outcome`];

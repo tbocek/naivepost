@@ -888,8 +888,6 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_prev
         screen::spoken_alone(3),
         "entry 3 \u{2014} no recording covers this clip, so the line plays on its own"
     );
-    assert!(screen::speaks_alone_off_the_tick(true));
-    assert!(!screen::speaks_alone_off_the_tick(false));
     let (case, said) = screen::audition_without_recording(screen::Audition::Speak { from: 4.0 }, 3);
     assert!(matches!(case, screen::Audition::Speak { from: 4.0 }));
     assert_eq!(

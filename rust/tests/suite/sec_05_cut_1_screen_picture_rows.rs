@@ -105,13 +105,6 @@ fn lane_geo(lane_rows: usize) -> LaneGeo {
     }
 }
 
-/// Frame names, spelled the only way that means anything here: `clock::frame_name`.
-fn stamps(at: &[f64]) -> Vec<PathBuf> {
-    at.iter()
-        .map(|second| PathBuf::from(format!("{}.jpg", naivepost::clock::frame_name(*second))))
-        .collect()
-}
-
 /// §1: the listed frames mark their own cells — a row with frames in it is NOT the flat band an empty lane paints.
 #[test]
 fn sec_05_cut_1_screen_a_listed_frame_marks_its_own_cell() {

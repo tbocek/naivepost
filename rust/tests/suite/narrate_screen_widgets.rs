@@ -345,8 +345,6 @@ fn sec_07_narrate_1_screen_s8_the_row_button_has_six_answers_and_each_says_its_o
     );
 
     // A clip no recording covers speaks alone off the tick, and says so in §1's words.
-    assert!(page::speaks_alone_off_the_tick(true));
-    assert!(!page::speaks_alone_off_the_tick(false));
     assert_eq!(
         page::spoken_alone(2),
         "entry 2 \u{2014} no recording covers this clip, so the line plays on its own"
@@ -672,10 +670,6 @@ fn sec_07_narrate_1_screen_s13_the_tooltip_names_the_eight_in_order_and_the_tag(
     assert!(tip.contains("[angry=1]"), "{tip}");
     assert!(tip.contains("@N"), "{tip}");
     assert!(tip.contains("[top|center|bottom]"), "{tip}");
-
-    // One line tall at rest, three at most when the row is the tall one.
-    assert_eq!(page::tooltip_line_count(false), (1, 1));
-    assert_eq!(page::tooltip_line_count(true), (1, 3));
 }
 
 // --- S14: the numbers themselves (§10, as §1 uses them) ------------------------------------------------------

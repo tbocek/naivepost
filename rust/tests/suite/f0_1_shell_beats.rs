@@ -139,6 +139,27 @@ fn check_autosave_beat(app: &adw::Application) {
         1.0,
         "the tag alone moves it"
     );
+    // ＋ away from the clip's start, and near it: its lone silent marker becomes the line, with no second row.
+    for offset in [3.0, 0.5] {
+        ui::set_state(naivepost::ui::NarrateState {
+            entries: vec![naivepost::narration::Entry {
+                s: 50.0,
+                e: 60.0,
+                ..Default::default()
+            }],
+            segs: vec![naivepost::cut::Seg {
+                s: 50.0,
+                e: 60.0,
+                ..Default::default()
+            }],
+            session: 50.0 + offset,
+            ..Default::default()
+        });
+        ui::narrate_page::press_narrate_add_line(&window);
+        let lines = ui::read_state().entries;
+        assert_eq!(lines.len(), 1, "no row beside the marker");
+        assert_eq!(lines[0].at, offset, "the marker moved to the playhead");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 /// The row's live box; writing its buffer is what makes `changed` run, as a keystroke does.

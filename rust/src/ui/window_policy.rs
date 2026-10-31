@@ -274,9 +274,16 @@ fn finish_derivation(
     for line in policy::derived_log(&derived, &session.borrow().policy) {
         crate::ui::window::log_line(&line);
     }
+    for line in policy::refused_log(&derived) {
+        crate::ui::window::log_line(&line);
+    }
     // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
     // what stops every ▶ from re-asking about a context nobody intends to fill.
-    if let Some(tracker) = POLICY_TRACKERS.with(|trackers| trackers.borrow().last().cloned()) {
+    // A model that could not be reached answered nothing: the next ▶ asks again.
+    if let Some(tracker) = POLICY_TRACKERS
+        .with(|trackers| trackers.borrow().last().cloned())
+        .filter(|_| !derived.model_fault)
+    {
         tracker.borrow_mut().mark_derived(context);
     }
     // §03: a changed markingPass invalidates the marks, so Prepare re-runs its marking pass instead

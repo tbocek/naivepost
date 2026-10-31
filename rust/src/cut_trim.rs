@@ -885,12 +885,3 @@ pub fn ruler_ticks(rec_end: f64, pps: f64, every_seconds: f64) -> Vec<(f64, Stri
     }
     ticks
 }
-
-// --- S3: what the right button never does ----------------------------------------------------------------
-
-/// F2.8 S3: a right click never moves the red line. Where the left button puts it is F2.4's
-/// [`crate::cut_line::click_outcome`]; this is the one rule that says what the other button leaves alone, so
-/// the two hands can aim at a second and move footage there without the preview jumping.
-pub fn right_press_moves_line() -> bool {
-    false
-}

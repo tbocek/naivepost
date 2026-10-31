@@ -438,16 +438,6 @@ pub fn tag_moves_line(clip_s: f64, clip_e: f64, requested: f64, at: f64) -> (f64
     (requested - clip_s, false)
 }
 
-/// §1 / inventory §A.5 (`monospace, word wrap, 1–3 lines tall`): the box grows to three and then scrolls. A box
-/// that grew forever would push the rows below it off the page while someone was typing in one of them.
-pub fn tooltip_line_count(tall: bool) -> (i32, i32) {
-    if tall {
-        (1, 3)
-    } else {
-        (1, 1)
-    }
-}
-
 /// §1 (`Tooltip explains the tag, judge vs weighted mixes, the eight base emotions`). P.policy.narrationEmotionTag
 /// — the tag itself, which has no row of its own in §10 and is spelled by spec/prompts/system.md:72. The order is
 /// that line's, so the tooltip and the prompt the model reads name the same eight in the same order.
@@ -779,12 +769,6 @@ pub fn audition_without_recording(case: Audition, line_no: usize) -> (Audition, 
     }
 }
 
-/// §1 (`A clip no recording covers speaks alone off the tick`): with nothing under it the line is all there is to
-/// hear, so it plays without waiting for a picture.
-pub fn speaks_alone_off_the_tick(no_recording: bool) -> bool {
-    no_recording
-}
-
 /// §1 (`"synthesizing… (first line after a cold start also loads the model)"`). The parenthetical is the point: a
 /// first line takes far longer than every line after it, and without that sentence it looks like a hang. §1 gives
 /// this one no line number, unlike its neighbours ("line N ready", "entry N — …"), so it takes none either.
@@ -930,8 +914,13 @@ pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, 
 pub fn near_line_start(at: f64, entries: &[Entry]) -> Option<f64> {
     entries
         .iter()
-        .find(|entry| (entry.s + entry.at - at).abs() < ADD_NEAR_SECONDS)
-        .map(|entry| entry.s + entry.at)
+        .enumerate()
+        // A silent marker is no line to jump to: ＋ turns it into one.
+        .filter(|(index, entry)| {
+            crate::narrate_edit::silent_marker_on(entry.s, entries) != Some(*index)
+        })
+        .find(|(_, entry)| (entry.s + entry.at - at).abs() < ADD_NEAR_SECONDS)
+        .map(|(_, entry)| entry.s + entry.at)
 }
 
 /// §1's row ＋ (`starting where its audio ends`): [`ADD_BELOW_SECONDS`] after the line above, refused when the clip
