@@ -30,18 +30,20 @@ pub enum Pressed {
     Refused,
 }
 
+/// A selection wide enough to count as marked, as `(start, length)`.
+pub fn marked_stretch(selection: Option<(f64, f64)>) -> Option<(f64, f64)> {
+    let (a, b) = selection?;
+    let (from, to) = (a.min(b), a.max(b));
+    // `to - from == MIN_MARKED_SECONDS` is tested as "not below it" rather than "at or above it": 0.2 is not
+    // representable in binary, so the width of a band dragged to exactly the floor can come out one ulp under it
+    // and would be thrown away as a click that slipped.
+    (to - from > MIN_MARKED_SECONDS || (to - from - MIN_MARKED_SECONDS).abs() < 1e-9)
+        .then_some((from, to - from))
+}
+
 pub fn press(selection: Option<(f64, f64)>, line: Option<f64>) -> Pressed {
-    if let Some((a, b)) = selection {
-        let (from, to) = (a.min(b), a.max(b));
-        // `to - from == MIN_MARKED_SECONDS` is tested as "not below it" rather than "at or above it": 0.2 is not
-        // representable in binary, so the width of a band dragged to exactly the floor can come out one ulp under it
-        // and would be thrown away as a click that slipped.
-        if to - from > MIN_MARKED_SECONDS || (to - from - MIN_MARKED_SECONDS).abs() < 1e-9 {
-            return Pressed::Stretched {
-                t: from,
-                dur: to - from,
-            };
-        }
+    if let Some((t, dur)) = marked_stretch(selection) {
+        return Pressed::Stretched { t, dur };
     }
     match line {
         Some(_) => Pressed::StopAtLine,

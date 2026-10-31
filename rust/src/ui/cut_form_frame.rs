@@ -6,6 +6,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::ui;
+use crate::ui::window::find_widget_by_name;
 
 /// §A's tooltip for the heading's ✕, spelled once here because it is this widget's sentence.
 pub const CLOSE_TIP: &str = "close this form \u{2014} nothing is lost that was not already saved";
@@ -109,25 +110,21 @@ pub fn scroll_to_top(window: &adw::ApplicationWindow) -> bool {
 /// The frame's widgets, newest window winning like every other per-window reader here.
 fn named(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     let content = window.content()?;
-    find(content.upcast_ref(), name)
+    find_widget_by_name(content.upcast_ref(), name)
 }
 
-/// Depth-first search by widget name, the same walk `window.rs` uses. Kept local because that one is
-/// `pub(crate)` to its own module and this file must not reach past the module boundary for a helper.
-fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if root.widget_name() == name {
-        return Some(root.clone());
+/// Empty a holder: what it owns comes out, never by a tree-wide name search (a closed window's widgets stay parented
+/// somewhere).
+pub(crate) fn clear_children(holder: &gtk::Box) {
+    let stale: Vec<gtk::Widget> = holder
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .collect();
+    for old in stale {
+        holder.remove(&old);
     }
-    for child in root.observe_children().iter::<glib::Object>() {
-        let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else {
-            continue;
-        };
-        if let Some(found) = find(&widget, name) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 /// §A's pinned FOOTER: the buttons that finish the form live here, not at the end of the scrolling body.
@@ -138,17 +135,7 @@ pub fn set_footer(window: &adw::ApplicationWindow, buttons: Option<&gtk::Box>) -
     let Some(footer) = live_footer(window) else {
         return false;
     };
-    let mut old: Vec<gtk::Widget> = Vec::new();
-    for n in 0..footer.observe_children().n_items() {
-        if let Some(child) = footer.observe_children().item(n) {
-            if let Ok(widget) = child.downcast::<gtk::Widget>() {
-                old.push(widget);
-            }
-        }
-    }
-    for widget in old {
-        footer.remove(&widget);
-    }
+    clear_children(&footer);
     match buttons {
         Some(widget) => {
             footer.append(widget);
@@ -165,30 +152,6 @@ pub fn set_readings(window: &adw::ApplicationWindow, show: bool) -> bool {
     };
     grid.set_visible(show);
     true
-}
-
-/// The page's own insert-form holder while a form is DRAWING in it (visible and filled), so a footer is only
-/// written on the page that has a form. Same walk `visible_insert_form` does, called rather than copied.
-fn visible_insert_form_holder(window: &adw::ApplicationWindow) -> Option<gtk::Widget> {
-    fn walk(root: &gtk::Widget) -> Option<gtk::Widget> {
-        if root.widget_name() == "insert-form"
-            && root.is_visible()
-            && root.observe_children().n_items() > 0
-        {
-            return Some(root.clone());
-        }
-        for child in root.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else {
-                continue;
-            };
-            if let Some(found) = walk(&widget) {
-                return Some(found);
-            }
-        }
-        None
-    }
-    walk(window.upcast_ref())
 }
 
 fn live_footer(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
@@ -209,7 +172,7 @@ pub fn set_pinned(window: &adw::ApplicationWindow, heading: Option<&str>) -> boo
     // The column's own pinned parts. An INSERT is not one of them: its form and its footer are their own boxes
     // below the frame (§S4 draws the form in place of the readings), so `set_footer` owns that pair and this
     // door must not hide it while a form is drawing.
-    let insert_open = visible_insert_form_holder(window).is_some();
+    let insert_open = ui::visible_insert_form(window).is_some();
     let (Some(title), Some(head)) = (
         named(window, "cut-form-title").and_then(|w| w.downcast::<gtk::Label>().ok()),
         named(window, "cut-form-heading"),
@@ -242,17 +205,7 @@ pub fn set_pinned(window: &adw::ApplicationWindow, heading: Option<&str>) -> boo
             if !insert_open {
                 // A closed form leaves no buttons behind: an empty footer would still paint its 4 px box.
                 if let Some(footer) = column_footer(window) {
-                    let mut old: Vec<gtk::Widget> = Vec::new();
-                    for n in 0..footer.observe_children().n_items() {
-                        if let Some(child) = footer.observe_children().item(n) {
-                            if let Ok(widget) = child.downcast::<gtk::Widget>() {
-                                old.push(widget);
-                            }
-                        }
-                    }
-                    for widget in old {
-                        footer.remove(&widget);
-                    }
+                    clear_children(&footer);
                     footer.set_visible(false);
                 }
             }

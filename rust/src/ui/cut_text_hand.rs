@@ -6,7 +6,6 @@ use gtk4 as gtk;
 
 use crate::cut;
 use crate::cut_screen;
-use crate::cut_speed;
 use crate::fx_aspect;
 use crate::fx_band;
 use crate::fx_record;
@@ -14,18 +13,16 @@ use crate::fx_text;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
-    find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
-    live_form_refused, log_line, paste_line, preview_picture_px, record_edit, refresh_effects_lane,
-    refresh_selection_readout, review_cut_of, save_insert_cut, selection, trim_seconds,
-    zoom_field_row, INSERT_PLACE_KNOWN, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
+    find_status, find_widget_by_name, line_step_button, live_form_refused, log_line,
+    preview_picture_px, record_edit, refresh_effects_lane, refresh_selection_readout,
+    review_cut_of, trim_seconds, zoom_field_row, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
 };
+use crate::ui::{cut_form_buttons, cut_form_frame};
 
 pub fn press_text_item(window: &adw::ApplicationWindow) -> String {
     // A marked stretch outranks the line for the tail's wording; a band under every effect's floor for "marked"
     // (cut_speed::MIN_MARKED_SECONDS) is not a band at all, exactly as F3.3 reads it.
-    let marked = selection(window)
-        .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
-        .map(|band| (band.start, band.end));
+    let marked = cut_form_buttons::marked_band(window);
     match fx_text::arm(text_armed()) {
         fx_text::Press::Armed => {
             set_text_armed(true);
@@ -66,15 +63,7 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         return;
     };
     holder.set_visible(false);
-    let stale: Vec<gtk::Widget> = holder
-        .observe_children()
-        .iter::<glib::Object>()
-        .flatten()
-        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
-        .collect();
-    for old in stale {
-        holder.remove(&old);
-    }
+    cut_form_frame::clear_children(&holder);
     LAST_TEXT_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
 
     let heading = gtk::Label::new(Some(&fx_text::form_title(fx.t)));
@@ -229,12 +218,7 @@ fn current_text_window() -> Option<adw::ApplicationWindow> {
 }
 
 fn text_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_TEXT_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
-            .unwrap_or(false)
-    })
+    LAST_TEXT_WINDOW.with(|cell| cut_form_buttons::owns_form(&cell.borrow(), window))
 }
 
 pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
@@ -270,13 +254,7 @@ pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
             return reason;
         }
     };
-    let mut cut_ = review_cut_of(window);
-    cut_.fx.push(fx.clone());
-    save_insert_cut(&cut_);
-    // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
-    live_form_answer_is_undo(window);
-    record_edit(window, &cut_);
-    refresh_effects_lane(window);
+    cut_form_buttons::land_new_effect(window, fx);
     close_text_form(window);
     set_text_armed(false);
     // The sentence is `fx_record`'s own ("Text recorded — ↶ Undo takes it back"), reused rather than composed
@@ -373,23 +351,7 @@ fn wire_text_buttons(window: &adw::ApplicationWindow) {
 }
 
 pub(crate) fn wire_text_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_text_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    cut_form_buttons::wire_esc(window, press_text_esc);
 }
 
 pub fn text_drag_ended_with_source(
@@ -398,25 +360,10 @@ pub fn text_drag_ended_with_source(
     to: (f64, f64),
     source: (f64, f64),
 ) -> String {
-    let dx = to.0 - from.0;
-    let dy = to.1 - from.1;
-    // A press that did not travel is a CLICK wherever it landed, and a click takes the lower third (§S2).
-    let choice = if dx.abs() < fx_zoom::DRAG_MIN_PX || dy.abs() < fx_zoom::DRAG_MIN_PX {
-        fx_text::BoxChoice::Click
-    } else {
-        fx_text::BoxChoice::Dragged {
-            x: from.0.min(to.0),
-            y: from.1.min(to.1),
-            w: dx.abs(),
-            h: dy.abs(),
-        }
-    };
+    let choice = fx_text::drag_choice(from, to);
     // The line is known only if this session ever placed one, read through the same seam Paste/Insert/Speed use.
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    let line = known.then(|| paste_line(window));
-    let selection = selection(window)
-        .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
-        .map(|band| (band.start, band.end));
+    let line = cut_form_buttons::known_line(window);
+    let selection = cut_form_buttons::marked_band(window);
     match fx_text::place(choice, line, selection, source) {
         Some(fx) => {
             show_text_form(window, &fx);

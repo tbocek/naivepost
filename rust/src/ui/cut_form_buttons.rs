@@ -7,8 +7,13 @@ use gtk4 as gtk;
 /// The two labels §F3.8 S5 spells, in the order it puts them on the row.
 pub const FORM_BUTTONS: [&str; 2] = ["Apply", "Cancel"];
 
+use crate::cut;
+use crate::cut_speed;
 use crate::fx_band;
-use crate::ui::window::find_widget_by_name;
+use crate::ui::window::{
+    find_status, find_widget_by_name, live_form_answer_is_undo, paste_line, record_edit,
+    refresh_effects_lane, review_cut_of, save_insert_cut, selection, INSERT_PLACE_KNOWN,
+};
 
 thread_local! {
     /// Per-form-kind debounce state: when the last keystroke landed, and whether a timer is already waiting for the
@@ -16,6 +21,67 @@ thread_local! {
     /// arms the timer, the rest only move the stamp.
     static FORM_STAMPS: std::cell::RefCell<std::collections::HashMap<String, (std::time::Instant, bool)>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The line, known only if this session ever placed one.
+pub(crate) fn known_line(window: &adw::ApplicationWindow) -> Option<f64> {
+    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    known.then(|| paste_line(window))
+}
+
+/// The marked stretch; a band under every effect's floor for "marked" is not a band at all, exactly as F3.3 reads it.
+pub(crate) fn marked_band(window: &adw::ApplicationWindow) -> Option<(f64, f64)> {
+    selection(window)
+        .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
+        .map(|band| (band.start, band.end))
+}
+
+/// Does `window` own the live form, as `owner` last drew it? Two windows both holding one would put Apply's write
+/// into whichever tree the reader reached first.
+pub(crate) fn owns_form(
+    owner: &Option<adw::ApplicationWindow>,
+    window: &adw::ApplicationWindow,
+) -> bool {
+    owner
+        .as_ref()
+        .map(|w| w.as_ptr() == window.as_ptr())
+        .unwrap_or(false)
+}
+
+/// A new effect lands on the cut, the file and the lane.
+pub(crate) fn land_new_effect(window: &adw::ApplicationWindow, fx: cut::Fx) {
+    let mut cut_ = review_cut_of(window);
+    cut_.fx.push(fx);
+    save_insert_cut(&cut_);
+    // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
+    live_form_answer_is_undo(window);
+    record_edit(window, &cut_);
+    refresh_effects_lane(window);
+}
+
+/// Esc goes to `press`, wired after `set_content` like every other control. It claims the key only when `press`
+/// answers; otherwise the key travels on.
+pub(crate) fn wire_esc(
+    window: &adw::ApplicationWindow,
+    press: fn(&adw::ApplicationWindow) -> Option<String>,
+) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
+        if key != gtk::gdk::Key::Escape {
+            return glib::Propagation::Proceed;
+        }
+        match press(&win) {
+            Some(said) => {
+                if let Some(status_line) = find_status(win.upcast_ref()) {
+                    status_line.set_text(&said);
+                }
+                glib::Propagation::Stop
+            }
+            None => glib::Propagation::Proceed,
+        }
+    });
+    window.add_controller(controller);
 }
 
 pub fn wire_live_fields(

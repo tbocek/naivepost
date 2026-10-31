@@ -101,6 +101,20 @@ pub enum BoxChoice {
     Dragged { x: f64, y: f64, w: f64, h: f64 },
 }
 
+/// A drag on the picture read as a box. A press that did not travel is a CLICK wherever it landed.
+pub fn drag_choice(from: (f64, f64), to: (f64, f64)) -> BoxChoice {
+    let (w, h) = ((to.0 - from.0).abs(), (to.1 - from.1).abs());
+    if w < fx_zoom::DRAG_MIN_PX || h < fx_zoom::DRAG_MIN_PX {
+        return BoxChoice::Click;
+    }
+    BoxChoice::Dragged {
+        x: from.0.min(to.0),
+        y: from.1.min(to.1),
+        w,
+        h,
+    }
+}
+
 pub fn place(
     choice: BoxChoice,
     line: Option<f64>,

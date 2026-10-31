@@ -374,7 +374,8 @@ fn sec_10_parameters_4_prompts_s8_no_live_ask_module_names_a_mode_of_its_own() {
     assert_eq!(ITEM, "§10-parameters#4-prompts");
     // Each file and the prompt key it asks with. A file may still mention `Mode` in prose (a doc
     // comment explaining §1's two modes) but must not build a body from a named variant.
-    let ask_modules: [(&str, &str); 9] = [
+    let ask_modules: [(&str, &str); 10] = [
+        ("src/clip_pass_ask.rs", "the passes' shared round"),
         ("src/captions_ask.rs", "captions"),
         ("src/speeds_ask.rs", "speed"),
         ("src/effects_ask.rs", "effects"),
@@ -399,8 +400,15 @@ fn sec_10_parameters_4_prompts_s8_no_live_ask_module_names_a_mode_of_its_own() {
             "{file} ({key}) still names a thinking mode in code; it must call \
              `prompts::mode_of({key:?})` so §4's split is the only source: {offending:?}",
         );
+        // A pass may leave its body to `clip_pass_ask`, itself in this list, but may then build none of its own.
+        let code: String = text
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
         assert!(
-            text.contains("prompts::mode_of"),
+            code.contains("prompts::mode_of")
+                || (code.contains("clip_pass_ask::conversation_body")
+                    && !code.contains("llm_request::body")),
             "{file} ({key}) must read §4's flag through `prompts::mode_of`",
         );
     }

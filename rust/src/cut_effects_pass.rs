@@ -6,6 +6,8 @@ use crate::cut_speed_pass;
 use crate::fx_zoom;
 use crate::tools::clips::Clips;
 
+pub use crate::cut_speed_pass::{Answer, Reply};
+
 /// F3.11 S1 (`one call over every clip · told the captions and speeds`): the whole request. Each clip's line carries
 /// what has already been decided about it — a caption means it runs at 1, a rate means the picture is already moving —
 /// because both change what a decoration should be ("never zoom past captions").
@@ -24,11 +26,7 @@ pub fn brief_over(
         .collect::<Vec<_>>();
     lines.push(cut_captions::CLIPS_HEADER.to_string());
     for clip in clips.clips() {
-        let mut line = cut_captions::clip_line(clip.n, clip.length);
-        let captions = clips.captions_of(clip.n).len();
-        if captions > 0 {
-            line.push_str(&format!(", {captions} caption(s) -- runs at 1"));
-        }
+        let mut line = cut_speed_pass::noted_clip_line(clips, clip.n, clip.length);
         if let Some((_, rate)) = speeds.iter().find(|(n, _)| *n == clip.n) {
             if *rate > 0.0 && *rate != 1.0 {
                 line.push_str(&format!(", plays at {}", trim_number(*rate)));
@@ -64,89 +62,36 @@ pub struct Call {
     pub gain: Option<f64>,
 }
 
-/// What one call came to. `Refused` is §F3.11's "skipped": the reply stays usable and its other calls land. Only a clip
-/// outside the list produces a [`Reply::fault`].
-#[derive(Debug, Clone, PartialEq)]
-pub enum Answer {
-    /// A decoration as placed, with the app's defaults on it.
-    Placed(Fx),
-    /// A volume asking for no change — nothing to do and nothing to say about it.
-    Ignored,
-    /// The tool's reason this line is unusable: an unknown kind, or a span that is empty inside the clip.
-    Refused(String),
-}
-
-/// F3.11 S2/S5: a whole reply. `fault` is the only thing that costs a retry ([`cut_captions::retries`] — one more round,
-/// then [`no_answer`]).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Reply {
-    pub effects: Vec<Fx>,
-    pub answers: Vec<Answer>,
-    pub fault: Option<String>,
-}
-
-impl Reply {
-    /// Whether the reply is worth placing at all.
-    pub fn usable(&self) -> bool {
-        self.fault.is_none()
-    }
-}
-
 /// F3.11 S2–S5: the reply turned into effects.
 pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
-    let count = clips.clips().len() as u32;
-    for call in calls {
-        if let Some(problem) = cut_captions::clip_outside(call.clip, 1, count) {
-            return Reply {
-                effects: Vec::new(),
-                answers: Vec::new(),
-                fault: Some(problem),
-            };
-        }
-    }
+    cut_speed_pass::place_each(clips, calls, |call| call.clip, place_one)
+}
 
-    let mut batch = clips.clone();
-    let mut answers = Vec::new();
-    let mut effects = Vec::new();
-    for call in calls {
-        if is_no_change(call) {
-            answers.push(Answer::Ignored);
-            continue;
-        }
-        // No box is sent: §F3.11's default is the frame's middle, and a model that wants somewhere else aims through
-        // `get_frames` and sends one — which this pass does not offer (§3.7 lists `box?`, the flowchart offers zoom /
-        // stop / volume), so the centred default is what every proposed zoom gets.
-        let answer = batch.add_effect(call.clip, &call.kind, call.start, call.end, call.gain, None);
-        let Ok(body) = serde_json::from_str::<serde_json::Value>(&answer) else {
-            answers.push(Answer::Refused(answer.clone()));
-            continue;
-        };
-        if let Some(reason) = body.get("error").and_then(|e| e.as_str()) {
-            answers.push(Answer::Refused(reason.to_string()));
-            continue;
-        }
-        let (Some(kind), Some(span)) = (body.get("kind").and_then(|v| v.as_str()), span_of(&body))
-        else {
-            answers.push(Answer::Refused(answer.clone()));
-            continue;
-        };
-        let gain = body.get("gain").and_then(|v| v.as_f64());
-        // The clip's own start: the state's session second for it, not a sum of lengths (see cut_speed_pass::place).
-        let at = batch
-            .clips()
-            .iter()
-            .find(|c| c.n == call.clip)
-            .expect("S2 checked membership")
-            .start;
-        let fx = defaults(kind, at, span, gain);
-        answers.push(Answer::Placed(fx.clone()));
-        effects.push(fx);
+fn place_one(batch: &mut Clips, call: &Call) -> Answer {
+    if is_no_change(call) {
+        return Answer::Ignored;
     }
-    Reply {
-        effects,
-        answers,
-        fault: None,
-    }
+    // No box is sent: §F3.11's default is the frame's middle, and a model that wants somewhere else aims through
+    // `get_frames` and sends one — which this pass does not offer (§3.7 lists `box?`, the flowchart offers zoom /
+    // stop / volume), so the centred default is what every proposed zoom gets.
+    let answer = batch.add_effect(call.clip, &call.kind, call.start, call.end, call.gain, None);
+    let body = match cut_speed_pass::tool_body(&answer) {
+        Ok(body) => body,
+        Err(reason) => return Answer::Refused(reason),
+    };
+    let (Some(kind), Some(span)) = (body.get("kind").and_then(|v| v.as_str()), span_of(&body))
+    else {
+        return Answer::Refused(answer);
+    };
+    let gain = body.get("gain").and_then(|v| v.as_f64());
+    // The clip's own start: the state's session second for it, not a sum of lengths (see cut_speed_pass::place).
+    let at = batch
+        .clips()
+        .iter()
+        .find(|c| c.n == call.clip)
+        .expect("S2 checked membership")
+        .start;
+    Answer::Placed(defaults(kind, at, span, gain))
 }
 
 /// F3.11 S3 (`gain of 1 or none ignored`): does this volume ask for a change at all? Asked before the tool runs so the

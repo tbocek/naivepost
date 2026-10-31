@@ -78,17 +78,7 @@ pub(crate) fn show_insert_form(
     let Some(holder) = insert_form_box(window) else {
         return;
     };
-    // Clear the previous form out of THE HOLDER, never by a tree-wide name search (see the fold
-    // badges for why: a closed window's widgets stay parented somewhere).
-    let stale: Vec<gtk::Widget> = holder
-        .observe_children()
-        .iter::<glib::Object>()
-        .flatten()
-        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
-        .collect();
-    for old in stale {
-        holder.remove(&old);
-    }
+    cut_form_frame::clear_children(&holder);
 
     let heading = gtk::Label::new(Some(&format!(
         "{} \u{2014} {}",

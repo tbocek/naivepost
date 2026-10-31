@@ -248,6 +248,7 @@ pub(crate) mod window_tabs;
 pub mod window_trim_strip;
 // F3.8 S5: `say_kept` in `cut_form_buttons` logs the kept reading through the same window log the forms' Apply
 // sentences use, so the module that draws the footer also writes what the debounced commit says.
+mod clip_pass;
 /// F2.2 ▶✂'s page half: the button's grey (S1) and ⏸ face, and the ✂ clock's tooltip.
 pub mod cut_cut_play;
 /// F3.11 ✨ Decorations: the pass's own half of the shell — read the page, telephone, write back.

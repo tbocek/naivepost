@@ -4,6 +4,7 @@
 //! and where an answer is written so one ↶ takes it back. [`run_speeds_pass`] dials for real; [`run_speeds_pass_with_reply`] hands the same calls back each round for tests; both run one private body.
 
 use crate::policy;
+use crate::ui::clip_pass;
 use crate::ui::window;
 
 /// F3.10 S1–S5: run the speeds pass over this window's newest cut and say what happened.
@@ -61,16 +62,7 @@ fn ask_speeds(
         .map(|clip| (clip.n, batch.captions_of(clip.n).len()))
         .filter(|(_, count)| *count > 0)
         .collect();
-    // §9 (`the caption, speed and decoration briefs name no camera or lane`): named once there is more than one row filming or recording heard.
-    let mut rows: Vec<String> = cut_
-        .segs
-        .iter()
-        .filter(|scene| scene.ins.is_empty())
-        .map(|scene| (crate::cut_cam::scene_row(scene) + 1).to_string())
-        .collect();
-    rows.sort_unstable();
-    rows.dedup();
-    let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
+    let (rows, lanes) = clip_pass::rows_and_lanes(cut_);
     let asked = crate::speeds_ask::ask_named(
         tree,
         &inputs.context,
@@ -101,62 +93,14 @@ fn walk_speeds_with(
     }
     let mut cut_ = cut_.clone();
     let mut changed = false;
-    // The clips are the VISIBLE SEGMENTS of the cut, numbered from 1 in play order with their session starts (`Clips` triples, not F3.9's sum). NOT `cut_play::kept_runs`: it MERGES touching segments for preloading,
-    // so three adjoining segments would be one clip to the model and every rate for clip 2 or 3 would fall outside the batch.
-    let mut segs: Vec<(f64, f64)> = cut_
-        .segs
-        .iter()
-        .filter(|seg| seg.e > seg.s)
-        .map(|seg| (seg.s, seg.e))
-        .collect();
-    segs.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let triples: Vec<(u32, f64, f64)> = segs
-        .iter()
-        .enumerate()
-        .map(|(i, (start, end))| (i as u32 + 1, *start, end - start))
-        .collect();
-    let mut batch = crate::tools::clips::Clips::new(&triples);
-    // S1's brief and S2's refusal read the captions ALREADY on the cut, so they must be in the batch. A text effect across a clip boundary is CLAMPED to the overlap, not skipped,
-    // or a caption would hide from the refusal rule and a captioned clip be sped up.
-    for fx in cut_.fx.iter().filter(|fx| fx.kind == "text") {
-        let clips_now: Vec<(u32, f64, f64)> = batch
-            .clips()
-            .iter()
-            .map(|clip| (clip.n, clip.start, clip.length))
-            .collect();
-        for (n, start, length) in clips_now {
-            let from = fx.t.max(start);
-            let to = (fx.t + fx.dur).min(start + length);
-            if to - from > 0.0 {
-                // Whether a caption fits is not this pass's question, so the tool's answer is not acted on.
-                let _ = batch.add_caption(n, from - start, to - start, &fx.text);
-            }
-        }
-    }
+    let batch = clip_pass::visible_clips(&cut_);
     let footage = crate::cut_speed_pass::footage_total(&batch);
 
-    // Two rounds at most, as F3.9: one rejection owes one retry. A fault is an UNUSABLE reply (a clip number never given); a per-call refusal does not cost the round.
-    let mut placed: Option<Vec<crate::cut::Fx>> = None;
-    let mut refusals: Vec<String> = Vec::new();
-    for attempt in 1..=2u32 {
-        let reply = crate::cut_speed_pass::place(&batch, &ask(attempt, &batch));
-        for answer in &reply.answers {
-            if let crate::cut_speed_pass::Answer::Refused(reason) = answer {
-                // S2: the refusal MUST be said, or the model believes its speed is in the cut.
-                refusals.push(reason.clone());
-            }
-        }
-        if reply.usable() {
-            placed = Some(reply.effects.clone());
-            break;
-        }
-        if let Some(problem) = &reply.fault {
-            window::log_line(&crate::cut_speed_pass::rejected(problem));
-        }
-        if !crate::cut_captions::retries(attempt) {
-            break;
-        }
-    }
+    let (placed, refusals) = clip_pass::rounds(
+        &|attempt| crate::cut_speed_pass::place(&batch, &ask(attempt, &batch)),
+        &|_| None,
+        crate::cut_speed_pass::rejected,
+    );
     let mut said = match placed {
         Some(effects) => {
             if effects.is_empty() {
@@ -173,12 +117,7 @@ fn walk_speeds_with(
             crate::cut_speed_pass::no_answer()
         }
     };
-    for reason in refusals {
-        // Each refused rate is surfaced so the user sees WHICH clip the model wanted to hurry and why not.
-        said.push_str(" \u{2014} ");
-        said.push_str(&reason);
-        window::log_line(&reason);
-    }
+    clip_pass::say_refusals(&mut said, refusals);
     window::log_line(&said);
     window::PassOut {
         said,

@@ -3,11 +3,7 @@
 use crate::clip_pass_ask;
 use crate::cut_effects_pass::{self, Call};
 use crate::layout::Tree;
-use crate::llm_cache;
-use crate::llm_request;
-use crate::roles::Job;
-use crate::services;
-use crate::settings::{self, Conf, Paths};
+use crate::settings::Conf;
 use crate::tools::clips::Clips;
 use crate::tools::Tool;
 use std::path::PathBuf;
@@ -25,27 +21,7 @@ pub const EFFECTS_SYSTEM: &str = concat!(
 );
 
 pub fn effects_system(context: &str) -> String {
-    let paths = current_paths();
-    crate::prompt_assembly::system_message(
-        &wording(paths.as_ref(), "system"),
-        "effects",
-        &wording(paths.as_ref(), "effects"),
-        context,
-        false,
-        false,
-    )
-}
-
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
-}
-
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
+    clip_pass_ask::system(STEP, context)
 }
 
 pub fn user_message(clips: &Clips, speeds: &[(u32, f64)]) -> String {
@@ -59,13 +35,7 @@ pub fn user_message_over(
     lanes: &[String],
 ) -> String {
     let total: f64 = clips.clips().iter().map(|clip| clip.length).sum();
-    let count = clips.clips().len();
-    let mut lines = vec![format!(
-        "{} {:.0} seconds over {} clip(s).",
-        crate::cut_speed_pass::FOOTAGE_HEADER,
-        total,
-        count
-    )];
+    let mut lines = vec![clip_pass_ask::footage_line(total, clips.clips().len())];
     lines.push(String::new());
     lines.push(cut_effects_pass::brief_over(clips, speeds, rows, lanes));
     lines.push(String::new());
@@ -90,109 +60,34 @@ pub fn user_message_over(
 }
 
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
-    let tools: Vec<Tool> = this_pass_tools();
-    let messages = clip_pass_ask::two_messages(system, user);
-    let body = llm_request::body(
-        STEP,
-        model,
-        &messages,
-        crate::prompts::mode_of(STEP),
-        Some(&tools),
-        true,
-    )?;
     // No `prompt_cache_key`: §1's request contract names model, the two messages, `tools` when the job has
     // them, and the sampling five — and `llm_request::body` is the one place a chat request is built (§09 §5).
-    Ok(body.to_string())
-}
-
-/// This pass's own tools, from §3.7's job row: `add_effect` for the work and `finish` as the model's own signal.
-fn this_pass_tools() -> Vec<Tool> {
-    crate::tools::offered(Job::ClipRules)
-        .into_iter()
-        .filter(|tool| matches!(tool, Tool::AddEffect | Tool::Finish | Tool::GetFrames))
-        .collect()
-}
-
-pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
-    call_of(args)
+    clip_pass_ask::conversation_body(
+        STEP,
+        model,
+        &clip_pass_ask::two_messages(system, user),
+        Some(&clip_pass_ask::offered_with(Tool::AddEffect)),
+    )
 }
 
 pub fn parse_effects(reply: &str) -> Vec<Call> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(reply.trim()) else {
-        return Vec::new();
-    };
-    // A whole chat envelope is what comes off the wire; a bare EFFECTS document (or the same document under a
-    // `content` key) is what sits in the cache, because §6 keeps the answer text and not the framing. Both
-    // shapes parse here so the wire reader and the cache reader are one rule that cannot disagree.
-    let answer = match value.get("choices") {
-        Some(_) => llm_request::parse_reply(&value),
-        None => llm_request::Reply {
-            content: value
-                .get("content")
-                .and_then(|content| content.as_str())
-                .map(str::to_string)
-                .unwrap_or_else(|| reply.trim().to_string()),
-            ..Default::default()
-        },
-    };
-    let calls: Vec<Call> = answer
-        .tool_calls
-        .iter()
-        .filter(|call| call.name == Tool::AddEffect.name())
-        .filter_map(|call| {
-            // A slot written by `answering_envelope` carries each call's arguments as a STRING, so this is the
-            // only read path; a non-string argument (a server that sent an object) would print with its own
-            // braces and fail to parse here, dropping every decoration in the reply.
-            let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
-            call_of(&args)
-        })
-        .collect();
-    if !calls.is_empty() {
-        return calls;
-    }
-    // No tool call: read the content as the EFFECTS document. Anything unreadable is no calls, which the pass
-    // reads as "the model proposed nothing" — the same ending a `{"fx":[]}` answer has.
-    let Ok(content) = serde_json::from_str::<serde_json::Value>(answer.content.trim()) else {
-        return Vec::new();
-    };
-    content
-        .get("fx")
-        .and_then(|fx| fx.as_array())
-        .map(|fx| fx.iter().filter_map(call_of).collect())
-        .unwrap_or_default()
+    clip_pass_ask::parse(reply, Tool::AddEffect, "fx", &call_of_args)
 }
 
-fn call_of(value: &serde_json::Value) -> Option<Call> {
-    let clip = value
-        .get("clip")
-        .and_then(|clip| {
-            clip.as_f64()
-                .or_else(|| clip.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
-        })
-        .filter(|n| n.is_finite() && *n >= 1.0)? as u32;
+/// One `{clip, kind, start, end, gain?}` entry, from either spelling.
+pub fn call_of_args(value: &serde_json::Value) -> Option<Call> {
     let kind = value
         .get("kind")
         .and_then(|kind| kind.as_str())
         .map(str::trim)
         .filter(|kind| !kind.is_empty())?
         .to_string();
-    let number = |key: &str| {
-        value
-            .get(key)
-            .and_then(|v| {
-                v.as_f64()
-                    .or_else(|| v.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
-            })
-            .filter(|n| n.is_finite())
-    };
-    let start = number("start")?;
-    let end = number("end")?;
     Some(Call {
-        clip,
+        clip: clip_pass_ask::clip_number(value)?,
         kind,
-        start,
-        end,
-        gain: number("gain"),
+        start: clip_pass_ask::number(value, "start")?,
+        end: clip_pass_ask::number(value, "end")?,
+        gain: clip_pass_ask::number(value, "gain"),
     })
 }
 
@@ -221,21 +116,12 @@ pub fn ask_named(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
-    let conf = match current_paths().as_ref().map(settings::read) {
-        Some(Ok(conf)) => conf,
-        // An unreadable settings file is reported the way a down server is: the pass keeps the stumble and
-        // says why, rather than dialling a guessed address.
-        Some(Err(reason)) => return Asked::failed(format!("settings could not be read: {reason}")),
-        None => Conf::default(),
-    };
-    // No LLM address at all: name it, because "no usable answer" would blame the model for a server nobody
-    // typed in. §02-services#1: an empty box means the loopback default, which is what `llm_endpoint` answers.
-    if services::server_url(&conf.server).is_none() {
-        return Asked::failed("no LLM address is set \u{2014} nothing was asked".to_string());
+    match clip_pass_ask::settings_with_address() {
+        Ok(conf) => ask_at_over(
+            tree, &conf, context, clips, speeds, rows, lanes, attempt, cancel,
+        ),
+        Err(reason) => Asked::failed(reason),
     }
-    ask_at_over(
-        tree, &conf, context, clips, speeds, rows, lanes, attempt, cancel,
-    )
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -284,7 +170,7 @@ pub fn ask_at_over(
         &clip_pass_ask::Pass {
             step: STEP,
             tool: Tool::AddEffect,
-            tools: this_pass_tools(),
+            tools: clip_pass_ask::offered_with(Tool::AddEffect),
             model: &conf.model,
             system: &effects_system(context),
             user: &user_message_over(clips, speeds, rows, lanes),
@@ -296,10 +182,6 @@ pub fn ask_at_over(
     )
 }
 
-fn messages(context: &str, clips: &Clips, speeds: &[(u32, f64)]) -> (String, String) {
-    (effects_system(context), user_message(clips, speeds))
-}
-
 pub fn cache_file_for_test(
     tree: &Tree,
     context: &str,
@@ -308,9 +190,12 @@ pub fn cache_file_for_test(
     model: &str,
     attempt: u32,
 ) -> PathBuf {
-    let (system, user) = messages(context, clips, speeds);
-    // A missing key is no file: `llm_cache::store` refuses to write one either (§6).
-    let key = llm_cache::key(&clip_pass_ask::cache_parts(&system, &user, model, attempt))
-        .unwrap_or_default();
-    tree.cache_llm(STEP, &key)
+    clip_pass_ask::cache_file(
+        tree,
+        STEP,
+        &effects_system(context),
+        &user_message(clips, speeds),
+        model,
+        attempt,
+    )
 }

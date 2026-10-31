@@ -1,13 +1,9 @@
 //! F3.10 S1's live half: the speed ask itself.
 
 use crate::clip_pass_ask;
-use crate::cut_speed_pass::{self, Call, GAP_SECONDS};
+use crate::cut_speed_pass::{Call, GAP_SECONDS};
 use crate::layout::Tree;
-use crate::llm_cache;
-use crate::llm_request;
-use crate::roles::Job;
-use crate::services;
-use crate::settings::{self, Conf, Paths};
+use crate::settings::Conf;
 use crate::tools::Tool;
 use std::path::PathBuf;
 
@@ -21,33 +17,8 @@ pub const SPEEDS_SYSTEM: &str = concat!(
     "Strict JSON and nothing else: no prose, no code fence, no comment."
 );
 
-/// The SYSTEM for a speed call: the house rules cut to this job's section, the speed wording, and the
-/// precedence rule only when there is a User Context to outrank anything (§09 §8 puts it last).
 pub fn speeds_system(context: &str) -> String {
-    let paths = current_paths();
-    crate::prompt_assembly::system_message(
-        &wording(paths.as_ref(), "system"),
-        "speed",
-        &wording(paths.as_ref(), "speed"),
-        context,
-        false,
-        false,
-    )
-}
-
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
-}
-
-/// The settings folder, read from this process's environment each time an ask is built so a change made
-/// while a run is going is honoured by its next request (§02-services#1: settings are re-read per request).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
+    clip_pass_ask::system(STEP, context)
 }
 
 /// The gap two same-rate stretches may come before they are one run.
@@ -80,12 +51,7 @@ pub fn user_message_over(
     lanes: &[String],
 ) -> String {
     let gap = gap_seconds();
-    let mut lines = vec![format!(
-        "{} {:.0} seconds over {} clip(s).",
-        cut_speed_pass::FOOTAGE_HEADER,
-        total_seconds,
-        clips.len()
-    )];
+    let mut lines = vec![clip_pass_ask::footage_line(total_seconds, clips.len())];
     lines.extend(crate::effect_overlap::brief_lines(rows, lanes));
     lines.push(String::new());
     lines.push(crate::cut_captions::CLIPS_HEADER.to_string());
@@ -117,95 +83,26 @@ pub fn user_message_over(
 }
 
 /// The chat body: thinking OFF (§4 does not list `speed` among the four prompts that think), and this job's
-/// two tools offered — `set_clip_speed` for the work and `finish` to close the reply.
+/// tools offered — `set_clip_speed` for the work and `finish` to close the reply.
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
-    let messages = clip_pass_ask::two_messages(system, user);
-    let tools: Vec<Tool> = this_pass_tools();
-    Ok(llm_request::body(
+    clip_pass_ask::conversation_body(
         STEP,
         model,
-        &messages,
-        crate::prompts::mode_of(STEP),
-        Some(&tools),
-        true,
-    )?
-    .to_string())
-}
-
-/// This pass's own two tools, from §3.7's job row: a call of another kind (a caption, a decoration) is not
-/// offered because this ask cannot place it (§2 S4).
-fn this_pass_tools() -> Vec<Tool> {
-    crate::tools::offered(Job::ClipRules)
-        .into_iter()
-        .filter(|tool| matches!(tool, Tool::SetClipSpeed | Tool::Finish | Tool::GetFrames))
-        .collect()
-}
-
-// NOTE: `prompt_cache_key` is not sent anywhere: §1's request contract (the table `tests/f3_9_s3_a_…` reads back
-// on the wire) names model, the two messages, `tools` when the job has them, and the sampling five — no such
-// field, and `llm_request::body` is the one place a chat request is built (§09 §5), so inventing a key here
-// would be a field no server in §1 documents and no other ask sends.
-
-/// Read a SPEEDS reply into the calls this pass places.
-pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
-    call_of(args)
+        &clip_pass_ask::two_messages(system, user),
+        Some(&clip_pass_ask::offered_with(Tool::SetClipSpeed)),
+    )
 }
 
 pub fn parse_speeds(reply: &str) -> Vec<Call> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(reply.trim()) else {
-        return Vec::new();
-    };
-    // A whole chat envelope is what comes off the wire; a bare SPEEDS document (or the same document under a
-    // `content` key) is what sits in the cache, because §6 keeps the answer text and not the framing.
-    let answer = match value.get("choices") {
-        Some(_) => llm_request::parse_reply(&value),
-        None => llm_request::Reply {
-            content: value
-                .get("content")
-                .and_then(|content| content.as_str())
-                .map(str::to_string)
-                .unwrap_or_else(|| reply.trim().to_string()),
-            ..Default::default()
-        },
-    };
-    let calls: Vec<Call> = answer
-        .tool_calls
-        .iter()
-        .filter(|call| call.name == Tool::SetClipSpeed.name())
-        .filter_map(|call| {
-            let args = serde_json::from_str::<serde_json::Value>(&call.args).ok()?;
-            call_of(&args)
-        })
-        .collect();
-    if !calls.is_empty() {
-        return calls;
-    }
-    let Ok(content) = serde_json::from_str::<serde_json::Value>(answer.content.trim()) else {
-        return Vec::new();
-    };
-    content
-        .get("speeds")
-        .and_then(|speeds| speeds.as_array())
-        .map(|speeds| speeds.iter().filter_map(call_of).collect())
-        .unwrap_or_default()
+    clip_pass_ask::parse(reply, Tool::SetClipSpeed, "speeds", &call_of_args)
 }
 
-fn call_of(value: &serde_json::Value) -> Option<Call> {
-    let clip = value
-        .get("clip")
-        .and_then(|clip| {
-            clip.as_f64()
-                .or_else(|| clip.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
-        })
-        .filter(|n| n.is_finite() && *n >= 1.0)? as u32;
-    let rate = value
-        .get("rate")
-        .and_then(|rate| {
-            rate.as_f64()
-                .or_else(|| rate.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
-        })
-        .filter(|rate| rate.is_finite())?;
-    Some(Call { clip, rate })
+/// One `{clip, rate}` pair, from either spelling.
+pub fn call_of_args(value: &serde_json::Value) -> Option<Call> {
+    Some(Call {
+        clip: clip_pass_ask::clip_number(value)?,
+        rate: clip_pass_ask::number(value, "rate")?,
+    })
 }
 
 pub type Asked = clip_pass_ask::Asked<Call>;
@@ -235,19 +132,12 @@ pub fn ask_named(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
-    let conf = match current_paths().as_ref().map(settings::read) {
-        Some(Ok(conf)) => conf,
-        Some(Err(reason)) => return Asked::failed(format!("settings could not be read: {reason}")),
-        None => Conf::default(),
-    };
-    // No LLM address at all: name it, because "no usable answer" would blame the model for a server nobody
-    // typed in.
-    if services::server_url(&conf.server).is_none() {
-        return Asked::failed("no LLM address is set \u{2014} nothing was asked".to_string());
+    match clip_pass_ask::settings_with_address() {
+        Ok(conf) => ask_at_over(
+            tree, &conf, context, clips, captioned, rows, lanes, attempt, cancel,
+        ),
+        Err(reason) => Asked::failed(reason),
     }
-    ask_at_over(
-        tree, &conf, context, clips, captioned, rows, lanes, attempt, cancel,
-    )
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -304,7 +194,7 @@ pub fn ask_at_over(
         &clip_pass_ask::Pass {
             step: STEP,
             tool: Tool::SetClipSpeed,
-            tools: this_pass_tools(),
+            tools: clip_pass_ask::offered_with(Tool::SetClipSpeed),
             model: &conf.model,
             system: &speeds_system(context),
             user: &user_message_over(clips, captioned, total, rows, lanes),
@@ -316,18 +206,6 @@ pub fn ask_at_over(
     )
 }
 
-/// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
-/// the answering round's envelope (see [`crate::clip_rules_tools_leg::answering_envelope`]).
-fn messages(context: &str, clips: &[(u32, f64)], captioned: &[(u32, usize)]) -> (String, String) {
-    let total: f64 = clips.iter().map(|(_, length)| length).sum();
-    (
-        speeds_system(context),
-        user_message(clips, captioned, total),
-    )
-}
-
-/// The file one ask's answer is cached in — `Tree::cache_llm`'s layout and `llm_cache`'s key, reached through
-/// `cache_parts`, the ONE key recipe the pass itself stores by, so the two cannot drift apart.
 pub fn cache_file_for_test(
     tree: &Tree,
     context: &str,
@@ -336,9 +214,13 @@ pub fn cache_file_for_test(
     model: &str,
     attempt: u32,
 ) -> PathBuf {
-    let (system, user) = messages(context, clips, captioned);
-    // A missing key is no file: `llm_cache::store` refuses to write one either (§6).
-    let key = llm_cache::key(&clip_pass_ask::cache_parts(&system, &user, model, attempt))
-        .unwrap_or_default();
-    tree.cache_llm(STEP, &key)
+    let total: f64 = clips.iter().map(|(_, length)| length).sum();
+    clip_pass_ask::cache_file(
+        tree,
+        STEP,
+        &speeds_system(context),
+        &user_message(clips, captioned, total),
+        model,
+        attempt,
+    )
 }

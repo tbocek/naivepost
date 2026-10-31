@@ -5,10 +5,9 @@ use crate::exchanges::{self, Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
-use crate::requests::{Request, Service};
 use crate::roles::Job;
 use crate::services;
-use crate::settings::{self, Conf, Paths};
+use crate::settings::Conf;
 use crate::tools::Tool;
 
 /// The step name this job's cache entries and timed rows carry. §3.7 is one section for the three
@@ -31,13 +30,6 @@ pub struct Asked {
     pub reason: String,
 }
 
-/// The settings folder, read from this process's environment each time an ask is built so a change
-/// made while a run is going is honoured by its next request (§02-services#1: settings are
-/// re-read per request).
-fn current_paths() -> Option<Paths> {
-    settings::from_environment()
-}
-
 /// One batch's live ask: build the two messages, honour the cache, dial, read the reply.
 #[allow(clippy::too_many_arguments)]
 pub fn ask(
@@ -48,14 +40,9 @@ pub fn ask(
     attempt: u32,
     cancelled: &dyn Fn() -> bool,
 ) -> Asked {
-    let conf = match current_paths().as_ref().map(settings::read) {
-        Some(Ok(conf)) => conf,
-        Some(Err(reason)) => {
-            // An unreadable settings file is reported the way a down server is: the pass keeps the
-            // stumble and says why, rather than dialling a guessed address.
-            return failed(format!("settings could not be read: {reason}"));
-        }
-        None => Conf::default(),
+    let conf = match crate::clip_pass_ask::settings_now() {
+        Ok(conf) => conf,
+        Err(reason) => return failed(reason),
     };
     ask_at(tree, &conf, user_context, clips, words, attempt, cancelled)
 }
@@ -83,7 +70,7 @@ pub fn ask_at(
     if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
         // §09 §10: a reply served from the cache writes its own line, marked `cache` with no time on
         // the wire, so the file shows what a re-run saved. Nothing goes out here; the row only says so.
-        crate::request_timing::record_cached(tree, base_row(&model));
+        crate::request_timing::record_cached(tree, crate::clip_pass_ask::base_row(STEP, &model));
         return match read_back(&cached) {
             Ok(calls) => Asked {
                 calls,
@@ -93,7 +80,7 @@ pub fn ask_at(
             Err(reason) => failed(reason),
         };
     }
-    let base = base_row(&model);
+    let base = crate::clip_pass_ask::base_row(STEP, &model);
     let endpoint = services::llm_endpoint(conf);
     // Only what this pass answers: `add_caption` for the work and `finish` as its own signal (§2 S3's end). The
     // SAME list goes into the request body and into the loop, so the model is never handed a tool whose result
@@ -182,10 +169,12 @@ pub fn ask_at(
         let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
             STEP,
             Tool::AddCaption.name(),
-            repair_messages(&system, &user),
+            crate::clip_pass_ask::two_messages(&system, &user),
             &reply,
             &crate::ui::window::log_line,
-            &|conversation| chat_body_conversation(&model, conversation, &offered),
+            &|conversation| {
+                crate::clip_pass_ask::conversation_body(STEP, &model, conversation, Some(&offered))
+            },
             // §3's patience ladder runs INSIDE this dial, so a repair whose retry had to wait for the server
             // to come back leaves those wait rows here and nowhere else (§09 §10 writes one per REQUEST).
             &dial,
@@ -195,7 +184,11 @@ pub fn ask_at(
         };
         // That retry was a request too, and §09 §10 wants every request on the record: this ask cannot route it
         // through `llm_retry_leg::chat` itself (the repair leg owns the dial), so the row is written here.
-        crate::clip_rules_tools_leg::record_repair_row(tree, base_row(&model), went_out);
+        crate::clip_rules_tools_leg::record_repair_row(
+            tree,
+            crate::clip_pass_ask::base_row(STEP, &model),
+            went_out,
+        );
         // The retry answered by calling: its `add_caption` calls ARE the answer.
         let calls: Vec<Call> = second
             .tool_calls
@@ -256,7 +249,8 @@ pub fn ask_at(
         &offered,
         &mut batch,
         &mut |conversation, tools| {
-            let body = chat_body_conversation(&model, conversation, tools)?;
+            let body =
+                crate::clip_pass_ask::conversation_body(STEP, &model, conversation, Some(tools))?;
             let sent = crate::llm_retry_leg::chat(
                 STEP,
                 tree,
@@ -358,25 +352,7 @@ fn clip_holding(runs: &[(f64, f64)], t: f64) -> Option<(u32, f64)> {
 }
 
 fn captions_system(context: &str) -> String {
-    let paths = current_paths();
-    crate::prompt_assembly::system_message(
-        &wording(paths.as_ref(), "system"),
-        "captions",
-        &wording(paths.as_ref(), "captions"),
-        context,
-        false,
-        false,
-    )
-}
-
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
-/// With no settings folder at all, the shipped wording is what goes out.
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::join_ask::shipped_file(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
+    crate::clip_pass_ask::system(STEP, context)
 }
 
 /// A `add_caption` call's arguments read as a caption: the same `{clip,start,end,text}` entry the prose document
@@ -396,56 +372,6 @@ pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
         end: number("end")?,
         text,
     })
-}
-
-/// The two messages of one captions ask, rebuilt for §3's repair path: the SAME system and user the first
-/// request carried, because a repair adds to the conversation rather than replacing it.
-fn repair_messages(system: &str, user: &str) -> Vec<Message> {
-    vec![
-        Message {
-            role: "system".to_string(),
-            parts: vec![Part::Text(system.to_string())],
-        },
-        Message {
-            role: "user".to_string(),
-            parts: vec![Part::Text(user.to_string())],
-        },
-    ]
-}
-
-/// The chat body for one round of a tool conversation: the grown message list beside the offer the loop was
-/// given (§2 S2's "append the assistant turn · one `tool` message per call"). The body carries `"stream": true`
-/// (§1), which `llm_request::body` sets for every mode.
-fn chat_body_conversation(
-    model: &str,
-    conversation: &[Message],
-    tools: &[Tool],
-) -> Result<String, String> {
-    // The mode is §4's flag for this prompt (see [`crate::prompts::mode_of`]), not a hard-coded `Mode`.
-    Ok(llm_request::body(
-        STEP,
-        model,
-        conversation,
-        crate::prompts::mode_of(STEP),
-        Some(tools),
-        true,
-    )?
-    .to_string())
-}
-
-/// The timed row shape this ask's rounds write: `started` and `run` belong to whoever owns the run, and a step
-/// that stands alone leaves them blank (the same shape `llm_retry_leg::chat` fills in).
-fn base_row(model: &str) -> Request {
-    Request {
-        started: String::new(),
-        run: String::new(),
-        step: "cut".to_string(),
-        job: STEP.to_string(),
-        service: Service::Llm,
-        model: model.to_string(),
-        kind: "chat".to_string(),
-        ..Default::default()
-    }
 }
 
 /// The cache slot parts: the exact request, so an unchanged batch costs nothing and an edited prompt misses (§09 §10).

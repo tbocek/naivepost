@@ -4,21 +4,19 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::cut;
-use crate::cut_speed;
 use crate::fx_record;
 use crate::fx_svg;
 use crate::fx_text;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
-    find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
-    live_form_refused, log_line, paste_line, preview_picture_px, record_edit, refresh_effects_lane,
-    review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
+    find_status, find_widget_by_name, line_step_button, live_form_refused, log_line,
+    preview_picture_px, trim_seconds, zoom_field_row,
 };
+use crate::ui::{cut_form_buttons, cut_form_frame};
 
 pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    let line = known.then(|| paste_line(window));
+    let line = cut_form_buttons::known_line(window);
     match fx_svg::press(line) {
         fx_svg::Press::Refused(reason) => {
             close_svg_form(window);
@@ -104,9 +102,7 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
             // A raster that came back from disk (the file was seen before) is ready the instant the ask returns, so
             // a form already open gets its picture now rather than on the next redraw.
             paint_svg_raster(window, &name);
-            let marked = selection(window)
-                .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
-                .map(|band| (band.start, band.end));
+            let marked = cut_form_buttons::marked_band(window);
             let said = fx_svg::arm_words(&name, marked);
             log_line(&said);
             said
@@ -205,28 +201,14 @@ pub fn svg_drag_ended_with_source(
     to: (f64, f64),
     source: (f64, f64),
 ) -> String {
-    let dx = to.0 - from.0;
-    let dy = to.1 - from.1;
-    let choice = if dx.abs() < fx_zoom::DRAG_MIN_PX || dy.abs() < fx_zoom::DRAG_MIN_PX {
-        fx_text::BoxChoice::Click
-    } else {
-        fx_text::BoxChoice::Dragged {
-            x: from.0.min(to.0),
-            y: from.1.min(to.1),
-            w: dx.abs(),
-            h: dy.abs(),
-        }
-    };
+    let choice = fx_text::drag_choice(from, to);
     // The file must already be chosen — the arm carries it, and the record's `src` is that same string.
     let Some(file) = svg_chosen_file().filter(|f| !f.trim().is_empty()) else {
         log_line(fx_svg::NO_FILE);
         return fx_svg::NO_FILE.to_string();
     };
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
-    let line = known.then(|| paste_line(window));
-    let sel = selection(window)
-        .filter(|band| band.length() >= cut_speed::MIN_MARKED_SECONDS)
-        .map(|band| (band.start, band.end));
+    let line = cut_form_buttons::known_line(window);
+    let sel = cut_form_buttons::marked_band(window);
     match fx_svg::place(choice, &file, line, sel, source) {
         Some(fx) => {
             show_svg_form(window, &fx);
@@ -281,15 +263,7 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
         return;
     };
     holder.set_visible(false);
-    let stale: Vec<gtk::Widget> = holder
-        .observe_children()
-        .iter::<glib::Object>()
-        .flatten()
-        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
-        .collect();
-    for old in stale {
-        holder.remove(&old);
-    }
+    cut_form_frame::clear_children(&holder);
     LAST_SVG_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
 
     let heading = gtk::Label::new(Some(&fx_svg::form_title(fx.t)));
@@ -510,12 +484,7 @@ thread_local! {
 /// Does THIS window own the live drawing form? Two windows both holding one would put Apply's write into
 /// whichever tree the reader reached first.
 fn svg_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_SVG_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
-            .unwrap_or(false)
-    })
+    LAST_SVG_WINDOW.with(|cell| cut_form_buttons::owns_form(&cell.borrow(), window))
 }
 
 /// Read a named Entry out of THIS window's tree, through the window that owns the form.
@@ -562,13 +531,7 @@ pub fn press_svg_apply(window: &adw::ApplicationWindow) -> String {
             return reason;
         }
     };
-    let mut cut_ = review_cut_of(window);
-    cut_.fx.push(fx.clone());
-    save_insert_cut(&cut_);
-    // `record_edit`, NOT `seed_review_cut`: the addition must sit on the history so F2.13's ↶ takes it back.
-    live_form_answer_is_undo(window);
-    record_edit(window, &cut_);
-    refresh_effects_lane(window);
+    cut_form_buttons::land_new_effect(window, fx);
     close_svg_form(window);
     set_svg_armed(false);
     let said = fx_record::recorded_status(cut::EffectKind::Svg);
@@ -634,21 +597,5 @@ fn wire_svg_buttons(window: &adw::ApplicationWindow) {
 /// Esc releases the drawing arm / form, wired after `set_content` like every other control. Claims Escape only
 /// when this window owns something to release; otherwise the key travels on.
 pub(crate) fn wire_svg_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_svg_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    cut_form_buttons::wire_esc(window, press_svg_esc);
 }

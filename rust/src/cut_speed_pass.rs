@@ -39,14 +39,19 @@ pub fn brief(clips: &Clips, footage: f64) -> String {
     lines.push(String::new());
     lines.push(cut_captions::CLIPS_HEADER.to_string());
     for clip in clips.clips() {
-        let mut line = cut_captions::clip_line(clip.n, clip.length);
-        let captions = clips.captions_of(clip.n).len();
-        if captions > 0 {
-            line.push_str(&format!(", {captions} caption(s) -- runs at 1"));
-        }
-        lines.push(line);
+        lines.push(noted_clip_line(clips, clip.n, clip.length));
     }
     lines.join("\n")
+}
+
+/// One clip's brief line, marked when it carries captions.
+pub fn noted_clip_line(clips: &Clips, n: u32, length: f64) -> String {
+    let mut line = cut_captions::clip_line(n, length);
+    let captions = clips.captions_of(n).len();
+    if captions > 0 {
+        line.push_str(&format!(", {captions} caption(s) -- runs at 1"));
+    }
+    line
 }
 
 // --- S2/S3: the answer's shape and its three outcomes ----------------------------------------------------------------
@@ -58,6 +63,7 @@ pub struct Call {
     pub rate: f64,
 }
 
+/// What one call came to, in this pass and the decorations'. `Refused` costs no round; only [`Reply::fault`] does.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Answer {
     Placed(Fx),
@@ -92,9 +98,54 @@ pub fn ramp(rate: f64, dur: f64) -> (f64, f64) {
 
 /// F3.10 S2–S5: the reply turned into effects.
 pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
+    let mut reply = place_each(clips, calls, |call| call.clip, place_one);
+    reply.effects = merge(&reply.effects);
+    reply
+}
+
+fn place_one(batch: &mut Clips, call: &Call) -> Answer {
+    if call.rate <= 0.0 || is_neutral(call.rate) {
+        return Answer::Ignored;
+    }
+    let answer = batch.set_clip_speed(call.clip, call.rate);
+    let body = match tool_body(&answer) {
+        Ok(body) => body,
+        Err(reason) => return Answer::Refused(reason),
+    };
+    // The rate as APPLIED: §3.7 clamps what will not render, and a speed record holding the
+    // asked-for number would promise seconds the render never produces.
+    let applied = body
+        .get("applied")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(call.rate);
+    let clip = batch
+        .clips()
+        .iter()
+        .find(|c| c.n == call.clip)
+        .expect("S2 checked membership");
+    let (trans, tout) = ramp(applied, clip.length);
+    Answer::Placed(Fx {
+        kind: "speed".into(),
+        t: clip.start,
+        dur: clip.length,
+        rate: applied,
+        trans,
+        tout,
+        ..Default::default()
+    })
+}
+
+/// Both passes' walk over a reply: a clip outside the list loses the whole reply, then each call lands by `one`
+/// on a clone of the state, so the caller's clips stay untouched.
+pub fn place_each<C>(
+    clips: &Clips,
+    calls: &[C],
+    clip_of: fn(&C) -> u32,
+    one: fn(&mut Clips, &C) -> Answer,
+) -> Reply {
     let count = clips.clips().len() as u32;
     for call in calls {
-        if let Some(problem) = cut_captions::clip_outside(call.clip, 1, count) {
+        if let Some(problem) = cut_captions::clip_outside(clip_of(call), 1, count) {
             return Reply {
                 effects: Vec::new(),
                 answers: Vec::new(),
@@ -102,53 +153,32 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
             };
         }
     }
-
     let mut batch = clips.clone();
     let mut answers = Vec::new();
     let mut effects = Vec::new();
     for call in calls {
-        if call.rate <= 0.0 || is_neutral(call.rate) {
-            answers.push(Answer::Ignored);
-            continue;
+        let answer = one(&mut batch, call);
+        if let Answer::Placed(fx) = &answer {
+            effects.push(fx.clone());
         }
-        let answer = batch.set_clip_speed(call.clip, call.rate);
-        let Some(body) = serde_json::from_str::<serde_json::Value>(&answer).ok() else {
-            answers.push(Answer::Refused(answer.clone()));
-            continue;
-        };
-        if let Some(reason) = body.get("error").and_then(|e| e.as_str()) {
-            answers.push(Answer::Refused(reason.to_string()));
-            continue;
-        }
-        // The rate as APPLIED: §3.7 clamps what will not render, and a speed record holding the
-        // asked-for number would promise seconds the render never produces.
-        let applied = body
-            .get("applied")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(call.rate);
-        let clip = &batch.clips()[batch
-            .clips()
-            .iter()
-            .position(|c| c.n == call.clip)
-            .expect("S2 checked membership")];
-        let (trans, tout) = ramp(applied, clip.length);
-        let fx = Fx {
-            kind: "speed".into(),
-            t: clip.start,
-            dur: clip.length,
-            rate: applied,
-            trans,
-            tout,
-            ..Default::default()
-        };
-        answers.push(Answer::Placed(fx.clone()));
-        effects.push(fx);
+        answers.push(answer);
     }
     Reply {
-        effects: merge(&effects),
+        effects,
         answers,
         fault: None,
     }
+}
+
+/// A tool's answer read as JSON; `Err` is the sentence to refuse the call with.
+pub fn tool_body(answer: &str) -> Result<serde_json::Value, String> {
+    let Ok(body) = serde_json::from_str::<serde_json::Value>(answer) else {
+        return Err(answer.to_string());
+    };
+    if let Some(reason) = body.get("error").and_then(|e| e.as_str()) {
+        return Err(reason.to_string());
+    }
+    Ok(body)
 }
 
 // --- S4: same-rate stretches nearer than the gap are one stretch -----------------------------------------------------

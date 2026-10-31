@@ -41,18 +41,8 @@ pub enum Pressed {
 
 /// F3.7 S1 (`a selection, or a line?
 pub fn press(selection: Option<(f64, f64)>, line: Option<f64>) -> Pressed {
-    if let Some((a, b)) = selection {
-        let (from, to) = (a.min(b), a.max(b));
-        // Compared as "not below the floor" rather than "at or above it": 0.2 is not representable in binary, so
-        // a band dragged to exactly the floor can come out one ulp under and be thrown away as a slipped click.
-        if to - from > cut_speed::MIN_MARKED_SECONDS
-            || (to - from - cut_speed::MIN_MARKED_SECONDS).abs() < 1e-9
-        {
-            return Pressed::Stretched {
-                t: from,
-                dur: to - from,
-            };
-        }
+    if let Some((t, dur)) = cut_speed::marked_stretch(selection) {
+        return Pressed::Stretched { t, dur };
     }
     match line {
         Some(_) => Pressed::MarkAtLine,
