@@ -328,7 +328,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_aud
     // so a test cannot go green against a pair the program disagrees with (TTS is served as `clon`).
     for key_id in [
         ("tts", "index-tts2"),
-        ("asr", "nemotron-asr"),
+        ("asr", "qwen3-asr"),
         ("diar", "sortformer"),
         ("sep", "bam"),
     ]
@@ -357,7 +357,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_aud
     }
 
     // The interesting failure: the id is served, but declared for another task.
-    let wrong_task = asr_row_against(&[("nemotron-asr", "align")]);
+    let wrong_task = asr_row_against(&[("qwen3-asr", "align")]);
     assert!(
         wrong_task.contains("is declared task") && wrong_task.contains("needs"),
         "a wrong declared task must be named, got {wrong_task}"
@@ -369,7 +369,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_aud
 fn asr_row_against(entries: &[(&str, &str)]) -> String {
     let (url, _) = fake("application/json", leak(catalogue(entries)), false);
     write_conf(&conf_at(&url));
-    settings_probe::probe("asr", "nemotron-asr").expect_err("the catalogue declares it for align")
+    settings_probe::probe("asr", "qwen3-asr").expect_err("the catalogue declares it for align")
 }
 
 /// s4 — the id the server does not serve at all is refused with what IS served, named.
@@ -384,7 +384,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s4_a_m
         false,
     );
     write_conf(&conf_at(&url));
-    let failure = settings_probe::probe("asr", "nemotron-asr").expect_err("not served");
+    let failure = settings_probe::probe("asr", "qwen3-asr").expect_err("not served");
     assert!(
         failure.contains("other-model"),
         "{failure} must list what the server has"

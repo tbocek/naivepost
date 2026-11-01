@@ -131,7 +131,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_
     // The five: a cleared box is not a usable value, so the shipped default goes back.
     for (key, default) in [
         ("AUDIOCPP_VOICES", "/mnt/models/audiocpp/voices"),
-        ("AUDIOCPP_ASR_MODEL", "nemotron-asr"),
+        ("AUDIOCPP_ASR_MODEL", "qwen3-asr"),
         ("AUDIOCPP_DIAR_MODEL", "sortformer-diar"),
         ("AUDIOCPP_TTS_MODEL", "index-tts2"),
         ("AUDIOCPP_SEP_MODEL", "bs-roformer"),
@@ -168,7 +168,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_
     let body = settings::render(&Conf::default());
     for line in [
         "AUDIOCPP_VOICES=\"/mnt/models/audiocpp/voices\"",
-        "AUDIOCPP_ASR_MODEL=\"nemotron-asr\"",
+        "AUDIOCPP_ASR_MODEL=\"qwen3-asr\"",
         "AUDIOCPP_DIAR_MODEL=\"sortformer-diar\"",
         "AUDIOCPP_TTS_MODEL=\"index-tts2\"",
         "AUDIOCPP_SEP_MODEL=\"bs-roformer\"",
@@ -397,10 +397,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_missing
         family: String::new(),
         task: task.into(),
     };
-    let catalogue = vec![
-        model("sortformer-diar", "diar"),
-        model("nemotron-asr", "asr"),
-    ];
+    let catalogue = vec![model("sortformer-diar", "diar"), model("qwen3-asr", "asr")];
     let url = "http://cpp:8765";
     let prepare = services::Need {
         task: "sep",
@@ -421,7 +418,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_missing
     let mine = services::missing_model(url, &catalogue, "my-separation-model", prepare);
     assert!(mine.contains("my-separation-model"), "{mine}");
     assert!(
-        mine.contains("sortformer-diar") && mine.contains("nemotron-asr"),
+        mine.contains("sortformer-diar") && mine.contains("qwen3-asr"),
         "{mine}"
     );
     assert!(!mine.contains("model_manager_v2.py"), "{mine}");

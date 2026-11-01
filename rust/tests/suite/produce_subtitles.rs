@@ -766,3 +766,36 @@ fn f5_4_s3_the_models_own_line_breaks_survive() {
     // The source text going the other way IS wrapped once, by S2 — that is the app's own line.
     assert_eq!(sub::wrap("one two three four").lines().count(), 1);
 }
+
+/// Each encoded clip runs a little past its plan and the join starts the next after it: the cues follow, clip by clip.
+#[test]
+fn f5_4_s2_the_cues_follow_the_clock_the_join_made() {
+    use naivepost::produce_subtitles::{onto_measured, Cue};
+    let cue = |s: f64, e: f64| Cue {
+        s,
+        e,
+        text: "worte".to_string(),
+        pos: String::new(),
+    };
+    let planned = [(0.0, 10.0), (10.0, 20.0), (30.0, 5.0)];
+    let actual = [10.1, 20.05, 5.0];
+    let moved = onto_measured(
+        &[cue(1.0, 2.0), cue(12.0, 13.0), cue(31.0, 32.0)],
+        &planned,
+        &actual,
+    );
+    assert!(
+        (moved[0].s - 1.0).abs() < 1e-9,
+        "the first clip starts where planned"
+    );
+    assert!(
+        (moved[1].s - 12.1).abs() < 1e-9,
+        "the second after the first's real length"
+    );
+    assert!((moved[2].e - 32.15).abs() < 1e-9, "and the drift adds up");
+    // A clip nobody could measure: nothing to go on, so the planned clock stands.
+    assert_eq!(
+        onto_measured(&[cue(12.0, 13.0)], &planned, &actual[..2])[0].s,
+        12.0
+    );
+}

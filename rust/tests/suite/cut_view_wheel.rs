@@ -430,9 +430,17 @@ fn the_ruler_counts_footage_across_a_night_nobody_filmed() {
     use naivepost::timeline::{clock_at, filmed_seconds};
     let runs = [(0.0, 1681.0), (54058.0, 60770.0)];
     assert_eq!(filmed_seconds(&runs, 1681.0), 1681.0);
-    assert_eq!(filmed_seconds(&runs, 30000.0), 1681.0, "nothing filmed overnight");
+    assert_eq!(
+        filmed_seconds(&runs, 30000.0),
+        1681.0,
+        "nothing filmed overnight"
+    );
     assert_eq!(filmed_seconds(&runs, 54068.0), 1691.0);
     assert_eq!(clock_at(&runs, 1691.0), 54068.0);
     assert_eq!(clock_at(&runs, 100.0), 100.0);
-    assert_eq!(filmed_seconds(&[(5.0, 10.0)], 7.0), 2.0, "a late start counts from the footage");
+    assert_eq!(
+        filmed_seconds(&[(5.0, 10.0)], 7.0),
+        2.0,
+        "a late start counts from the footage"
+    );
 }

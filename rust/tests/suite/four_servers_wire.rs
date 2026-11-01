@@ -274,7 +274,7 @@ fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still
     let url = format!("http://127.0.0.2:{dead}");
     let tree = Tree::new(project_dir("s16")).expect("a project folder");
     let endpoint = endpoint_at(&url, "");
-    let base = server_leg::base_row(Server::Audio, "nemotron-asr", "health", "", "settings", "");
+    let base = server_leg::base_row(Server::Audio, "qwen3-asr", "health", "", "settings", "");
 
     let (_, result) = server_leg::call(
         &tree,

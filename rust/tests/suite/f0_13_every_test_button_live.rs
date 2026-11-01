@@ -113,7 +113,7 @@ fn f0_13_every_test_button_answers_through_the_live_provider() {
         ("/health", r#"{"status":"ok"}"#.to_string()),
         (
             "/v1/models",
-            r#"{"data":[{"id":"index-tts2","family":"index_tts2","task":"clon"},{"id":"nemotron-asr","family":"nemotron","task":"asr"},{"id":"sortformer-diar","family":"sortformer","task":"diar"},{"id":"bs-roformer","family":"roformer","task":"sep"},{"id":"qwen3-aligner","family":"qwen3","task":"align"}]}"#.to_string(),
+            r#"{"data":[{"id":"index-tts2","family":"index_tts2","task":"clon"},{"id":"qwen3-asr","family":"nemotron","task":"asr"},{"id":"sortformer-diar","family":"sortformer","task":"diar"},{"id":"bs-roformer","family":"roformer","task":"sep"},{"id":"qwen3-aligner","family":"qwen3","task":"align"}]}"#.to_string(),
         ),
     ]);
     let paths = naivepost::settings::from_environment().expect("a settings folder");
@@ -142,7 +142,7 @@ fn f0_13_every_test_button_answers_through_the_live_provider() {
         assert!(said.contains("no web search"), "{said}");
         for (key, id) in [
             ("tts", "index-tts2"),
-            ("asr", "nemotron-asr"),
+            ("asr", "qwen3-asr"),
             ("diar", "sortformer-diar"),
             ("sep", "bs-roformer"),
         ] {

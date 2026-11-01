@@ -1656,7 +1656,7 @@ fn f1_3_s6_what_the_pass_wrote_is_what_prepare_counts() {
 // live in `tests/suite/asr.rs` with a hand-passed closure; what these add is that the ▶ walk does it.
 
 /// S1: the ceiling is the model's, and it is what decides how many requests one recording becomes.
-/// The same 140 s take against a qwen3 id (60 s) is several requests; against the shipped non-qwen3
+/// The same 140 s take against a qwen3 id (60 s) is several requests; against a non-qwen3
 /// id (300 s) it is one. `services::asr_model` is the door the ceiling comes through, and the fake
 /// records every envelope, so the count is read off the wire rather than inferred from a file.
 #[test]
@@ -1676,7 +1676,7 @@ fn f1_4_s1_the_models_ceiling_decides_how_many_requests_a_take_becomes() {
     // The other half of the row: the SAME length under a 300 s ceiling is a single request, which is
     // `asr::fits` deciding to upload the recording whole rather than cut it for nothing.
     let whole = Scene::new("140.0", &[], "");
-    let log = walk_scene_asr(&whole, "", false);
+    let log = walk_scene_asr(&whole, "nemotron-asr", false);
     assert_eq!(
         asr_requests(&whole).len(),
         1,

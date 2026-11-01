@@ -33,7 +33,7 @@ fn sec_02_services_4_degraded_modes_s1_no_aligner_cuts_off_the_waveform() {
     // what the settings end up holding. Parsed from a body rather than hand-built, so a change to the
     // catalog shape lands here too.
     let models = services::parse_models(
-        r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"index-tts2","task":"tts"}]}"#,
+        r#"{"data":[{"id":"qwen3-asr","task":"asr"},{"id":"index-tts2","task":"tts"}]}"#,
     );
     assert_eq!(models.len(), 2);
     let aligner = services::pick_aligner("", &models).unwrap_or_default();

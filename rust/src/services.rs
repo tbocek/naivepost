@@ -17,7 +17,7 @@ pub const SD_PORT: u16 = 1234;
 
 /// The four audio model ids, compiled in: they are what an empty box means, and a server that
 /// has not been configured still answers to them.
-pub const ASR_MODEL: &str = "nemotron-asr";
+pub const ASR_MODEL: &str = "qwen3-asr";
 pub const DIAR_MODEL: &str = "sortformer-diar";
 pub const TTS_MODEL: &str = "index-tts2";
 pub const SEP_MODEL: &str = "bs-roformer";
@@ -28,8 +28,7 @@ pub const SEP_MODEL: &str = "bs-roformer";
 pub const ALIGN_PREFERENCE: &str = "qwen3-aligner";
 
 /// The packages the shipped defaults install from, named in the hint §1 asks for. Only these
-/// three exist: a hand-picked id's weights would be a guess.
-pub const ASR_PACKAGE: &str = "nemotron_asr_q8_0";
+/// exist: a hand-picked id's weights would be a guess, and so would a package name for `qwen3-asr`.
 pub const DIAR_PACKAGE: &str = "sortformer_diar_4spk_v1_q8_0";
 pub const SEP_PACKAGE: &str = "bs_roformer_q8_0";
 
@@ -335,7 +334,6 @@ pub fn pick_aligner(configured: &str, models: &[AudioModel]) -> Option<String> {
 /// only honest when the id is the one this build ships with.
 pub fn install_package(id: &str) -> Option<&'static str> {
     match id {
-        ASR_MODEL => Some(ASR_PACKAGE),
         DIAR_MODEL => Some(DIAR_PACKAGE),
         SEP_MODEL => Some(SEP_PACKAGE),
         _ => None,
