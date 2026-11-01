@@ -53,3 +53,20 @@ fn joins_cut_from_the_words_unless_someone_chose() {
         CutMode::Model
     );
 }
+
+#[test]
+fn f0_7_the_language_is_read_from_the_context_without_a_model() {
+    let derive = |context: &str| {
+        let mut policy = naivepost::project::Policy::default();
+        naivepost::policy::derive(&mut policy, context, &mut |_, _| Vec::new());
+        policy.language.value
+    };
+    assert_eq!(derive("One person. The talk is in German, with some English."), "de");
+    assert_eq!(derive("The recordings are spoken in French."), "fr");
+    assert_eq!(derive("A weekly news segment."), "en", "not said: the default stands");
+    assert_eq!(
+        derive("Read aloud.\n****SCRIPT START****\nThe talk is in German.\n****SCRIPT STOP****"),
+        "en",
+        "the script is not the context's word"
+    );
+}

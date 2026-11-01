@@ -378,6 +378,7 @@ pub fn derive(
         };
     }
     let mut out = read_target_length(policy, context);
+    read_language(policy, context, &mut out);
     let req = request(context);
     for _ in 0..DERIVE_ROUNDS {
         let proposals = answer(&req, &out.refusals);
@@ -446,6 +447,28 @@ pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
         }
     }
     out
+}
+
+/// `P.policy.language` out of the User Context's own words ("The talk is in German"), so the session's language does not hang on a model being reachable.
+/// Not the script, which may quote any language; a context that does not say leaves the field alone, and the model may still set it.
+fn read_language(policy: &mut Policy, context: &str, out: &mut Derived) {
+    let Ok(said) = regex::Regex::new(
+        r"(?i)\b(?:talk|lecture|video|session|speech|recordings?)\s+(?:is|are)\s+(?:spoken\s+)?in\s+(English|German|French)\b",
+    ) else {
+        return;
+    };
+    let words = crate::prompt_assembly::without_script(context);
+    let Some(name) = said.captures(&words).and_then(|found| found.get(1)) else {
+        return;
+    };
+    let proposal = Proposal {
+        field: "language".to_string(),
+        value: crate::roles::language_code(name.as_str()),
+        because: "the User Context's own words".to_string(),
+    };
+    let landed = apply(policy, &proposal);
+    out.proposals.push(proposal);
+    out.applied.push(("language", landed));
 }
 
 /// The extra line one target-length read earns — only the cases [`derived_log`] cannot say.
