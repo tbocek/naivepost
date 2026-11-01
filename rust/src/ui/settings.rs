@@ -12,8 +12,9 @@ use super::settings_servers;
 use crate::checks;
 use crate::machine_store;
 use crate::model_list;
-use crate::server_entries::{self, Section};
 use crate::settings::Conf;
+pub use crate::ui::settings_doors::*;
+pub(crate) use crate::ui::settings_wire::*;
 
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
 pub type Answer = Result<String, String>;
@@ -110,36 +111,36 @@ pub fn paint_badge(badge: &gtk::Label, phase: &checks::Phase) {
 }
 
 thread_local! {
-    static OPEN: RefCell<Vec<Rc<Dialog>>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static OPEN: RefCell<Vec<Rc<Dialog>>> = const { RefCell::new(Vec::new()) };
 }
 
-struct Dialog {
-    window: adw::Window,
-    store: RefCell<Option<machine_store::Store>>,
+pub(crate) struct Dialog {
+    pub(crate) window: adw::Window,
+    pub(crate) store: RefCell<Option<machine_store::Store>>,
     /// Wall-clock origin for the 600 ms beat, so `flush`/`touched` get one consistent "now".
-    started: std::time::Instant,
+    pub(crate) started: std::time::Instant,
     /// The dialog's own bookkeeping, so a timer can reach it after `build_owned` returns.
-    this: RefCell<Option<Rc<Dialog>>>,
-    entries: RefCell<Vec<(String, gtk::Entry)>>,
-    badges: RefCell<Vec<(String, gtk::Label)>>,
-    buttons: RefCell<Vec<(String, gtk::Button)>>,
-    fetched: RefCell<Vec<String>>,
-    list: gtk::DropDown,
+    pub(crate) this: RefCell<Option<Rc<Dialog>>>,
+    pub(crate) entries: RefCell<Vec<(String, gtk::Entry)>>,
+    pub(crate) badges: RefCell<Vec<(String, gtk::Label)>>,
+    pub(crate) buttons: RefCell<Vec<(String, gtk::Button)>>,
+    pub(crate) fetched: RefCell<Vec<String>>,
+    pub(crate) list: gtk::DropDown,
     /// Set while a save timer is waiting, so a burst of keystrokes arms one timeout, not fifty.
-    save_armed: Rc<std::cell::Cell<bool>>,
-    log_view: gtk::TextView,
-    log_expander: gtk::Expander,
-    test_log: RefCell<checks::TestLog>,
-    provider: Provider,
+    pub(crate) save_armed: Rc<std::cell::Cell<bool>>,
+    pub(crate) log_view: gtk::TextView,
+    pub(crate) log_expander: gtk::Expander,
+    pub(crate) test_log: RefCell<checks::TestLog>,
+    pub(crate) provider: Provider,
 }
 
 impl Dialog {
     /// The moment the dialog opened, as the beat measures it.
-    fn now(&self) -> std::time::Duration {
+    pub(crate) fn now(&self) -> std::time::Duration {
         self.started.elapsed()
     }
 
-    fn typed_all(&self) -> Vec<(String, String)> {
+    pub(crate) fn typed_all(&self) -> Vec<(String, String)> {
         self.entries
             .borrow()
             .iter()
@@ -147,7 +148,7 @@ impl Dialog {
             .collect()
     }
 
-    fn seed_entries(&self) {
+    pub(crate) fn seed_entries(&self) {
         let base = self.store_base();
         let seeded: Vec<(String, String)> = self
             .entries
@@ -164,7 +165,7 @@ impl Dialog {
         }
     }
 
-    fn typed_conf(&self) -> Conf {
+    pub(crate) fn typed_conf(&self) -> Conf {
         let mut conf = if self.store.borrow().is_some() {
             self.store_base()
         } else {
@@ -179,7 +180,7 @@ impl Dialog {
     }
 
     /// The conf the boxes were seeded from, for the spin seeding above.
-    fn store_base(&self) -> Conf {
+    pub(crate) fn store_base(&self) -> Conf {
         self.store
             .borrow()
             .as_ref()
@@ -189,7 +190,7 @@ impl Dialog {
 
     // what a real machine's settings look like while §5's no-Save beat stays unarmed (nothing to write
     // to: a snapshot must not touch `$XDG_CONFIG_HOME`).
-    fn paint_from(&self, conf: &Conf) {
+    pub(crate) fn paint_from(&self, conf: &Conf) {
         for (key, entry) in self.entries.borrow().iter() {
             if let Some(value) = machine_store::text_for(conf, key) {
                 entry.set_text(&value);
@@ -198,7 +199,7 @@ impl Dialog {
     }
 
     /// A keystroke anywhere: arm the beat, and make sure a timer is waiting to land it.
-    fn touched(self: &Rc<Self>) {
+    pub(crate) fn touched(self: &Rc<Self>) {
         let owed = {
             let mut store = self.store.borrow_mut();
             match store.as_mut() {
@@ -224,7 +225,7 @@ impl Dialog {
     }
 
     /// The timer's job: write if the beat elapsed, say so in both logs, and stop until the next key.
-    fn land_save(self: &Rc<Self>) -> glib::ControlFlow {
+    pub(crate) fn land_save(self: &Rc<Self>) -> glib::ControlFlow {
         self.save_armed.set(false);
         let (line, still_due) = {
             let mut store = self.store.borrow_mut();
@@ -249,7 +250,7 @@ impl Dialog {
     }
 
     /// Closing the dialog: land whatever is still owed, then forget the store.
-    fn close_store(&self) {
+    pub(crate) fn close_store(&self) {
         let taken = self.store.borrow_mut().take();
         if let Some(mut store) = taken {
             if let Ok(Some(line)) = store.on_close(&self.typed_all()) {
@@ -260,7 +261,7 @@ impl Dialog {
     }
 
     /// One line into the dialog's log pane and the main log, the way a Test verdict reports (§5).
-    fn note(&self, line: &str) {
+    pub(crate) fn note(&self, line: &str) {
         let buffer = self.log_view.buffer();
         let mut end = buffer.end_iter();
         buffer.insert(&mut end, &format!("settings: {line}\n"));
@@ -268,7 +269,7 @@ impl Dialog {
     }
 
     /// What the box named `entry-<key>` holds right now — the value the press tests.
-    fn typed(&self, key: &str) -> String {
+    pub(crate) fn typed(&self, key: &str) -> String {
         self.entries
             .borrow()
             .iter()
@@ -277,7 +278,7 @@ impl Dialog {
             .unwrap_or_default()
     }
 
-    fn badge(&self, key: &str) -> Option<gtk::Label> {
+    pub(crate) fn badge(&self, key: &str) -> Option<gtk::Label> {
         self.badges
             .borrow()
             .iter()
@@ -286,7 +287,7 @@ impl Dialog {
     }
 
     /// The value box for `key` — what a Test press reads and what a test types into.
-    fn entry(&self, key: &str) -> Option<gtk::Entry> {
+    pub(crate) fn entry(&self, key: &str) -> Option<gtk::Entry> {
         self.entries
             .borrow()
             .iter()
@@ -295,7 +296,7 @@ impl Dialog {
     }
 
     /// One verdict, painted and mirrored: badge, dialog log, main window log.
-    fn report(&self, key: &str, phase: &checks::Phase) {
+    pub(crate) fn report(&self, key: &str, phase: &checks::Phase) {
         if let Some(badge) = self.badge(key) {
             paint_badge(&badge, phase);
         }
@@ -313,7 +314,7 @@ impl Dialog {
         crate::ui::window::log_line(&line);
     }
 
-    fn paint_log(&self) {
+    pub(crate) fn paint_log(&self) {
         let buffer = self.log_view.buffer();
         let body: String = self
             .test_log
@@ -326,7 +327,7 @@ impl Dialog {
     }
 
     /// Ask the provider for one row and report what it said.
-    fn ask(self: &Rc<Self>, key: &str) {
+    pub(crate) fn ask(self: &Rc<Self>, key: &str) {
         let typed = self.typed(key);
         self.report(key, &checks::Phase::Running);
         let row = key.to_string();
@@ -336,7 +337,7 @@ impl Dialog {
         });
     }
 
-    fn off_thread(
+    pub(crate) fn off_thread(
         self: &Rc<Self>,
         key: &str,
         typed: String,
@@ -373,7 +374,7 @@ impl Dialog {
     }
 
     /// Fetch models: ask the server what it serves and fill the dropdown.
-    fn fetch_models(self: &Rc<Self>) {
+    pub(crate) fn fetch_models(self: &Rc<Self>) {
         // The Server box: the address to list from. The Model box had been passed here, so a listing asked
         // the model's name as if it were a host.
         let typed = self.typed("server");
@@ -385,7 +386,7 @@ impl Dialog {
     }
 
     /// Fill the dropdown from what the listing answered, and report it.
-    fn show_listing(&self, typed: &str, listed: Answer) {
+    pub(crate) fn show_listing(&self, typed: &str, listed: Answer) {
         let typed = typed.to_string();
         match listed {
             Ok(body) => {
@@ -412,7 +413,7 @@ impl Dialog {
     }
 
     /// Use: copy the chosen id into Model, only if the server really listed it.
-    fn use_model(&self) {
+    pub(crate) fn use_model(&self) {
         let chosen = if self.list.selected() == gtk::INVALID_LIST_POSITION {
             String::new()
         } else {
@@ -455,7 +456,7 @@ impl Dialog {
         }
     }
 
-    fn ask_all(self: &Rc<Self>) {
+    pub(crate) fn ask_all(self: &Rc<Self>) {
         for (key, _) in KINDS {
             self.ask(key);
         }
@@ -912,193 +913,6 @@ model answers through judge_text that nothing changed",
     dialog
 }
 
-fn wire_servers(dialog: &Rc<Dialog>) {
-    let fill = {
-        let dialog = Rc::downgrade(dialog);
-        move |section: Section, entry: &server_entries::Entry| {
-            let Some(dialog) = dialog.upgrade() else {
-                return;
-            };
-            for conf_key in section.conf_keys() {
-                let Some(box_key) = server_entries::box_of(conf_key) else {
-                    continue;
-                };
-                let value = entry.get(*conf_key).map(String::as_str).unwrap_or("");
-                if let Some((_, input)) = dialog
-                    .entries
-                    .borrow()
-                    .iter()
-                    .find(|(key, _)| key == box_key)
-                {
-                    input.set_text(value);
-                }
-            }
-            if let Some(store) = dialog.store.borrow_mut().as_mut() {
-                store.adopt(|conf| server_entries::apply(section, entry, conf));
-            }
-            // The same text set again emits no change, and the voices folder has no box: arm the beat here.
-            dialog.touched();
-        }
-    };
-    let values_now = {
-        let dialog = Rc::downgrade(dialog);
-        move |section: Section| {
-            dialog
-                .upgrade()
-                .map(|dialog| server_entries::values_from(section, &dialog.typed_conf()))
-                .unwrap_or_default()
-        }
-    };
-    let note = {
-        let dialog = Rc::downgrade(dialog);
-        move |line: &str| {
-            if let Some(dialog) = dialog.upgrade() {
-                dialog.note(line);
-            }
-        }
-    };
-    let conf = dialog.store_base();
-    settings_servers::wire(
-        settings_servers::Lent {
-            fill: Rc::new(fill),
-            values_now: Rc::new(values_now),
-            note: Rc::new(note),
-        },
-        &conf,
-    );
-}
-
-fn register_value_boxes(dialog: &Rc<Dialog>) {
-    fn walk(node: &gtk::Widget, out: &mut Vec<(String, gtk::Entry)>) {
-        if let (Some(key), Some(entry)) = (
-            node.widget_name()
-                .strip_prefix("entry-")
-                .map(str::to_string),
-            node.downcast_ref::<gtk::Entry>(),
-        ) {
-            out.push((key, entry.clone()));
-        }
-        let mut child = node.first_child();
-        while let Some(c) = child {
-            child = c.next_sibling();
-            walk(&c, out);
-        }
-    }
-    let mut found = Vec::new();
-    walk(dialog.window.upcast_ref(), &mut found);
-    let mut entries = dialog.entries.borrow_mut();
-    for (key, entry) in found {
-        if !entries.iter().any(|(known, _)| *known == key) {
-            entries.push((key, entry));
-        }
-    }
-}
-
-fn wire_use_target(dialog: &Rc<Dialog>) {
-    for key in ["llm", "decision"] {
-        if let Some(entry) = dialog
-            .entries
-            .borrow()
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, e)| e.clone())
-        {
-            let focus = gtk::EventControllerFocus::new();
-            let key = key.to_string();
-            focus.connect_enter(move |_| {
-                USE_TARGET.with(|target| *target.borrow_mut() = key.clone());
-            });
-            entry.add_controller(focus);
-        }
-    }
-}
-
-/// Every value box reports its keystrokes to the store (§5: written 600 ms after the last one).
-fn wire_entries_to_store(dialog: &Rc<Dialog>) {
-    for (key, entry) in dialog.entries.borrow().iter() {
-        let owned = Rc::clone(dialog);
-        let key = key.clone();
-        entry.connect_changed(move |entry| {
-            // §5: typing into a box changes the server entry in use as well.
-            settings_servers::edited(&key, &entry.text());
-            owned.touched();
-        });
-    }
-}
-/// Each `test-<key>-button` gets the row whose entry shares its key.
-fn wire_buttons(dialog: &Rc<Dialog>) {
-    for key in test_keys() {
-        let Some(button) = crate::ui::window::find_widget_by_name(
-            dialog.window.upcast_ref(),
-            &format!("test-{key}-button"),
-        )
-        .and_then(|w| w.downcast::<gtk::Button>().ok()) else {
-            continue;
-        };
-        let Some(entry) = crate::ui::window::find_widget_by_name(
-            dialog.window.upcast_ref(),
-            &format!("entry-{key}"),
-        )
-        .and_then(|w| w.downcast::<gtk::Entry>().ok()) else {
-            continue;
-        };
-        let Some(badge) = crate::ui::window::find_widget_by_name(
-            dialog.window.upcast_ref(),
-            &format!("badge-{key}"),
-        )
-        .and_then(|w| w.downcast::<gtk::Label>().ok()) else {
-            continue;
-        };
-        dialog.entries.borrow_mut().push((key.to_string(), entry));
-        dialog.badges.borrow_mut().push((key.to_string(), badge));
-        dialog
-            .buttons
-            .borrow_mut()
-            .push((key.to_string(), button.clone()));
-
-        let owned = Rc::clone(dialog);
-        let key = key.to_string();
-        button.connect_clicked(move |_| owned.ask(&key));
-    }
-
-    if let Some(all) =
-        crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), "test-all-button")
-            .and_then(|w| w.downcast::<gtk::Button>().ok())
-    {
-        let owned = Rc::clone(dialog);
-        all.connect_clicked(move |_| owned.ask_all());
-    }
-
-    // Fetch models and Use: the two buttons that share the Writing block. They are looked up by name
-    // like every other control, so neither can be drawn without being wired.
-    if let Some(fetch) =
-        crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), "fetch-models-button")
-            .and_then(|w| w.downcast::<gtk::Button>().ok())
-    {
-        let owned = Rc::clone(dialog);
-        fetch.connect_clicked(move |_| owned.fetch_models());
-    }
-    if let Some(use_choice_button) =
-        crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), "use-model-button")
-            .and_then(|w| w.downcast::<gtk::Button>().ok())
-    {
-        let owned = Rc::clone(dialog);
-        use_choice_button.connect_clicked(move |_| owned.use_model());
-    }
-    // The two badges drawn outside `add(...)` join the same key -> badge map, so `report` paints
-    // them exactly like a per-row verdict instead of dropping straight into the log.
-    for key in [FETCH_KEY, USE_KEY] {
-        if let Some(badge) = crate::ui::window::find_widget_by_name(
-            dialog.window.upcast_ref(),
-            &format!("badge-{key}"),
-        )
-        .and_then(|w| w.downcast::<gtk::Label>().ok())
-        {
-            dialog.badges.borrow_mut().push((key.to_string(), badge));
-        }
-    }
-}
-
 pub const FETCH_KEY: &str = "fetch-models";
 
 /// The provider key for adopting the chosen id into Model.
@@ -1106,11 +920,11 @@ pub const USE_KEY: &str = "use-model";
 
 thread_local! {
     /// The model box Use fills: the one of Model (`llm`) and Decision (`decision`) entered last.
-    static USE_TARGET: RefCell<String> = RefCell::new("llm".to_string());
+    pub(crate) static USE_TARGET: RefCell<String> = RefCell::new("llm".to_string());
 }
 
 /// Every key that has a Test button, in dialog order.
-fn test_keys() -> [&'static str; 12] {
+pub(crate) fn test_keys() -> [&'static str; 12] {
     [
         "llm",
         "llm-vision",
@@ -1174,110 +988,4 @@ pub fn settings_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     crate::ui::window::find_widget_by_name(window.upcast_ref(), "settings-button")?
         .downcast()
         .ok()
-}
-
-/// The ids the open dialog's model list currently offers, newest first by fetch order.
-pub fn listed_models(_window: &adw::ApplicationWindow) -> Vec<String> {
-    let Some(list) = find_named("model-list")
-        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-        .or_else(|| {
-            last_dialog()
-                .and_then(|d| {
-                    crate::ui::window::find_widget_by_name(d.window.upcast_ref(), "model-list")
-                })
-                .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-        })
-    else {
-        return Vec::new();
-    };
-    let Some(model) = list.model() else {
-        return Vec::new();
-    };
-    let strings = match model.downcast::<gtk::StringList>() {
-        Ok(strings) => strings,
-        Err(_) => return Vec::new(),
-    };
-    (0..strings.n_items())
-        .filter_map(|i| strings.string(i).map(|text| text.to_string()))
-        .collect()
-}
-
-pub fn open_settings_window() -> Option<adw::Window> {
-    last_dialog().map(|dialog| dialog.window.clone())
-}
-
-/// One row's Test button, by key (`test-<key>-button`).
-pub fn test_button(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Button> {
-    find_named(&format!("test-{key}-button"))?
-        .downcast()
-        .ok()
-        .or_else(|| {
-            crate::ui::window::find_widget_by_name(
-                window.upcast_ref(),
-                &format!("test-{key}-button"),
-            )?
-            .downcast()
-            .ok()
-        })
-}
-
-/// One row's badge, by key (`badge-<key>`).
-pub fn badge(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Label> {
-    last_dialog()
-        .and_then(|dialog| dialog.badge(key))
-        .or_else(|| {
-            crate::ui::window::find_widget_by_name(window.upcast_ref(), &format!("badge-{key}"))?
-                .downcast()
-                .ok()
-        })
-}
-
-/// One row's value box, by key (`entry-<key>`) — the box a Test press reads what was typed from.
-pub fn entry(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Entry> {
-    last_dialog()
-        .and_then(|dialog| dialog.entry(key))
-        .or_else(|| {
-            crate::ui::window::find_widget_by_name(window.upcast_ref(), &format!("entry-{key}"))?
-                .downcast()
-                .ok()
-        })
-}
-
-/// The dialog's own log text, which is what its expander shows.
-pub fn dialog_log() -> String {
-    if let Some(dialog) = last_dialog() {
-        return buffer_text(&dialog.log_view);
-    }
-    String::new()
-}
-
-pub fn dialog_log_open() -> bool {
-    if let Some(dialog) = last_dialog() {
-        return dialog.log_expander.is_expanded();
-    }
-    false
-}
-
-/// The open dialog's boxes as typed, `(key, value)`, which is what a Test reads and the save writes.
-pub fn typed_values() -> Vec<(String, String)> {
-    last_dialog()
-        .map(|dialog| dialog.typed_all())
-        .unwrap_or_default()
-}
-
-fn last_dialog() -> Option<Rc<Dialog>> {
-    OPEN.with(|open| open.borrow().last().cloned())
-}
-
-/// A widget by name inside the open dialog.
-fn find_named(name: &str) -> Option<gtk::Widget> {
-    let dialog = last_dialog()?;
-    crate::ui::window::find_widget_by_name(dialog.window.upcast_ref(), name)
-}
-
-fn buffer_text(view: &gtk::TextView) -> String {
-    let buffer = view.buffer();
-    let start = buffer.start_iter();
-    let end = buffer.end_iter();
-    buffer.text(&start, &end, false).to_string()
 }
