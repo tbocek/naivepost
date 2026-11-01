@@ -335,7 +335,7 @@ fn f1_8_s3_a_moved_time_or_a_missing_row_is_refused() {
     let mut asked: Vec<String> = Vec::new();
     let outcome = fix::fix_block(&lines(2), "", |message| {
         asked.push(message.to_string());
-        let mut rows = answered(message, |text| text.to_string());
+        let mut rows = answered(message, |text| format!("{text}."));
         if asked.len() == 1 {
             // First answer: the second row's start moved.
             if let Some(fix::Reply::Row(row)) = rows.get_mut(1) {
@@ -526,7 +526,7 @@ fn f1_8_s3_a_block_is_cached_under_its_own_rows() {
         "the fixer's file name comes from the one digest rule"
     );
     let mut changed = rows.clone();
-    changed[1].text = "something else entirely".into();
+    changed[1].text = "Something else entirely.".into();
     assert_ne!(key, fix::block_key("", &changed));
 
     assert!(
@@ -611,7 +611,7 @@ fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_an_answer_by_its_input_which
 
     // Changed rows are another input: asked again.
     let mut changed = lines(2);
-    changed[1].text = "something else entirely".into();
+    changed[1].text = "Something else entirely.".into();
     textfmt::write_lines(&changed, &tree.transcript_tsv(BASE)).unwrap();
     let again = Cell::new(0);
     run_with(

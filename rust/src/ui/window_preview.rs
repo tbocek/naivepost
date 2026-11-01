@@ -108,7 +108,9 @@ pub(crate) fn show_playhead_reading(window: &adw::ApplicationWindow, at: f64) {
     if let Some(label) = crate::ui::window::find_widget_by_name(window.upcast_ref(), &name)
         .and_then(|widget| widget.downcast::<gtk::Label>().ok())
     {
-        label.set_text(&crate::preview::clock(Some(at)));
+        let runs = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings());
+        let filmed = crate::timeline::filmed_seconds(&runs, at);
+        label.set_text(&crate::preview::clock(Some(filmed)));
     }
 }
 

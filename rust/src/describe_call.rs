@@ -135,7 +135,9 @@ pub fn stage_chunk_reached(
                 let end = batch.last().copied().unwrap_or(start_second) + freq;
                 let batch = batch.to_vec();
                 let context = context.clone();
+                let page = crate::exchange_leg::row_page_to_share();
                 handles.push(scope.spawn(move || {
+                    let _page = crate::exchange_leg::share_row_page(page);
                     // Workers buffer their log lines (`log` lives on this thread); the main loop prints them in chunk order.
                     let mut said: Vec<String> = Vec::new();
                     let answer = run_chunk(

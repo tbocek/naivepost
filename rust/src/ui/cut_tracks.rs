@@ -834,12 +834,15 @@ fn rows_of(fx_rows: usize, thumb_px: u32) -> Rows {
 
 fn draw_ruler(cr: &cairo::Context, scene: &Scene, tape: f64) {
     let step = tick_step_seconds(scene.pps);
-    // Each tick at its second's PAINTED x (after the gutter, through the folds); a tick inside a fold is dropped.
+    // The ticks count footage, not the session clock, so a night between two recordings is no jump in the numbers.
+    // Each at its second's PAINTED x (after the gutter, through the folds); a tick inside a fold is dropped.
+    let runs = scene.runs();
+    let filmed = timeline::filmed_seconds(&runs, scene.tape_end());
     let mut last = f64::NEG_INFINITY;
-    let marks: Vec<(f64, String)> = cut_trim::ruler_ticks(scene.tape_end(), scene.pps, step)
+    let marks: Vec<(f64, String)> = cut_trim::ruler_ticks(filmed, scene.pps, step)
         .into_iter()
         .filter_map(|(x, label)| {
-            let painted = band_x(scene, x / scene.pps);
+            let painted = band_x(scene, timeline::clock_at(&runs, x / scene.pps));
             let fresh = painted > last + 1.0;
             last = last.max(painted);
             (fresh && painted <= tape).then_some((painted, label))
@@ -857,8 +860,13 @@ fn labels(cr: &cairo::Context, ticks: &[(f64, String)]) {
     cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
     cr.set_font_size(9.0);
     ink(cr, RULER_INK);
+    // Past a fold two ticks can land close together: the second keeps its line and gives up its label.
+    let mut free_from = f64::NEG_INFINITY;
     for (x, label) in ticks {
-        text_at(cr, x + 2.0, cut_trim::RULER_H - 4.0, label);
+        if *x >= free_from {
+            text_at(cr, x + 2.0, cut_trim::RULER_H - 4.0, label);
+            free_from = x + cr.text_extents(label).map_or(40.0, |seen| seen.width()) + 6.0;
+        }
     }
 }
 

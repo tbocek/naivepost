@@ -328,6 +328,11 @@ impl Gate {
         }
     }
 
+    /// How many requests the gate lets through from now on; whoever is on the wire stays there.
+    pub fn set_slots(&mut self, slots: u32) {
+        self.slots = clamped_slots(slots);
+    }
+
     pub fn acquire(&mut self, step: &str) -> Acquisition {
         // A slot handed over by a release is collected here rather than re-bought below. The ordinary path
         // cannot see the hand-off: the asker already sits in `held`, which the gate reads as "waiting for

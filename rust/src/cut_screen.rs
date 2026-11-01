@@ -197,6 +197,17 @@ pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wh
     }
 }
 
+/// One frame of a wheel notch's glide: the share of the way left that a frame covers, so a notch starts quickly and
+/// settles, and a further notch simply moves the target. Within half a pixel it lands.
+pub fn glide_step(origin: f64, target: f64) -> f64 {
+    const SHARE: f64 = 0.25;
+    if (target - origin).abs() < 0.5 {
+        target
+    } else {
+        origin + (target - origin) * SHARE
+    }
+}
+
 // --- The transport's three play buttons (§A's group 1) -----------------------------------------
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

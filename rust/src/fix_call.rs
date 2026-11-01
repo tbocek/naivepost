@@ -127,7 +127,7 @@ pub fn stage_chunk(
         let outcome = match cached {
             Some(reply) => {
                 from_cache += 1;
-                fix_transcripts::fix_block(&block, &context, |_| Ok(reply.clone()))?
+                fix_transcripts::stored_block(&block, &context, reply)?
             }
             None => {
                 asked += 1;

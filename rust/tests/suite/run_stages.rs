@@ -412,3 +412,53 @@ fn f1_3_s0_every_source_is_heard_a_videos_own_sound_too() {
         .collect();
     assert_eq!(heard, ["sources/a.mkv", "sources/b.mkv"]);
 }
+
+/// ⏹ cancels the dial on the wire, and the row comes back with an error. That is the stop's doing: the run says stopped, not FAILED.
+#[test]
+fn a_row_that_errors_under_stop_is_a_stop_not_a_failure() {
+    let stage = |program: &str| Stage {
+        track: naivepost::runqueue::TRACK_DESCRIBE,
+        name: "describe",
+        phase: 1,
+        of: 1,
+        kind: "chunk",
+        tasks: vec![Task {
+            label: "row".to_string(),
+            program: program.to_string(),
+            args: Vec::new(),
+            already_done: false,
+            session: None,
+        }],
+    };
+    let asked = std::cell::Cell::new(0);
+    let drive = naivepost::run_stages::drive_walk(
+        &[stage("/no/such/program")],
+        &mut naivepost::runqueue::Queue::new(),
+        || false,
+        || {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        },
+        |_| {},
+        &mut Subprocesses::default(),
+    );
+    assert!(
+        matches!(
+            drive,
+            naivepost::run_stages::Drive::Stopped { ran: 0, left: 1 }
+        ),
+        "{drive:?}"
+    );
+    let drive = naivepost::run_stages::drive_walk(
+        &[stage("/no/such/program")],
+        &mut naivepost::runqueue::Queue::new(),
+        || false,
+        || false,
+        |_| {},
+        &mut Subprocesses::default(),
+    );
+    assert!(
+        matches!(drive, naivepost::run_stages::Drive::Failed { .. }),
+        "{drive:?}"
+    );
+}

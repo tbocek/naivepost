@@ -451,3 +451,86 @@ fn f2_2_s6_dropped_stretches_come_back_dimmed_and_kept_material_never_does() {
         "nothing removed -> nothing dimmed"
     );
 }
+
+/// S5 "past the last clip → pause": the tick says so once and stops, instead of moving the line and rewriting the status ten times a second.
+#[test]
+fn f2_2_s5_past_the_last_clip_the_tick_pauses_and_goes_quiet() {
+    use naivepost::cut_play_leg::{start_cut_preview_tick, CutPreviewPage};
+    use std::cell::Cell;
+    use std::rc::Rc;
+    struct Page {
+        cut_: naivepost::cut::Cut,
+        playing: Cell<bool>,
+        said: Cell<u32>,
+        paused: Cell<u32>,
+    }
+    struct Shared(Rc<Page>);
+    impl std::ops::Deref for Shared {
+        type Target = Page;
+        fn deref(&self) -> &Page {
+            &self.0
+        }
+    }
+    impl CutPreviewPage for Shared {
+        fn cut_only(&self) -> bool {
+            true
+        }
+        fn playing(&self) -> bool {
+            self.playing.get()
+        }
+        fn playhead(&self) -> Option<f64> {
+            Some(5.0)
+        }
+        fn set_playhead(&self, _at: f64) {}
+        fn cut(&self) -> naivepost::cut::Cut {
+            self.cut_.clone()
+        }
+        fn say_clock(&self, _clock: f64, ended: bool) {
+            assert!(ended, "the line stands past the last clip");
+            self.said.set(self.said.get() + 1);
+        }
+        fn pause_at_end(&self) {
+            self.playing.set(false);
+            self.paused.set(self.paused.get() + 1);
+        }
+        fn volume(&self) -> f64 {
+            1.0
+        }
+        fn arm_spare_at(&self, _at: f64) -> bool {
+            false
+        }
+        fn cross_into_spare(&self) -> bool {
+            false
+        }
+        fn drop_spare(&self) {}
+        fn hold_still(&self, _hold: bool) -> bool {
+            false
+        }
+        fn play_rate(&self, _rate: f64, _at: f64) -> bool {
+            false
+        }
+        fn apply_gain(&self, _gain: f64, _at_secs: f64) {}
+    }
+    let mut cut_ = naivepost::cut::Cut::default();
+    cut_.segs.push(naivepost::cut::Seg {
+        s: 0.0,
+        e: 1.0,
+        ..Default::default()
+    });
+    let page = Rc::new(Page {
+        cut_,
+        playing: Cell::new(true),
+        said: Cell::new(0),
+        paused: Cell::new(0),
+    });
+    let context = glib::MainContext::default();
+    let _owned = context.acquire().expect("the test owns the main context");
+    start_cut_preview_tick(Rc::new(Shared(page.clone())));
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(600);
+    while std::time::Instant::now() < until {
+        context.iteration(false);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(page.paused.get(), 1, "it paused");
+    assert_eq!(page.said.get(), 1, "and said so once");
+}

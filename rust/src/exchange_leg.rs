@@ -223,7 +223,8 @@ fn stamp() -> String {
     let year = if month <= 2 { year + 1 } else { year };
     let (hours, rest) = ((millis / 3_600_000) as u32, millis % 3_600_000);
     let (minutes, seconds) = ((rest / 60_000) as u32, (rest % 60_000) / 1000);
-    format!("{month:02}{day:02}{hours:02}{minutes:02}{seconds:02}{year:04}")
+    let tag = PAGE_TAG.with(|tag| tag.borrow().clone());
+    format!("{month:02}{day:02}{hours:02}{minutes:02}{seconds:02}{year:04}{tag}")
 }
 
 /// The page the CALLING THREAD's run is writing, open from its first call and closed when the next run starts.
@@ -457,6 +458,50 @@ pub fn reset_run_for_test() -> Option<String> {
 
 thread_local! {
     static RUN_OPEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// What a row running beside others adds to its page's name, so two rows starting in one second keep two pages.
+    static PAGE_TAG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// A worker thread's place in the run's record, given back when it is dropped. A page takes one open call at a time,
+/// so calls on the wire together cannot share one: each row running beside others keeps a page of its own.
+pub struct RowPage;
+
+impl RowPage {
+    /// This thread's calls go on a new page of the open run, its name carrying `tag`.
+    pub fn open(tag: &str) -> Self {
+        RUN_OPEN.with(|cell| cell.set(true));
+        PAGE_TAG.with(|held| *held.borrow_mut() = format!("-{tag}"));
+        Self
+    }
+}
+
+impl Drop for RowPage {
+    fn drop(&mut self) {
+        RUN_OPEN.with(|cell| cell.set(false));
+        PAGE_TAG.with(|held| held.borrow_mut().clear());
+        if let Ok(mut held) = RUN.lock() {
+            held.remove(&std::thread::current().id());
+        }
+    }
+}
+
+/// The row page this thread writes, for a helper thread the row dials through; `None` outside a row.
+pub fn row_page_to_share() -> Option<(std::sync::Arc<std::sync::Mutex<RunLog>>, String)> {
+    let tag = PAGE_TAG.with(|tag| tag.borrow().clone());
+    (!tag.is_empty()).then(|| (page(), tag))
+}
+
+/// A helper thread writes `shared`, its row's page, until the answer is dropped. The row waits for it, so their calls never overlap.
+pub fn share_row_page(
+    shared: Option<(std::sync::Arc<std::sync::Mutex<RunLog>>, String)>,
+) -> Option<RowPage> {
+    let (run, tag) = shared?;
+    if let Ok(mut held) = RUN.lock() {
+        held.insert(std::thread::current().id(), run);
+    }
+    RUN_OPEN.with(|cell| cell.set(true));
+    PAGE_TAG.with(|held| *held.borrow_mut() = tag);
+    Some(RowPage)
 }
 
 /// Is a run open right now? Read by [`record`] to decide whether the page it just opened belongs to a

@@ -395,3 +395,129 @@ fn f1_6_s6_the_live_gate_writes_textscenes_and_describe_reads_them() {
         vec![12.0]
     );
 }
+
+/// A fake LLM of `slots` slots, serving each connection on its own thread: `/health` says the slots, a chat ask
+/// answers `judge_text` after a pause, and the most asks it ever held at once is kept.
+fn fake_slots(slots: u32) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let (now, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+    let seen = most.clone();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let (now, most) = (now.clone(), most.clone());
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut first = String::new();
+                let _ = reader.read_line(&mut first);
+                let mut length = 0usize;
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                    if header.to_ascii_lowercase().starts_with("content-length:") {
+                        length = header[15..].trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0u8; length];
+                let _ = reader.read_exact(&mut body);
+                let answer = if first.contains("/health") {
+                    format!("{{\"status\":\"ok\",\"slots\":{slots}}}")
+                } else {
+                    most.fetch_max(now.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(30));
+                    now.fetch_sub(1, Ordering::SeqCst);
+                    "{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"judge_text\",\"arguments\":\"{\\\"changed\\\":false,\\\"what\\\":\\\"same\\\"}\"}}]}}]}".to_string()
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
+                    answer.len()
+                );
+            });
+        }
+    });
+    (url, seen)
+}
+
+/// The gate over three recordings against a server of `slots` slots: the walk's outcome, the most asks on the wire
+/// at once, and the recordings that got their `textscenes.tsv`.
+fn three_recordings(slots: u32) -> (naivepost::run_stages::Drive, usize, usize, Vec<String>) {
+    let (url, most) = fake_slots(slots);
+    let (root, session, paths, conf, mut project, tree) = lecture_scene(url);
+    project.sources.clear();
+    for lane in ["one", "two", "three"] {
+        std::fs::write(session.join(format!("sources/{lane}.mkv")), b"mkv").unwrap();
+        project.sources.push(Source {
+            path: format!("project:sources/{lane}.mkv"),
+            footage: true,
+            ..Default::default()
+        });
+        let (frames, scaled) = (tree.frames_dir(lane), tree.llm_frames_dir(lane));
+        std::fs::create_dir_all(&frames).unwrap();
+        std::fs::create_dir_all(&scaled).unwrap();
+        for step in 0..240 {
+            let at = step as f64 * 0.25;
+            std::fs::write(frames.join(format!("{}.jpg", frame_name(at))), "A").unwrap();
+            std::fs::write(scaled.join(naivepost::describe::scaled_name(0.0, at)), "A").unwrap();
+        }
+    }
+    naivepost::project::save(&project, &session).unwrap();
+    settings::save(&paths, &conf).unwrap();
+    std::env::set_var("XDG_CONFIG_HOME", root.join("cfg"));
+    std::env::set_var("XDG_DATA_HOME", root.join("data"));
+    naivepost::startup::set_open_dir(&session);
+    let mut lines = Vec::new();
+    let drive = naivepost::run_stages::drive_walk_watched_for_test(
+        &[text_gate::stage(&project)],
+        &mut naivepost::runqueue::Queue::new(),
+        |_| {},
+        &[],
+        &mut |queue, _| lines.push(queue.text_and_tip().0),
+    );
+    std::env::remove_var("XDG_CONFIG_HOME");
+    std::env::remove_var("XDG_DATA_HOME");
+    let written = ["one", "two", "three"]
+        .iter()
+        .filter(|lane| text_gate::path(&tree, lane).exists())
+        .count();
+    (
+        drive,
+        most.load(std::sync::atomic::Ordering::SeqCst),
+        written,
+        lines,
+    )
+}
+
+/// The recordings are independent, so they run side by side up to the slots the server says it has, and no further.
+#[test]
+fn f1_6_s6_recordings_are_judged_side_by_side_up_to_the_servers_slots() {
+    let _scene = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (drive, most, written, lines) = three_recordings(2);
+    assert!(
+        matches!(drive, naivepost::run_stages::Drive::Done { ran: 3, .. }),
+        "{drive:?}"
+    );
+    assert_eq!(most, 2, "two slots, two asks on the wire");
+    assert_eq!(written, 3, "every recording got its answer");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("2 at once -- 3 of 3 recordings, ")
+                && line.contains(" judge(s)")),
+        "the status line counts the whole stage, not one row: {lines:?}"
+    );
+
+    let (drive, most, written, _) = three_recordings(1);
+    assert!(
+        matches!(drive, naivepost::run_stages::Drive::Done { ran: 3, .. }),
+        "{drive:?}"
+    );
+    assert_eq!(most, 1, "one slot, one ask at a time");
+    assert_eq!(written, 3);
+}

@@ -1014,6 +1014,10 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     fn apply_gain(&self, gain: f64, at_secs: f64) {
         crate::ui::cut_cut_play::hand_gain(gain, at_secs);
     }
+    fn pause_at_end(&self) {
+        crate::ui::cut_cut_play::pause_media();
+        crate::ui::window_line_step::pause_for_step(&self.0);
+    }
     fn say_clock(&self, clock: f64, ended: bool) {
         if let Some(status) = find_status(self.0.upcast_ref()) {
             status.set_text(&cut_play_leg::clock_line(clock, ended));

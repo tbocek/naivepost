@@ -180,6 +180,7 @@ pub mod reset;
 pub mod retakes;
 pub mod retakes_ask;
 pub mod roles;
+pub mod rows_at_once;
 pub mod run;
 pub mod run_stages;
 pub mod runqueue;

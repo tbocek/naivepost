@@ -392,6 +392,60 @@ pub fn apply_wheel_at<S: Fn(i64)>(
     }
 }
 
+thread_local! {
+    /// Where a Shift pan is gliding to, and where it last put the view, while one is under way.
+    static GLIDE: std::cell::Cell<Option<(f64, f64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Move the view `px` over a few frames instead of in one jump. A notch during a glide adds to the target; anything
+/// else that moves the view (a zoom, the scrollbar, the line) ends it, since the view is then no longer where the glide left it.
+fn glide_pan(window: &adw::ApplicationWindow, px: f64) {
+    let runs = timeline::filmed_runs(&cut_folds::page_recordings());
+    let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
+    let view = wheel_gestures_view(window);
+    let total = total_px(filmed, pps());
+    let running = GLIDE.with(|glide| glide.get());
+    let from = running.map_or_else(origin, |(target, _)| target);
+    GLIDE.with(|glide| {
+        glide.set(Some((
+            clamp_origin(from + px, total, view),
+            running.map_or_else(origin, |(_, left)| left),
+        )))
+    });
+    if running.is_some() {
+        return;
+    }
+    let held = window.clone();
+    window.add_tick_callback(move |_, _| {
+        let Some((target, left)) = GLIDE.with(|glide| glide.get()) else {
+            return glib::ControlFlow::Break;
+        };
+        if (origin() - left).abs() > 0.01 {
+            GLIDE.with(|glide| glide.set(None));
+            return glib::ControlFlow::Break;
+        }
+        let total = total_px(
+            timeline::filmed_runs(&cut_folds::page_recordings())
+                .iter()
+                .map(|(start, end)| end - start)
+                .sum(),
+            pps(),
+        );
+        let moved = set_origin(
+            cut_screen::glide_step(left, target),
+            total,
+            wheel_gestures_view(&held),
+        );
+        repaint_page(&held);
+        if (moved - target).abs() < 0.01 {
+            GLIDE.with(|glide| glide.set(None));
+            return glib::ControlFlow::Break;
+        }
+        GLIDE.with(|glide| glide.set(Some((target, moved))));
+        glib::ControlFlow::Continue
+    });
+}
+
 fn pointer_x_on(ctrl: &gtk::EventControllerScroll, widget: &gtk::Widget, hovered: f64) -> f64 {
     let (Some(event), Some(native)) = (ctrl.current_event(), widget.native()) else {
         return hovered;
@@ -450,6 +504,19 @@ pub fn attach_wheel<S>(
             let shift = ctrl
                 .current_event_state()
                 .contains(gtk::gdk::ModifierType::SHIFT_MASK);
+            // A pan on the tracks moves smoothly: a touchpad's own pixels as they come, a wheel's notch as a glide.
+            if let cut_screen::Wheel::Pan { px } =
+                cut_screen::wheel(over, shift, dy, dx, wheel_gestures_view(&win))
+            {
+                let delta = if dx.abs() > dy.abs() { dx } else { dy };
+                glide_or_follow(
+                    &win,
+                    ctrl.unit() == gtk::gdk::ScrollUnit::Surface,
+                    delta,
+                    px,
+                );
+                return glib::Propagation::Stop;
+            }
             let step2 = step.clone();
             let for_step = win.clone();
             // The band is the tape itself, so its pixels are the page pixels a zoom anchors at; any other
@@ -464,6 +531,16 @@ pub fn attach_wheel<S>(
             glib::Propagation::Stop
         });
         widget.add_controller(controller);
+    }
+}
+
+fn glide_or_follow(window: &adw::ApplicationWindow, pixels: bool, delta: f64, notch_px: f64) {
+    if pixels {
+        // The fingers are the animation: following them directly, a glide would only lag behind.
+        GLIDE.with(|glide| glide.set(None));
+        apply_wheel_result(window, cut_screen::Wheel::Pan { px: delta });
+    } else {
+        glide_pan(window, notch_px * delta.abs().max(1.0));
     }
 }
 

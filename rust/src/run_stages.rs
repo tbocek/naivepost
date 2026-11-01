@@ -424,6 +424,34 @@ where
         queue.job(stage.track, stage.name, stage.phase, stage.of);
         queue.push(stage.track, stage.tasks.len(), stage.kind);
         on_queue(queue, stage.name);
+        if let Some(at_once) = crate::rows_at_once::at_once_for(stage) {
+            match crate::rows_at_once::walk(
+                stage, at_once, queue, &paused, &stop_flag, &mut log, on_queue,
+            ) {
+                crate::rows_at_once::Walked::Done {
+                    ran: rows,
+                    skipped: passed,
+                } => {
+                    ran += rows;
+                    skipped += passed;
+                }
+                crate::rows_at_once::Walked::Stopped { ran: rows, left } => {
+                    return Drive::Stopped {
+                        ran: ran + rows,
+                        left,
+                    };
+                }
+                crate::rows_at_once::Walked::Failed(error) => {
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
+                }
+            }
+            queue.done(stage.track, 1.0);
+            on_queue(queue, stage.name);
+            continue;
+        }
         let total = stage.tasks.len();
         // The walk's own position. A stop reports THIS, not an arithmetic guess off the loop index:
         // a run stopped between two tasks leaves exactly the tasks that were never reached.
@@ -481,10 +509,7 @@ where
                     dial_task(task, &mut log)
                 };
                 if let Err(error) = worked {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -493,10 +518,7 @@ where
             }
             if task.program == crate::frames_run::FRAMES_TASK {
                 if let Err(error) = crate::frames_run::run_task(task, &mut log) {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -518,10 +540,7 @@ where
                     );
                 };
                 if let Err(error) = crate::text_gate::run_task(task, &mut log, &mut reached) {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -555,10 +574,7 @@ where
                     }
                 }
                 if let Err(error) = described {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -569,10 +585,7 @@ where
             // wrote and contacts no model, so the row only costs the bar one task.
             if task.program == crate::word_list::WORDS_TASK {
                 if let Err(error) = crate::word_list::run_task(task, &mut log) {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -581,10 +594,7 @@ where
             }
             if task.program == TEXT_TASK {
                 if let Err(error) = crate::fix_call::run_task(task, &mut log) {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -604,10 +614,7 @@ where
                     crate::fix_session::run_session(task, &mut log, &mut reached)
                 };
                 if let Err(error) = worked {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -615,10 +622,7 @@ where
                 continue;
             }
             if let Err(why) = spawn_task(task, procs, &mut log) {
-                return Drive::Failed {
-                    stage: stage.name,
-                    error: why,
-                };
+                return ended_by(&stop_flag, stage.name, why, ran, progress.left);
             }
             ran += 1;
             progress = progress.advanced();
@@ -628,6 +632,21 @@ where
         on_queue(queue, stage.name);
     }
     Drive::Done { ran, skipped }
+}
+
+/// A row that came back with an error. Under ⏹ the error is the stop's own doing (the dial was cancelled), so the run was stopped, not failed.
+fn ended_by(
+    stopped: &dyn Fn() -> bool,
+    stage: &'static str,
+    error: String,
+    ran: usize,
+    left: usize,
+) -> Drive {
+    if stopped() {
+        Drive::Stopped { ran, left }
+    } else {
+        Drive::Failed { stage, error }
+    }
 }
 
 pub const MERGE_ROW_SHARE: f64 = 0.75;
@@ -651,7 +670,7 @@ pub fn stage_at(stage: &Stage, done: usize) -> f64 {
     }
 }
 
-fn report_within(
+pub(crate) fn report_within(
     queue: &mut Queue,
     on_queue: &mut dyn FnMut(&Queue, &str),
     stage: &Stage,

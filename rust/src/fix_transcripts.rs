@@ -341,7 +341,28 @@ fn bare_row(lines: &[Line], reply: &[Reply]) -> Option<AnsweredRow> {
 }
 
 /// S3: one block through the fixer's tools.
-pub fn fix_block<F>(lines: &[Line], context: &str, mut ask: F) -> Result<BlockOutcome, String>
+pub fn fix_block<F>(lines: &[Line], context: &str, ask: F) -> Result<BlockOutcome, String>
+where
+    F: FnMut(&str) -> Result<Vec<Reply>, String>,
+{
+    walk_block(lines, context, true, ask)
+}
+
+/// A stored answer read back. It went through the checks when it was given, and a block that ran out of tries is stored as its own lines, which must not read as a raw answer to be refused.
+pub fn stored_block(
+    lines: &[Line],
+    context: &str,
+    reply: Vec<Reply>,
+) -> Result<BlockOutcome, String> {
+    walk_block(lines, context, false, |_| Ok(reply.clone()))
+}
+
+fn walk_block<F>(
+    lines: &[Line],
+    context: &str,
+    refuse_raw: bool,
+    mut ask: F,
+) -> Result<BlockOutcome, String>
 where
     F: FnMut(&str) -> Result<Vec<Reply>, String>,
 {
@@ -403,6 +424,9 @@ where
         let answers = apply_reply(&mut block, &reply);
         match answers.iter().find(|answer| refused(answer)) {
             Some(answer) => refusals.push(refusal_reason(answer)),
+            None if refuse_raw && left_raw(lines, &apply(&block, lines)) => {
+                refusals.push(LEFT_RAW.to_string())
+            }
             None => {
                 return Ok(BlockOutcome {
                     lines: apply(&block, lines),
@@ -423,6 +447,31 @@ where
         valid: false,
         attempt: BLOCK_TRIES,
     })
+}
+
+/// Fewest words for an unchanged answer to mean anything: "und noch äh" has nothing to clean.
+const RAW_MIN_WORDS: usize = 6;
+
+const LEFT_RAW: &str = "the lines came back exactly as asked, with no capitals or punctuation -- write them as clean text";
+
+/// The block came back as it went out and still reads as the recogniser's bare words: an answer that passes every other check and cleans nothing.
+fn left_raw(lines: &[Line], answered: &[Line]) -> bool {
+    let unchanged = lines.len() == answered.len()
+        && lines
+            .iter()
+            .zip(answered)
+            .all(|(line, back)| line.text.trim() == back.text.trim());
+    let bare = |line: &Line| {
+        !line
+            .text
+            .chars()
+            .any(|c| c.is_uppercase() || ".,:;?!".contains(c))
+    };
+    let words: usize = lines
+        .iter()
+        .map(|line| line.text.split_whitespace().count())
+        .sum();
+    unchanged && words >= RAW_MIN_WORDS && lines.iter().all(bare)
 }
 
 fn apply(block: &Block, lines: &[Line]) -> Vec<Line> {
@@ -778,13 +827,13 @@ pub struct Outcome {
     pub files: Vec<PathBuf>,
 }
 
-/// Does this source still owe the fixer anything?
+/// Does this source still owe the fixer anything? A recording nobody spoke in has nothing to fix and never gets a fixed file.
 pub fn owes_the_fixer(tree: &Tree, source: &Source) -> bool {
     let path = match source.is_commentary {
         true => tree.commentary_fixed_tsv(&source.base),
         false => tree.transcript_fixed_tsv(&source.base),
     };
-    !path.exists()
+    !path.exists() && load_transcript(tree, &source.base).map_or(true, |lines| !lines.is_empty())
 }
 
 /// S1-S7 for one session.
@@ -872,7 +921,7 @@ where
             let cached = cached_block(tree, prompt, &block);
             let from_cache = cached.is_some();
             let outcome = match cached {
-                Some(reply) => fix_block(&block, &context, |_| Ok(reply.clone()))?,
+                Some(reply) => stored_block(&block, &context, reply)?,
                 None => fix_block(&block, &context, &mut ask)?,
             };
             out.blocks += 1;

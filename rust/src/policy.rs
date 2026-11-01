@@ -114,7 +114,11 @@ fn is_language_code(code: &str) -> bool {
 const ON_OFF: &[&str] = &["on", "off", "true", "false"];
 
 fn lookup(field: &str) -> Option<CatalogueRow> {
-    derived_fields().into_iter().find(|row| row.field == field)
+    // A model reading the list may send a field's id for its name: both say the one field.
+    let field = field.trim();
+    derived_fields()
+        .into_iter()
+        .find(|row| row.field == field || row.id == field)
 }
 
 /// S3: validate one proposal and store it if it passes.
@@ -124,6 +128,16 @@ fn lookup(field: &str) -> Option<CatalogueRow> {
 /// §F0.7 has no hand-set precedence: a valid proposal always stores, whatever `source` the field carries (an old
 /// `naivepost.json` may say `"source": "user"`; the next derivation overwrites it).
 pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
+    if proposal.field.trim().is_empty() {
+        return Applied::Refused(format!(
+            "that set_policy named no field \u{2014} the fields are {}",
+            derived_fields()
+                .iter()
+                .map(|r| r.field)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
     let Some(row) = lookup(&proposal.field) else {
         return Applied::Refused(format!(
             "{} is not a policy field \u{2014} the fields are {}",

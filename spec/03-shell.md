@@ -295,7 +295,7 @@ One window "Settings", with a title bar carrying its title and close button; Esc
 - 🗑 asks "Delete the <section> entry <name>?" with Cancel as the default (Esc is Cancel). Delete removes it and selects the next entry (else the one before), filling the boxes from it. 🗑 is greyed while the section has one entry: a section always has one.
 - A pick changes no request already sent: flows read the settings per request. While a run is open the dialog says once "the new server is used from the next request; ⏹ and ▶ to restart the run now".
 
-No request count to set: each server is given one of the app's requests at a time, and different servers run side by side ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)). Prototype: the LLM held to one request at a time in code, audio and image requests not held at all.
+No request count to set: each server is given one of the app's requests at a time, and different servers run side by side; the only exception reads the LLM server's own slots ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)). Prototype: the LLM held to one request at a time in code, audio and image requests not held at all.
 
 ### F0.13 Tests
 

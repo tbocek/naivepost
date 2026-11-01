@@ -404,3 +404,35 @@ fn sec_05_cut_1_screen_s5_a_wheel_over_the_tracks_zooms_around_the_cursor_and_sh
         "the zoom-button check never ran"
     );
 }
+
+/// A Shift notch glides: it starts at once, slows as it nears the target, and lands exactly on it.
+#[test]
+fn a_shift_notch_glides_onto_its_target() {
+    let (mut at, target) = (0.0_f64, 100.0_f64);
+    let first = cut_screen::glide_step(at, target);
+    assert!(first > 0.0 && first < target, "a part of the way: {first}");
+    let mut steps = Vec::new();
+    while at != target {
+        let next = cut_screen::glide_step(at, target);
+        steps.push(next - at);
+        at = next;
+        assert!(steps.len() < 60, "it lands within a second");
+    }
+    assert!(
+        steps[0] > steps[steps.len() / 2],
+        "and slows on the way: {steps:?}"
+    );
+}
+
+/// Two days of recordings: the numbers count footage straight across the night, and back again.
+#[test]
+fn the_ruler_counts_footage_across_a_night_nobody_filmed() {
+    use naivepost::timeline::{clock_at, filmed_seconds};
+    let runs = [(0.0, 1681.0), (54058.0, 60770.0)];
+    assert_eq!(filmed_seconds(&runs, 1681.0), 1681.0);
+    assert_eq!(filmed_seconds(&runs, 30000.0), 1681.0, "nothing filmed overnight");
+    assert_eq!(filmed_seconds(&runs, 54068.0), 1691.0);
+    assert_eq!(clock_at(&runs, 1691.0), 54068.0);
+    assert_eq!(clock_at(&runs, 100.0), 100.0);
+    assert_eq!(filmed_seconds(&[(5.0, 10.0)], 7.0), 2.0, "a late start counts from the footage");
+}

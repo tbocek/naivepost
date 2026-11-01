@@ -699,3 +699,30 @@ fn f1_8_s7_a_marked_stretch_folds_into_one_line() {
         "fewer lines than rows, because the marked ones contribute one between them: {folded} / {log:?}"
     );
 }
+
+/// A recording nobody spoke in has no transcript and never gets a fixed file; it must not send the whole session through the fixer again.
+#[test]
+fn f1_8_a_silent_recording_owes_the_fixer_nothing() {
+    use naivepost::fix_transcripts::{owes_the_fixer, Source};
+    let root = crate::common::temp_dir_tagged("silent-owes");
+    let session = naivepost::startup::session_dir(&root);
+    std::fs::create_dir_all(&session).unwrap();
+    naivepost::project::save(&naivepost::project::Project::default(), &session).unwrap();
+    let tree = naivepost::layout::Tree::new(&session).unwrap();
+    let source = Source {
+        base: "take".to_string(),
+        file_name: "take.mkv".to_string(),
+        start: 0.0,
+        duration: 0.0,
+        is_video: true,
+        is_commentary: false,
+    };
+    assert!(!owes_the_fixer(&tree, &source), "nothing was said");
+    let spoken = tree.transcript_tsv("take");
+    std::fs::create_dir_all(spoken.parent().unwrap()).unwrap();
+    std::fs::write(&spoken, "1.00\t2.00\tSPEAKER_00\thallo\n").unwrap();
+    assert!(
+        owes_the_fixer(&tree, &source),
+        "words, and no fixed file yet"
+    );
+}

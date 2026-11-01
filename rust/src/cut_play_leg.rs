@@ -254,6 +254,8 @@ pub fn start_cut_preview_tick(page: Rc<dyn CutPreviewPage>) {
             page.say_clock(step.clock, step.ended);
             if step.ended {
                 clear_spare(&*page);
+                // Past the last clip the preview pauses. Left playing, this tick moved the line back and wrote all this again ten times a second.
+                page.pause_at_end();
             }
             glib::ControlFlow::Continue
         },
@@ -271,6 +273,8 @@ pub trait CutPreviewPage {
     fn set_playhead(&self, at: f64);
     fn cut(&self) -> Cut;
     fn say_clock(&self, clock: f64, ended: bool);
+    /// The line ran past the last clip: stop the transport and what plays, so a later tick has nothing to do.
+    fn pause_at_end(&self) {}
     fn volume(&self) -> f64;
     /// S5: preroll the spare at `at`; the page names the files, the leg owns the process. Answers whether a pipeline opened.
     fn arm_spare_at(&self, at: f64) -> bool;

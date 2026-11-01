@@ -129,6 +129,25 @@ fn release(url: &str, holder: &str) {
     gate_of(url).lock().expect("the gate").release(holder);
 }
 
+/// The one exception to one request per server (§09 §4): let `slots` requests through to `url` at once, until the answer is dropped: a stage of independent rows, on a
+/// server that says it has the slots. Everything else still takes turns.
+pub struct Opened {
+    url: String,
+}
+
+pub fn open_to(url: &str, slots: u32) -> Opened {
+    gate_of(url).lock().expect("the gate").set_slots(slots);
+    Opened {
+        url: url.to_string(),
+    }
+}
+
+impl Drop for Opened {
+    fn drop(&mut self) {
+        gate_of(&self.url).lock().expect("the gate").set_slots(1);
+    }
+}
+
 /// Who is on the wire to `url` now, in arrival order; empty for an unknown server or one whose last request is in.
 pub fn holders(url: &str) -> Vec<String> {
     let found = registry().lock().expect("the gate map").get(url).cloned();

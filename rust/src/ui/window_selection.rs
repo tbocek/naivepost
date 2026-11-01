@@ -180,12 +180,15 @@ pub(crate) fn refresh_verb_buttons(window: &adw::ApplicationWindow) {
 pub(crate) fn refresh_selection_readout(window: &adw::ApplicationWindow) {
     let band = selection();
     let text = match cut_select::marks(band.as_ref()) {
-        Some((start, end)) => format!(
-            "{} {} \u{2013} {}",
-            cut_select::READOUT_PREFIX,
-            preview::clock(Some(start)),
-            preview::clock(Some(end))
-        ),
+        Some((start, end)) => {
+            let runs = crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings());
+            format!(
+                "{} {} \u{2013} {}",
+                cut_select::READOUT_PREFIX,
+                preview::clock(Some(crate::timeline::filmed_seconds(&runs, start))),
+                preview::clock(Some(crate::timeline::filmed_seconds(&runs, end)))
+            )
+        }
         None => cut_select::READOUT_NONE.to_string(),
     };
     if let Some(label) = ui::find_widget_by_name(window.upcast_ref(), "selection-readout") {

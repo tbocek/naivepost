@@ -163,3 +163,49 @@ fn p_machine_fixtries_s6_family_is_machine_and_the_row_is_deliberately_unrowed()
     );
     assert_eq!(blocks.unwrap().from, "prepare::FIX_BLOCK_LINES");
 }
+
+/// The model answers with the recogniser's bare words: it passes every other check and cleans nothing, so it is asked again.
+#[test]
+fn f1_8_a_block_handed_back_raw_is_asked_again() {
+    use naivepost::fix_transcripts::{fix_block, AnsweredRow, Reply};
+    use naivepost::textfmt::Line;
+    let line = |text: &str| Line {
+        start: 1.0,
+        end: 5.0,
+        speaker: "SPEAKER_00".to_string(),
+        text: text.to_string(),
+    };
+    let row = |text: &str| {
+        vec![Reply::Row(AnsweredRow {
+            start: 1.0,
+            end: 5.0,
+            speaker: "SPEAKER_00".to_string(),
+            text: text.to_string(),
+        })]
+    };
+    let raw = "sollen sie verstehen wie sich web architektur entwickelt";
+    let clean = "Sollen Sie verstehen, wie sich Web-Architektur entwickelt.";
+    let mut asks = Vec::new();
+    let outcome = fix_block(&[line(raw)], "", |message| {
+        asks.push(message.to_string());
+        Ok(row(if asks.len() == 1 { raw } else { clean }))
+    })
+    .expect("the block runs");
+    assert_eq!(asks.len(), 2, "asked again");
+    assert!(
+        asks[1].contains("came back exactly as asked"),
+        "and told why"
+    );
+    assert!(outcome.valid);
+    assert_eq!(outcome.lines[0].text, clean);
+
+    // Too short to clean: unchanged is the right answer.
+    let mut asked = 0;
+    let outcome = fix_block(&[line("und noch äh")], "", |_| {
+        asked += 1;
+        Ok(row("und noch äh"))
+    })
+    .expect("the block runs");
+    assert_eq!(asked, 1);
+    assert!(outcome.valid);
+}

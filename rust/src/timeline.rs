@@ -222,6 +222,29 @@ impl Span {
 }
 
 /// The zoom floor: the filmed length across the view (§2); [`cut_screen::fit_pps`] owns the rule.
+/// How much footage lies before `clock`: what a person reads off the ruler. The session clock runs on through the hours
+/// nobody filmed (a lecture recorded over two days has a night in it); the tape does not lay those out, so neither do its numbers.
+pub fn filmed_seconds(runs: &[(f64, f64)], clock: f64) -> f64 {
+    if runs.is_empty() {
+        return clock;
+    }
+    runs.iter()
+        .map(|(start, end)| (clock.min(*end) - start).max(0.0))
+        .sum()
+}
+
+/// The session second `filmed` seconds of footage in: the inverse of [`filmed_seconds`]. Past the end it runs on linearly.
+pub fn clock_at(runs: &[(f64, f64)], filmed: f64) -> f64 {
+    let mut left = filmed;
+    for (start, end) in runs {
+        if left < end - start {
+            return start + left;
+        }
+        left -= end - start;
+    }
+    runs.last().map_or(filmed, |(_, end)| end + left)
+}
+
 pub fn floor_pps(runs: &[(f64, f64)], view_px: f64) -> f64 {
     let filmed = runs.iter().map(|(start, end)| end - start).sum::<f64>();
     cut_screen::fit_pps(filmed, view_px)

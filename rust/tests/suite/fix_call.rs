@@ -385,7 +385,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_session_note
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_fixer_is_not_shown_the_script()
 {
-    let fake = Fake::start(rows_answer(&[]));
+    let fake = Fake::start(rows_answer(&[(1, "So the algorithm receives the input.")]));
     let scene = Scene::new("no-script", &fake.url);
     let with_script = |script: &str| naivepost::project::Project {
         context: format!(

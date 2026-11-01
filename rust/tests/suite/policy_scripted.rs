@@ -61,12 +61,40 @@ fn f0_7_the_language_is_read_from_the_context_without_a_model() {
         naivepost::policy::derive(&mut policy, context, &mut |_, _| Vec::new());
         policy.language.value
     };
-    assert_eq!(derive("One person. The talk is in German, with some English."), "de");
+    assert_eq!(
+        derive("One person. The talk is in German, with some English."),
+        "de"
+    );
     assert_eq!(derive("The recordings are spoken in French."), "fr");
-    assert_eq!(derive("A weekly news segment."), "en", "not said: the default stands");
+    assert_eq!(
+        derive("A weekly news segment."),
+        "en",
+        "not said: the default stands"
+    );
     assert_eq!(
         derive("Read aloud.\n****SCRIPT START****\nThe talk is in German.\n****SCRIPT STOP****"),
         "en",
         "the script is not the context's word"
     );
+}
+
+/// The list a model reads names each field and its id; a proposal under the id is the same field, not a refusal.
+#[test]
+fn f0_7_a_field_sent_by_its_id_lands() {
+    use naivepost::policy::{apply, Applied, Proposal};
+    let mut policy = naivepost::project::Policy::default();
+    let propose = |field: &str, value: &str| Proposal {
+        field: field.to_string(),
+        value: value.to_string(),
+        because: "the context".to_string(),
+    };
+    assert!(!matches!(
+        apply(&mut policy, &propose("P.policy.language", "de")),
+        Applied::Refused(_)
+    ));
+    assert_eq!(policy.language.value, "de");
+    let Applied::Refused(say) = apply(&mut policy, &propose("", "de")) else {
+        panic!("no field is still a refusal");
+    };
+    assert!(say.contains("named no field"), "{say}");
 }
