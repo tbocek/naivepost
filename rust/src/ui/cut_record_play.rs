@@ -2,6 +2,7 @@
 
 use adw::prelude::*;
 
+use crate::narrate_preview_media::file_stem;
 use crate::preview::{self, Press};
 use crate::ui::cut_folds;
 use crate::ui::window::log_line;
@@ -254,14 +255,6 @@ pub fn light_lit(window: &adw::ApplicationWindow) {
                 button.remove_css_class("suggested-action");
             }
         }
-    }
-}
-
-/// A stored path's name without its extension.
-fn file_stem(name: &str) -> String {
-    match name.rfind('.') {
-        Some(at) if at > 0 => name[..at].to_string(),
-        _ => name.to_string(),
     }
 }
 

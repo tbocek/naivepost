@@ -9,16 +9,8 @@ use crate::cut;
 use crate::cut_select::Surface;
 use crate::cut_verbs::Outcome;
 use crate::snapshot_face::seed_snapshot_frame;
+use crate::snapshot_trim::tape;
 use crate::ui;
-
-/// The session the three shots film: one take covering the whole tape, which gives a head, a hole and a tail anywhere on it.
-fn tape() -> Vec<crate::timeline::Recording> {
-    vec![crate::timeline::Recording {
-        base: "session-tape".to_string(),
-        start: 0.0,
-        end: 120.0,
-    }]
-}
 
 /// Two kept clips with a real 10 s hole between them: the "before" all three images draw. Add fills the hole; Remove drops the second clip's middle.
 fn seeded() -> cut::Cut {

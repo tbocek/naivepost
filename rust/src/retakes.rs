@@ -6,6 +6,7 @@
 //!
 //! No model call happens here: runs arrive as answers handed in by the caller, so it is testable (spec/00-principles.md §5).
 
+use crate::describe::trim_seconds;
 use crate::edges::{self, AlignedWord};
 use crate::layout::Tree;
 use crate::project::{MarkingPass, Project, Source};
@@ -63,15 +64,6 @@ pub fn brief(lines: &[Line], source_changes: &[u32]) -> String {
 
 /// S2: the separator where one recording ends and the next begins, a sentence the model reads as prose.
 pub const SOURCE_CHANGE_LINE: &str = "--- the recording stops here; the next one begins ---";
-
-/// Seconds without a tail of zeroes: `1.5`, not `1.500000`.
-fn trim_seconds(secs: f64) -> String {
-    if (secs - secs.round()).abs() < 1e-9 {
-        return format!("{}", secs.round() as i64);
-    }
-    let text = format!("{secs:.3}");
-    text.trim_end_matches('0').trim_end_matches('.').to_string()
-}
 
 // ---- S3: the pooled runs --------------------------------------------------
 

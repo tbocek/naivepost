@@ -5,6 +5,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 
 use crate::fx_lane;
+use crate::ui::cut_lane_rows::find_in_holder;
+use crate::ui::cut_lane_rows::set_class;
 use crate::ui::{cut_picture, cut_preview_frame};
 
 /// Build the effects-lane holder and the preview panel and pack them into `page_box` directly after `previous`, in the order `spec/img/06-lane.png` gives: frame first, then the lane. Returns the panel.
@@ -174,25 +176,4 @@ fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(
     made.set_widget_name(name);
     holder.append(&made);
     made
-}
-
-/// This module's own copy of the page's direct-child lookup, so the two do not share a growing file.
-fn find_in_holder(holder: &gtk::Widget, name: &str) -> Option<gtk::Box> {
-    let mut child = holder.first_child();
-    while let Some(node) = child {
-        if node.widget_name() == name {
-            return node.downcast::<gtk::Box>().ok();
-        }
-        child = node.next_sibling();
-    }
-    None
-}
-
-fn set_class<W: AsRef<gtk::Widget>>(widget: &W, class: &str, on: bool) {
-    let widget = widget.as_ref();
-    if on {
-        widget.add_css_class(class);
-    } else {
-        widget.remove_css_class(class);
-    }
 }

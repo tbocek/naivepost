@@ -1,6 +1,7 @@
 //! F1.13 The session's word list (spec/04-prepare.md) — the one list retakes, joins, `final.txt` and
 //! subtitles all read.
 
+use crate::prepare::base_name;
 use crate::tools::mm_ss;
 
 /// A word whose loudest moment is under 1/N of its recording's median word was put on no sound.
@@ -676,11 +677,6 @@ fn lane_of(source: &crate::project::Source) -> String {
         Some(dot) if dot > 0 => name[..dot].to_string(),
         _ => name.to_string(),
     }
-}
-
-/// The path's last part.
-fn base_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// The recording's own size and mtime, off the stored path (`project:` resolves inside the project).

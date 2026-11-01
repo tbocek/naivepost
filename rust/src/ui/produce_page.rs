@@ -6,8 +6,12 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::narrate_preview_media::source_name as short;
+use crate::produce_flow::codec_name;
+pub(crate) use crate::produce_flow::container_name;
 use crate::produce_screen as screen;
 use crate::project::{Codec, Container, Subtitles};
+use crate::ui::narrate_page::say;
 use crate::ui::produce_page_layout as layout;
 use crate::ui::produce_page_rows::{session_tree, words_half};
 
@@ -413,14 +417,6 @@ fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
             })
             .as_deref(),
     );
-}
-
-fn say(window: &adw::ApplicationWindow, said: &str) -> String {
-    if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
-        status.set_text(said);
-    }
-    crate::ui::window::log_line(said);
-    said.to_string()
 }
 
 pub fn refresh(window: &adw::ApplicationWindow) {
@@ -842,10 +838,6 @@ pub fn press_title_words(window: &adw::ApplicationWindow, text: &str) -> String 
     )
 }
 
-fn short(path: &str) -> String {
-    path.rsplit('/').next().unwrap_or(path).to_string()
-}
-
 fn parse_container(value: &str) -> Container {
     match value {
         "mkv" => Container::Mkv,
@@ -1076,22 +1068,6 @@ fn language_name(code: &str) -> String {
         other => other,
     }
     .to_string()
-}
-
-pub(crate) fn container_name(c: Container) -> &'static str {
-    match c {
-        Container::Mp4 => "mp4",
-        Container::Mkv => "mkv",
-        Container::Webm => "webm",
-    }
-}
-
-fn codec_name(c: Codec) -> &'static str {
-    match c {
-        Codec::H264 => "h264",
-        Codec::H265 => "h265",
-        Codec::Vp9 => "vp9",
-    }
 }
 
 fn subtitles_name(s: Subtitles) -> &'static str {

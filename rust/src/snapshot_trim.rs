@@ -7,7 +7,7 @@ use crate::cut_trim::{self, Border};
 use crate::snapshot_face::seed_snapshot_frame;
 use crate::ui;
 
-fn tape() -> Vec<crate::timeline::Recording> {
+pub(crate) fn tape() -> Vec<crate::timeline::Recording> {
     vec![crate::timeline::Recording {
         base: "session-tape".to_string(),
         start: 0.0,

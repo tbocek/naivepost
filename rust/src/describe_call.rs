@@ -216,7 +216,7 @@ pub fn run_task(
 }
 
 /// The session's own notes (§F1.7 S3), from `naivepost.json`; absent means no context, never an invented one.
-fn user_context(tree: &Tree) -> String {
+pub(crate) fn user_context(tree: &Tree) -> String {
     crate::project::load(tree.dir())
         .map(|project| project.context.clone())
         .unwrap_or_default()
@@ -462,7 +462,7 @@ pub fn system_message(paths: &Paths, context: &str) -> String {
 }
 
 /// The wording reader every ask uses: the shipped file, or the settings copy of it (§04-prepare#6).
-fn wording(paths: &Paths, key: &str) -> String {
+pub(crate) fn wording(paths: &Paths, key: &str) -> String {
     let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
     settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
 }

@@ -380,7 +380,7 @@ where
 }
 
 /// The container as the log spells it; kept here so the opening line need not reach into a UI module.
-fn container_name(c: Container) -> &'static str {
+pub(crate) fn container_name(c: Container) -> &'static str {
     match c {
         Container::Mp4 => "mp4",
         Container::Mkv => "mkv",
@@ -389,7 +389,7 @@ fn container_name(c: Container) -> &'static str {
 }
 
 /// The codec as the log spells it.
-fn codec_name(c: Codec) -> &'static str {
+pub(crate) fn codec_name(c: Codec) -> &'static str {
     match c {
         Codec::H264 => "h264",
         Codec::H265 => "h265",

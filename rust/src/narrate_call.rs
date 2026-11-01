@@ -6,6 +6,7 @@
 //! shipped text as fallback), so no builder here invents a load path for `spec/prompts/<key>.md`.
 
 use crate::cut::{Fx, Seg};
+use crate::cut_captions::is_ok;
 use crate::layout::Tree;
 use crate::narrate_pass;
 use crate::narrate_reply;
@@ -82,12 +83,6 @@ pub fn request_from_tree(
         narrator,
         crate::narrate_run::voice_is_captions_only(voice),
     )
-}
-
-/// Whether a tool answer is a success rather than the `{}` error shape every refusal comes in. Read as
-/// JSON, since a prefix match breaks when a sentence starts like a key (as `cut_captions` does).
-fn is_ok(answer: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(answer).is_ok_and(|body| body.get("error").is_none())
 }
 
 /// §F4.2's attempt loop: ask, read the echoed bounds forward, refuse what does not hold up, ask again with

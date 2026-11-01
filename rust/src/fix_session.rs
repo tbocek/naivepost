@@ -161,7 +161,7 @@ pub fn placed_sources(project: &Project) -> Vec<fix_transcripts::Source> {
 }
 
 /// The lane a project row files its transcripts under: the stem of its file name (as [`crate::audio_task::source_lane`] and [`crate::fix_call`]).
-fn lane_of(source: &crate::project::Source) -> String {
+pub(crate) fn lane_of(source: &crate::project::Source) -> String {
     let name = source.path.rsplit('/').next().unwrap_or(&source.path);
     match name.split_once('.') {
         Some((stem, _)) => stem.to_string(),

@@ -2,13 +2,7 @@
 //! speak call, the translation ask, the checkpoint answer, and the two failure notes. Split out of
 //! `produce_page.rs`, which is past its size budget; the page keeps every call site.
 
-/// The session's folder, resolved the way the page resolves everything else on this path.
-pub(crate) fn session_tree() -> crate::layout::Tree {
-    crate::layout::Tree::new(crate::startup::open_dir()).unwrap_or_else(|_| {
-        crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap()
-    })
-}
-
+pub(crate) use crate::ui::produce_languages::session_tree;
 pub(crate) fn speak_a_line(line: &crate::produce_exec::ToSpeak, voice: &str) -> Result<(), String> {
     crate::ui::produce_speak_leg::speak_one(&session_tree(), line, voice)
         .map(|take| crate::ui::window::log_line(&format!("spoken \u{2014} {}", take.display())))

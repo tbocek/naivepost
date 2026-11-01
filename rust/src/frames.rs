@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use crate::clock::frame_name;
+use crate::describe::trim_seconds as trim_number;
 use crate::layout::Tree;
 use crate::prepare::EXTRACTION_GRID;
 use crate::requests::{self, SceneChange};
@@ -59,14 +60,6 @@ pub fn scene_pass_plan() -> Vec<String> {
         "null".to_string(),
         "-".to_string(),
     ]
-}
-
-fn trim_number(secs: f64) -> String {
-    if (secs - secs.round()).abs() < 1e-9 {
-        return format!("{}", secs.round() as i64);
-    }
-    let text = format!("{secs:.3}");
-    text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 /// Where the video's pictures end, from the scene sweep (S2): its last scored frame.

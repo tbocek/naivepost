@@ -4,6 +4,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::ui::cut_preview_frame::{self as picture, Frame};
+use crate::ui::narrate_frame_wheel::picture_of;
 
 /// Install the painter on `narrate-picture`. Called from the page's `wire`, once.
 pub fn install_draw(window: &adw::ApplicationWindow) {
@@ -172,12 +173,4 @@ fn paint(cr: &cairo::Context, width: f64, height: f64) {
     let seen = picture::observe(&frame, None);
     // Only what the cut lays over the footage: the footage itself is `narrate-video` under this surface.
     picture::paint(cr, &frame, &seen);
-}
-
-/// This window's `narrate-picture`.
-fn picture_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
-    let content = window.content()?;
-    crate::ui::window::find_widget_by_name(&content, "narrate-picture")?
-        .downcast()
-        .ok()
 }

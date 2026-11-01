@@ -220,7 +220,7 @@ fn fills_frame(sample: &render_fx::Sample) -> bool {
 }
 
 /// Round up to a whole even pixel: 4:2:0 refuses a chroma sample on an odd edge (as [`crate::render_fx::frame_box`]).
-fn even(v: i32) -> i32 {
+pub(crate) fn even(v: i32) -> i32 {
     v + v % 2
 }
 

@@ -70,7 +70,7 @@ pub fn answer_chooser(window: &adw::ApplicationWindow, picked: Option<std::path:
 }
 
 /// Put one sentence on the shell's status line; `say` is private to the page, so this goes straight to the widget.
-fn set_status(window: &adw::ApplicationWindow, said: &str) {
+pub(crate) fn set_status(window: &adw::ApplicationWindow, said: &str) {
     if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
         status.set_text(said);
     }

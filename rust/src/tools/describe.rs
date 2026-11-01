@@ -1,5 +1,6 @@
 //! Describe — spec/02-services.md §3.2, one chunk of frames at a time.
 
+use crate::describe::flatten_line as flatten;
 use serde_json::json;
 
 pub const RECENT_EVENTS: usize = 3;
@@ -347,10 +348,6 @@ pub fn parse_event_line(line: &str, interval: f64, frames: &[f64]) -> ParseOutco
         return ParseOutcome::Flattened { frame, at, text };
     }
     ParseOutcome::Snapped { frame, at, text }
-}
-
-fn flatten(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Split a reply at its `STATE:` label, returning the half before it and the state after.

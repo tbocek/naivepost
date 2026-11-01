@@ -3,6 +3,7 @@
 use adw::prelude::*;
 
 use crate::produce_flow;
+use crate::ui::narrate_voices::set_status as say;
 
 thread_local! {
     static OPEN_DIALOG: std::cell::RefCell<Option<adw::MessageDialog>> =
@@ -36,13 +37,6 @@ pub fn confirm_then(
         }
     });
     asked
-}
-
-/// §S2's question on the window's status line.
-fn say(window: &adw::ApplicationWindow, said: &str) {
-    if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
-        status.set_text(said);
-    }
 }
 
 /// Ask §S2's question about `video` and hand the answer to `on_answer`: the response id arrives

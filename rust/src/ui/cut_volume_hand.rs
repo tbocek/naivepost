@@ -7,6 +7,7 @@ use crate::cut;
 use crate::fx_volume;
 use crate::fx_zoom;
 use crate::shell::Page;
+use crate::ui::cut_label_hand::label_entry_of as volume_entry_of;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
     live_form_refused, log_line, record_edit, refresh_effects_lane, save_insert_cut, selection,
@@ -223,11 +224,6 @@ fn volume_entry(name: &str) -> Option<gtk::Entry> {
             .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
             .and_then(|w| w.downcast::<gtk::Entry>().ok())
     })
-}
-
-/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
-fn volume_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// This window's Curve dropdown.

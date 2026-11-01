@@ -85,7 +85,7 @@ pub const RATES: [f64; 11] = [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 20.
 
 pub const CUSTOM: &str = "Custom\u{2026}";
 
-fn short_number(value: f64) -> String {
+pub(crate) fn short_number(value: f64) -> String {
     if value == value.trunc() {
         return format!("{}", value as i64);
     }

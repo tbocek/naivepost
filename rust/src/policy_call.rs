@@ -1,5 +1,6 @@
 //! F0.7 S2's live half: the derivation that actually telephones the LLM.
 
+use crate::clip_pass_ask::wording;
 use crate::exchanges::{Message, Mode, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
@@ -300,15 +301,6 @@ fn policy_system(paths: Option<&Paths>, req: &DerivationRequest) -> String {
         false,
         false,
     )
-}
-
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
 }
 
 /// The user turn: the context the model is reading, assembled by §8's door

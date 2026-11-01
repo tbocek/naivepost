@@ -292,7 +292,7 @@ pub fn press_fold_all(window: &adw::ApplicationWindow) -> String {
     said
 }
 
-pub(crate) fn save_folds(cut_: &Cut) {
+pub fn save_folds(cut_: &Cut) {
     // §7's one writer: a fold toggle lands in `cut/cut.json` through `cut_save`, the same door
     // every edit uses.
     crate::ui::window_logs::save_cut_or_say(cut_);

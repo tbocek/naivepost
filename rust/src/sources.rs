@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::add_sources::is_video;
 use crate::clock;
+use crate::prepare::base_name;
 use crate::project::{Project, Source};
 use crate::run::NARRATOR_SLOTS;
 
@@ -101,10 +102,6 @@ pub fn row_controls(source: &Source, stream_count: usize) -> Vec<Control> {
     controls.push(Control::Separate);
     controls.push(Control::Remove);
     controls
-}
-
-fn base_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// §4's three-line explanation over the track checks: what a tick means, said once instead of on

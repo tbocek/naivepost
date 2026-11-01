@@ -184,7 +184,7 @@ fn fit(wide: u32, high: u32) -> (u32, u32) {
 }
 
 /// Round down to the nearest even number: 4:2:0 chroma needs it, and rounding up would exceed `WIDTH`.
-fn even(side: u32) -> u32 {
+pub(crate) fn even(side: u32) -> u32 {
     side - side % 2
 }
 

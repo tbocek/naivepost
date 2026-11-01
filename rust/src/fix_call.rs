@@ -2,6 +2,7 @@
 //! [`crate::fix_transcripts`] holds the F1.8 rules; this answers its `ask` closure. One block is ONE chat call: system wording, then the User Context (script included, for name spellings) over the grounding and the block's rows, no tools. The same rows come back as [`Reply::Row`]s and `fix_block` refuses a moved count, time or speaker, which is the enforcement.
 //! Test seam: point `LLM_SERVER` at a local fake.
 
+use crate::describe_call::wording;
 use crate::exchanges::{Message, Part};
 use crate::fix_transcripts::{self, Reply};
 use crate::layout::Tree;
@@ -261,10 +262,4 @@ fn fix_system(paths: &Paths) -> String {
         false,
         false,
     )
-}
-
-/// The wording to ask with, through the settings read path so an edit wins (§04-prepare#6); the shipped wording when none is on disk.
-fn wording(paths: &Paths, key: &str) -> String {
-    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
-    settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
 }

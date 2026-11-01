@@ -175,7 +175,7 @@ fn label_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
-fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
+pub(crate) fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
     find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 

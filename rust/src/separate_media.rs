@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::asr::trim_number as trim;
 use crate::layout::Tree;
 use crate::run_stages;
 use crate::separate;
@@ -347,12 +348,4 @@ pub fn mux_video(
     crate::subprocess::run(program, &args, log)
         .map(|_| ())
         .map_err(|err| format!("{}: {err}", out.display()))
-}
-
-/// A number without a tail of zeroes, matching [`crate::asr`]'s own spelling.
-fn trim(value: f64) -> String {
-    if value == value.trunc() {
-        return format!("{}", value as i64);
-    }
-    format!("{value}")
 }

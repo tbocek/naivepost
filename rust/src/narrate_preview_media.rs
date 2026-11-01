@@ -1,6 +1,7 @@
 //! F4.5 S1/S3 — what the picture's player is actually asked to play, and at what level.
 
 use crate::cut::{Cut, Seg};
+use crate::cut_play_back::signal;
 use crate::{cut_hear, layout, narrate_preview, play_back, preview, project};
 
 /// The footage list the picture plays: one entry per kept clip, in cut order, each resolved to a
@@ -130,7 +131,7 @@ fn footage_path(
 }
 
 /// A stored path's last element, and that element without its extension.
-fn source_name(path: &str) -> String {
+pub(crate) fn source_name(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
 }
 
@@ -143,7 +144,7 @@ fn lane_of(path: &str) -> Option<String> {
         .filter(|held| !held.is_empty())
 }
 
-fn file_stem(name: &str) -> String {
+pub(crate) fn file_stem(name: &str) -> String {
     match name.rfind('.') {
         Some(at) if at > 0 => name[..at].to_string(),
         _ => name.to_string(),
@@ -217,12 +218,6 @@ pub fn resume_pids(pids: &[u32]) {
     for pid in pids {
         signal(*pid, libc::SIGCONT);
     }
-}
-
-fn signal(pid: u32, signal: i32) {
-    // SAFETY: `kill` on an integer pid cannot corrupt memory; every pid here came from `spawn_piped`, so the
-    // only processes ever signalled are ones this app started in this user's session.
-    unsafe { libc::kill(pid as i32, signal) };
 }
 
 pub fn hold_pid(pid: u32, hold: bool) {

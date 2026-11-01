@@ -24,7 +24,7 @@ fn held_still() -> &'static Mutex<bool> {
 }
 
 /// Send `signal` to a pid.
-fn signal(pid: u32, signal: i32) {
+pub(crate) fn signal(pid: u32, signal: i32) {
     // SAFETY: `kill` on an integer pid cannot corrupt memory; every pid here came from `spawn_piped`, so
     // the only processes ever signalled are ones this leg started in this user's session.
     unsafe { libc::kill(pid as i32, signal) };

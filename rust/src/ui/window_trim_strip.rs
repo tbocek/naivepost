@@ -11,6 +11,7 @@ use crate::cut_screen;
 use crate::cut_select;
 use crate::cut_trim;
 use crate::ui::window as ui;
+pub(crate) use crate::ui::window_line_step::now_ms as now_millis;
 
 struct TrimDrag {
     index: usize,
@@ -485,13 +486,6 @@ pub(crate) fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
             button.set_sensitive(live);
         }
     }
-}
-/// Milliseconds since an arbitrary origin, for the scrub throttle; never compared across a restart.
-pub(crate) fn now_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 /// Attach the two gestures to `track-strip`: left button trims a border, right button moves.
 /// Kept in thread-locals so a test can fire them the way GTK does.

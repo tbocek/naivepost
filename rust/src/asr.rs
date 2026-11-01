@@ -130,7 +130,7 @@ pub fn cut_plan(from: f64, to: f64) -> Vec<String> {
 
 /// A number without a tail of `.0`, which is what makes the logged command line readable and keeps
 /// ffmpeg's own parsing out of it.
-fn trim_number(value: f64) -> String {
+pub(crate) fn trim_number(value: f64) -> String {
     if value == value.trunc() {
         return format!("{}", value as i64);
     }

@@ -9,6 +9,7 @@ use crate::cut_cards;
 use crate::cut_insert;
 use crate::cut_select;
 use crate::startup;
+pub use crate::ui::cut_folds::save_folds as save_insert_cut;
 use crate::ui::cut_form_frame;
 use crate::ui::window as ui;
 
@@ -344,12 +345,6 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
         }
         Err(refusal) => refusal,
     }
-}
-
-pub fn save_insert_cut(cut_: &Cut) {
-    // §7's one writer: the session resolution and the call to `cut::save` are `cut_save`'s, not
-    // this door's.
-    crate::ui::window_logs::save_cut_or_say(cut_);
 }
 
 /// F2.12 S1 + S2: ⧉ Insert.

@@ -9,6 +9,7 @@ use crate::cut;
 use crate::cut_speed;
 use crate::fx_zoom;
 use crate::shell::Page;
+use crate::ui::cut_label_hand::label_entry_of as speed_entry_of;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo, log_line,
     press_band_esc, record_edit, refresh_effects_lane, save_insert_cut, selection, trim_seconds,
@@ -226,11 +227,6 @@ fn speed_entry(name: &str) -> Option<gtk::Entry> {
             .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
             .and_then(|w| w.downcast::<gtk::Entry>().ok())
     })
-}
-
-/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
-fn speed_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// Read one of the speed form's dropdowns back from THIS window's tree.

@@ -10,13 +10,9 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::cut_insert;
+use crate::prepare::base_name as card_name;
 use crate::timeline;
 use crate::ui::{self, cut_card_preview, cut_tracks, cut_view};
-
-/// A card's own name, as every other sentence here names a file: its last path element.
-fn card_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
-}
 
 /// The status line's answer when the press landed on footage: the hand is left EXACTLY as it was, so a card
 /// nobody aimed at cannot throw away one already held.

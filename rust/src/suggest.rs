@@ -5,6 +5,7 @@
 use crate::cut::{Cut, Fx, Seg};
 use crate::cut_clamp;
 use crate::cut_effect_decisions::{self as decisions, Candidate};
+pub use crate::cut_suggest_passes::order as passes_switched_on;
 use crate::decision_audit;
 use crate::policy::{self, Pass};
 use crate::project::{MarkingPass, Policy};
@@ -281,14 +282,6 @@ pub fn message_over(
 /// Whether the model cut is asked for at all; under `CutMode::Words` no call is made.
 pub fn model_cut_offered(policy_: &Policy, marking_pass: MarkingPass) -> bool {
     roles::job_applies(Job::ModelCut, marking_pass, policy::cut_mode_of(policy_))
-}
-
-/// Which of the three after-the-cut passes run. Empty means those jobs are NEVER CALLED: a call returning nothing still costs a model and could return something the policy ruled out.
-pub fn passes_switched_on(policy_: &Policy) -> Vec<Pass> {
-    [Pass::Captions, Pass::Speeds, Pass::Decorations]
-        .into_iter()
-        .filter(|pass| policy::pass_runs(policy_, *pass))
-        .collect()
 }
 
 /// The whole-cut checks as a problem list, worst first ([`cutpass::cut_problems`]'s order; the tool phrases the complaint).
