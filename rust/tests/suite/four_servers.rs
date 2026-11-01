@@ -336,13 +336,13 @@ fn sec_02_services_1_the_four_servers_s7_settings_are_reread_per_request() {
 /// The four model ids, compiled in, and what an empty box means.
 #[test]
 fn sec_02_services_1_the_four_servers_s8_model_ids_default_then_override() {
-    assert_eq!(svc::ASR_MODEL, "nemotron-asr");
+    assert_eq!(svc::ASR_MODEL, "qwen3-asr");
     assert_eq!(svc::DIAR_MODEL, "sortformer-diar");
     assert_eq!(svc::TTS_MODEL, "index-tts2");
     assert_eq!(svc::SEP_MODEL, "bs-roformer");
 
     let conf = Conf::default();
-    assert_eq!(svc::asr_model(&conf), "nemotron-asr");
+    assert_eq!(svc::asr_model(&conf), "qwen3-asr");
     assert_eq!(svc::diar_model(&conf), "sortformer-diar");
     assert_eq!(svc::tts_model(&conf), "index-tts2");
     assert_eq!(svc::sep_model(&conf), "bs-roformer");
@@ -371,7 +371,7 @@ fn sec_02_services_1_the_four_servers_s9_aligner_is_picked_by_task() {
     let models = vec![
         model("aab-alignment-ctc", "align"),
         model(svc::ALIGN_PREFERENCE, "align"),
-        model("nemotron-asr", "asr"),
+        model("qwen3-asr", "asr"),
     ];
 
     assert_eq!(svc::ALIGN_PREFERENCE, "qwen3-aligner");
@@ -383,7 +383,7 @@ fn sec_02_services_1_the_four_servers_s9_aligner_is_picked_by_task() {
     );
     let only_weak = vec![
         model("aab-alignment-ctc", "align"),
-        model("nemotron-asr", "asr"),
+        model("qwen3-asr", "asr"),
     ];
     assert_eq!(
         svc::pick_aligner("", &only_weak).as_deref(),
@@ -405,15 +405,15 @@ fn sec_02_services_1_the_four_servers_s9_aligner_is_picked_by_task() {
     // another aligner would align through a model the user never chose. Same for one it serves
     // for something other than align.
     assert_eq!(svc::pick_aligner("not-here", &three), None);
-    assert_eq!(svc::pick_aligner("nemotron-asr", &models), None);
+    assert_eq!(svc::pick_aligner("qwen3-asr", &models), None);
     // No declared aligner at all is a working setup, not an error to paper over.
-    assert_eq!(svc::pick_aligner("", &[model("nemotron-asr", "asr")]), None);
+    assert_eq!(svc::pick_aligner("", &[model("qwen3-asr", "asr")]), None);
     assert_eq!(svc::pick_aligner("", &[]), None);
 
     // The catalog parser: `GET /v1/models` answers with `data`, and the task is what the rule
     // keys off. Unparseable is an empty list, which the missing model's own message reports.
     let body = r#"{"object":"list","data":[
-        {"id":"nemotron-asr","object":"model","owned_by":"audio.cpp","family":"nemotron","task":"asr"},
+        {"id":"qwen3-asr","object":"model","owned_by":"audio.cpp","family":"nemotron","task":"asr"},
         {"id":"qwen3-aligner","object":"model","owned_by":"audio.cpp","family":"qwen3","task":"align"}
     ]}"#;
     let parsed = svc::parse_models(body);
@@ -432,10 +432,7 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
         family: String::new(),
         task: task.into(),
     };
-    let models = vec![
-        model("sortformer-diar", "diar"),
-        model("nemotron-asr", "asr"),
-    ];
+    let models = vec![model("sortformer-diar", "diar"), model("qwen3-asr", "asr")];
     let url = "http://127.0.0.1:8765";
 
     // A shipped default: the message carries the install command for its weights, and lists what
@@ -450,11 +447,11 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
         },
     );
     assert!(msg.contains(url), "{msg}");
-    assert!(msg.contains("nemotron-asr"), "{msg}");
+    assert!(msg.contains("qwen3-asr"), "{msg}");
     assert!(msg.contains("sortformer-diar"), "{msg}");
     // Sorted, so the same server answers the same way twice.
     assert!(
-        msg.find("nemotron-asr").unwrap() < msg.find("sortformer-diar").unwrap(),
+        msg.find("qwen3-asr").unwrap() < msg.find("sortformer-diar").unwrap(),
         "{msg}"
     );
     assert!(
@@ -482,7 +479,7 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
     let msg = svc::missing_model(
         url,
         &models,
-        "nemotron-asr",
+        "qwen3-asr",
         svc::Need {
             task: "sep",
             step: "Prepare",
@@ -492,11 +489,8 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
     assert!(msg.contains("\"asr\""), "{msg}");
     assert!(msg.contains("\"sep\""), "{msg}");
 
-    // The three shipped defaults have packages; the TTS model does not get a hint.
-    assert_eq!(
-        svc::install_package(svc::ASR_MODEL),
-        Some("nemotron_asr_q8_0")
-    );
+    // The shipped defaults with a known package have one; the ASR and TTS models do not get a hint.
+    assert_eq!(svc::install_package(svc::ASR_MODEL), None);
     assert_eq!(
         svc::install_package(svc::DIAR_MODEL),
         Some("sortformer_diar_4spk_v1_q8_0")
@@ -634,7 +628,7 @@ fn sec_02_services_1_the_four_servers_s13_every_kind_is_recorded_with_its_cost()
         assert_eq!(row.on_wire_s, Some(1.23));
         assert_eq!(row.sent_bytes, Some(4096));
         assert_eq!(row.received_bytes, Some(512));
-        assert_eq!(row.model, "nemotron-asr");
+        assert_eq!(row.model, "qwen3-asr");
     }
     // A cancelled call is recorded too — §1 asks for that outright.
     let cancelled = rows
@@ -733,7 +727,7 @@ fn sec_02_services_1_the_four_servers_s14_model_choice_survives_the_settings_fil
     })
     .expect("clear model choice");
     let conf = settings::read(&paths).expect("read back again");
-    assert_eq!(svc::asr_model(&conf), "nemotron-asr");
+    assert_eq!(svc::asr_model(&conf), "qwen3-asr");
     assert_eq!(
         svc::pick_aligner(&conf.align_model, &models).as_deref(),
         Some("qwen3-aligner")

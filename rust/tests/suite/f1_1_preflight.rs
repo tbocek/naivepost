@@ -20,17 +20,17 @@ use naivepost::settings::{self, Conf, Paths};
 
 /// The catalogue a healthy-enough server answers with: the shipped ASR id declared `asr`, and nothing
 /// else — so diarization is the first thing missing, which is the order §S5 names.
-const ASR_ONLY: &str = r#"{"data":[{"id":"nemotron-asr","family":"qwen3","task":"asr"}]}"#;
+const ASR_ONLY: &str = r#"{"data":[{"id":"qwen3-asr","family":"qwen3","task":"asr"}]}"#;
 
 /// Every model Prepare needs, each declared for its own task.
 const ALL_SERVED: &str = r#"{"data":[
-  {"id":"nemotron-asr","family":"qwen3","task":"asr"},
+  {"id":"qwen3-asr","family":"qwen3","task":"asr"},
   {"id":"sortformer-diar","family":"qwen3","task":"diar"},
   {"id":"bs-roformer","family":"bs","task":"sep"}]}"#;
 
 /// ASR and diarization both served, separation not: the case where the tick is the whole question.
 const ASR_ONLY_DUAL: &str = r#"{"data":[
-  {"id":"nemotron-asr","family":"qwen3","task":"asr"},
+  {"id":"qwen3-asr","family":"qwen3","task":"asr"},
   {"id":"sortformer-diar","family":"qwen3","task":"diar"}]}"#;
 
 struct Dirs {

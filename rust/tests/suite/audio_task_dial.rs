@@ -437,7 +437,7 @@ fn handle_upload_or_task(
 }
 
 /// The catalogue a fake server with the shipped defaults answers with.
-const CATALOGUE: &str = r#"{"data":[{"id":"nemotron-asr","family":"qwen3","task":"asr"},{"id":"qwen3-aligner","family":"qwen3","task":"align"}]}"#;
+const CATALOGUE: &str = r#"{"data":[{"id":"qwen3-asr","family":"qwen3","task":"asr"},{"id":"qwen3-aligner","family":"qwen3","task":"align"}]}"#;
 
 /// `POST /v1/tasks/run` for speech to text: the envelope on the wire is exactly what §5 confirms.
 #[test]
@@ -845,7 +845,7 @@ fn sec_02_services_1_the_four_servers_s2_an_ordinary_failure_keeps_the_servers_o
         "so is the server's own reason: {err}"
     );
     assert!(
-        err.contains("nemotron-asr"),
+        err.contains("qwen3-asr"),
         "and which model was dialled: {err}"
     );
     assert!(

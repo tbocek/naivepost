@@ -352,7 +352,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4_the_audio_catalogue_dials_
         assert_eq!(path, "/v1/models", "§2's audio listing");
         (
             200,
-            r#"{"data":[{"id":"nemotron-asr","family":"qwen3","task":"asr"}]}"#.to_string(),
+            r#"{"data":[{"id":"qwen3-asr","family":"qwen3","task":"asr"}]}"#.to_string(),
         )
     });
     let paths = settings::from_environment().expect("settings folder");
@@ -364,7 +364,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4_the_audio_catalogue_dials_
     let models = naivepost::audio_task::catalog(&Some(tree.clone()), &paths, "Prepare")
         .expect("the listing arrives");
     assert!(
-        models.iter().any(|model| model.id == "nemotron-asr"),
+        models.iter().any(|model| model.id == "qwen3-asr"),
         "the run reads the ids the server declared, got {models:?}"
     );
     let asked = fake.next_seen();

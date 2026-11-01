@@ -262,7 +262,7 @@ fn check_audio_row_needs_health_and_catalogue(window: &adw::ApplicationWindow) {
             // The family spelling `checks::tts_endpoint_verdict` recognises is `index_tts2` (underscore).
             // A hyphen in the listing would read as "serves both -- none of them can clone a voice", so
             // this is the catalogue as audio.cpp really answers it.
-            r#"{"data":[{"id":"nemotron-asr","family":"nemotron","task":"asr"},{"id":"index-tts2","family":"index_tts2","task":"clon"}]}"#,
+            r#"{"data":[{"id":"qwen3-asr","family":"nemotron","task":"asr"},{"id":"index-tts2","family":"index_tts2","task":"clon"}]}"#,
         ),
     ]);
 

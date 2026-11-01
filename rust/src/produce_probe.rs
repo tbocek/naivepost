@@ -63,6 +63,22 @@ pub fn size_of(file: &Path) -> Option<(i32, i32)> {
     parse_sizes(&reply)
 }
 
+/// How long a file runs as the join counts it: its container duration. `None` when ffprobe cannot say.
+pub fn seconds_of(file: &Path) -> Option<f64> {
+    let args = [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "csv=p=0",
+    ];
+    let name = file.display().to_string();
+    let refs: Vec<&str> = args.iter().copied().chain([name.as_str()]).collect();
+    let reply = crate::subprocess::run(&ffprobe_program(), &refs, |_| ()).ok()?;
+    reply.trim().parse::<f64>().ok().filter(|s| *s > 0.0)
+}
+
 /// Does this file carry a sound stream? One ffprobe cannot answer for counts as having one: a clip that then
 /// fails says why, where a silently dropped sound would not.
 pub fn has_sound(file: &Path) -> bool {

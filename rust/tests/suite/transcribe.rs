@@ -97,7 +97,7 @@ fn f1_3_s2_a_short_take_is_written_up_as_silence_without_asking_anything() {
         &tree,
         SOURCE,
         1.2,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || {
             asked.store(true, Ordering::SeqCst);
@@ -160,7 +160,7 @@ fn f1_3_s3_asr_is_skipped_when_words_json_exists() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || {
             asked.store(true, Ordering::SeqCst);
@@ -179,7 +179,7 @@ fn f1_3_s3_asr_is_skipped_when_words_json_exists() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || {
             Ok(WordsDoc {
@@ -191,7 +191,7 @@ fn f1_3_s3_asr_is_skipped_when_words_json_exists() {
     )
     .expect("the ASR answered");
 
-    assert_eq!(passage.logs[1], ">>> [mic.wav] ASR (nemotron-asr)");
+    assert_eq!(passage.logs[1], ">>> [mic.wav] ASR (qwen3-asr)");
     // Written whole, since it is the marker: the next pass must not ask again.
     let saved = requests::read_words(&tree, SOURCE)
         .unwrap()
@@ -218,7 +218,7 @@ fn f1_3_s4_a_failed_alignment_stands_on_the_asr_times_when_it_has_them() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::Failed("connect refused".into()),
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
@@ -311,7 +311,7 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::Failed("model not loaded".into()),
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
@@ -330,7 +330,7 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || {
             Ok(WordsDoc {
@@ -370,7 +370,7 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         // Asked at all is the failure: the first rewrite called the aligner on every resumed run and threw
         // its answer away afterwards, so a closure that only answered "failed" never noticed.
         |_| -> Align { panic!("the aligner is asked nothing when words.aligned.json is on disk") },
@@ -413,7 +413,7 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || Ok(WordsDoc::default()),
         || {
@@ -444,7 +444,7 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || Ok(WordsDoc::default()),
         || Ok(turns(&[(0.0, 2.0, 2)])),
@@ -628,7 +628,7 @@ fn f1_3_s6_the_two_transcript_files_and_the_count() {
         &tree,
         SOURCE,
         30.0,
-        "nemotron-asr",
+        "qwen3-asr",
         |_| Align::None,
         || Ok(WordsDoc::default()),
         || Ok(vec![]),

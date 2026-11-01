@@ -70,7 +70,7 @@ fn fake_audio_server() -> String {
                     }
                 }
                 let payload = if line.contains("/v1/models") {
-                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                    r#"{"data":[{"id":"qwen3-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
                 } else {
                     "{}"
                 };

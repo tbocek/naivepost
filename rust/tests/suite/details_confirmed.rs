@@ -20,9 +20,9 @@ fn uploaded() -> ServerPath {
 fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_task_run_bodies() {
     // ASR: the words and the language they were spoken in.
     assert_eq!(
-        bodies::asr_body("nemotron-asr", &uploaded(), "pl"),
+        bodies::asr_body("qwen3-asr", &uploaded(), "pl"),
         json!({
-            "model": "nemotron-asr",
+            "model": "qwen3-asr",
             "request": { "audio": "/srv/uploads/take.wav", "language": "pl" },
         })
     );
@@ -354,7 +354,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_aud
 
     // One id per button, and the declared task is what decides.
     let catalogue = [
-        model("nemotron-asr", "nemotron", "asr"),
+        model("qwen3-asr", "nemotron", "asr"),
         model("mislabelled", "x", "diar"),
     ];
     let absent = checks::model_verdict(
@@ -382,7 +382,7 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_aud
     );
     assert!(checks::model_verdict(
         &catalogue,
-        "nemotron-asr",
+        "qwen3-asr",
         naivepost::services::Need {
             task: "asr",
             step: "Prepare"

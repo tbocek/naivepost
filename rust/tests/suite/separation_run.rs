@@ -44,7 +44,7 @@ static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// What the fake serves as its model list: an ASR and nothing else, so a refusal about the shipped
 /// separation id is refused because it is genuinely not there (§1's install hint then names the package).
-const MODEL_LIST: &str = r#"{"data":[{"id":"nemotron-asr","family":"qwen3","task":"asr"}]}"#;
+const MODEL_LIST: &str = r#"{"data":[{"id":"qwen3-asr","family":"qwen3","task":"asr"}]}"#;
 
 /// The env and the working folder belong to the process and cargo runs these tests as threads, so the
 /// two walk tests take them one at a time and restore them before returning.

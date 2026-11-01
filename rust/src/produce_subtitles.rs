@@ -265,6 +265,35 @@ pub fn placement(pos: &str) -> Option<&'static str> {
 
 /// S2/S9: the cue sheet in SubRip. The timecode is [`transcribe`]'s — one formatter for every `.srt` the app
 /// writes rather than one per module.
+/// The cues moved from the clock the plan worked out onto the one the join really made. A clip's picture ends on a whole
+/// frame, so it runs a little past its planned length and the join starts the next clip after it; over a hundred clips that
+/// is seconds. `planned` is each clip's (start, length), `actual` each encoded file's length; a list that does not match leaves the cues alone.
+pub fn onto_measured(cues: &[Cue], planned: &[(f64, f64)], actual: &[f64]) -> Vec<Cue> {
+    if planned.is_empty() || planned.len() != actual.len() {
+        return cues.to_vec();
+    }
+    let mut starts = Vec::with_capacity(actual.len());
+    let mut at = 0.0;
+    for length in actual {
+        starts.push(at);
+        at += length;
+    }
+    let moved = |t: f64| {
+        let clip = planned
+            .iter()
+            .rposition(|(start, _)| *start <= t + 1e-9)
+            .unwrap_or(0);
+        t - planned[clip].0 + starts[clip]
+    };
+    cues.iter()
+        .map(|cue| Cue {
+            s: moved(cue.s),
+            e: moved(cue.e),
+            ..cue.clone()
+        })
+        .collect()
+}
+
 pub fn srt_text(cues: &[Cue]) -> String {
     let mut out = String::new();
     for (index, cue) in cues.iter().enumerate() {

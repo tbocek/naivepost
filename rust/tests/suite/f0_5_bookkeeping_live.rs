@@ -72,7 +72,7 @@ fn fake_audio_server_counted() -> String {
                 // `/v1/models` names the two models §S5 needs; every other route (the health check and
                 // the unload a close hands over among them) just 200s.
                 let payload = if line.contains("/v1/models") {
-                    r#"{"data":[{"id":"nemotron-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
+                    r#"{"data":[{"id":"qwen3-asr","task":"asr"},{"id":"sortformer-diar","task":"diar"}]}"#
                 } else {
                     "{\"ok\":true}"
                 };

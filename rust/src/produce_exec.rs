@@ -862,9 +862,26 @@ where
         ran.stopped_at = Some("before translate and mux");
         return ran;
     }
+    // The subtitles go on the clock the join made, measured off the encoded files, so they stay with the speech to the last clip.
+    let lengths: Vec<f64> = plan
+        .encodes
+        .iter()
+        .filter_map(|encode| crate::produce_probe::seconds_of(&encode.file))
+        .collect();
+    let timed = subs::onto_measured(
+        &plan.cues.all,
+        &render::produced_clocks(&plan.clips),
+        &lengths,
+    );
+    if !timed.is_empty() {
+        if let Err(why) = std::fs::write(&sheet, subs::srt_text(&timed)) {
+            ran.failed = Some(format!("{sheet}: {why}", sheet = sheet.display()));
+            return ran;
+        }
+    }
     // S7: `plan.translated` is already the ticked list minus the session's own language (`track_languages`), so nothing translates into itself.
     let tracked = crate::produce_translate::track(
-        &plan.cues.all,
+        &timed,
         &plan.cues.session_language,
         &plan.translated,
         mats.translate,
@@ -887,7 +904,7 @@ where
     let translated_or_original = |code: &str| -> Vec<subs::Cue> {
         match by_code.get(code) {
             Some(cues) if !cues.is_empty() => cues.clone(),
-            _ => plan.cues.all.clone(),
+            _ => timed.clone(),
         }
     };
     if plan.mux.argv.iter().any(|arg| arg == "-c:s") {
@@ -917,7 +934,10 @@ where
     for sidecar in &plan.sidecars {
         // Write from the plan's own track when the translation leg was unreachable (it returns the original cues): an empty sidecar beside a finished video is forbidden by §5.
         let out = match &sidecar.language {
-            None => sidecar.clone(),
+            None => Sidecar {
+                cues: timed.clone(),
+                ..sidecar.clone()
+            },
             Some(code) => Sidecar {
                 cues: translated_or_original(code),
                 ..sidecar.clone()

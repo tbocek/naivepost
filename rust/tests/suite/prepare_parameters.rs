@@ -391,7 +391,7 @@ fn sec_04_prepare_4_parameters_used_s6_frames_workers_quality_and_scratch() {
     }
 
     let mut asked = 0;
-    asr::run(&tree, SOURCE, 10.0, "nemotron-asr", "en", &[], |_file| {
+    asr::run(&tree, SOURCE, 10.0, "qwen3-asr", "en", &[], |_file| {
         asked += 1;
         Ok(Answer {
             text: "one take".into(),
@@ -405,7 +405,7 @@ fn sec_04_prepare_4_parameters_used_s6_frames_workers_quality_and_scratch() {
         "success clears its own mess"
     );
 
-    let stopped = asr::run(&tree, SOURCE, 10.0, "nemotron-asr", "en", &[], |_file| {
+    let stopped = asr::run(&tree, SOURCE, 10.0, "qwen3-asr", "en", &[], |_file| {
         Err("no room for the model".into())
     });
     assert!(stopped.is_err(), "a refusal is a failure");
