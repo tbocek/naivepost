@@ -222,12 +222,6 @@ pub fn session_sources() -> Vec<String> {
 pub fn run_queue(_window: &adw::ApplicationWindow) -> Option<Rc<RefCell<runqueue::Queue>>> {
     ui::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned())
 }
-/// The tooltip Open carries, which is how a test reads §1's wording for badge **2**.
-pub fn open_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    open_button(window)?
-        .tooltip_text()
-        .map(|text| text.to_string())
-}
 /// The run's progress bar (F0.5 S2), found the same way as [`play_button`].
 pub fn progress_bar(window: &adw::ApplicationWindow) -> Option<gtk::ProgressBar> {
     find_widget_by_name(window.upcast_ref(), "run-progress")?

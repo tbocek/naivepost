@@ -501,11 +501,6 @@ pub(crate) fn open_insert_chooser(
     crate::ui::chooser_hold::show(&chooser);
 }
 
-/// F2.12 S3 + S4: the file came back from the chooser — build the plan and draw the form.
-pub fn insert_chosen(window: &adw::ApplicationWindow, file: &std::path::Path, at: f64) -> String {
-    insert_chosen_with_length(window, file, at, None)
-}
-
 pub fn insert_chosen_with_length(
     window: &adw::ApplicationWindow,
     file: &std::path::Path,

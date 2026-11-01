@@ -75,15 +75,6 @@ pub fn press_test(key: &str, typed: &str, answer: Answer) -> checks::Phase {
 /// One Test All answer: the kind asked and what came back.
 pub type AllAnswer = (String, Answer);
 
-/// "Test All": every kind's own verdict, none short-circuiting (§5).
-pub fn press_all(answers: &[AllAnswer]) -> Vec<checks::Row> {
-    let pairs: Vec<(&str, Answer)> = answers
-        .iter()
-        .map(|(kind, verdict)| (name_for(kind), verdict.clone()))
-        .collect();
-    checks::test_all(&pairs)
-}
-
 pub fn paint_badge(badge: &gtk::Label, phase: &checks::Phase) {
     // The row's spinner sits just before its badge in the same cell (`spinner-<key>`); rows without one (Fetch
     // models, Use) show the mark alone.
