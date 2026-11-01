@@ -4,7 +4,6 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::cut::Cut;
 use crate::cut_cards;
 use crate::cut_insert;
 use crate::cut_select;

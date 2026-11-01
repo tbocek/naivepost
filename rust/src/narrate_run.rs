@@ -3,7 +3,6 @@
 use crate::cut::NO_CUT_YET;
 use crate::narrate_rewrite::{clips_to_write, log_line, why};
 pub use crate::narrate_rules::voice_is_captions as voice_is_captions_only;
-use crate::narrate_screen::CAPTIONS;
 use crate::narration::{Entry, Narration};
 
 /// S1's fourth refusal, word for word (§F4.1 S1; `spec/inventory/narrate.md` names the missing file as

@@ -414,23 +414,7 @@ pub(crate) fn wire_speed_buttons(window: &adw::ApplicationWindow) {
 
 /// Esc releases an open speed form; claims Escape only when this window owns a form.
 pub(crate) fn wire_speed_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_speed_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    crate::ui::cut_form_buttons::wire_esc(window, press_speed_esc);
 }
 
 /// F3.8 S3 (`Esc drops the hold and disarms`): the band's own Esc controller, shaped like `wire_speed_esc`: it prints what [`press_band_esc`] answered and lets the key

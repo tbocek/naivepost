@@ -7,7 +7,7 @@ use crate::cut_clamp;
 use crate::cut_effect_decisions::{self as decisions, Candidate};
 pub use crate::cut_suggest_passes::order as passes_switched_on;
 use crate::decision_audit;
-use crate::policy::{self, Pass};
+use crate::policy::{self};
 use crate::project::{MarkingPass, Policy};
 use crate::roles::{self, Job};
 use crate::timeline;

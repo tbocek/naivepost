@@ -16,7 +16,7 @@ use crate::project::Project;
 use crate::requests::{Request, Service};
 use crate::seam_retries::{self, Asking};
 use crate::services;
-use crate::settings::{self, Conf, Paths};
+use crate::settings::{self, Conf};
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
 use crate::word_list::Word;
 
