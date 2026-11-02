@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::layout;
-use crate::project::{self, move_to_front, RawPublish};
+use crate::project::{self, RawPublish};
 
 /// Read `publish.json`.
 pub fn load(tree: &layout::Tree) -> Result<project::Publish, String> {
@@ -50,25 +50,6 @@ pub fn is_written(tree: &layout::Tree) -> bool {
     tree.publish_json().exists()
 }
 
-/// Delete the publish folder — §5's "deleting the folder starts it over".
-pub fn start_over(tree: &layout::Tree) -> Result<(), String> {
-    let dir = tree.publish_dir();
-    // The fallback when neither publish folder exists yet is the legacy path, which is
-    // inside the project; a project whose path resolved to its own root would delete the
-    // session, and no §1 layout should ever make that true.
-    if dir == tree.dir() {
-        return Err(format!(
-            "{}: the publish folder is the project itself",
-            dir.display()
-        ));
-    }
-    match fs::remove_dir_all(&dir) {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(format!("{}: {err}", dir.display())),
-    }
-}
-
 /// The base the image model edits: the first frame.
 pub fn base(publish: &project::Publish) -> Option<&str> {
     publish.frames.first().map(String::as_str)
@@ -77,15 +58,6 @@ pub fn base(publish: &project::Publish) -> Option<&str> {
 /// The pictures to be referred to ("the ship from the second image"), in order.
 pub fn references(publish: &project::Publish) -> &[String] {
     publish.frames.get(1..).unwrap_or_default()
-}
-
-/// Make that frame the base by moving it to the front, keeping the rest's order (§5).
-pub fn set_base(publish: &mut project::Publish, path: &str) -> bool {
-    let Some(at) = publish.frames.iter().position(|f| f == path) else {
-        return false;
-    };
-    publish.frames = move_to_front(publish.frames.clone(), at);
-    true
 }
 
 // `own` — "the thumbnail is a chosen frame, not drawn" (§5) — needs no setter: it is a

@@ -2,7 +2,6 @@
 
 use crate::cut::Fx;
 use crate::cut_speed;
-use crate::render_fx;
 use crate::tools;
 
 // --- S1: where the mark goes ---------------------------------------------------------------------------------------
@@ -146,11 +145,4 @@ pub fn label(fx: &Fx) -> String {
 /// F3.7 S5: what the page says after a label is placed.
 pub fn placed_status(fx: &Fx) -> String {
     format!("{} \u{2014} {NOTHING_CHANGES}", label(fx))
-}
-
-/// F3.7 S5 (`never rendered`): the render's own answer to a label, delegated to the one place that decides it
-/// ([`render_fx::is_rendered`], whose comment records that the mark survives in the record precisely because
-/// this flow exists) rather than restated as a second `kind == "label"` test that could drift.
-pub fn never_rendered(fx: &Fx) -> bool {
-    !render_fx::is_rendered(&fx.kind)
 }

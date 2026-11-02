@@ -59,11 +59,6 @@ pub fn arm_tail(marked: Option<(f64, f64)>) -> String {
     }
 }
 
-/// F3.1 S1 (`Camera layer goes down; whole source visible`): while a box is drawn the framing is out of the way.
-pub fn whole_source_shown(armed: bool) -> bool {
-    armed
-}
-
 /// F3.1 S1 (`same entry again disarms`; Esc too — spec/inventory/cut.md §E): whether the arm was there to lose.
 pub fn disarm(armed: bool) -> bool {
     armed
@@ -101,16 +96,6 @@ pub fn free_rectangle(from: (f64, f64), to: (f64, f64)) -> Option<Rect> {
         return None;
     }
     Some(Rect { x: x0, y: y0, w, h })
-}
-
-/// F3.1 S2: the release does not snap a near-full box to full; a function so the answer can be asserted.
-pub fn snaps_to_full_size() -> bool {
-    false
-}
-
-/// F3.1 S2: the box does not inherit the cut's aspect either.
-pub fn keeps_the_cut_shape() -> bool {
-    false
 }
 
 /// F3.1 S2 → §06#1 (`cx, cy, hf … fractions of the SOURCE frame (width follows the aspect)`): the box as the record stores it.
@@ -521,17 +506,6 @@ pub fn camera_at(fx: &[Fx], t: f64) -> Camera {
             frame
         }
     }
-}
-
-/// F3.1: the frame a staying zoom leaves behind, published for F3.2 (does a staying zoom hold the whole frame?).
-pub fn settled_after(fx: &[Fx], t: f64) -> Camera {
-    let mut settled = SETTLED;
-    for effect in zooms_in_order(fx) {
-        if effect.stay && effect.spans().0 <= t {
-            settled = rect_of(effect);
-        }
-    }
-    settled
 }
 
 /// F3.1: a zoom's own rect, clamped as it is read (§A.1's clamp covers hand-edited files) and defaulting to the whole source for a missing fraction.

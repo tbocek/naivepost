@@ -2,8 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::cut_hear;
-use crate::produce_embed as embed;
 use crate::produce_render as render;
 use crate::produce_screen as screen;
 use crate::produce_stamp as stamp;
@@ -82,19 +80,6 @@ pub fn fixed_rate() -> f64 {
     render_fx::ZOOM_GRID_FPS
 }
 
-pub fn first_stream_is_own_sound(tracks: &[u32], stream: u32) -> bool {
-    tracks.is_empty() || tracks.contains(&stream)
-}
-
-/// The same fact from a source record, so a caller never re-derives "first audio stream" as `0` at the call site.
-pub fn own_sound_from_source(source: &project::Source) -> bool {
-    first_stream_is_own_sound(&source.tracks, 0)
-}
-
-pub fn heard_via_lane_mix(tracks: &[u32], stream: u32) -> bool {
-    !first_stream_is_own_sound(tracks, stream) && cut_hear::MAX_GAIN > 0.0
-}
-
 pub fn bounds_match(line_s: f64, line_e: f64, clip_s: f64, clip_e: f64) -> bool {
     (line_s - clip_s).abs() <= BOUNDS_TOLERANCE_SECONDS
         && (line_e - clip_e).abs() <= BOUNDS_TOLERANCE_SECONDS
@@ -102,28 +87,6 @@ pub fn bounds_match(line_s: f64, line_e: f64, clip_s: f64, clip_e: f64) -> bool 
 
 pub fn drifts(planned: f64, actual: f64) -> bool {
     (planned - actual).abs() >= DRIFT_SECONDS
-}
-
-pub fn run_closes(source_is_footage: bool, on_recording: bool) -> bool {
-    !source_is_footage || !on_recording
-}
-
-pub fn held_cue_end(line_start: f64, next_line_start: Option<f64>, clip_end: f64) -> f64 {
-    let until = next_line_start.unwrap_or(clip_end);
-    until.max(line_start).min(clip_end)
-}
-
-pub fn spoken_line_filters(
-    clip: &render::Clip,
-    settings: &Produce,
-    _lanes: usize,
-    _hush: &[(f64, f64)],
-) -> Vec<String> {
-    clip.lines
-        .iter()
-        .find(|line| line.speech > 0.0)
-        .map(|line| render::voice_chain(line, settings))
-        .unwrap_or_default()
 }
 
 pub const SCRATCH: &str = render::SCRATCH;
@@ -136,14 +99,6 @@ pub const SCRATCH_KINDS: [&str; 6] = [
     "<name>.frames/",
     "joined.<container>",
 ];
-
-pub fn clip_cues(clip_no: usize, cut_stamp: &str) -> String {
-    format!("c{clip_no:03}_{cut_stamp}.srt")
-}
-
-pub fn cue_title(clip_no: usize, cue_no: usize) -> String {
-    format!("c{clip_no:03}_t{cue_no:02}.svg")
-}
 
 pub fn card_copy(card_file: &str) -> String {
     let name = card_file.rsplit('/').next().unwrap_or(card_file);
@@ -198,23 +153,6 @@ pub fn stored_resolution(known: bool) -> project::Resolution {
 
 pub const DROPPED_PRODUCE_KEYS: [&str; 1] = ["subs_from"];
 
-pub fn legacy_subtitles(stored: &str) -> Option<Subtitles> {
-    match stored {
-        "burned" => Some(Subtitles::BurnedIn),
-        "track" => Some(Subtitles::TrackInFile),
-        // The one answer with no stream behind it, and any word this app has never written.
-        _ => None,
-    }
-}
-
-pub fn legacy_game_volume(stored: Option<f64>) -> f64 {
-    stored.unwrap_or_else(|| Produce::default().game_volume)
-}
-
-pub fn legacy_bare(blurred_edges: bool) -> bool {
-    !blurred_edges
-}
-
 pub fn answer_number(line: &str) -> Option<(usize, &str)> {
     let digits = line
         .trim_start()
@@ -252,60 +190,7 @@ pub fn thumbnail_box_without_aspect() -> (u32, u32) {
     screen::thumb_box("", 0, 0)
 }
 
-pub fn frame_box_from_nothing(height: i32) -> (i32, i32) {
-    let high = if height > 0 {
-        height
-    } else {
-        render_fx::TIER_SHORT_SIDE
-    };
-    let wide = even_side(high * 16 / 9);
-    (wide, even_side(high))
-}
-
-pub fn even_side(side: i32) -> i32 {
-    side - side % 2
-}
-
-pub fn apply_legacy_base(frames: &[String], index: usize) -> Vec<String> {
-    if index == 0 || index >= frames.len() {
-        return frames.to_vec();
-    }
-    let mut out = vec![frames[index].clone()];
-    out.extend(
-        frames
-            .iter()
-            .enumerate()
-            .filter(|(n, _)| *n != index)
-            .map(|(_, frame)| frame.clone()),
-    );
-    out
-}
-
-pub fn title_off_reads_once(stored: Option<bool>, already_read: bool) -> Option<bool> {
-    (!already_read).then_some(stored).flatten()
-}
-
-pub fn clear_frame_only_instruction(instruction: &str) -> String {
-    let lines: Vec<&str> = instruction
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
-    if lines.len() == 1 && frame_line(lines[0]).is_some() {
-        return String::new();
-    }
-    instruction.to_string()
-}
-
-pub fn publish_folder_wins(legacy_exists: bool, new_exists: bool) -> bool {
-    !new_exists && legacy_exists
-}
-
 pub const DEADLOCK_LOG: &str = "    publish: no picture, no images and no instruction \u{2014} asking for the upload text again";
-
-pub fn asks_for_text_again(has_picture: bool, images: usize, instruction: &str) -> bool {
-    !has_picture && images == 0 && instruction.trim().is_empty()
-}
 
 pub fn chosen_frame_log(at_seconds: f64) -> String {
     format!(
@@ -423,37 +308,8 @@ pub fn drops_description_heading(line: &str) -> bool {
     trimmed.ends_with(':') && trimmed.chars().count() < DESCRIPTION_HEADING_CHARS
 }
 
-pub fn candidate_frames(kept: &[(f64, f64)], extracted: &[f64]) -> Vec<f64> {
-    let mut wanted: Vec<f64> = Vec::new();
-    for (from, to) in kept {
-        let span = (to - from).max(0.0);
-        for band in 0..LABELLED_LINES_MAX {
-            let middle =
-                from + span * (2.0 * band as f64 + 1.0) / (2.0 * LABELLED_LINES_MAX as f64);
-            if middle > *from && middle < *to {
-                wanted.push(middle);
-            }
-        }
-    }
-    // Too few kept moments to choose from: hand back everything extracted rather than nothing, which is what
-    // lets a first run of a short session still edit a real frame.
-    if wanted.len() < LABELLED_LINES_MAX {
-        return extracted.to_vec();
-    }
-    wanted
-}
-
-/// Is this extracted moment under an insert? Its picture comes from elsewhere, so it cannot stand for the video.
-pub fn under_insert(at: f64, inserts: &[(f64, f64)]) -> bool {
-    inserts.iter().any(|(from, to)| at >= *from && at < *to)
-}
-
 pub const NO_FRAMES_LOG: &str =
     "    publish: no frames extracted either \u{2014} drawing from the instruction alone";
-
-pub fn base_gone_error(path: &str) -> String {
-    format!("the base image is gone: {path}")
-}
 
 pub fn reference_skipped_log(path: &str) -> String {
     format!("    publish: {path} is not there \u{2014} sent without it")
@@ -480,15 +336,6 @@ pub fn already_drawn(both_files: bool, stamp_matches: bool) -> bool {
     both_files && stamp_matches
 }
 
-/// Printing failed: keep the plain picture. Losing the frame would turn a cosmetic failure into no thumbnail.
-pub fn print_failed_keeps_plain(print_failed: bool) -> bool {
-    print_failed
-}
-
-pub fn title_band_is_box(carries_words: bool) -> bool {
-    carries_words
-}
-
 pub const REMOVE_IS_PERMANENT: &str =
     "Remove keeps it off for good; clearing the line only lets the next seed refill it";
 
@@ -498,37 +345,10 @@ pub fn youtube_title_redraws_picture() -> bool {
 
 pub const TEXT_CHIP_HINT: &str = "Printed to fill the box you marked \u{2014} a longer line comes out smaller, and Enter starts a new line.";
 
-/// Does this press open the dialog? Only ever the chip.
-pub fn opens_text_dialog(is_chip: bool) -> bool {
-    is_chip
-}
-
-/// A drag under [`DRAG_MIN_PX`] marks nothing, so tapping inside a box you already drew does not erase it.
-pub fn drag_marks(moved_px: f64) -> bool {
-    moved_px >= DRAG_MIN_PX
-}
-
-pub fn box_saved_empty(existed: bool) -> BoxSave {
-    if existed {
-        BoxSave::Removed
-    } else {
-        BoxSave::NotCreated
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoxSave {
     NotCreated,
     Removed,
-}
-
-pub fn copies_plain_bytes(words: &str) -> bool {
-    words.trim().is_empty()
-}
-
-/// The page's own file, beside the video — [`embed::paths`]' third answer.
-pub fn page_path(tree: &crate::layout::Tree, container: project::Container) -> std::path::PathBuf {
-    embed::paths(tree, container).2
 }
 
 pub fn stamp_unwritable_log(why: &str) -> String {
@@ -537,8 +357,4 @@ pub fn stamp_unwritable_log(why: &str) -> String {
 
 pub fn stamp_matches(computable: bool, stored: Option<&str>, current: &str) -> bool {
     computable && stamp::skip_encode(stored, current)
-}
-
-pub fn stamp_failure_fails_run() -> bool {
-    false
 }

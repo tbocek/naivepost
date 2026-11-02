@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use crate::checks;
 use crate::exchanges::{Message, Mode, Part, ToolCall};
 use crate::llm_budget;
-use crate::services::{self, Kind};
+use crate::services::{self};
 use crate::tools::Tool;
 
 /// §1's own sentence for the one thing a request cannot do without.
@@ -17,15 +17,6 @@ pub fn model_required(model: &str) -> Result<&str, String> {
         return Err(NO_MODEL.to_string());
     }
     Ok(model)
-}
-
-/// Where a chat request goes: `POST <server>/v1/chat/completions`. The path is [`Kind::Chat`]'s, so the table in
-/// [`crate::services`] stays the one place that knows which kind takes which path. A server with no URL is the
-/// same dead end as no model — nothing to send to.
-pub fn chat_url(server: &str) -> Result<String, String> {
-    let base =
-        services::server_url(server).ok_or_else(|| format!("{server:?}: no server to ask"))?;
-    Ok(format!("{base}{}", Kind::Chat.path(None)))
 }
 
 pub fn headers(key: &str, streaming: bool) -> Vec<(String, String)> {
@@ -375,8 +366,3 @@ fn assemble(content: String, reasoning: String, mut calls: Vec<(usize, ToolCall)
 }
 
 // ---- S4: the cancel context ----------------------------------------------------------
-
-/// §1's last bullet: every request rides the run's cancel context, so ⏹ aborts it.
-pub fn rides_cancel() -> bool {
-    services::rides_cancel_context(Kind::Chat)
-}

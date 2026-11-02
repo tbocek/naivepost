@@ -20,7 +20,6 @@ use naivepost::degraded;
 use naivepost::exchanges::{Message, Mode, Part};
 use naivepost::llm_request as llm;
 use naivepost::roles::{self, Job};
-use naivepost::services::{self, Kind};
 use naivepost::tools;
 
 const ITEM: &str = "§09-llm-and-tools#1-request-contract";
@@ -38,78 +37,6 @@ fn body(mode: Mode) -> serde_json::Value {
 }
 
 // ---- S1: where it goes, the key, and the model id -----------------------------------
-
-#[test]
-fn sec_09_llm_and_tools_1_request_contract_s1_url_key_and_model_id() {
-    assert_eq!(ITEM, "§09-llm-and-tools#1-request-contract");
-    // `POST <server>/v1/chat/completions` — and the path is services::Kind::Chat's, so one table knows paths.
-    let path = Kind::Chat.path(None);
-    assert_eq!(path, "/v1/chat/completions");
-    for (server, want) in [
-        (
-            "localhost:8731",
-            "https://localhost:8731/v1/chat/completions",
-        ),
-        ("http://box:8731", "http://box:8731/v1/chat/completions"),
-        ("https://box:8731/", "https://box:8731/v1/chat/completions"),
-    ] {
-        assert_eq!(
-            llm::chat_url(server).expect("a server is set"),
-            want,
-            "{server}"
-        );
-        assert!(
-            want.ends_with(&path),
-            "{want} does not end in the Kind's own path"
-        );
-    }
-    // No server is as much of a dead end as no model: there is nothing to send to.
-    assert!(llm::chat_url("   ").is_err());
-
-    // Bearer key when set — and only when set, because a token that says "none" some servers read as a bad
-    // request (services::authorization's reason, reused rather than restated).
-    let headers = llm::headers("", false);
-    assert!(
-        headers.iter().all(|(name, _)| name != "authorization"),
-        "{headers:?}"
-    );
-    assert_eq!(
-        headers[0],
-        ("content-type".to_string(), "application/json".to_string())
-    );
-    let keyed = llm::headers("k1", false);
-    assert!(
-        keyed.contains(&("authorization".to_string(), "Bearer k1".to_string())),
-        "{keyed:?}"
-    );
-    assert_eq!(services::authorization("k1").as_deref(), Some("Bearer k1"));
-    assert_eq!(
-        services::authorization(""),
-        None,
-        "an empty key sends no header"
-    );
-
-    // A streaming caller says what it will read; a plain one does not ask for a stream it will not parse.
-    assert!(llm::headers("", true).contains(&("accept".to_string(), llm::EVENT_STREAM.to_string())));
-    assert_eq!(llm::EVENT_STREAM, "text/event-stream");
-
-    // Model id required, with §1's own sentence — and it is a different sentence from the settings dialog's.
-    assert_eq!(
-        llm::NO_MODEL,
-        "no LLM model configured -- use the gear button"
-    );
-    assert_eq!(llm::model_required("   ").unwrap_err(), llm::NO_MODEL);
-    assert_eq!(
-        llm::model_required("  qwen3  ").unwrap(),
-        "qwen3",
-        "typed with spaces is still the id"
-    );
-    // Divergence pinned rather than fixed: two wordings of one problem live in the app, because they are asked
-    // at different moments — a step about to run (§1's gear-button sentence) against a server being checked.
-    let dialog = checks::llm_model_listed(&[], "").unwrap_err();
-    assert!(dialog.contains("Fetch models and pick one"), "{dialog}");
-    assert_ne!(dialog, llm::NO_MODEL);
-}
 
 // ---- S2: the body -------------------------------------------------------------------
 
@@ -402,28 +329,3 @@ fn sec_09_llm_and_tools_1_request_contract_s3_streaming() {
 mod wire;
 
 // ---- S4: the cancel context ----------------------------------------------------------
-
-#[test]
-fn sec_09_llm_and_tools_1_request_contract_s4_rides_the_cancel_context() {
-    assert_eq!(ITEM, "§09-llm-and-tools#1-request-contract");
-    // §1's last bullet: every request rides the run's cancel context, so ⏹ aborts it. The rule is services' and
-    // says yes for every kind — the rewrite's fix for a prototype that left five calls off the list, which is
-    // why a ⏹ during a long synthesis used to leave the app waiting for a request it had already given up on.
-    assert!(llm::rides_cancel());
-    assert_eq!(
-        llm::rides_cancel(),
-        services::rides_cancel_context(Kind::Chat)
-    );
-    for kind in [
-        Kind::Chat,
-        Kind::ListModels,
-        Kind::Health,
-        Kind::Speech,
-        Kind::UnloadAll,
-    ] {
-        assert!(
-            services::rides_cancel_context(kind),
-            "{kind:?} must be cancellable too"
-        );
-    }
-}

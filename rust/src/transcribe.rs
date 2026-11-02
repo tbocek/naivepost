@@ -238,33 +238,6 @@ pub fn write_transcript(tree: &Tree, source: &str, lines: &[Line]) -> Result<(),
     textfmt::write_rows_or_none(&tree.transcript_srt(source), &srt_text(lines))
 }
 
-/// S6: words an answer sent back that cannot be placed on the clock. No usable `start_sample`/`end_sample` means the answer changed shape, and cut points sit on word edges, so guessing would move the video.
-pub fn unusable_words(words: &[Word]) -> usize {
-    words
-        .iter()
-        .filter(|word| word.end_sample <= word.start_sample)
-        .count()
-}
-
-/// S6: refusing a transcript whose words have no usable times, naming how many.
-pub fn unusable_words_error(count: usize) -> String {
-    format!("{count} words carry no usable start_sample/end_sample -- the answer changed shape")
-}
-
-/// S4/S6: transcribed but nothing has a time and no aligner can give them. Named by the model that answered, since the fix is a setting. The variant is for when an aligner was asked and left no times; the warning above says why.
-pub fn no_word_times(asr: &str, aligner_left_none: bool) -> String {
-    if aligner_left_none {
-        return format!(
-            "{asr} transcribed this recording but timed no words, and the aligner left no times either, \
-             which the line above this one says why"
-        );
-    }
-    format!(
-        "{asr} transcribed this recording but timed no words, no aligner is registered to time them -- \
-         register one (task \"align\") -- or use an ASR that answers with word timings"
-    )
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Passage {
     pub logs: Vec<String>,
@@ -394,11 +367,6 @@ fn write_turns(tree: &Tree, source: &str, turns: &[Turn]) -> Result<(), String> 
 
 pub fn is_short_take(duration: f64) -> bool {
     requests::is_short(duration, requests::MIN_TAKE_SECONDS)
-}
-
-/// Whether this source's audio is decoded yet (S1): mono 16 kHz `voice16k.wav`.
-pub fn has_audio(tree: &Tree, source: &str) -> bool {
-    tree.voice16k_wav(source).exists()
 }
 
 /// A word's span as segments use it: end clamped to [`MERGE_MAX_WORD`] past its start. Public so anything showing words shows the span Cut reads.

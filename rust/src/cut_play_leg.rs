@@ -203,19 +203,6 @@ pub const DIM_GREY: f64 = crate::ui::cut_colours::SCRIM.0;
 /// The old alpha: 0.18 measured invisible against the ground (§F2.2 S6 redo).
 pub const DIM_ALPHA: f64 = 0.18;
 
-/// S6: paint the dimmed stretches across one bar row; `pps` is the strip's pixels-per-second, as for the kept boxes.
-pub fn paint_dimmed(cr: &cairo::Context, spans: &[(f64, f64)], top: f64, height: f64, pps: f64) {
-    cr.set_source_rgb(DIM_GREY, DIM_GREY, DIM_GREY);
-    for &(start, end) in spans {
-        let x = start * pps;
-        let w = (end - start).max(0.0) * pps;
-        if w > 0.0 {
-            cr.rectangle(x, top, w, height);
-            let _ = cr.fill();
-        }
-    }
-}
-
 /// S5: run the cut preview's tick loop while ▶✂ is the preview. Started once per window from `build_window`; every [`crate::preview::TICK_MS`] it asks [`tick`] where the line goes, moves the playhead, arms the spare ([`arm_spare`]) and writes the CUT's time to the status line ([`cut_play::cut_clock_note`]; no clock widget exists yet). No-op unless the preview is the plain cut.
 pub fn start_cut_preview_tick(page: Rc<dyn CutPreviewPage>) {
     glib::timeout_add_local(

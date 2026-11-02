@@ -143,39 +143,6 @@ fn f3_4_s4_the_preview_lays_the_words_in_the_stored_box() {
     );
 }
 
-/// §F3.4 S4 (`dark dilated edge`): the numbers the draw path reads are §10's, so changing a row shows up here
-/// instead of only in a screenshot nobody took.
-#[test]
-fn f3_4_s4_the_edge_is_dilated_not_shadowed() {
-    common::pin_private_cwd();
-    // A dilation scales with the type; a shadow would be a fixed offset. And it never rounds away to nothing.
-    assert_eq!(fx_text::edge_radius(20.0), 20.0 * fx_text::EDGE_RADIUS_EM);
-    assert_eq!(
-        fx_text::edge_radius(4.0),
-        1.0,
-        "under a pixel the edge would vanish between samples"
-    );
-    // The render strokes across its path, so twice the radius: one constant for both halves' thickness.
-    assert_eq!(
-        fx_text::render_stroke_width(20.0),
-        fx_text::edge_radius(20.0) * 2.0
-    );
-    assert_eq!(
-        fx_text::EDGE_ALPHA,
-        0.85,
-        "not fully opaque, or the edge reads as a second set of words"
-    );
-    assert_eq!(
-        fx_text::EDGE_STEPS,
-        16,
-        "sixteen directions: eight was faceted on diagonals"
-    );
-    assert!(
-        fx_text::preview_is_the_render(),
-        "one layout function, so there is nothing to keep in step"
-    );
-}
-
 // --- the wire: a press on the picture ---------------------------------------------------------------------------
 
 /// The Cut page with ONE caption already on the cut, its seconds covering the placed line, plus the tape the

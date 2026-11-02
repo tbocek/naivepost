@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use crate::cut::Seg;
 use crate::cut_select::{MIN_SCENE_SECONDS, MIN_SECONDS, SNAP_PX};
-use crate::{preview, tools};
+use crate::tools;
 
 /// F2.8 S1: how near a clip border the pointer must be for either button to take it (`spec/inventory/cut.md` "Trim: edges within 6 px (own side first)"), the shortest of §10's grab reaches.
 pub const EDGE_GRAB_PX: f64 = 6.0;
@@ -16,24 +16,6 @@ pub const EDGE_GRAB_PX: f64 = 6.0;
 pub enum Border {
     Start,
     End,
-}
-
-/// F2.8 S1: the border within [`EDGE_GRAB_PX`] of `px` on a clip drawn between `start_px` and `end_px`. Within reach of both the nearer wins; on a tie the end answers (drawn last, on top).
-pub fn grab_border(px: f64, start_px: f64, end_px: f64) -> Option<Border> {
-    let to_start = (px - start_px).abs();
-    let to_end = (px - end_px).abs();
-    let start = to_start <= EDGE_GRAB_PX;
-    let end = to_end <= EDGE_GRAB_PX;
-    match (start, end) {
-        (true, true) => Some(if to_start < to_end {
-            Border::Start
-        } else {
-            Border::End
-        }),
-        (true, false) => Some(Border::Start),
-        (false, true) => Some(Border::End),
-        (false, false) => None,
-    }
 }
 
 /// F2.8 S1: the nearest clips before and after `segs[index]` BY POSITION on the timeline, not index. A segment overlapping this one (a card over it, or an edit mid-trim) bounds nothing, else a clip is fenced in by its own overlay.
@@ -108,26 +90,6 @@ pub const SCRUB_MS: u64 = 90;
 /// F2.8 S1: may this tick scrub the picture? Accurate seeks flush the pipeline, so at most every [`SCRUB_MS`]; `None` (not scrubbed yet) always does.
 pub fn scrubs(last_ms: Option<u64>, now_ms: u64) -> bool {
     last_ms.is_none_or(|then| now_ms.saturating_sub(then) >= SCRUB_MS)
-}
-
-/// F2.8 S1 ("the picture lands on the edge"): the second the preview shows for a border. A start shows itself; an end shows the frame before the boundary (`spec/inventory/cut.md`). `frame_seconds` is the project's own frame interval.
-pub fn scrub_second(border: Border, start: f64, end: f64, frame_seconds: f64) -> f64 {
-    match border {
-        Border::Start => start,
-        Border::End => end - frame_seconds,
-    }
-}
-
-/// F2.8 S1: the status when a border is picked up (`spec/inventory/cut.md` verbatim) on the tenth-of-a-second clock; `clip_no` counts from 1.
-pub fn picked_up_status(clip_no: usize, border: Border, t: f64) -> String {
-    let which = match border {
-        Border::Start => "start",
-        Border::End => "end",
-    };
-    format!(
-        "clip {clip_no}'s {which} picked up at {} \u{2014} right-drag to trim",
-        preview::clock(Some(t))
-    )
 }
 
 pub fn trim_status(clip_no: usize, start: f64, end: f64) -> String {
@@ -257,21 +219,6 @@ pub fn band_at(y: f64, bands: &StripBands) -> Band {
     Band::Bar
 }
 
-/// F2.8 S2: the door from a press position to the flowchart inputs `recorders_band`, `wave_strip`, `on_border`, so branch order lives in tested code. `on_border` comes from the drawn boxes (`border_at`): S2 refuses to slide "unless on a border" while S1 lets EITHER button drag it.
-pub fn press_targets(
-    y: f64,
-    x: f64,
-    boxes: &[Box_],
-    band_name: Option<&str>,
-) -> (Option<String>, Option<String>, bool) {
-    let on_border = border_at(boxes, x).is_some();
-    match band_at(y, &PLACEHOLDER_STRIP_BANDS) {
-        Band::Recorders => (band_name.map(str::to_string), None, on_border),
-        Band::Wave => (None, band_name.map(str::to_string), on_border),
-        Band::Ruler | Band::Bar => (None, None, on_border),
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Slide {
     Recording(String),
@@ -343,11 +290,6 @@ pub const ROW_TRAVEL_PX: f64 = 3.0;
 /// F2.8 S2: does this press open a gesture? Sideways travel from [`ROW_TRAVEL_PX`]; a move to another row needs none.
 pub fn opens_gesture(travel_px: f64, row_change: bool) -> bool {
     travel_px >= ROW_TRAVEL_PX || row_change
-}
-
-/// F2.8 S3: an unmoved press is a click, the inverse of [`opens_gesture`].
-pub fn is_click(travel_px: f64, row_change: bool) -> bool {
-    !opens_gesture(travel_px, row_change)
 }
 
 /// F2.8 S2 ("one Undo per gesture"): push only on the first real move of a hold.
@@ -599,28 +541,6 @@ pub fn clip_boxes(segs: &[Seg], pps: f64) -> Vec<Box_> {
             insert: seg.is_insert(),
         })
         .collect()
-}
-
-/// F2.8 S1: which box a press falls on and which border the pointer took: nearest wins within [`EDGE_GRAB_PX`] (as [`grab_border`], `// layout.edgeGrabPx`); inside but away from both borders is the box with `None`; inserts answer `None` everywhere (rule 8).
-pub fn box_at(boxes: &[Box_], px: f64) -> Option<(usize, Option<Border>)> {
-    let mut best: Option<(f64, usize, Border)> = None;
-    let mut trimmable = boxes.iter().filter(|b| !b.insert);
-
-    for b in trimmable.clone() {
-        for (edge, border) in [(b.x, Border::Start), (b.x + b.w, Border::End)] {
-            let d = (px - edge).abs();
-            if d <= EDGE_GRAB_PX && best.is_none_or(|(bd, _, _)| d < bd) {
-                best = Some((d, b.index, border));
-            }
-        }
-    }
-    if let Some((_, index, border)) = best {
-        return Some((index, Some(border)));
-    }
-
-    trimmable
-        .find(|b| px >= b.x && px <= b.x + b.w)
-        .map(|b| (b.index, None))
 }
 
 /// F2.8 S1: the ruler row: a tick every `every_seconds` up to `rec_end`, labelled as `spec/img/05-trim.png` prints them (`0:00`, `0:30`, `1:00`), without the tenth [`preview::clock`] carries. A non-positive span, zoom or spacing answers with no ticks.

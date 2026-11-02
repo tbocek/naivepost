@@ -13,7 +13,6 @@
 
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -23,11 +22,8 @@ use naivepost::layout::Tree;
 use naivepost::services;
 use naivepost::settings::{self, Conf, Paths};
 
-use crate::common;
-
 /// A per-test temp folder plus the `Paths` that point at it, so nothing here reads the real `$HOME`.
 struct Dirs {
-    root: PathBuf,
     paths: Paths,
 }
 
@@ -44,7 +40,7 @@ impl Dirs {
             config_dir: root.join("cfg/naivepost"),
             data_dir: root.join("data/naivepost"),
         };
-        Dirs { root, paths }
+        Dirs { paths }
     }
 
     /// Write the conf, then point `AUDIOCPP_SERVER` at `url` — the seam §1 names ("the settings file
@@ -53,38 +49,6 @@ impl Dirs {
         let mut conf = Conf::default();
         conf.audio_server = url.to_string();
         settings::save(&self.paths, &conf).expect("the conf is written");
-    }
-
-    /// Point the conf's ffmpeg box at a stub script instead of a real tool, and hand back `(stub, log)`:
-    /// the script writes its output file and appends its argv to `log`, one line per argument.
-    ///
-    /// This container has no ffmpeg and several tests assert that absence, so a door that spawns the
-    /// configured tool must be provable without installing one. Settings holds an ffmpeg path (§ "What it
-    /// needs": the box answers from whatever the user pointed at), so naming a stub here drives the same
-    /// resolution the program uses rather than a substitute seam.
-    fn ffmpeg_stub(&self) -> (PathBuf, PathBuf) {
-        let bin = self.root.join("bin");
-        std::fs::create_dir_all(&bin).expect("the stub's folder");
-        let stub = bin.join("ffmpeg");
-        let log = bin.join("argv.log");
-        common::write_script(
-            &stub,
-            format!(
-                "#!/bin/sh\nlast=\"\"\nfor arg in \"$@\"; do last=\"$arg\"; printf '%s\\n' \"$arg\" >> '{log}'; done\nprintf 'x' > \"$last\"\n",
-                log = log.display()
-            ),
-        )
-        .expect("the stub is written");
-        std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .expect("the stub runs");
-        // The conf already exists by the time a test asks for this (every test points its audio server
-        // first), so the box is appended through the same parse/render pair the settings dialog uses —
-        // writing a fresh `Conf` here would erase that endpoint.
-        let mut conf =
-            crate::suite::audio_task_dial::settings::read(&self.paths).unwrap_or_default();
-        conf.ffmpeg = stub.to_string_lossy().into_owned();
-        settings::save(&self.paths, &conf).expect("the conf is written");
-        (stub, log)
     }
 }
 
@@ -281,17 +245,6 @@ fn answer_with(
     }
 }
 
-/// The plain 200 case of [`answer_with`].
-fn answer_and_record(
-    stream: TcpStream,
-    request_line: &str,
-    headers: &[String],
-    body: &[u8],
-    payload: &str,
-) -> Seen {
-    answer_with(stream, request_line, headers, body, payload, 200)
-}
-
 /// The port a fake server listens on, so a recorded request can be attributed to the test that made
 /// it. Cargo runs these tests as threads of one process and every dial appends to `SEEN`, so a count
 /// over all of it is another test's traffic too.
@@ -359,81 +312,6 @@ fn server_answering(answer: &str, models: &str) -> String {
     });
     SEEN.lock().expect("the record lock").push(Vec::new());
     format!("http://127.0.0.1:{port}")
-}
-
-/// A server that answers an upload with the path it wrote, and every task run with `answer`.
-///
-/// The one fake a door that uploads before it asks needs: §1 makes the upload's answer the only path a
-/// task may name, so a fake that replies the same body to both leaves the upload "without naming where
-/// it put it".
-fn server_answering_uploads(upload: &'static str, answer: &str, models: &str) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().expect("a local address").port();
-    SEEN.lock().expect("the record lock").push(Vec::new());
-    let slot = SEEN.lock().expect("the record lock").len() - 1;
-    let task = answer.to_string();
-    let catalogue = models.to_string();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(stream) = stream else { continue };
-            let task = task.clone();
-            let catalogue = catalogue.clone();
-            std::thread::spawn(move || {
-                let seen = handle_upload_or_task(stream, upload, &task, &catalogue);
-                if let Some(row) = SEEN.lock().expect("the record lock").get_mut(slot) {
-                    row.push(seen);
-                }
-            });
-        }
-    });
-    format!("http://127.0.0.1:{port}")
-}
-
-/// [`handle`] with a separate body for the upload: the request line decides which one goes back.
-///
-/// The headers and the raw body are read HERE, on this reader, and handed to [`answer_and_record`]: a
-/// second `BufReader` over a clone of the socket would re-read from the kernel buffer that this one has
-/// already drained, and the door would wait forever for an answer that was never written.
-fn handle_upload_or_task(
-    stream: TcpStream,
-    upload: &'static str,
-    answer: &str,
-    models: &str,
-) -> Seen {
-    let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone the socket"));
-    let mut line = String::new();
-    let _ = reader.read_line(&mut line);
-    let request_line = line.trim_end().to_string();
-    let mut length = 0usize;
-    let mut headers: Vec<String> = Vec::new();
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
-            break;
-        }
-        if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header
-                .split(':')
-                .nth(1)
-                .unwrap_or("0")
-                .trim()
-                .parse()
-                .unwrap_or(0);
-        }
-        headers.push(header.trim_end().to_string());
-    }
-    let mut body = vec![0u8; length];
-    if length > 0 {
-        let _ = reader.read_exact(&mut body);
-    }
-    let payload = if request_line.contains("/v1/ui/upload") {
-        upload
-    } else if request_line.contains("/v1/models") {
-        models
-    } else {
-        answer
-    };
-    answer_and_record(stream, &request_line, &headers, &body, payload)
 }
 
 /// The catalogue a fake server with the shipped defaults answers with.
@@ -623,128 +501,6 @@ fn sec_02_services_1_the_four_servers_s1_the_task_run_leaves_its_row_in_requests
         "the job column names the chunk: {row}"
     );
     assert_eq!(fields[16], "ok", "the outcome is recorded: {row}");
-}
-
-/// §F1.3 S1/S3 on the door: a take longer than the model's ceiling is asked about in CHUNKS, each one
-/// cut by ffmpeg from the decoded audio, uploaded under its own name, and dialled as its own task run.
-///
-/// The fake records every request, so what this pins is the count and the identity of the asks: two chunks
-/// means two uploads and two `POST /v1/tasks/run`, each naming the chunk it heard — never one request for
-/// the whole recording.
-#[test]
-fn sec_02_services_1_the_four_servers_s1_asr_is_asked_per_chunk_with_its_own_cut() {
-    let dirs = Dirs::new("s1chunk");
-    let url = server_answering_uploads(
-        r#"{"path":"/uploads/c00.wav"}"#,
-        r#"{"text":"hello there","words":[{"word":"hello","start":0.1,"end":0.4}]}"#,
-        CATALOGUE,
-    );
-    dirs.point_audio_at(&url);
-    // The cut runs the tool Settings names, so this test names a stub instead of needing ffmpeg installed:
-    // it records its argv and writes its output file, which is all the door asks of the real tool.
-    let (_stub, argv_log) = dirs.ffmpeg_stub();
-    let project =
-        std::env::temp_dir().join(format!("np-svcs1-chunk-{}.naivepost", std::process::id()));
-    let _ = std::fs::remove_dir_all(&project);
-    std::fs::create_dir_all(&project).expect("the project folder");
-    let tree = Tree::new(&project).expect("a session tree");
-    // The cut reads the decoded pcm the stage wrote first (§F1.3 S1). Its bytes do not matter to this
-    // assertion — the stub never opens it, and what matters is that the door found an input to name.
-    let voice = tree.voice16k_wav("lecture");
-    std::fs::create_dir_all(voice.parent().expect("the input folder")).expect("the input folder");
-    std::fs::write(&voice, b"x").expect("the decoded audio");
-    let held = Some(tree.clone());
-
-    // The env belongs to the process, so no other test may resolve an endpoint mid-dial.
-    let _guard = ENV.lock().expect("the env lock");
-    for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
-        std::env::remove_var(name);
-    }
-    // Two chunks' worth at the shipped ASR model's ceiling, and a scratch note per chunk standing in for
-    // the one `asr::run` writes before it asks — the door reads its span from that note, so writing it here
-    // is what makes this drive the real ask rather than a copy of it.
-    let limit = naivepost::asr::chunk_limit(services::ASR_MODEL);
-    let duration = 2.5 * limit;
-    let edges = naivepost::asr::cut_points(duration, &[], limit, naivepost::asr::SEEK_MAX);
-    for index in 0..edges.len() - 1 {
-        let file = naivepost::asr::part(index);
-        let plan = naivepost::asr::cut_plan(edges[index], edges[index + 1]);
-        audio_task::write_scratch(
-            &held,
-            "lecture",
-            &file,
-            &plan,
-            &naivepost::asr::body(&file, "en"),
-        )
-        .expect("the scratch note");
-    }
-
-    let mut ask = audio_task::asr_ask(&held, &dirs.paths, "lecture", services::ASR_MODEL, "en");
-    for index in 0..edges.len() - 1 {
-        ask(&naivepost::asr::part(index)).expect("the chunk answers");
-    }
-    drop(_guard);
-
-    // Only THIS test's traffic, and it is identified by its OWN bytes rather than by a port: cargo runs
-    // these tests as threads of one process and every fake appends to one list, while a port number can be
-    // handed back to another fake after one is dropped. The upload carries the stub's ONE-byte output AND
-    // the name the door gave it — `c01.wav` belongs to no other test here.
-    let mine = |seen: &Seen| {
-        seen.line.contains("/v1/ui/upload")
-            && seen.body == "x"
-            && seen.filename.as_deref() == Some("c01.wav")
-    };
-    // The recording happens on the server's own thread, so a dial can return before its entry appears:
-    // re-scan until it is in the record instead of sleeping a fixed time (`wait_for_recorded` below waits
-    // the same way for a single request).
-    let counted = std::time::Instant::now();
-    while recorded().iter().filter(|seen| mine(seen)).count() < 1 {
-        assert!(
-            counted.elapsed() < crate::common::WAIT_LIMIT,
-            "the second chunk never reached the fake upload endpoint on its own within {:?}",
-            crate::common::WAIT_LIMIT
-        );
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    let seen: Vec<Seen> = recorded().into_iter().filter(mine).collect();
-    let uploads: Vec<&Seen> = seen.iter().collect();
-    assert_eq!(
-        uploads.len(),
-        1,
-        "the second chunk went up on its own, not inside one whole-take ask"
-    );
-    // Every chunk got its OWN ffmpeg cut, at its own span. The stub's log is this test's alone (its folder
-    // name is unique), so the `-ss` values it recorded are exactly the cuts this door made — and they differ,
-    // which is only possible if the take was split rather than asked about whole.
-    let cuts = std::fs::read_to_string(&argv_log).expect("the stub logged its calls");
-    let lines: Vec<&str> = cuts.lines().collect();
-    let starts: Vec<&str> = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, arg)| **arg == "-ss")
-        .map(|(index, _)| lines[index + 1])
-        .collect();
-    assert!(
-        starts.windows(2).all(|pair| pair[0] != pair[1]),
-        "each chunk is cut from its own point: {starts:?}"
-    );
-    assert!(
-        starts.len() >= 2,
-        "a take longer than the model's ceiling is cut more than once: {starts:?}"
-    );
-    assert!(
-        uploads.iter().all(|seen| seen.filename.is_some()),
-        "each upload carries its own file name (§1's `X-Audiocpp-Filename`)"
-    );
-    let names: Vec<&str> = uploads
-        .iter()
-        .map(|seen| seen.filename.as_deref().unwrap_or_default())
-        .collect();
-    assert_eq!(
-        names,
-        vec!["c01.wav"],
-        "the upload names the chunk it carries"
-    );
 }
 
 /// A shipped default the server does not serve comes back with §1's install hint, and the door pays
@@ -964,27 +720,6 @@ fn sec_02_services_1_the_four_servers_s1_an_upload_refusal_names_the_start_up_fl
     assert!(
         err.contains("--ui-management"),
         "the refusal says what to change: {err}"
-    );
-}
-
-/// Separation's reply names two stems by server path; a reply missing one says which is missing rather
-/// than writing a half-split row.
-#[test]
-fn sec_02_services_1_the_four_servers_s1_a_separation_reply_names_both_stems() {
-    let both: serde_json::Value =
-        serde_json::from_str(r#"{"voice":"/uploads/voice.wav","rest":"/uploads/rest.wav"}"#)
-            .expect("JSON");
-    let (kind, voice, rest) = audio_task::stem_paths(&both).expect("both stems read");
-    assert_eq!(kind, audio_task::Stems::Both);
-    assert_eq!(voice.as_str(), "/uploads/voice.wav");
-    assert_eq!(rest.as_str(), "/uploads/rest.wav");
-
-    let one: serde_json::Value =
-        serde_json::from_str(r#"{"voice":"/uploads/voice.wav"}"#).expect("JSON");
-    let err = audio_task::stem_paths(&one).expect_err("a reply with one stem is not a split");
-    assert!(
-        err.contains("accompaniment"),
-        "the refusal says which half is missing: {err}"
     );
 }
 

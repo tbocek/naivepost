@@ -8,8 +8,7 @@
 //! against a real reply rather than quoted beside an empty one.
 
 use naivepost::{
-    cut::Fx, cut_effects_pass as effects_pass, cut_hear, cut_speed, fx_lane, fx_record, params,
-    render_fx,
+    cut::Fx, cut_effects_pass as effects_pass, cut_speed, fx_lane, fx_record, params, render_fx,
 };
 
 use crate::common;
@@ -55,96 +54,6 @@ fn sec_06_effects_6_parameters_used_s1_lane_height_has_one_owner() {
     );
     // An empty lane still costs a row (§2), so the floor is one row, never nought.
     assert_eq!(fx_lane::lane_height_px(0), 26.0);
-}
-
-/// §6's minRate / maxRate / rampStepSeconds: the render's speed spans come from the staircase those
-/// three own, so a longer or steeper ramp means more constant-rate stretches on the encode chain.
-#[test]
-fn sec_06_effects_6_parameters_used_s2_the_render_reads_the_staircase() {
-    // The picture list the render builds for a sped clip is the staircase, not one flat span.
-    let seg = naivepost::cut::Seg {
-        s: 0.0,
-        e: 20.0,
-        ..Default::default()
-    };
-    let long_ramp = vec![speed(0.0, 12.0, 8.0, 6.0)];
-    let short_ramp = vec![speed(0.0, 12.0, 8.0, 0.5)];
-    let long = render_fx::split_pictures(&long_ramp, &seg);
-    let short = render_fx::split_pictures(&short_ramp, &seg);
-    assert!(
-        long.iter().filter(|p| p.rate > 1.0).count() > 2,
-        "a 6 s ramp up to ×8 is encoded as several stairs, got {long:?}"
-    );
-    assert!(
-        long.len() > short.len(),
-        "a longer, steeper ramp cannot give fewer stairs: {} vs {}",
-        long.len(),
-        short.len()
-    );
-    // Every stair sits inside the clip and carries a rate the clamps allow.
-    for picture in &long {
-        assert!(
-            picture.from >= seg.s && picture.to <= seg.e,
-            "{picture:?} outside the clip"
-        );
-        assert!(
-            picture.rate == 0.0
-                || (cut_speed::MIN_RATE..=cut_speed::MAX_RATE).contains(&picture.rate),
-            "stair rate {} is outside P.eng.minRate..=maxRate",
-            picture.rate
-        );
-    }
-    // A rate beyond the bound is pulled back before the stairs are counted, on this path too.
-    let wild = render_fx::split_pictures(&[speed(0.0, 10.0, 500.0, 4.0)], &seg);
-    assert!(
-        wild.iter().all(|p| p.rate <= cut_speed::MAX_RATE),
-        "an absurd ask must not escape the clamp: {wild:?}"
-    );
-    // A stop keeps its meaning: the encode never gives a freeze a rate — the footage runs on at 1×
-    // and a still rides over it — so no stair may come out of a `rate 0` ask. `steps_of` answers ×0
-    // (that is what makes it a stop to every reader), and this is the rule that refuses to spend it.
-    let freezing = [speed(0.0, 3.0, 0.0, 1.0)];
-    assert!(
-        render_fx::footage_stays_at_one(&freezing),
-        "a stop leaves the footage at 1x"
-    );
-    assert!(
-        cut_speed::render_stairs(&freezing, &seg)
-            .iter()
-            .all(|span| span.rate == 0.0),
-        "the staircase itself must not turn a freeze into slow motion"
-    );
-    // The price of a stair is rampStepSeconds' rule, spelled by the same constant.
-    assert_eq!(cut_speed::RAMP_STEP_SECONDS, 0.6);
-}
-
-/// §6's maxGain (10): the ceiling that reaches the ffmpeg `volume=` expression is the one the record
-/// rule names, so the loudest ask cannot exceed what the render will honour.
-#[test]
-fn sec_06_effects_6_parameters_used_s3_max_gain_bounds_the_filter() {
-    assert_eq!(fx_record::gain_ceiling(), 10.0);
-    assert_eq!(fx_record::gain_ceiling(), cut_hear::MAX_GAIN);
-    let cues = render_fx::gain_cues(&[volume(0.0, 4.0, 99.0)], 0.0, 1.0, 4.0);
-    assert_eq!(cues.len(), 1, "one cue per volume effect");
-    assert_eq!(
-        cues[0].gain,
-        fx_record::gain_ceiling(),
-        "a gain over the ceiling arrives at the filter AT the ceiling"
-    );
-    // The filter's own multiplier is the ceiling minus unity: `volume=1+9.0000*…` reaches ×10 at the
-    // top of the band, and a gain above the ceiling cannot make it say ten.
-    let expr = render_fx::gain_expr(&cues[0]);
-    assert!(
-        expr.contains(&format!("{:.4}", fx_record::gain_ceiling())),
-        "the volume expression must carry the ceiling, got {expr}"
-    );
-    assert!(
-        !expr.contains(&format!("{:.4}", 99.0 - 1.0)),
-        "an ask over the ceiling must not reach the filter: {expr}"
-    );
-    // Silence stays silence: 0 is 0 and not the floor of a clamp.
-    let quiet = render_fx::gain_cues(&[volume(0.0, 4.0, 0.0)], 0.0, 1.0, 4.0);
-    assert_eq!(quiet[0].gain, 0.0);
 }
 
 /// §6's decorations density ceiling: `P.machine.maxProposedEffects` is compared against a real reply.

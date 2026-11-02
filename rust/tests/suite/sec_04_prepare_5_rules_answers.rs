@@ -24,7 +24,6 @@ use naivepost::retakes;
 use naivepost::textfmt::{self, Line};
 use naivepost::tools::retakes::{Line as MarkedLine, Marks, Trim};
 use naivepost::tools::textedit::{self, Side};
-use naivepost::transcribe;
 use serde_json::json;
 
 /// A project folder of §1's shape, unique per test so parallel tests cannot read each other's files.
@@ -373,43 +372,6 @@ fn sec_04_prepare_5_rules_b4_an_empty_marks_file_means_asked_none() {
 }
 
 // ---- bullet 5: no aligner + no word times is a hard failure; no speech is not ---------
-
-/// §5: *"no ASR word times and no aligner is a hard failure named plainly"*. The sentence names the model
-/// that answered and names the remedy, because the fix is a setting the person can reach — and §6 spells
-/// it as a hard failure of that source, not a warning beside an empty file.
-#[test]
-fn sec_04_prepare_5_rules_b5_no_word_times_and_no_aligner_is_named_plainly() {
-    let plain = transcribe::no_word_times("whisper.cpp", false);
-    assert!(
-        plain.contains("whisper.cpp"),
-        "it names the ASR that answered without times: {plain}"
-    );
-    assert!(
-        plain.contains("timed no words"),
-        "and what is missing: {plain}"
-    );
-    assert!(
-        plain.contains("no aligner is registered"),
-        "and that no aligner exists: {plain}"
-    );
-    assert!(plain.contains("register one"), "and the remedy: {plain}");
-    // The aligner-was-asked variant points at the line above instead of repeating a reason it does not
-    // know; both spellings exist because the remedy differs.
-    let variant = transcribe::no_word_times("qwen3-asr", true);
-    assert!(
-        variant.contains("the aligner left no times either"),
-        "{variant}"
-    );
-    assert!(
-        !variant.contains("register one"),
-        "the aligner is registered here, so that is not the fix"
-    );
-
-    // A hard failure arrives as an `Err`, through the pass that decides alignment: an ASR with no word
-    // times and no aligner stops the source rather than writing an untimed transcript.
-    let failure: Result<(), String> = Err(transcribe::no_word_times("whisper.cpp", false));
-    assert!(failure.is_err(), "it is a failure, not a logged warning");
-}
 
 /// §5: *"diarization failure is fatal after the ladder"*. Every rung refusing is the model being asked
 /// for more reference than any window can hold: `diar_scan::run` walks all three and then returns `Err`,

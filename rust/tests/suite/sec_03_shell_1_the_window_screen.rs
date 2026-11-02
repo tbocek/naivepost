@@ -488,34 +488,6 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
     );
 }
 
-/// §1 badge **13**'s rule, in words a test can check without a window: the bar takes what is left of the row
-/// once every other part of it has been served, and never squeezes another part out of the row.
-#[test]
-fn sec_03_shell_1_the_window_s13_the_progress_bar_leaves_the_badges_their_room() {
-    use naivepost::ui::window_run_bar_fit::PROGRESS_MIN_PX;
-    use naivepost::ui::window_run_scroller::progress_px;
-    // §1's numbers for the row at the minimum size: a ~1220 px row, ▶ / 🎲 / ⏹ needing 171 px, the two
-    // readouts 531 px, and three gaps of 6 px (measured off `just snapshot 03-window`).
-    let (row_w, badges, readouts, gaps) = (1220, 171, 531, 18);
-    let bar = progress_px(row_w, badges, readouts, gaps);
-    assert_eq!(
-        bar + badges + readouts + gaps,
-        row_w,
-        "{ITEM} §1 badge 13: the bar must take EXACTLY the row's free width — no more (that is what drew ⏹ \
-         under the track) and no less (that leaves blank plate in the row)"
-    );
-    // A row narrower than everything in it still gets a VISIBLE bar: the floor is `PROGRESS_MIN_PX`, never 0.
-    let squeezed = progress_px(400, badges, readouts, gaps);
-    assert_eq!(
-        squeezed, PROGRESS_MIN_PX,
-        "{ITEM} §1 badge 13: a squeezed row must fall back to the bar's floor, not to nothing"
-    );
-    assert!(
-        squeezed > 0,
-        "{ITEM}: a zero-width progress bar is invisible"
-    );
-}
-
 /// The band rule's arithmetic with no window in sight, restated for this item's id so a failure names the
 /// screen it belongs to: `rest_position` feeds `gtk::Paned::set_position`, whose own clamp panics when the
 /// range comes out inverted, so both degenerate asks have to be answered here.

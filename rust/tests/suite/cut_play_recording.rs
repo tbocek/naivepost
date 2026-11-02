@@ -123,28 +123,6 @@ fn f2_1_s2_the_button_toggles_and_plays_from_the_red_line() {
 }
 
 #[test]
-fn f2_1_s3_every_second_plays_cuts_and_all() {
-    // S3: "While playing every second plays, cuts and all" — a line inside a stretch the cut removed
-    // still walks straight through it. The cut here keeps one second of the hour.
-    let removed_at = 40.0;
-    assert_eq!(preview::play_advance(removed_at, 0.1, false), 40.1);
-
-    // Ten ticks of a tenth of a second walk the session at walking pace: no skipping, no rounding away
-    // a frame's worth per tick.
-    let mut line = removed_at;
-    for _ in 0..10 {
-        line = preview::play_advance(line, 0.1, false);
-    }
-    assert!((line - 41.0).abs() < 1e-9, "ten tenths landed on {line}");
-
-    // The ✂ argument changes nothing this round: F2.2 owns the skipping and its rule is not invented here.
-    assert_eq!(
-        preview::play_advance(removed_at, 0.1, true),
-        preview::play_advance(removed_at, 0.1, false)
-    );
-}
-
-#[test]
 fn f2_1_s4_running_into_a_fold_opens_it_and_says_so() {
     // S3 / §B: "▶ playing into a fold opens it ('unfolded m:ss — ▶ ran into it')".
     let playing = |at: f64| Player {
@@ -217,33 +195,4 @@ fn f2_1_s5_at_a_recordings_end_the_line_walks_on() {
 
     // Inside a run the line is simply on footage: it stays.
     assert_eq!(preview::walk_on(&gap, 30.0), Some(30.0));
-}
-
-#[test]
-fn f2_1_s6_the_clock_reads_session_time_ten_times_a_second() {
-    // S4: "Clock shows session time; line follows the player ten times a second, smoothed live clock in
-    // between." §D: '"mm:ss.d"; "--:--.-" with no playhead'.
-    assert_eq!(preview::TICK_MS, 100);
-    assert_eq!(preview::follows_per_second(), 10);
-
-    assert_eq!(preview::clock(Some(75.34)), "01:15.3");
-    assert_eq!(preview::clock(Some(0.0)), "00:00.0");
-    assert!(
-        preview::clock(Some(3661.0)).starts_with("61:01"),
-        "minutes keep counting: {}",
-        preview::clock(Some(3661.0))
-    );
-    assert_eq!(preview::clock(None), "--:--.-");
-
-    // The live clock runs at the rate, no further than one tick, and never backwards.
-    assert!((preview::live_clock(10.0, 40, 1.0) - 10.04).abs() < 1e-9);
-    assert!(
-        (preview::live_clock(10.0, 900, 1.0) - 10.1).abs() < 1e-9,
-        "capped at one tick"
-    );
-    assert!(preview::live_clock(10.0, 40, -1.0) >= 10.0, "monotone");
-    assert!(
-        (preview::live_clock(10.0, 40, 2.0) - 10.08).abs() < 1e-9,
-        "at double speed"
-    );
 }

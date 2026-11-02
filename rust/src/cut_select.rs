@@ -52,16 +52,6 @@ pub enum Scope {
 
 pub const ANY_ROW: usize = usize::MAX;
 
-/// F2.6 S1: may a verb aimed at `row` use this selection? A whole-timeline scope answers yes to every row,
-/// a row's own scope only to itself — the question ＋ Add and | Split ask before touching another camera's
-/// clips.
-pub fn scoped_to_row(scope: &Scope, row: usize) -> bool {
-    match scope {
-        Scope::Footage { row: own } => *own == ANY_ROW || *own == row,
-        Scope::Sound { .. } => false,
-    }
-}
-
 /// F2.6 S1: the band a drag drew — session seconds, always `start < end`, plus what it is of.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Selection {
@@ -406,14 +396,5 @@ pub fn verbs(sel: Option<&Selection>, has_footage: bool) -> Verbs {
             copy: long,
             insert: InsertAim::Footage,
         },
-    }
-}
-
-pub fn add_tip(sel: Option<&Selection>) -> Option<String> {
-    match &sel?.scope {
-        Scope::Sound { recording } => Some(format!(
-            "\u{ff0b} Add keeps footage, and this selection is {recording}'s sound"
-        )),
-        Scope::Footage { .. } => None,
     }
 }

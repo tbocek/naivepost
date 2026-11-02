@@ -47,55 +47,6 @@ fn sec_06_effects_8_details_s4_read_head_opens_only_on_drift() {
     );
 }
 
-/// §8 (`a card, held frame or clip on no recording closes it`): the arithmetic
-/// can say anything it likes about a clip that films nothing.
-#[test]
-fn sec_06_effects_8_details_s4b_a_card_held_frame_or_missing_recording_closes_it() {
-    // Footage on tape: the only case that opens.
-    assert!(head::opens(30.0, 29.9, true, true));
-    // An insert (a card, a copy) films nothing to read back.
-    assert!(!head::opens(30.0, 29.9, false, true), "a card closes it");
-    // Ground with no recording under it has no sound to read.
-    assert!(!head::opens(30.0, 29.9, true, false), "no tape closes it");
-    assert!(
-        !head::opens(30.0, 29.9, false, false),
-        "both at once still closes"
-    );
-    // The two halves answer as the spec spells them, unchanged.
-    assert!(details::run_closes(false, true));
-    assert!(details::run_closes(true, false));
-    assert!(!details::run_closes(true, true));
-    // And the source/tape questions read the segment, not a guess: an `ins` is an insert.
-    let footage = Seg {
-        s: 0.0,
-        e: 30.0,
-        ..Default::default()
-    };
-    let card = Seg {
-        s: 0.0,
-        e: 30.0,
-        ins: "cards/title.svg".into(),
-        ..Default::default()
-    };
-    assert!(head::source_is_footage(&footage));
-    assert!(!head::source_is_footage(&card), "a card is not footage");
-    // Tape means the segment overlaps a filmed run; a gap does not.
-    let runs = [(0.0, 20.0)];
-    assert!(head::on_recording(&footage, &runs));
-    assert!(
-        !head::on_recording(
-            &Seg {
-                s: 25.0,
-                e: 30.0,
-                ..Default::default()
-            },
-            &runs
-        ),
-        "a gap"
-    );
-    assert!(!head::on_recording(&footage, &[]), "no tape named at all");
-}
-
 /// §8 (`the dip half on each side of the join`): two `afade`s, half the lane's dip
 /// each, at the run's own ends — and NEITHER when the planner said the head is shut.
 #[test]

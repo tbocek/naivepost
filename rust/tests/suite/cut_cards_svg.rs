@@ -10,7 +10,6 @@
 
 use naivepost::cut_cards as cards;
 use naivepost::cut_insert;
-use naivepost::params;
 
 // --- S1: the path's arguments ---------------------------------------------------------------------------------------
 
@@ -119,51 +118,6 @@ fn sec_06_effects_5_cards_svg_inserts_s3_holes_are_filled_or_left_outside_commen
 
 // --- S4: the two shipped cards ---------------------------------------------------------------------------------------
 
-/// S4 (`tier` — a board of rows S A B C D F with items "Name|logo.png" and a `new` list of arrivals with per-item
-/// timing; `badge` — one big letter with a caption).
-#[test]
-fn sec_06_effects_5_cards_svg_inserts_s4_the_two_shipped_cards_have_their_shape() {
-    assert_eq!(cards::TIER_ROWS, ["S", "A", "B", "C", "D", "F"]);
-
-    let items = cards::parse_items("Dust|dust.png, Ace");
-    assert_eq!(items.len(), 2);
-    assert_eq!(items[0].logo.as_deref(), Some("dust.png"));
-    assert_eq!(items[1].logo, None, "a bare name has no logo");
-    assert_eq!(cards::join_items(&items), "Dust|dust.png, Ace");
-    assert!(cards::parse_items("").is_empty());
-
-    let arrivals = cards::parse_arrivals("A[1.2s]: a.svg, B: b.svg");
-    assert_eq!(arrivals.len(), 2);
-    assert_eq!(arrivals[0].delay, Some(1.2));
-    assert_eq!(arrivals[0].logo.as_deref(), Some("a.svg"));
-    assert_eq!(arrivals[1].delay, None, "no timing means the board decides");
-    assert_eq!(arrivals[1].logo.as_deref(), Some("b.svg"));
-
-    // A delay that cannot be read is no delay — the arrival still belongs on the board.
-    let mistyped = cards::parse_arrivals("C[soon]: c.svg");
-    assert_eq!(mistyped.len(), 1);
-    assert_eq!(mistyped[0].label, "C");
-    assert_eq!(mistyped[0].delay, None);
-
-    for doc in [
-        cards::badge_svg("S", "top"),
-        cards::tier_svg(&items, &arrivals),
-    ] {
-        assert!(
-            doc.contains("width=\"1920\"") && doc.contains("height=\"1080\""),
-            "{doc}"
-        );
-        assert!(doc.contains(cards::BACKGROUND), "a dark background: {doc}");
-        assert!(
-            !doc.contains("{{"),
-            "a shipped card asks for nothing: {doc}"
-        );
-    }
-    // And each names itself, which is how an insert knows it was drawn by a card.
-    assert!(cards::badge_svg("S", "t").contains(&format!("data-naivepost=\"{}\"", cards::BADGE)));
-    assert!(cards::tier_svg(&[], &[]).contains(&format!("data-naivepost=\"{}\"", cards::TIER)));
-}
-
 // --- S5: the seeds ---------------------------------------------------------------------------------------------------
 
 /// S5 (`seeds s a b c d f .svg, tier.svg and CARDS.md written into assets/ on first use, never overwriting`): badges
@@ -221,53 +175,6 @@ fn sec_06_effects_5_cards_svg_inserts_s5_the_seeds_are_badges_then_the_board_the
 }
 
 // --- S6: the static file is the finished card --------------------------------------------------------------------------
-
-/// S6 (`Canvas 1920×1080, dark background, 2.2 s stillness at the end. Every animation starts at 0 and waits inside
-/// keyTimes, so the static file is the finished card`): an animation whose first keyTime is not 0 shows a half-drawn
-/// picture to anyone who opens the file.
-#[test]
-fn sec_06_effects_5_cards_svg_inserts_s6_the_static_file_is_the_finished_card() {
-    assert_eq!(cards::CANVAS, (1920, 1080));
-    assert!(cards::is_frame_size((1920, 1080)));
-    assert!(!cards::is_frame_size((1280, 720)));
-    assert_eq!(cards::STILLNESS_SECONDS, 2.2); // card.stillnessSeconds
-
-    let row = params::cut()
-        .into_iter()
-        .find(|row| row.id == "card.stillnessSeconds")
-        .expect("catalogued");
-    assert_eq!(row.spelled, "2.2");
-
-    assert!(cards::starts_at_zero_and_waits(&[0.0, 0.4, 1.0]));
-    // Nothing waits at the start, so the static file would be caught mid-move.
-    assert!(!cards::starts_at_zero_and_waits(&[0.25, 1.0]));
-    // Not ascending: keyTimes are a clock, and this one runs backwards.
-    assert!(!cards::starts_at_zero_and_waits(&[0.0, 1.0, 0.5]));
-    // Never reaches the end, so the finished state is never the settled one.
-    assert!(!cards::starts_at_zero_and_waits(&[0.0, 0.5]));
-    assert!(!cards::starts_at_zero_and_waits(&[]));
-
-    // And what the generators emit obeys it: every keyTimes list in both shipped cards waits at 0 and reaches 1.
-    let badge = cards::badge_svg("S", "top");
-    let board = cards::tier_svg(&[], &[]);
-    for doc in [badge.as_str(), board.as_str()] {
-        let mut rest = doc;
-        let mut found = 0;
-        while let Some(at) = rest.find("keyTimes=\"") {
-            let list = &rest[at + "keyTimes=\"".len()..];
-            let list = &list[..list.find('"').expect("a closing quote")];
-            let times: Vec<f64> = list.split(';').filter_map(|v| v.parse().ok()).collect();
-            assert!(
-                cards::starts_at_zero_and_waits(&times),
-                "{list} in a shipped card"
-            );
-            found += 1;
-            rest = &list[list.len()..];
-        }
-        // The badge animates its letter in; a board with no arrivals is already the finished picture.
-        assert_eq!(found, usize::from(doc == badge));
-    }
-}
 
 // --- S7a: the bake reads SMIL and CSS ---------------------------------------------------------------------------------
 

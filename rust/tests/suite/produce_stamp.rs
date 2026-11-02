@@ -15,7 +15,7 @@ use naivepost::layout::Tree;
 use naivepost::narration::Entry;
 use naivepost::produce_render;
 use naivepost::produce_stamp as stamp;
-use naivepost::project::{self, Codec, Container, Crop, Preset, Produce, Publish, Subtitles};
+use naivepost::project::{self, Codec, Container, Preset, Produce, Subtitles};
 
 const ITEM: &str = "F5.3";
 
@@ -529,46 +529,6 @@ fn f5_3_s9_encode_then_write_the_new_stamp() {
 }
 
 // ---- what is deliberately not in it ----------------------------------------------
-
-#[test]
-fn f5_3_s10_the_upload_text_is_not_in_the_stamp() {
-    assert_eq!(ITEM, "F5.3");
-    // Title, description, thumbnail and the upload record change with a redraw or one edited sentence; none
-    // of them touches a frame of the video, so none of them may make an encode look stale. They are not even
-    // part of `Input` — which is the strongest form the check can take.
-    let base = Case::new();
-    let mut written = Publish::default();
-    written.title = "A better title".to_string();
-    written.description = "everything about it".to_string();
-    written.prompt = "draw this".to_string();
-    written.negative = "not this".to_string();
-    written.thumb_title = "BIG".to_string();
-    written.frames = vec!["produce/publish/frame-1.png".to_string()];
-    written.crop = Crop { x: 0.4, y: 0.2 };
-    written.own = true;
-    written.title_seeded = true;
-    // The stamp's input cannot see any of that: same state, same hash.
-    assert_eq!(base.stamp(), Case::new().stamp());
-    assert_ne!(base.stamp().len(), 0);
-    let _ = format!("{written:?}");
-
-    // The upload text's own gate is a file, and deleting the folder starts it over — tested here against a
-    // real project folder so F5.3 and §5 cannot drift apart.
-    let root = temp_root("s10");
-    let tree = Tree::new(root.join("demo.naivepost")).unwrap();
-    assert!(!naivepost::publish::is_written(&tree));
-    std::fs::create_dir_all(tree.publish_dir()).unwrap();
-    std::fs::write(tree.publish_json(), "{}").unwrap();
-    assert!(naivepost::publish::is_written(&tree));
-    naivepost::publish::start_over(&tree).unwrap();
-    assert!(!naivepost::publish::is_written(&tree));
-
-    // And that gate lives inside `produce/`, beside the video and its stamp.
-    assert!(tree
-        .publish_json()
-        .starts_with(tree.final_stamp().parent().unwrap().parent().unwrap()));
-    std::fs::remove_dir_all(&root).ok();
-}
 
 #[test]
 fn f5_3_s11_the_stamp_is_ten_named_parts_not_one_blob() {

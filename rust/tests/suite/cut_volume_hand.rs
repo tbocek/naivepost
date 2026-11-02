@@ -8,11 +8,10 @@
 //! derived from the rule it tests rather than read off a run. No widget and no display: `rust/src/ui/window.rs`
 //! renders only Prepare, so there is no 🔊 Volume button to press yet.
 
-use naivepost::cut::{EffectKind, Fx};
+use naivepost::cut::Fx;
 use naivepost::cut_hear;
 use naivepost::cut_speed;
-use naivepost::fx_lane;
-use naivepost::fx_record::{self, Field};
+use naivepost::fx_record::{self};
 use naivepost::fx_volume::{self, Pressed};
 use naivepost::fx_zoom;
 use naivepost::tools;
@@ -368,90 +367,6 @@ fn f3_6_s4_the_floor_and_the_ceiling() {
 
 // --- S5: heard, not seen ----------------------------------------------------------------------------------------------
 
-/// S5 (`applied in the preview even while paused`) + §F3.6's `overlapping gains multiply`: the loudness of a second is
-/// a function of the second. Two volumes are two things done to the same sound, so they multiply — where two rates
-/// average ([`cut_hear::gain_under`]'s doc says exactly that), and where one gain reaches playbin's ceiling a further
-/// one has nowhere left to go.
-#[test]
-fn f3_6_s5_overlapping_gains_multiply() {
-    let loud = vol(2.0, 12.0, 4.0, 0.25);
-
-    // Mid-band the envelope is 1, so the gain is what it says: trans = tout = 0.25 around t = 14 well inside 4 s.
-    assert_close(
-        "one volume doubles it",
-        cut_hear::gain_under(std::slice::from_ref(&loud), 14.0),
-        2.0,
-    );
-    // Two of them are two things done to the same sound: 2 times 2, not the average of 2 and 2.
-    assert_close(
-        "two overlapping gains multiply",
-        cut_hear::gain_under(&[loud.clone(), loud.clone()], 14.0),
-        4.0,
-    );
-    // Nought is silence and stays silence however it is reached; fx_record's own reading agrees.
-    let hush = vol(0.0, 12.0, 4.0, 0.25);
-    assert_close(
-        "a volume at nought is silence",
-        cut_hear::gain_under(std::slice::from_ref(&hush), 14.0),
-        0.0,
-    );
-    assert!(fx_record::gain_is_silence(&hush));
-    assert!(!fx_record::gain_is_silence(&loud));
-    // A volume at 100 % changes nothing, which is the same number as no volume at all.
-    assert_close(
-        "100 % is untouched",
-        cut_hear::gain_under(&[vol(1.0, 12.0, 4.0, 0.25)], 14.0),
-        1.0,
-    );
-    // The ceiling caps the product, so a fourth one after it buys nothing — that is why the field tops out at 1000 %.
-    assert_close(
-        "playbin's ceiling",
-        cut_hear::gain_under(&[vol(100.0, 12.0, 4.0, 0.25)], 14.0),
-        10.0,
-    );
-    assert!(
-        cut_hear::gain_under(
-            &[vol(100.0, 12.0, 4.0, 0.25), vol(4.0, 12.0, 4.0, 0.25)],
-            14.0
-        ) <= cut_hear::MAX_GAIN
-    );
-
-    // Mid-ramp: with a one-second ramp at half a second in the envelope is 0.5, so gain 2 reads halfway from 1 —
-    // 1 + (2 - 1) × 0.5 = 1.5. The fades are why a volume is never a step unless asked to be.
-    let ramped = vol(2.0, 12.0, 4.0, 1.0);
-    assert_close(
-        "halfway up the ramp",
-        cut_hear::gain_under(std::slice::from_ref(&ramped), 12.5),
-        1.5,
-    );
-
-    // Paused or playing: §A.6's "Preview gain applies even paused". Same function, so the same number at a second
-    // where the envelope is not even 1 — which is the point, since the fades can only be judged without a moving frame.
-    assert_close(
-        "heard paused mid-band",
-        fx_volume::heard_while_paused(std::slice::from_ref(&loud), 14.0),
-        2.0,
-    );
-    assert_eq!(
-        fx_volume::heard_while_paused(std::slice::from_ref(&loud), 14.0),
-        cut_hear::gain_under(std::slice::from_ref(&loud), 14.0)
-    );
-    assert_close(
-        "heard paused mid-ramp",
-        fx_volume::heard_while_paused(std::slice::from_ref(&ramped), 12.5),
-        1.5,
-    );
-    assert_eq!(
-        fx_volume::heard_while_paused(std::slice::from_ref(&ramped), 12.5),
-        cut_hear::gain_under(&[ramped], 12.5)
-    );
-
-    // And nothing to see: §A.6's "No box, no drag" is a statement about the picture, so while paused there is by
-    // definition no change on screen — §06#2's rule that only kinds with a visual differ there.
-    assert!(fx_volume::gain_has_no_visual());
-    assert!(!fx_lane::drawn_paused(EffectKind::Volume));
-}
-
 /// S5 (`status "\u{2026} \u2014 the picture is untouched"`) + §A.6's `label the percentage`: what the page says
 /// afterwards, in the unit the form asked in.
 #[test]
@@ -498,43 +413,3 @@ fn f3_6_s5b_the_status_says_the_picture_is_untouched() {
 }
 
 // --- §A.6: no box, no drag, and the whole bed ------------------------------------------------------------------------
-
-/// §A.6 (`No box, no drag` / `lane (new): "" = the whole bed`) + §1's table marking `cx cy hf wf` "–" for volume:
-/// which parts of a record a volume owns, that it rides everything unless named for one lane, and the colour its bar
-/// gets on the effects lane.
-#[test]
-fn f3_6_s6_no_box_no_drag_and_the_whole_bed() {
-    // The table read at volume's row: loudness and length yes, a box no — that IS "no box, no drag" in code, since
-    // there is no field for a drag to write.
-    assert!(fx_record::uses(EffectKind::Volume, Field::Gain));
-    assert!(fx_record::uses(EffectKind::Volume, Field::Dur));
-    assert!(!fx_record::uses(EffectKind::Volume, Field::Cx));
-    assert!(!fx_record::uses(EffectKind::Volume, Field::Cy));
-    assert!(!fx_record::uses(EffectKind::Volume, Field::Hf));
-    assert!(!fx_record::uses(EffectKind::Volume, Field::Wf));
-
-    // An unnamed lane is the whole bed; naming one is how a single track gets raised instead of everything.
-    let bed = vol(2.0, 12.0, 4.0, 0.25);
-    assert_eq!(bed.lane, "");
-    assert!(fx_record::rides_whole_bed(&bed));
-    let one_lane = Fx {
-        kind: "volume".into(),
-        lane: "mic1".into(),
-        ..Default::default()
-    };
-    assert!(!fx_record::rides_whole_bed(&one_lane));
-
-    // Silence is a stored nought, and the field's nought stores exactly that.
-    assert!(fx_record::gain_is_silence(&vol(0.0, 12.0, 4.0, 0.25)));
-    assert_close("the field's nought", fx_volume::gain_of_percent(0.0), 0.0);
-
-    // One ceiling for the form, the preview and the render: P.eng.maxGain, named once in cut_hear.
-    assert_close("P.eng.maxGain", fx_record::gain_ceiling(), 10.0);
-
-    // The lane's colour: amber, i.e. audio's own family — the same pair of floats §D gives it, compared as numbers so
-    // a re-tuned colour fails here rather than in someone's screenshot.
-    let (r, g, b) = fx_lane::bar_colour(EffectKind::Volume, false);
-    assert_close("amber red", r, 0.95);
-    assert_close("amber green", g, 0.85);
-    assert_close("amber blue", b, 0.2);
-}

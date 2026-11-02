@@ -109,59 +109,6 @@ fn sec_05_cut_1_screen_s7_cut_and_cut_at_1x_disagree_by_the_speed_effects() {
 }
 
 #[test]
-fn sec_05_cut_1_screen_s9_the_picture_band_counts_the_seconds_between_two_pictures() {
-    // §1: "New: on the 250 ms grid restarted at each scene change (F1.6) the band has a picture at
-    // every zoom; prototype: one frame every Freq seconds, so zoomed in the band shows black between
-    // them." The row that makes the grid is `P.eng.frameGridSeconds` = 0.25, which is
-    // prepare::EXTRACTION_GRID; the slot is what has to fit inside it.
-    let slot =
-        |thumb: u32, aspect: &str| cut_screen::slot_seconds(thumb, aspect, cut_screen::ZOOM_MAX);
-    // A 64 px row of 16:9 footage is 113.8 px wide; at 4 px a second one thumbnail slot covers
-    // nearly half a minute of the session, which is why zooming in is what makes the grid matter.
-    assert!((cut_screen::slot_seconds(64, "16:9", 4.0) - 28.444).abs() < 0.01);
-
-    // The grid's own rule, held as the number it is: one frame per 250 ms of footage, restarted at
-    // every scene change, and finer than the Freq spacing the prototype drew its band from.
-    assert_eq!(naivepost::prepare::EXTRACTION_GRID, 0.25); // P.eng.frameGridSeconds
-    assert!(naivepost::prepare::EXTRACTION_GRID < naivepost::prepare::MODEL_FRAME_STEP);
-
-    // Smaller rows and portrait shapes need the finest grid least, so they are the ones that clear it.
-    assert!(slot(cut_screen::THUMB_MIN, "9:16") < slot(cut_screen::THUMB_AT_OPEN, "16:9"));
-
-    // At the ceiling a 64 px 16:9 row wants a frame every 0.47 s of footage, finer than
-    // P.eng.frameGridSeconds already is — so this page does not claim the grid covers it, and says so
-    // as a number rather than as a bool that could only be wished true. Zooming in makes a slot cover
-    // LESS footage (28.4 s at the opening 4 px/s), which is exactly where §1 says the prototype showed
-    // black between its one-frame-per-Freq pictures.
-    assert!(!cut_screen::picture_at_every_zoom(
-        cut_screen::ZOOM_MAX,
-        cut_screen::THUMB_AT_OPEN,
-        "16:9"
-    ));
-    let at_ceiling = slot(cut_screen::THUMB_AT_OPEN, "16:9");
-    assert!(
-        at_ceiling > naivepost::prepare::EXTRACTION_GRID && at_ceiling < 0.5,
-        "{at_ceiling} s a slot"
-    );
-    assert!(
-        cut_screen::slot_seconds(64, "16:9", cut_screen::ZOOM_AT_OPEN) > at_ceiling,
-        "a slot shrinks as the zoom deepens"
-    );
-
-    // An aspect the page cannot parse falls back to the shipped shape rather than dividing by nothing.
-    assert_eq!(
-        slot_seconds_unparsed(),
-        cut_screen::slot_seconds(64, "16:9", 240.0)
-    );
-    assert_eq!(cut_screen::slot_seconds(64, "16:9", 0.0), 0.0);
-}
-
-/// The value an unreadable aspect falls back to — the same as the shipped one's.
-fn slot_seconds_unparsed() -> f64 {
-    cut_screen::slot_seconds(64, "", 240.0)
-}
-
-#[test]
 fn sec_05_cut_1_screen_s11_the_cut_readout_says_there_is_nothing_to_cut_without_footage() {
     // `spec/inventory/cut.md` §A: the bottom bar reads "nothing to cut — no source on Inputs is marked
     // as footage" when no source carries the footage mark. A listened-to-only recording is not a cut.

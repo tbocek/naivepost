@@ -899,27 +899,6 @@ fn f1_7_s6_state_txt_is_rewritten_after_every_chunk() {
 
 // ---- S7 ---------------------------------------------------------------------
 
-/// S7: the two closing sentences, exactly as §F1.7 words them.
-#[test]
-fn f1_7_s7_the_completion_line_names_the_chunks_and_any_cache_hits() {
-    assert_eq!(
-        describe::complete_log("lecture", 12),
-        ">>> [lecture] event log complete (12 chunks)"
-    );
-    assert_eq!(
-        describe::complete_log_cached("lecture", 12, 9),
-        ">>> [lecture] event log complete (12 chunks, 9 answered from the cache)"
-    );
-    // The cached form is built from the note S4 supplies, so the two spellings cannot diverge.
-    assert_eq!(
-        describe::complete_log("lecture", 12).replace(
-            "(12 chunks)",
-            &format!("(12 chunks{})", describe::cached_note(9))
-        ),
-        describe::complete_log_cached("lecture", 12, 9)
-    );
-}
-
 // ---- the chunk plan --------------------------------------------------------
 
 /// The chunk boundaries: P.machine.describeFramesPerReq frames per request, the last allowed short,

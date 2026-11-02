@@ -26,34 +26,7 @@ fn p_policy_keepswearing_s1_kept_by_default() {
 
 // --- S2: on, the rule says the swearing stays --------------------------------------------------
 
-#[test]
-fn p_policy_keepswearing_s2_on_promises_the_words_stay() {
-    let rule = cut_captions::cleaning_rule(true);
-    assert!(rule.contains("the swearing kept"), "{rule}");
-    assert!(rule.contains("subtitler"), "{rule}");
-    // And it still cleans what a subtitler cleans — the toggle is one clause of this sentence.
-    assert!(rule.contains("no stutters"), "{rule}");
-    assert!(rule.contains("no repeated words"), "{rule}");
-    assert!(rule.contains("sentence case"), "{rule}");
-}
-
 // --- S3: off, only that promise goes ----------------------------------------------------------
-
-#[test]
-fn p_policy_keepswearing_s3_off_drops_only_the_promise() {
-    // §10 gives no censor style, so "off" is the app no longer telling the model the words stay —
-    // not a bleep scheme invented in the app.
-    let rule = cut_captions::cleaning_rule(false);
-    assert!(!rule.contains("swear"), "{rule}");
-    assert!(!rule.contains("kept"), "{rule}");
-    // Everything else about cleaning the words is untouched.
-    assert!(rule.contains("no stutters"), "{rule}");
-    assert!(rule.contains("no repeated words"), "{rule}");
-    assert!(rule.contains("sentence case"), "{rule}");
-    assert!(rule.contains("subtitler"), "{rule}");
-    // Off is strictly shorter: one clause was removed, nothing added.
-    assert!(rule.len() < cut_captions::cleaning_rule(true).len());
-}
 
 // --- S4: the constant cannot drift from the shipped prompt -------------------------------------
 

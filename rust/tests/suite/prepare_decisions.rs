@@ -19,10 +19,10 @@ use naivepost::exchanges::ToolCall;
 use naivepost::prepare_decisions as pd;
 use naivepost::textfmt::Retake;
 use naivepost::tool_loop;
-use naivepost::tools::describe::{self, Batch, MissingReason, Placement, Spoken};
+use naivepost::tools::describe::{Batch, Spoken};
 use naivepost::tools::fix::{Block, Line as FixLine};
 use naivepost::tools::retakes::{Line, Marks, Trim};
-use naivepost::tools::textedit::{self, Join, Side};
+use naivepost::tools::textedit::{self};
 
 use crate::common;
 use common::word;
@@ -325,66 +325,6 @@ fn retakes_log() -> Vec<String> {
 }
 
 #[test]
-fn sec_12_decisions_prepare_s5_drop_words_takes_counts_and_answers_with_the_words() {
-    // tool:drop_words -- the count is an argument; the answer is the words that will go. The model is
-    // never asked to restate the joined text, which is what lost a join over one respelled word before.
-    let mut join = Join::new(
-        &["so", "we", "can", "start", "the", "run"],
-        &["and", "then", "go", "from", "here"],
-    );
-    let replied = json(&join.drop_words(Side::Before, 2));
-    assert!(replied["error"].is_null(), "{replied}");
-    assert_eq!(replied["side"], "before");
-    assert_eq!(replied["count"], 2);
-    let going: Vec<&str> = replied["words"]
-        .as_array()
-        .expect("a list of words")
-        .iter()
-        .map(|w| w.as_str().unwrap())
-        .collect();
-    assert_eq!(
-        going,
-        vec!["the", "run"],
-        "the last two of the before side, in order"
-    );
-    // It answers with the words themselves, so nothing can be dropped unseen.
-    assert!(replied["across_the_join"].is_string());
-    // Nothing asks for a restatement of the join.
-    assert!(
-        json(&join.keep_join())["joined"].is_null(),
-        "no `joined` field anywhere"
-    );
-
-    // Zero named words is refused rather than read as an empty stretch at the seam.
-    let mut fresh = Join::new(&["a", "b", "c"], &["d", "e"]);
-    assert!(fresh.drop_words(Side::After, 0).contains("keep_join"));
-
-    // P.machine.seamSnapWords -- how close to the join a named stretch still counts as being at it.
-    assert_eq!(textedit::SEAM_SNAP_WORDS, 3);
-    assert!(
-        textedit::seam_snap(Side::Before, 3).is_ok(),
-        "exactly the snap distance is still the join"
-    );
-    let too_far = textedit::seam_snap(Side::Before, 4).unwrap_err();
-    assert!(too_far.contains("4 words short"), "{too_far}");
-    // The two directions are told apart because they are fixed in opposite directions.
-    let past = textedit::seam_snap(Side::After, 9).unwrap_err();
-    assert!(past.contains("past the join"), "{past}");
-    // P.machine.seamNoiseWords -- a stretch this small elsewhere reads as a respelling, not a cut.
-    assert_eq!(textedit::SEAM_NOISE_WORDS, 2);
-
-    // The answer a refusal gets travels back as a sentence the model can act on, and the loop puts it in
-    // the next round verbatim (§12's correction row: the tool loop IS the correction).
-    let refused = ToolCall {
-        name: "drop_words".into(),
-        args: "{}".into(),
-        result: error(&fresh.drop_words(Side::After, 0)),
-    };
-    let back = tool_loop::tool_result(&refused);
-    assert!(back.contains("keep_join"), "{back}");
-}
-
-#[test]
 fn sec_12_decisions_prepare_s6_dedupejoins_is_named_in_the_log_not_asked_of_the_model() {
     // The dedupe's own note is NOT the join pass's line: the join prefix is what a reader greps for, and a
     // bare `12.0: "..." said again` row (the prototype's) does not carry it, so the pass names the step.
@@ -480,118 +420,6 @@ fn sec_12_decisions_prepare_s7_one_bad_row_is_one_refusal_and_a_wrong_speaker_ca
     let row = &pd::audit()[6];
     assert!(row.home.contains("per line"), "{}", row.home);
     assert!(row.home.contains("flag_line"), "{}", row.home);
-}
-
-#[test]
-fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on() {
-    // The three READS §3.2 offers describe are answered by the live leg, not left silent: `get_events`
-    // answers with this chunk's own event rows, which is what lets a frame be NAMED BACK in the next round
-    // rather than guessed from the brief's extract.
-    let rows = vec![
-        naivepost::describe::EventRow {
-            at: 10.0,
-            text: "the tower fires".to_string(),
-        },
-        naivepost::describe::EventRow {
-            at: 12.0,
-            text: "a map unrolls".to_string(),
-        },
-    ];
-    let batch = [10.0, 11.0, 12.0];
-    let args = serde_json::json!({ "from": 9.0, "to": 11.5 });
-    let dir =
-        std::env::temp_dir().join(format!("naivepost-pd-s8-{}.naivepost", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("a scratch folder");
-    let tree = naivepost::layout::Tree::new(&dir).expect("a .naivepost folder is a project");
-    let answered = naivepost::describe_call::read_answer(
-        &tree,
-        "take-a",
-        "",
-        &rows,
-        &batch,
-        "get_events",
-        &args,
-    )
-    .expect("get_events is a read the leg answers");
-    let got: serde_json::Value = serde_json::from_str(&answered).expect("a read answers JSON");
-    let lines = got["events"].as_array().expect("a list of events");
-    assert_eq!(
-        lines.len(),
-        1,
-        "only the event whose span touches 9..11.5: {answered}"
-    );
-    assert!(
-        lines[0].as_str().unwrap().contains("the tower fires"),
-        "{answered}"
-    );
-
-    // tool:record_event. Drift beyond half an interval is dropped, an unparseable offset is dropped,
-    // and instead of force-writing the batch's first frame the finish names it.
-    let frames = [10.0, 11.0, 12.0];
-    let interval = 1.0;
-
-    // Within half an interval: that frame is what the stamp meant.
-    assert_eq!(
-        describe::place_offset(0.3, interval, &frames),
-        Placement::Frame {
-            frame: 1,
-            at: 10.0,
-            drift: 0.3
-        }
-    );
-    // Further than half an interval from every frame: gone, not rounded. Offsets count from the
-    // batch's own first frame, so on a 1 s grid [0, 2] all land somewhere -- past the last frame's
-    // half-interval there is no nearest frame and the line is dropped.
-    assert_eq!(
-        describe::place_offset(2.6, interval, &frames),
-        Placement::TooFar(2.6)
-    );
-    // Exactly half an interval still snaps -- the nearest frame is unique there.
-    assert_eq!(
-        describe::place_offset(0.5, interval, &frames),
-        Placement::Frame {
-            frame: 1,
-            at: 10.0,
-            drift: 0.5
-        }
-    );
-
-    // An unparseable offset is dropped with that reason named. (An *unlabelled* reply is a different
-    // case -- filed as the description, `UnlabeledDescription` -- so the line carries the EVENT
-    // label and only the offset fails to read.)
-    let dropped = describe::parse_event_line("EVENT: +xx the tower", interval, &frames);
-    assert!(
-        format!("{dropped:?}").contains("UnparseableOffset"),
-        "{dropped:?}"
-    );
-
-    // record_event answers with the frame and its session second.
-    let mut batch = Batch::new(10.0, interval, 3);
-    let replied = json(&batch.record_event(2, "the tower fires", false));
-    assert!(replied["error"].is_null(), "{replied}");
-    assert_eq!(replied["frame"], 2);
-    assert_eq!(replied["at"], 11.0);
-    // A frame outside the batch is refused with the range named.
-    assert!(error(&batch.record_event(9, "not shown", false)).contains("1..=3"));
-
-    // Finish names what is still empty, and the opening frame with nothing behind it is called out by
-    // the reason rather than quietly written as "Calm; same view.".
-    batch.record_event(3, "smoke clears", true);
-    let missing = batch.finish();
-    assert_eq!(missing.len(), 1, "{missing:?}");
-    assert_eq!(missing[0].frame, 1);
-    assert_eq!(missing[0].at, 10.0);
-    assert_eq!(missing[0].reason, MissingReason::FirstFrameWithNoHistory);
-    // The line §6 force-writes there, spelled once in the program and written by `events_rows`.
-    assert_eq!(Batch::SAME_WITHOUT_HISTORY, "Calm; same view.");
-    // With history behind it the same gap is an ordinary missing event.
-    let mut continued = Batch::new(20.0, interval, 2).with_history();
-    continued.record_event(2, "still going", false);
-    assert_eq!(continued.finish()[0].reason, MissingReason::NoEvent);
-
-    let row = &pd::audit()[7];
-    assert!(row.home.contains("record_event"), "{}", row.home);
-    assert!(row.home.contains("finish"), "{}", row.home);
 }
 
 #[test]

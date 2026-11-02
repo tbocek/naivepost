@@ -26,18 +26,6 @@ fn lines(count: usize) -> Vec<Line> {
 
 // --- S1: the default, and the bound read as a predicate ----------------------------------------
 
-#[test]
-fn p_machine_fixtries_s1_two_attempts_per_block() {
-    // P.machine.fixTries = 2, the count the prototype wrote as `try < 2`.
-    assert_eq!(fix::BLOCK_TRIES, 2);
-    assert_eq!(fix::attempts(), 2);
-    // The same bound as a question: after one ask another is owed, after two none is.
-    assert!(fix::more_tries_left(0));
-    assert!(fix::more_tries_left(1));
-    assert!(!fix::more_tries_left(2));
-    assert!(!fix::more_tries_left(3), "past the bound stays past it");
-}
-
 // --- S2: the live loop spends exactly its tries, then the originals stand ----------------------
 
 #[test]

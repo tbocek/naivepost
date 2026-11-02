@@ -15,7 +15,7 @@ use adw::prelude::*;
 use common::source_row as row;
 use gtk4 as gtk;
 use naivepost::project::Project;
-use naivepost::sources::{self, Control, TrackInfo};
+use naivepost::sources::{self, Control};
 use naivepost::ui;
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
@@ -260,68 +260,6 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         sources::clash(&distinct),
         None,
         "{ITEM}: two stamps are two files"
-    );
-}
-
-/// §4's track checks: the last ticked track cannot be unticked (a row hearing nothing would leave Cut
-/// with nothing to align), ticking is sorted into the file's own stream order, and each ticked track
-/// becomes a lane of its own.
-#[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_tracks_are_ticked_and_united_into_lanes(
-) {
-    common::pin_private_cwd();
-    let mut project = Project {
-        sources: vec![{
-            let mut cam = row("cam.mkv", true, 1);
-            cam.tracks = vec![1];
-            cam
-        }],
-        ..Default::default()
-    };
-
-    assert!(
-        !sources::tick_track(&mut project, 0, 1, false),
-        "{ITEM}: the only tick stays"
-    );
-    assert!(sources::tick_track(&mut project, 0, 3, true));
-    assert!(sources::tick_track(&mut project, 0, 2, true));
-    assert_eq!(
-        project.sources[0].tracks,
-        vec![1, 2, 3],
-        "{ITEM}: ticks follow the file's stream order"
-    );
-    assert!(
-        sources::tick_track(&mut project, 0, 2, false),
-        "{ITEM}: one of three can go"
-    );
-    assert_eq!(project.sources[0].tracks, vec![1, 3]);
-
-    assert_eq!(
-        sources::tracks_face(&project.sources[0], 3).as_deref(),
-        Some("2/3")
-    );
-    // Two ticks split the file; one tick is used as it stands, so it contributes no lanes.
-    assert_eq!(sources::split_lanes(&project), ["cam-t1", "cam-t3"]);
-    project.sources[0].tracks = vec![2];
-    assert!(
-        sources::split_lanes(&project).is_empty(),
-        "{ITEM}: an unsplit file is one source"
-    );
-
-    let info = TrackInfo {
-        index: 2,
-        title: "Room mic".into(),
-        channels: 2,
-    };
-    assert_eq!(info.label(), "Track 2 \u{2014} Room mic (stereo)");
-    assert_eq!(
-        TrackInfo {
-            index: 1,
-            title: String::new(),
-            channels: 1
-        }
-        .label(),
-        "Track 1 \u{2014}  (mono)"
     );
 }
 

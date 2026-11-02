@@ -335,45 +335,11 @@ pub fn firefox_verdict(
 /// The only two things `GET /v1/models` on the LLM server is for: finding the model id ("Fetch models"), and sd.cpp's fallback probe when its capabilities call fails. A wrong id is proven by a completion, not this list.
 pub const LIST_MODELS_LLM_USES: [&str; 2] = ["Fetch models", "sd.cpp fallback probe"];
 
-/// Is the configured id listed? Empty is its own answer: there is no default id.
-pub fn llm_model_listed(models: &[String], wanted: &str) -> Result<String, String> {
-    let wanted = wanted.trim();
-    if wanted.is_empty() {
-        return Err("no LLM model configured -- use Fetch models and pick one".to_string());
-    }
-    if models.iter().any(|id| id == wanted) {
-        return Ok(format!("{wanted:?} is served by this server"));
-    }
-    Err(format!(
-        "this server does not serve {wanted:?} -- it lists {}",
-        models.join(", ")
-    ))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     pub name: String,
     pub ok: bool,
     pub why: String,
-}
-
-/// "Test All": every row's verdict in screen order (§5). Nothing short-circuits, so one failure does not hide the rest.
-pub fn test_all(verdicts: &[(&str, Result<String, String>)]) -> Vec<Row> {
-    verdicts
-        .iter()
-        .map(|(name, verdict)| match verdict {
-            Ok(detail) => Row {
-                name: (*name).to_string(),
-                ok: true,
-                why: detail.clone(),
-            },
-            Err(reason) => Row {
-                name: (*name).to_string(),
-                ok: false,
-                why: reason.clone(),
-            },
-        })
-        .collect()
 }
 
 /// No Save button (§5): the file is written 600 ms after the last keystroke and again on close if owed, so screen and disk never differ.

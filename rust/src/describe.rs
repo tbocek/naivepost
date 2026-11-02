@@ -487,11 +487,6 @@ pub fn write_chunk(
 
 // ---- S7: what gets said ----------------------------------------------------
 
-/// S7: the pass finished with everything asked live.
-pub fn complete_log(base: &str, chunks: usize) -> String {
-    format!(">>> [{base}] event log complete ({chunks} chunks)")
-}
-
 /// S7: the same, when some chunks came from the cache — the sentence that tells a reader why this
 /// run took four seconds.
 pub fn complete_log_cached(base: &str, chunks: usize, cached: usize) -> String {

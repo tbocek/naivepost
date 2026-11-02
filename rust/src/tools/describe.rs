@@ -205,17 +205,6 @@ pub fn speech_block(before: &[String], during: &[String], after: &[String]) -> S
     out
 }
 
-pub fn no_event_line(reply: &str) -> String {
-    let text = reply.split_whitespace().collect::<Vec<_>>().join(" ");
-    let head: String = text.chars().take(120).collect();
-    let head = if text.chars().count() > 120 {
-        format!("{}…", head.trim_end())
-    } else {
-        head
-    };
-    format!("(no event line: {head})")
-}
-
 pub const OLD_SHAPE_FRAME: usize = 1;
 
 /// One line of transcript from any recording, as `speech_around` sees it.
@@ -296,78 +285,6 @@ pub fn place_offset(offset: f64, interval: f64, frames: &[f64]) -> Placement {
         Some((frame, at, drift)) => Placement::Frame { frame, at, drift },
         None => Placement::TooFar(offset),
     }
-}
-
-/// named instead of swallowed.
-pub fn parse_event_line(line: &str, interval: f64, frames: &[f64]) -> ParseOutcome {
-    let line = line.trim_end_matches(['\r', '\n']);
-    if line.trim().is_empty() {
-        return ParseOutcome::Dropped(DropReason::UnparseableOffset);
-    }
-
-    // The STATE half is taken off first: it belongs to the running state, and leaving it in would
-    // file the state inside an event.
-    let (event_part, state) = split_state(line);
-
-    // A stamped line is "EVENT [+2s]: text"; anything else where a stamp should be is unparseable.
-    let body = match event_part.find("EVENT") {
-        Some(at) => &event_part[at + "EVENT".len()..],
-        None => {
-            // No label at all. The words before the STATE line are the description — that is what
-            // they were, every time this happened.
-            let text = flatten(event_part);
-            if !text.is_empty() {
-                return ParseOutcome::UnlabeledDescription(state.unwrap_or(text));
-            }
-            return ParseOutcome::Dropped(DropReason::UnparseableOffset);
-        }
-    };
-    let Some((offset_text, text)) = bracketed_offset(body) else {
-        // "EVENT" with no readable `[...]` after it: the same case as a bad number, and the reason
-        // is the same — there is no moment to attach the words to.
-        return ParseOutcome::Dropped(DropReason::UnparseableOffset);
-    };
-    let Ok(offset) = offset_text
-        .trim()
-        .trim_end_matches('s')
-        .trim()
-        .parse::<f64>()
-    else {
-        return ParseOutcome::Dropped(DropReason::UnparseableOffset);
-    };
-
-    // Nearest frame, and only if it is close enough to be meant.
-    let (frame, at) = match place_offset(offset, interval, frames) {
-        Placement::Frame { frame, at, .. } => (frame, at),
-        Placement::TooFar(_) => return ParseOutcome::Dropped(DropReason::TooFarFromEveryFrame),
-    };
-
-    let multi = text.contains('\n');
-    let text = flatten(text);
-    if multi {
-        return ParseOutcome::Flattened { frame, at, text };
-    }
-    ParseOutcome::Snapped { frame, at, text }
-}
-
-/// Split a reply at its `STATE:` label, returning the half before it and the state after.
-fn split_state(reply: &str) -> (&str, Option<String>) {
-    match reply.find("STATE:") {
-        Some(at) => (&reply[..at], Some(flatten(&reply[at + "STATE:".len()..]))),
-        None => (reply, None),
-    }
-}
-
-/// The `[...]` offset of an `EVENT [...] : text` line and the text after the colon.
-fn bracketed_offset(body: &str) -> Option<(&str, &str)> {
-    let start = body.find('[')?;
-    let inner = &body[start + 1..];
-    let end = inner.find(']')?;
-    let offset = &inner[..end];
-    let rest = inner[end + 1..]
-        .find(':')
-        .map(|colon| &inner[end + 1 + colon + 1..])?;
-    Some((offset, rest))
 }
 
 pub fn is_same(text: &str) -> bool {

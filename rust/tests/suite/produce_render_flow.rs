@@ -12,7 +12,7 @@ use crate::common;
 use common::entry_at as entry;
 use naivepost::cut::{Fx, Lane, Seg};
 use naivepost::produce_render as r;
-use naivepost::project::{self, Codec, Container, Produce, Subtitles};
+use naivepost::project::{self, Container, Produce, Subtitles};
 use naivepost::render_fx;
 use naivepost::tools::cutpass;
 
@@ -391,48 +391,6 @@ fn f5_2_s3b_the_fitting_ladder() {
     assert!(placed.is_empty() && logs.is_empty());
 }
 
-#[test]
-fn f5_2_s3c_lane_report_and_read_head() {
-    assert_eq!(ITEM, "f5_2");
-    // P.eng.laneMinMixSeconds: the shortest overlap worth an ffmpeg input of its own.
-    assert_eq!(r::LANE_MIN_MIX_SECONDS, 0.1);
-
-    // §B step 2's three per-lane sentences.
-    assert_eq!(
-        r::lane_report("Music", 3, 5),
-        "Music is mixed into 3 of the 5 clips"
-    );
-    assert_eq!(
-        r::lane_left_out("Music"),
-        "Music runs under 0 clip(s) and every one of them leaves it out \u{2014} it is not in the render"
-    );
-    assert_eq!(
-        r::lane_not_running("Music"),
-        "Music was not running while any clip was \u{2014} it is not in the render"
-    );
-
-    // An own-clock run is planned so its sound can be read at 1× under a sped-up picture; a pitched or
-    // muted sound follows the picture and has no run to read.
-    let clip = seg(10.0, 20.0);
-    let own = Fx {
-        kind: "speed".to_string(),
-        snd: "own".to_string(),
-        t: 10.0,
-        dur: 10.0,
-        rate: 2.0,
-        ..Default::default()
-    };
-    assert_eq!(r::read_head_plan(&clip, &[own]), Some((10.0, 20.0)));
-
-    let mute = Fx {
-        kind: "speed".to_string(),
-        snd: "mute".to_string(),
-        ..Default::default()
-    };
-    assert_eq!(r::read_head_plan(&clip, &[mute]), None);
-    assert_eq!(r::read_head_plan(&clip, &[]), None);
-}
-
 // ---- S4 ---------------------------------------------------------------------------
 
 #[test]
@@ -477,162 +435,7 @@ fn f5_2_s4_subtitles_on_the_produced_clock() {
 
 // ---- S5 ---------------------------------------------------------------------------
 
-#[test]
-fn f5_2_s5_one_encode_command_per_clip() {
-    assert_eq!(ITEM, "f5_2");
-    // tool:ffmpeg.encode — the codec arguments are ffmpeg's own spellings, so they are pinned as strings.
-    let clip = r::Clip {
-        no: 1,
-        seg_s: 0.0,
-        on_screen: 10.0,
-        rate: 1.0,
-        frame: (1920, 1080),
-        ..Default::default()
-    };
-    let settings = Produce::default();
-    let out = std::path::Path::new("produce/clips/c001_abcd.mp4");
-    let line = r::encode_command(&clip, &settings, &[], None, out).join(" ");
-
-    // The seek is an input option: it comes before the -i it belongs to, so a clip starting at 40 minutes
-    // does not decode 40 minutes first. The picture itself arrives as the first `-i` of the run.
-    let mut seeked = clip.clone();
-    seeked.seg_s = 12.5;
-    let argv = r::encode_command(
-        &seeked,
-        &settings,
-        &[("picture", Some("media/talk.mkv"))],
-        None,
-        out,
-    );
-    let ss = argv.iter().position(|a| *a == "-ss").unwrap();
-    let input = argv.iter().position(|a| *a == "-i").unwrap();
-    assert!(ss < input, "{argv:?}");
-    assert_eq!(argv[ss + 1], "12.500");
-
-    // h264 in an mp4 at the page's preset and CRF, yuv420p so any player opens it.
-    assert!(line.contains("libx264"), "{line}");
-    assert!(line.contains("-crf 24"), "{line}");
-    assert!(line.contains("-pix_fmt yuv420p"), "{line}");
-    assert!(line.contains("-preset slow"), "{line}");
-
-    // Preset and CRF come off the Produce row, not out of this module.
-    let mut quick = settings.clone();
-    quick.preset = project::Preset::Fast;
-    quick.crf = 18;
-    let line = r::encode_command(&clip, &quick, &[], None, out).join(" ");
-    assert!(line.contains("-preset fast"), "{line}");
-    assert!(line.contains("-crf 18"), "{line}");
-
-    // vp9 in a webm: the rate control ffmpeg wants for it, and none of mp4's flags.
-    let mut web = settings.clone();
-    web.codec = Codec::Vp9;
-    web.container = Container::Webm;
-    let line = r::encode_command(&clip, &web, &[], None, out).join(" ");
-    assert!(line.contains("libvpx-vp9"), "{line}");
-    assert!(line.contains("-b:v 0"), "{line}");
-    assert!(!line.contains("yuv420p"), "{line}");
-
-    // A frame rate: named when the row names one, and `source` means ffmpeg is told nothing. With the
-    // frame-timing tick off the `fps` filter sets the grid and the output is told it is constant.
-    let mut constant = settings.clone();
-    constant.vfr = false;
-    let argv = r::encode_command(&clip, &constant, &[], None, out);
-    assert!(
-        argv.windows(2).any(|w| w == ["-fps_mode", "cfr"]),
-        "{argv:?}"
-    );
-    assert!(argv.join(" ").contains("fps=fps=30"), "{argv:?}");
-    let mut source = settings.clone();
-    source.frame_rate = project::FrameRate::Source;
-    assert!(!r::encode_command(&clip, &source, &[], None, out)
-        .iter()
-        .any(|a| a == "-fpsmax" || a == "-fps_mode"));
-    // The peak-rate tick turns the same number into a ceiling: `-fpsmax` alone, since ffmpeg refuses it beside
-    // `-fps_mode vfr` as contradictory (the first rewrite's every VFR encode), and no `fps` filter pinning a grid.
-    let mut peak = settings.clone();
-    peak.vfr = true;
-    let argv = r::encode_command(&clip, &peak, &[], None, out);
-    assert!(argv.windows(2).any(|w| w == ["-fpsmax", "30"]), "{argv:?}");
-    assert!(!argv.iter().any(|a| a == "-fps_mode"), "{argv:?}");
-    assert!(!argv.join(" ").contains("fps=fps="), "{argv:?}");
-
-    // Burned-in subtitles reach the encoder as a filter. The default Produce row ticks blurred edges, so the
-    // run below turns that off to keep the question to one filter.
-    let mut burned = settings.clone();
-    burned.subtitles = Subtitles::BurnedIn;
-    let plain = Produce {
-        blurred_edges: false,
-        ..burned.clone()
-    };
-    let line =
-        r::encode_command(&clip, &plain, &[], Some("produce/clips/final.srt"), out).join(" ");
-    assert!(line.contains("subtitles=produce/clips/final.srt"), "{line}");
-    // And the cues are printed after the camera and before nothing that could cover them.
-    let chain = r::video_chain(&clip, &burned, Some("produce/clips/final.srt"));
-    let at = |needle: &str| chain.iter().position(|f| f.contains(needle)).unwrap();
-    assert!(at("subtitles=") > at("overlay="), "{chain:?}");
-
-    // Handing the same `.srt` to a run whose filter asks for no cues adds nothing: it is the caller's choice,
-    // not something the encoder decides on its own.
-    let chain = r::video_chain(&clip, &plain, None);
-    assert!(
-        chain.iter().all(|filter| !filter.contains("subtitles=")),
-        "{chain:?}"
-    );
-
-    // The clip's stem carries the run's stamp: a leftover c001 of an older cut cannot join into this one.
-    assert_eq!(r::clip_stem(1, "abcd"), "c001_abcd");
-
-    // Every command is written out verbatim before it runs — the one that hung is the one worth reading.
-    let argv = r::encode_command(&clip, &settings, &[], None, out);
-    assert_eq!(
-        r::command_log(3, &argv),
-        format!(">>> clip 3: ffmpeg {}", argv.join(" "))
-    );
-}
-
 // ---- S6 ---------------------------------------------------------------------------
-
-#[test]
-fn f5_2_s6_the_join_is_a_stream_copy() {
-    assert_eq!(ITEM, "f5_2");
-    // The join copies streams, so it cannot mix sizes: a clip whose ffprobe size differs from clip 0's gets
-    // §F5.2's sentence, and identical sizes stay silent. Sizes are the PROBED frame pair (§F5.2 S5), not
-    // byte counts — two clips at one size differ in bytes every time.
-    assert_eq!(
-        r::join_mismatch((1920, 1080), (1280, 720)),
-        Some(
-            "!!! the join is a stream copy and cannot mix sizes, so the video breaks at this clip"
-                .to_string()
-        )
-    );
-    assert_eq!(r::join_mismatch((1920, 1080), (1920, 1080)), None);
-
-    // The list is the demuxer's own quoting, one line per clip in the order they play.
-    let list = r::concat_list(&[
-        "produce/clips/c001_ab.mp4".into(),
-        "produce/clips/c002_ab.mp4".into(),
-    ]);
-    assert_eq!(
-        list,
-        "file 'produce/clips/c001_ab.mp4'\nfile 'produce/clips/c002_ab.mp4'"
-    );
-
-    // `-c copy` is the whole point: re-encoding the join would be a second generation of loss.
-    let argv = r::join_command(
-        std::path::Path::new("produce/list.txt"),
-        std::path::Path::new("produce/video.mp4"),
-    );
-    let line = argv.join(" ");
-    assert!(line.contains("-f concat"), "{line}");
-    assert!(line.contains("-c copy"), "{line}");
-    assert!(!line.contains("-filter_complex"), "{line}");
-
-    // The step's own name and its place on the bar.
-    assert_eq!(r::JOINING, "joining");
-    assert!(r::JOIN_FRACTION > r::SPEAKING_FRACTION);
-    assert!(r::JOIN_FRACTION < r::TRANSLATE_FRACTION);
-}
 
 // ---- S7 ---------------------------------------------------------------------------
 

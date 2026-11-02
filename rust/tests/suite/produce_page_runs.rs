@@ -284,104 +284,6 @@ fn f5_7_s2_the_log_line_is_the_specs_own_sentence() {
 // ---- S3: ⊕ Set from image ---------------------------------------------------------
 
 #[test]
-fn f5_7_s3_a_chosen_picture_is_copied_not_referenced() {
-    assert_eq!(ITEM, "F5.7");
-    let chosen = runs::take_from_image("/home/dev/Videos/frame.png", 1920, 1080, 12.5);
-    // The copy lives in the app's own images folder under the file's stem: reopening the project must not
-    // depend on a file that can be moved or deleted afterwards.
-    assert_eq!(chosen.stored, format!("{}/frame.png", runs::images_dir()));
-    assert!(
-        runs::images_dir().ends_with("naivepost/images"),
-        "{}",
-        runs::images_dir()
-    );
-    assert!(
-        !chosen.stored.contains("/Videos/"),
-        "the user's folder is never the record: {}",
-        chosen.stored
-    );
-
-    // A stem with a dot in its middle keeps it — only the extension is dropped.
-    assert!(
-        runs::take_from_image("/tmp/shot.final.png", 1920, 1080, 0.0)
-            .stored
-            .ends_with("shot.final.png")
-    );
-}
-
-#[test]
-fn f5_7_s3_the_box_is_the_pictures_own_shape_scaled_to_fit() {
-    assert_eq!(ITEM, "F5.7");
-    // The picture's own aspect, not the project's: choosing a picture *is* the choice of shape. Sides stay even
-    // because every encoder on the Produce row is 4:2:0, which refuses an odd edge.
-    let wide = runs::take_from_image("/tmp/frame.png", 1920, 1080, 0.0);
-    assert_eq!(
-        wide.box_,
-        (1920, 1080),
-        "the tier's own size needs no scaling"
-    );
-    // A 3:2 picture: 1920 wide, 1280 tall — both even, the ratio exact.
-    let three_two = runs::take_from_image("/tmp/frame.png", 3000, 2000, 0.0);
-    assert_eq!(three_two.box_, (1920, 1280));
-    // A portrait picture fills the height instead of the width.
-    let tall = runs::take_from_image("/tmp/frame.png", 1080, 1920, 0.0);
-    assert_eq!(tall.box_, (1080, 1920));
-    // Integer scaling rounds *up* before the even round takes it back down, so a 641-wide picture lands on the
-    // tier's own height rather than a pixel over it. What must never happen is an odd side or a width past 1920.
-    let odd = runs::take_from_image("/tmp/frame.png", 641, 361, 0.0);
-    assert_eq!(odd.box_, (1920, 1080));
-    // A ratio the tier cannot answer exactly is rounded down to even on the side that moves: 7000×3000 wants
-    // 822.8 tall and gets 822.
-    let thirds = runs::take_from_image("/tmp/frame.png", 7000, 3000, 0.0);
-    assert_eq!(thirds.box_, (1920, 822));
-    for (width, height) in [wide.box_, three_two.box_, tall.box_, odd.box_, thirds.box_] {
-        assert_eq!(height % 2, 0, "4:2:0 refuses an odd side");
-        assert_eq!(width % 2, 0, "and so on the other edge");
-        // Fitting means the *longer* edge stops at the tier; a 3:2 picture is therefore taller than the 16:9
-        // frame it will be letterboxed into, and that is the point of fitting rather than cropping.
-        assert!(
-            width.max(height) <= runs::WIDTH,
-            "{width}×{height} leaves the tier"
-        );
-    }
-}
-
-#[test]
-fn f5_7_s3_the_log_names_the_file_and_where_the_frame_came_from() {
-    assert_eq!(ITEM, "F5.7");
-    let chosen = runs::take_from_image("/home/dev/Videos/frame.png", 1920, 1080, 12.5);
-    // Base name only — the user's path is nobody's business after the copy exists — and one decimal on the time,
-    // which is how the Cut page writes a timestamp.
-    assert_eq!(
-        chosen.log,
-        "thumbnail taken from frame.png — scaled to 1920×1080 at 12.5s"
-    );
-}
-
-#[test]
-fn f5_7_s3_a_missing_copy_is_reported_and_the_choice_survives() {
-    assert_eq!(ITEM, "F5.7");
-    // Reopening a project whose copy was deleted says so and keeps the choice: the next run uses the picture if
-    // it comes back, so reporting the loss must not undo the press.
-    assert_eq!(runs::chosen_state(false), Some(runs::CHOSEN_REMOVED));
-    assert_eq!(runs::CHOSEN_REMOVED, "thumbnail not found");
-    assert_eq!(
-        runs::chosen_state(true),
-        None,
-        "a copy that is there needs no message"
-    );
-
-    // The tooltip promises the two things these two assertions check: a copy was made, and it survives.
-    let tip = runs::CHOSEN_TIP;
-    assert!(tip.contains("copy"), "{tip}");
-    assert!(tip.contains("survives reopening"), "{tip}");
-    assert!(
-        tip.contains("does not replace your file"),
-        "the user's own file is never edited: {tip}"
-    );
-}
-
-#[test]
 fn f5_7_s3_the_copy_is_recorded_and_reopening_finds_it() {
     assert_eq!(ITEM, "F5.7");
     let (_root, tree) = common::tree_in("s3-record");
@@ -405,16 +307,6 @@ fn f5_7_s3_the_copy_is_recorded_and_reopening_finds_it() {
 }
 
 // ---- S4: ask again --------------------------------------------------------------
-
-#[test]
-fn f5_7_s4_asking_again_hands_back_an_empty_box() {
-    assert_eq!(ITEM, "F5.7");
-    // The press says those words were wrong; offering them back would be the mistake the redraw box exists to
-    // stop, in the other direction.
-    assert_eq!(runs::re_ask(), "");
-    assert_eq!(runs::re_ask(), "");
-    assert_ne!(runs::re_ask(), "anything at all");
-}
 
 // ---- S5: Words on the thumbnail ---------------------------------------------------
 

@@ -176,24 +176,12 @@ pub fn refused_log(step: &str, error: &str) -> String {
     format!(">>> {step}: the server refused the request with tools ({error}) -- asked again without them")
 }
 
-/// Where a transport retry starts from: the first message this loop added, so the tool loop re-runs from the
-/// original messages; continuing from the grown list would leave an assistant turn with no matching tool
-/// results, which some servers reject outright.
-pub fn rerun_from(original_len: usize) -> usize {
-    original_len
-}
-
 /// A tool's text back to the model. A problem is [`tools::error`]'s `{"error": "…"}`, an answer the model can act on.
 pub fn tool_result(call: &ToolCall) -> String {
     if call.result.is_empty() {
         return tools::error("the tool returned nothing");
     }
     call.result.clone()
-}
-
-/// S6: never. A tool failing is information for the model; the flow ends only by S3 or S4.
-pub fn fails_the_job(_tool_failed: bool) -> bool {
-    false
 }
 
 /// A call as §7's page shows it: `[tool call name(args)]`, appended to the reply. Recording is a report on

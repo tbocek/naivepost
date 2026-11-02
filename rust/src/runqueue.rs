@@ -303,11 +303,6 @@ pub fn audio_unload_is_bounded() -> (Duration, bool) {
     (UNLOAD_TIMEOUT, UNLOAD_IS_BEST_EFFORT)
 }
 
-/// Whether a cancellation flagged at `epoch` applies to the run holding `now`: only equal epochs.
-pub fn is_cancelled(flagged: bool, epoch: u64, now: u64) -> bool {
-    flagged && epoch == now
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

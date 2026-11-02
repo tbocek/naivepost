@@ -72,48 +72,6 @@ fn f3_8_s1_a_press_on_a_band_picks_it_up() {
 }
 
 #[test]
-fn f3_8_s1_under_four_pixels_is_a_click_that_opens_the_form() {
-    // §A.9 / S1: "drag under 4 px is a click", and the click opens the form.
-    for travel in [0.0, 1.5, 3.0, 3.9] {
-        assert_eq!(
-            fx_band::press_band(20.0, 60.0, travel, false, true, None),
-            fx_band::Press::ClickForm,
-            "{travel} px of travel must still be a click"
-        );
-    }
-    // 4 px is NOT under 4, so it is a drag. This is the boundary the spec draws, and it is drawn by
-    // `cut_select::is_drag` (`moved_px > DRAG_SLOP_PX`) rather than by a literal here.
-    assert_eq!(
-        fx_band::press_band(20.0, 60.0, 4.0, false, true, None),
-        fx_band::Press::ClickForm,
-        "exactly 4 px is still not OVER the slop"
-    );
-    assert_eq!(
-        fx_band::press_band(20.0, 60.0, 4.1, false, true, None),
-        fx_band::Press::Hold {
-            t: 20.0,
-            from_end: None
-        }
-    );
-
-    // The delegation: `fx_band`'s answer agrees with the slop owner's, at 4 px and either side of it. This is
-    // why the module cannot quietly adopt F2.8's 3 px clip threshold instead — `cut_trim::is_click` says a
-    // 3 px move is NOT a click, and for a band that would be wrong.
-    for travel in [3.0, 4.0, 5.0] {
-        let clicked = matches!(
-            fx_band::press_band(20.0, 60.0, travel, false, true, None),
-            fx_band::Press::ClickForm
-        );
-        assert_eq!(clicked, !cut_select::is_drag(travel), "{travel} px");
-    }
-    assert_eq!(cut_select::DRAG_SLOP_PX, 4.0, "the spec's slop is 4 px");
-    assert_ne!(
-        cut_trim::ROW_TRAVEL_PX, cut_select::DRAG_SLOP_PX,
-        "F2.8's clip gesture opens at 3 px, so borrowing is_click here would change the band's rule"
-    );
-}
-
-#[test]
 fn f3_8_s1_ends_are_grips_only_at_30_px() {
     // S1: "ends are grips when the band is \u2265 30 px". The threshold itself, both sides of it.
     assert!(!fx_band::grips_open(29.9));

@@ -143,57 +143,12 @@ pub struct Chosen {
 /// The width every thumbnail is drawn at (§08's thumbnail row; see [`crate::render_fx::TIER_SHORT_SIDE`]).
 pub const WIDTH: u32 = 1920;
 
-/// S3: use this file as the thumbnail. The copy survives a reopening; the box is the picture's own shape, as choosing it is choosing the shape.
-/// `at_seconds` only reaches the log.
-pub fn take_from_image(file: &str, wide: u32, high: u32, at_seconds: f64) -> Chosen {
-    let name = file.rsplit('/').next().unwrap_or(file);
-    // The stem is everything up to the *last* dot: a frame named `shot.final.png` keeps its middle.
-    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
-    let (w, h) = fit(wide.max(1), high.max(1));
-    Chosen {
-        stored: format!("{}/{stem}.png", images_dir()),
-        box_: (w, h),
-        log: format!("thumbnail taken from {name} — scaled to {w}×{h} at {at_seconds:.1}s"),
-    }
-}
-
-/// The app's own images folder: `XDG_CONFIG_HOME`/naivepost/images (`~/.config` when unset); scratch that outlives a session, not configuration.
-pub fn images_dir() -> String {
-    let root = match std::env::var("XDG_CONFIG_HOME") {
-        Ok(root) if !root.is_empty() => root,
-        _ => match std::env::var("HOME") {
-            Ok(home) if !home.is_empty() => format!("{home}/.config"),
-            _ => String::new(),
-        },
-    };
-    format!("{root}/naivepost/images")
-}
-
-/// S3's other half: what the row says about a choice whose copy is gone. The choice stays; this reports the loss.
-pub fn chosen_state(copy_exists: bool) -> Option<&'static str> {
-    (!copy_exists).then_some(CHOSEN_REMOVED)
-}
-
-/// Scale into `WIDTH` wide keeping the shape, on even sides: 4:2:0 encoders refuse an odd edge.
-fn fit(wide: u32, high: u32) -> (u32, u32) {
-    if wide >= high {
-        (WIDTH, even(WIDTH * high / wide))
-    } else {
-        (even(WIDTH * wide / high), WIDTH)
-    }
-}
-
 /// Round down to the nearest even number: 4:2:0 chroma needs it, and rounding up would exceed `WIDTH`.
 pub(crate) fn even(side: u32) -> u32 {
     side - side % 2
 }
 
 // ---- S4: Re-ask ------------------------------------------------------------------
-
-/// S4: the ask-again button hands back an empty box, never the text it is replacing: this press says those words were wrong.
-pub fn re_ask() -> String {
-    String::new()
-}
 
 // ---- S5: Words on the thumbnail ---------------------------------------------------
 

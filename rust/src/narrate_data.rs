@@ -87,22 +87,6 @@ pub fn write_voice(tree: &Tree, id: &str) -> Result<(), String> {
     tree.write_file(&rel, id.as_bytes())
 }
 
-/// An id is pasted into `narrate/samples/` file names, so keep letters, digits, `-`, `_`, `.`; everything else becomes `-`; trim separators; empty means `"voice"` (prototype `sanitizeVoiceID`).
-pub fn sanitize_voice_id(raw: &str) -> String {
-    let mapped: String = raw
-        .chars()
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => c,
-            _ => '-',
-        })
-        .collect();
-    let trimmed = mapped.trim_matches(|c| c == '-' || c == '_' || c == '.');
-    if trimmed.is_empty() {
-        return "voice".to_string();
-    }
-    trimmed.to_string()
-}
-
 // --- pitch.txt ----------------------------------------------------------------
 
 /// `narrate/pitch.txt`: the semitones the reference is shifted by. Read clamped, not refused (P.eng.pitchRangeSemitones, built by `crate::params::narrate()` from [`crate::narrate_screen`]'s slider ends). Missing or unparsable reads 0.0.
@@ -195,11 +179,6 @@ pub fn reference_part(tree: &Tree, index: usize) -> PathBuf {
 
 pub fn reference_list(tree: &Tree) -> PathBuf {
     tree.reference_dir().join("ref_parts.txt")
-}
-
-/// Is there a base with no shifted copy? The state a shift rebuilds from.
-pub fn reference_needs_shift(base: &Path, served: &Path) -> bool {
-    base.exists() && !served.exists()
 }
 
 /// Invalidation shared by voice, pitch and takes: remove the built reference so the next speech rebuilds it. The served copy always goes; the base only when `keep_base` is false (the pitch slider keeps its base). A missing file is not a failure. Returns how many went.

@@ -331,18 +331,6 @@ fn f1_10_s3_thinking_is_on_for_this_job() {
     assert!(joins::thinking_on(), "the join pass thinks");
 }
 
-#[test]
-fn f1_10_s3_the_bounds_are_the_parameter_rows_named_in_the_spec() {
-    // P.machine.seamReachWords 140, P.machine.seamSnapWords 3, P.machine.seamMaxWords 40,
-    // P.machine.seamCeil 0.6, P.machine.seamRetries 1, P.eng.joinReachWords 3.
-    assert_eq!(
-        joins::bounds(),
-        (140, 3, 40, 0.6, 1, 3),
-        "every number the join rules count with"
-    );
-    assert_eq!(joins::noise_words(), 2, "P.machine.seamNoiseWords");
-}
-
 // ---- S3: reading the quoted answer ----------------------------------------
 
 /// The ETH join-23 shape: BEFORE ends mid-sentence, AFTER restarts it.
@@ -457,8 +445,8 @@ fn f1_10_s3_a_quote_that_is_not_how_before_ends_is_refused() {
 }
 
 #[test]
-fn f1_10_s3_more_than_seamMaxWords_is_refused_with_the_tools_own_sentence() {
-    // P.machine.seamMaxWords = 40.
+fn f1_10_s3_more_than_seam_max_words_is_refused_with_the_tools_own_sentence() {
+    // P.machine.seam_max_words = 40.
     let big_before: Vec<String> = (0..60).map(|n| format!("w{n}")).collect();
     let after = split("tail word");
     let mut join = Join::new(&strings(&big_before), &strings(&after));
@@ -478,8 +466,8 @@ fn f1_10_s3_more_than_seamMaxWords_is_refused_with_the_tools_own_sentence() {
 }
 
 #[test]
-fn f1_10_s3_more_than_seamCeil_of_the_shown_words_is_refused() {
-    // P.machine.seamCeil = 0.6 of what was SHOWN. Eight shown, five wanted gone is 62 %.
+fn f1_10_s3_more_than_seam_ceil_of_the_shown_words_is_refused() {
+    // P.machine.seam_ceil = 0.6 of what was SHOWN. Eight shown, five wanted gone is 62 %.
     let before = split("aa bb cc dd ee ff");
     let after = split("gg hh");
     let mut join = Join::new(&strings(&before), &strings(&after));

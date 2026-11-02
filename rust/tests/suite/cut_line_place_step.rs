@@ -171,27 +171,6 @@ fn f2_4_s1b_the_first_left_press_measures_the_edge_reach_first() {
     );
 }
 
-/// F2.4 (Place and step the line) S2: a frame step moves what is held, never the line —
-/// edge first, then clip, then effect.
-#[test]
-fn f2_4_s2_a_frame_step_moves_the_hold_not_the_line() {
-    assert_eq!(line::step_hold(Some(Held::Edge)), Some("edge"));
-    assert_eq!(line::step_hold(Some(Held::Clip)), Some("clip"));
-    assert_eq!(line::step_hold(Some(Held::Effect)), Some("effect"));
-    assert_eq!(
-        line::step_hold(None),
-        None,
-        "nothing held: the step belongs to the line or nowhere"
-    );
-
-    assert_eq!(
-        line::step_frames(false),
-        1,
-        "f is one frame of the recording"
-    );
-    assert_eq!(line::step_frames(true), 5, "Shift, or ‹‹ ››, is five");
-}
-
 /// F2.4 (Place and step the line) S2: with nothing held a frame step pauses the preview
 /// and seeks by whole frames of the recording under the line.
 #[test]

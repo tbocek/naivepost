@@ -677,37 +677,6 @@ fn f2_12_s6_the_card_is_re_found_by_identity() {
     assert_eq!(ins::GONE, "that card is no longer in the cut");
 }
 
-/// F2.12 S6 — `switching modes returns or takes footage`: between→over costs the seconds as － Remove would,
-/// over→between gives them back and lengthens the video by the card; anything else changes nothing underneath.
-#[test]
-fn f2_12_s6_switching_modes_returns_or_takes_footage() {
-    assert_eq!(
-        ins::switching_takes_footage(ins::Mode::Between, ins::Mode::Over),
-        Some(true)
-    );
-    assert_eq!(
-        ins::switching_takes_footage(ins::Mode::Over, ins::Mode::Between),
-        Some(false)
-    );
-    assert_eq!(
-        ins::switching_takes_footage(ins::Mode::Between, ins::Mode::Between),
-        None
-    );
-    assert_eq!(
-        ins::switching_takes_footage(ins::Mode::Over, ins::Mode::Over),
-        None
-    );
-    // A lane moving touches no footage at all: nothing was cut to it.
-    assert_eq!(
-        ins::switching_takes_footage(ins::Mode::Lane, ins::Mode::Over),
-        None
-    );
-    assert_eq!(
-        ins::switching_takes_footage(ins::Mode::Over, ins::Mode::Lane),
-        None
-    );
-}
-
 // --- S7: what the preview shows while it plays -----------------------------------------------------------------
 
 /// F2.12 S7 — `cards render at 8 fps (one frame for stills)`: a picture that never changes needs one texture and

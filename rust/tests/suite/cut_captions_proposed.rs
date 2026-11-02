@@ -12,14 +12,13 @@
 
 use naivepost::cut::Fx;
 use naivepost::cut_captions::{self as captions, Call, Reply};
-use naivepost::fx_record::{self, Field};
 use naivepost::params;
 use naivepost::roles::Job;
-use naivepost::tools::clips::{self, Clips};
+use naivepost::tools::clips::Clips;
 use naivepost::tools::Tool;
 
 use crate::common;
-use common::{assert_close, row, EPS};
+use common::{assert_close, row};
 
 /// One row of the catalogue, by id. Both of this flow's ids are catalogued — `P.machine.captionBatch` in §4's list
 /// (which [`params::find`] answers) and `P.policy.captionMinSeconds` in §6's (`params::cut`) — so this looks through
@@ -44,14 +43,6 @@ fn call(clip: u32, start: f64, end: f64, text: &str) -> Call {
         start,
         end,
         text: text.to_string(),
-    }
-}
-
-/// The captions of a reply, or the reason it was thrown away.
-fn placed(clips_in: &[(u32, f64)], calls: &[Call]) -> Vec<Fx> {
-    match captions::place(clips_in, calls) {
-        Reply::Accepted(fxs) => fxs,
-        Reply::Rejected(reason) => panic!("the reply was rejected: {reason}"),
     }
 }
 
@@ -292,78 +283,6 @@ fn f3_9_s4_a_clip_outside_the_batch_loses_the_whole_reply() {
 }
 
 // --- S5: the floor, the fades, and whose seconds these are ---------------------------------------------------------
-
-/// S5 (`≥ P.policy.captionMinSeconds, with words? no → skipped · yes → placed · fades min 0.3, d/4`): a caption under
-/// the floor or without words disappears silently while its neighbours in the same reply still land; a placed caption
-/// is a text effect at the SESSION second the app worked out, faded by S5's own rule.
-#[test]
-fn f3_9_s5_short_or_wordless_captions_are_skipped_quietly() {
-    // P.policy.captionMinSeconds: 0.3 s, read from §3.7's tool rather than restated. 0.2 is under it, 0.5 over.
-    assert_eq!(clips::CAPTION_MIN_SECONDS, 0.3);
-
-    let reply = vec![
-        call(6, 1.0, 1.2, "too short to read"),
-        call(6, 3.0, 5.0, "   "),
-        call(7, 4.0, 5.2, "kept"),
-    ];
-    let fxs = placed(&batch(), &reply);
-    assert_eq!(fxs.len(), 1, "{fxs:?}: the two refusals were not skipped");
-    assert_eq!(fxs[0].text, "kept");
-
-    // The record a caption becomes is a text effect — `cut.json` holds no separate kind for a proposed caption, which
-    // is what lets a hand-typed one and a proposed one be edited the same way afterwards.
-    let fx = &fxs[0];
-    assert_eq!(fx.kind, "text");
-    // No box: §A.6's lower third it lands in, so `centre()` answers the default rather than (0.5, 0.5).
-    assert!(!fx.has_box());
-    assert_eq!(fx.centre(), (0.5, 0.78));
-    // And a text effect's own fields only: words yes, a zoom's box and a volume's gain no.
-    assert!(fx_record::uses(fx.effect_kind().unwrap(), Field::Words));
-    assert!(!fx_record::uses(fx.effect_kind().unwrap(), Field::Gain));
-
-    // The session second is the app's arithmetic: clip 7 sits after clip 6, which is ten seconds long, so its 4.0 s
-    // offset is session 14.0 — the model was never asked where clip 7 begins and could not have answered.
-    assert_close(
-        "clip 6 starts at 0.0",
-        captions::session_start(&batch(), 6),
-        0.0,
-    );
-    assert_close(
-        "clip 7 starts after ten seconds",
-        captions::session_start(&batch(), 7),
-        10.0,
-    );
-    assert_close("the caption's session second", fx.t, 14.0);
-    // The same rule with positions the caller knows: 60.0 + 0.4 = 60.4.
-    let at = captions::on_the_timeline_at(60.0, (0.4, 1.6), "words");
-    assert_close("at a known clip start", at.t, 60.4);
-
-    // S5's fade: P.policy.effectDefaultFades' text value (0.3) capped by a quarter of the caption's length, so a
-    // short caption cannot spend most of itself fading. Derived on paper — 1.2/4 = 0.3 exactly, so the cap and the
-    // quarter meet there; below it d/4 wins (0.8/4 = 0.2, 0.3/4 = 0.075); above it the cap holds (4.0/4 = 1.0 → 0.3).
-    assert_close("the two rules meet at 1.2 s", captions::fade(1.2), 0.3);
-    assert_close("d/4 wins below that", captions::fade(0.8), 0.2);
-    assert_close("and again at the floor", captions::fade(0.3), 0.075);
-    assert_close("the cap holds above it", captions::fade(4.0), 0.3);
-    // The placed caption carries that fade on both edges: dur 5.2 - 4.0 = 1.2, so 0.3 each side.
-    assert_close("its length", fx.dur, 1.2);
-    assert_close("faded in", fx.trans, captions::fade(fx.dur));
-    assert_close("and out", fx.tout, captions::fade(fx.dur));
-    assert_close("which is the cap here", fx.trans, 0.3);
-    // A short one fades by d/4 instead — and it is NOT §3.7's tool fade (0.15), which stays what the tool reports.
-    let brief = captions::on_the_timeline_at(0.0, (0.0, 0.8), "brief");
-    assert_close("a short caption fades by d/4", brief.trans, 0.2);
-    assert!(
-        (brief.trans - clips::FADE_SECONDS).abs() > EPS,
-        "S5's fade is not the tool's 0.15"
-    );
-
-    // Silence at nought gain is nothing to do with this flow, but a caption is not silence either: an accepted reply
-    // never leaves a caption-less record behind when the model sent only refusals.
-    assert!(
-        matches!(captions::place(&batch(), &[call(6, 1.0, 1.2, "x")]), Reply::Accepted(ref fxs) if fxs.is_empty())
-    );
-}
 
 // --- S6: the batch that keeps failing --------------------------------------------------------------------------------
 

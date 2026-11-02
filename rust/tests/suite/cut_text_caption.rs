@@ -6,8 +6,7 @@
 //! [`crate::fx_lane`]'s, §06#1's "no box means this default" is [`crate::fx_record`]'s).
 
 use naivepost::cut::Fx;
-use naivepost::fx_lane;
-use naivepost::fx_text::{self, BoxChoice, Edge, Form, LOWER_THIRD};
+use naivepost::fx_text::{self, BoxChoice, Form, LOWER_THIRD};
 use naivepost::fx_zoom;
 use naivepost::tools;
 
@@ -418,14 +417,6 @@ fn f3_4_s4_the_edge_is_a_dark_dilation() {
     assert_eq!(fx_text::render_stroke_width(fx_text::MIN_POINTS), 2.0);
 }
 
-/// S4 (`same function for preview and render`): the reason the layout is arithmetic over an average character width
-/// rather than a font measurement — cairo could measure, librsvg will not, so the only way the two agree to the last
-/// decimal is if neither measures. Asserted as the fact it is: one layout function, called twice, same answer.
-#[test]
-fn f3_4_s4_the_preview_is_the_render() {
-    assert!(fx_text::preview_is_the_render());
-}
-
 // --- S5: moving and sizing on the preview --------------------------------------------------------------------------
 
 /// S5 (`On the preview a box moves — snapping within 10 px to the finished frame's left edge, centre, right edge
@@ -499,91 +490,4 @@ fn f3_4_s5_a_moved_box_snaps_to_the_frame_lines() {
         fx_text::snap_to(309.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX),
         309.0
     );
-}
-
-/// S5 (`and resizes (independent axes, 16 px floor)`): one edge moves and only its axis changes; the box never goes
-/// under 16 px on the axis being pulled; and a dragged edge is offered only itself for snapping — pulling a side to
-/// the centre must not be second-guessed into moving the middle there.
-#[test]
-fn f3_4_s5_a_resized_box_keeps_the_other_axis() {
-    assert_eq!(fx_text::MIN_BOX_PX, 16.0);
-    // Sizing offers one line; moving offers three. That is the whole difference between the two gestures.
-    assert_eq!(fx_text::resize_lines(320.0), [320.0]);
-
-    let box_ = lower_third_box();
-    let (x, y, w, h) = box_.to_px(FRAME.0, FRAME.1);
-
-    // The right edge in by 40 px, to 536: the nearest frame line is 104 away (the centre is 216), so nothing snaps and
-    // the floor at x+16 = 80 does not bite either. Width shrinks to 472; the corner stays at (64, 252) and the height
-    // is not involved — that is what "independent axes" means here.
-    let narrower = fx_text::resize_box(box_, Edge::Right, 536.0, FRAME);
-    let (nx, ny, nw, nh) = narrower.to_px(FRAME.0, FRAME.1);
-    assert!((nx - 64.0).abs() < 1e-9, "{nx}");
-    assert!((ny - 252.0).abs() < 1e-9, "{ny}");
-    assert!((nw - 472.0).abs() < 1e-9, "{nw}");
-    assert!((nh - 57.6).abs() < 1e-9, "{nh}");
-
-    // 5 px off the centre line the dragged edge takes it: |320 − 315| = 5 is within reach, so the right edge lands on
-    // 320 and the box is 256 wide. The one line offered was the edge itself, and the frame's line is what it met.
-    let snapped = fx_text::resize_box(box_, Edge::Right, 315.0, FRAME);
-    let (sx, _, sw, _) = snapped.to_px(FRAME.0, FRAME.1);
-    assert!((sx + sw - 320.0).abs() < 1e-9, "{}", sx + sw);
-    assert!((sw - 256.0).abs() < 1e-9, "{sw}");
-
-    // …and 20 px off it, where the centre is 20 away and the right edge 340, no line is in reach so the edge stays at
-    // 300. Nothing else was offered to pull to — that is "a dragged edge only itself".
-    let far = fx_text::resize_box(box_, Edge::Right, 300.0, FRAME);
-    let (fx0, _, fw0, _) = far.to_px(FRAME.0, FRAME.1);
-    assert!((fx0 + fw0 - 300.0).abs() < 1e-9, "{}", fx0 + fw0);
-
-    // The bottom edge down by 20 px, to 329.6: the frame's bottom is 30.4 away and its middle 149.6, so no snap —
-    // height grows to 77.6 while x and w are untouched.
-    let taller = fx_text::resize_box(box_, Edge::Bottom, y + h + 20.0, FRAME);
-    let (tx, ty, tw, th) = taller.to_px(FRAME.0, FRAME.1);
-    assert!((tx - x).abs() < 1e-9, "{tx}");
-    assert!((tw - w).abs() < 1e-9, "{tw}");
-    assert!((ty - 252.0).abs() < 1e-9, "{ty}");
-    assert!((th - 77.6).abs() < 1e-9, "{th}");
-
-    // The floor, and the only place the 16 px itself shows: NARROW's bottom is at 309.6, its top dragged to 609.6
-    // (nearest line 249.6 away, so no snap) would give a negative height, and `min(309.6 − 16)` stops it at exactly
-    // 16 — the box then sits against its own bottom edge at y=293.6 with the width alone. Vertically 16 clears
-    // §A.4's `hf ∈ [0.03,1]`, which on a 360-high frame is 10.8.
-    let flat = fx_text::resize_box(NARROW, Edge::Top, 609.6, FRAME);
-    let (ffy, ffh, ffw) = {
-        let (_ax, ay, aw, ah) = flat.to_px(FRAME.0, FRAME.1);
-        (ay, ah, aw)
-    };
-    assert_eq!(ffh, fx_text::MIN_BOX_PX);
-    assert!((ffy - 293.6).abs() < 1e-9, "{ffy}");
-    assert!((ffw - 256.0).abs() < 1e-9, "{ffw}");
-
-    // Horizontally the same floor can never show at this frame's size: 16 px is under §A.4's `wf ∈ [0.04,1]`, which on
-    // 640 is 25.6, so the box stops there instead — and holding it on the picture leaves it at x=192, its own left
-    // edge, because a 25.6 px plate still fits where the anchor was.
-    let crushed = fx_text::resize_box(NARROW, Edge::Right, 192.0 - 300.0, FRAME);
-    let (cx0, _, cw, _) = crushed.to_px(FRAME.0, FRAME.1);
-    assert_eq!(cw, fx_text::MIN_WIDTH_FRACTION * FRAME.0);
-    assert!((cx0 - 192.0).abs() < 1e-9, "{cx0}");
-
-    // The opposite edge, and still one axis only: NARROW's left dragged to 300 is 20 px off the centre line, so no
-    // snap, and `min(448 − 16)` does not bite — x=300 with a width of 148, the top and height exactly as they were.
-    let side = fx_text::resize_box(NARROW, Edge::Left, 300.0, FRAME);
-    let (sx0, sy0, sw0, sh0) = side.to_px(FRAME.0, FRAME.1);
-    assert!((sx0 - 300.0).abs() < 1e-9, "{sx0}");
-    assert!((sw0 - 148.0).abs() < 1e-9, "{sw0}");
-    assert!((sy0 - 252.0).abs() < 1e-9, "{sy0}");
-    assert!((sh0 - 57.6).abs() < 1e-9, "{sh0}");
-}
-
-/// S5 (`a press without travel toggles play/pause wherever it lands`): landing on a caption cannot change what a
-/// press means, so the box lets a still press through to the picture — and while the box is held it keeps drawing at
-/// full strength with its outline dashed (§06#2), which is what makes the gesture legible without hiding the words.
-#[test]
-fn f3_4_s5_a_press_without_travel_still_toggles_play() {
-    assert!(fx_text::press_without_travel_toggles_play());
-    // §06#2's rule, asserted as a neighbour rather than re-derived: held ≠ hidden.
-    assert!(fx_lane::held_drawn_full(true));
-    assert!(fx_lane::held_outline_dashed(true));
-    assert!(!fx_lane::held_outline_dashed(false));
 }

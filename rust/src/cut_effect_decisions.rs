@@ -1,8 +1,6 @@
 //! Cut and effects — where each of the eleven behind-the-model behaviours of
 //! `spec/12-decisions.md` §"Cut and effects" (rows 11–21) lives now.
 
-use crate::roles;
-
 pub use crate::tools::cutpass::SNAP_TOLERANCE_SECONDS;
 
 pub use crate::cut_effects_pass::ZOOM_HEIGHT;
@@ -115,12 +113,6 @@ pub fn withdrawal_notice(web_withdrawn: bool, thinking_off: bool) -> Option<Stri
         }
         (false, true) => Some("note: thinking is switched off for this attempt.".to_string()),
     }
-}
-
-/// Whether the withdrawal applies to this cut attempt: web tools ride the first attempt only, so they
-/// are gone from attempt 2 onward. Read through [`roles::CutAttempt`] so the audit names the live field.
-pub fn web_tools_withdrawn(attempt: u32) -> bool {
-    !roles::cut_attempt(attempt).web_tools
 }
 
 // --- the audit table -----------------------------------------------------------------------------------------------------

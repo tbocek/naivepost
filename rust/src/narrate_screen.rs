@@ -55,11 +55,6 @@ pub fn pitch_readout(semitones: f64) -> String {
     format!("{:.1}", clamp_pitch(semitones))
 }
 
-/// Zero writes no `narrate/pitch.txt` and no shifted copy, keeping every take cached before the slider valid.
-pub fn pitch_is_shifted(semitones: f64) -> bool {
-    semitones != 0.0
-}
-
 /// spec/10-parameters.md:133 `Narrate take band: ruler 12 …`.
 pub const BAND_RULER_PX: f64 = 12.0;
 
@@ -108,10 +103,6 @@ pub fn take_press(pressed_x: f64, released_x: f64, start: f64) -> TakePress {
 
 pub fn can_make_take(selection: (f64, f64)) -> bool {
     selection.1 - selection.0 >= TAKE_MIN_SECONDS
-}
-
-pub fn take_seconds_too_short(seconds: f64) -> bool {
-    seconds < TAKE_MIN_SECONDS
 }
 
 /// §1 / inventory §A.7 (`that is N s — a take has to be at least 0.4 s`).
@@ -240,11 +231,6 @@ pub fn clock_line(session: f64, cut_at: f64, length: f64) -> String {
         tools::mm_ss(cut_at),
         tools::mm_ss(length)
     )
-}
-
-/// §1 (`paused, wheel steps a frame`): stepping under a moving picture would fight the tick.
-pub fn wheel_steps_a_frame(playing: bool) -> bool {
-    !playing
 }
 
 /// What a leading tag means. A placement is a caption (the viewer reads it) and not an emotion; an enum because both cannot be true.
@@ -599,18 +585,8 @@ pub fn audition_without_recording(case: Audition, line_no: usize) -> (Audition, 
     }
 }
 
-/// §1 (`"synthesizing… (first line after a cold start also loads the model)"`): the parenthetical keeps a slow first line from looking like a hang. No line number, as §1 gives none.
-pub fn speaking_line() -> String {
-    "synthesizing\u{2026} (first line after a cold start also loads the model)".to_string()
-}
-
 pub fn spoken_alone(entry_no: usize) -> String {
     format!("entry {entry_no} \u{2014} no recording covers this clip, so the line plays on its own")
-}
-
-/// §1 (`failure "synthesis failed — see log"`): the log has the server's reason.
-pub fn synthesis_failed() -> &'static str {
-    "synthesis failed \u{2014} see log"
 }
 
 /// §1's row order, which the window builds: time entry (14), status (15, 21), ▶ speak (16), ↻ re-roll (17), ＋ add below (18),
@@ -744,13 +720,6 @@ pub fn remove_line(clip_has_other_line: bool, clip_s: f64) -> String {
 
 pub fn re_roll_refusal(clip_no: usize, has_line: bool) -> Option<String> {
     (!has_line).then(|| format!("clip {clip_no} has no line to re-roll"))
-}
-
-/// §6 (`re-rolling an already heard or edited narration needs the Replace tick`): the refusal says what to click; the tick never defaults on ([`crate::narrate_details`]).
-pub fn replace_refusal(heard_or_edited: bool, replace_ticked: bool) -> Option<&'static str> {
-    (heard_or_edited && !replace_ticked).then_some(
-        "this narration was already heard or edited \u{2014} tick \u{201c}Replace\u{201d} to write another take over it",
-    )
 }
 
 pub fn time_field(shown: f64) -> String {

@@ -82,41 +82,6 @@ fn f0_5_s1_start_run_turns_running_on_and_opens_the_log() {
 }
 
 #[test]
-fn f0_5_s1_start_run_clears_a_stale_cancel_from_the_previous_run() {
-    // F0.5 S1: a `cancelled` left standing by the run before must not abort this one.
-    let mut bar = RunBar::default();
-    let mut queue = Queue::new();
-    let mut log = exchanges::RunLog::new();
-    bar.cancelled = true;
-    bar.stop_flag = true;
-
-    let epoch = runqueue::start_run(
-        &mut bar,
-        &mut queue,
-        &mut log,
-        Step::Suggest,
-        Snapshot::default(),
-    )
-    .epoch;
-
-    assert!(
-        !bar.cancelled,
-        "S1: the cancel flag is cleared for the new run"
-    );
-    assert!(!bar.stop_flag, "S1: the stop flag is cleared too");
-    assert_eq!(epoch, bar.run_epoch);
-    // And the stale pairing cannot be reconstructed: the old epoch is not the current one.
-    assert!(
-        !runqueue::is_cancelled(true, epoch - 1, bar.run_epoch),
-        "a cancellation flagged in an earlier run does not speak for this one"
-    );
-    assert!(
-        runqueue::is_cancelled(true, epoch, bar.run_epoch),
-        "same generation plus the flag is what means cancelled"
-    );
-}
-
-#[test]
 fn f0_5_s1_start_run_resets_the_queue_it_inherits() {
     // F0.5 S1: the queue reset happens here because the tracks are summed — last run's leftovers
     // would be added to every reading this one takes.

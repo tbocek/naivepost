@@ -11,8 +11,7 @@ use crate::prompts;
 use crate::seam_retries;
 use crate::textfmt::{self, Retake};
 use crate::tools::textedit::{
-    Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS, SEAM_NOISE_WORDS, SEAM_REACH_WORDS,
-    SEAM_SNAP_WORDS,
+    Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS, SEAM_REACH_WORDS, SEAM_SNAP_WORDS,
 };
 use crate::word_list::{self, Word};
 
@@ -626,10 +625,4 @@ pub fn bounds() -> (usize, usize, usize, f64, u32, usize) {
         seam_retries::SEAM_RETRIES,
         JOIN_REACH_WORDS,
     )
-}
-
-/// The noise bound: a stretch of this many words somewhere away from the join is a respelling of the
-/// seam rather than a second copy, and does not disqualify the join. `P.machine.seamNoiseWords`.
-pub fn noise_words() -> usize {
-    SEAM_NOISE_WORDS
 }

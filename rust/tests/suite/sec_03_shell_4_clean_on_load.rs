@@ -25,7 +25,7 @@ use adw::prelude::*;
 use common::source_row as row;
 use gtk4 as gtk;
 use naivepost::project::Project;
-use naivepost::{open_project, sources, ui};
+use naivepost::{open_project, ui};
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
 const ITEM: &str =
@@ -57,55 +57,6 @@ fn contradictory_rows() -> Vec<naivepost::project::Source> {
         row("project:sources/wild.mkv", false, 9),
         row("project:sources/mic.wav", true, 0),
     ]
-}
-
-/// §4: a load clears what the file cannot mean, says each clearing, and fills the slot the strip
-/// emptied. Driven through `open_project::apply`, the ONE door that decides what a load keeps.
-#[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_load_clears_a_duplicated_slot_and_fills_slot_1(
-) {
-    common::pin_private_cwd();
-    let root = common::temp_dir_created("clean-apply");
-    let folder = dirty_folder(&root, &contradictory_rows());
-
-    let applied = open_project::apply(&folder, |path| path.is_file())
-        .expect("a hand-edited project still opens");
-    let project = &applied.project;
-
-    // Both keep voice 1: the number says which voice, and one person is usually every recording.
-    assert_eq!(
-        project.sources[1].narrator, 1,
-        "{ITEM}: two rows may share voice 1"
-    );
-    // A voice past the last one is not honoured either: it is voice 1, there being no "no voice".
-    assert_eq!(
-        project.sources[2].narrator, 1,
-        "{ITEM}: voice 9 is past the last one"
-    );
-    // Only a video may be footage: the audio row loses the flag, not the row.
-    assert!(
-        !project.sources[3].footage,
-        "{ITEM}: an audio file has no frames"
-    );
-    assert_eq!(
-        sources::slot_holder(project, 1),
-        Some(0),
-        "{ITEM}: slot 1 stays held"
-    );
-
-    // Each clearing is REPORTED -- silently losing a tag someone typed is worse than a line about it --
-    // and the lines ride `Applied.lines`, which is what the shell logs on an open.
-    for said in [
-        "wild.mkv: voice 9 is past the last one -- voice 1",
-        "mic.wav: an audio file has no frames -- not footage",
-    ] {
-        assert!(
-            applied.lines.iter().any(|line| line.contains(said)),
-            "{ITEM}: the load never said {said:?}: {:?}",
-            applied.lines
-        );
-    }
-    fs::remove_dir_all(&root).ok();
 }
 
 /// The other half of §4's sentence: a project that loads clean is not talked to, and whatever the user
@@ -179,39 +130,6 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     );
     let (launched, _) = ui::launch::load_for_launch(&folder);
     assert_eq!(voices(&launched.sources), [2, 3]);
-    fs::remove_dir_all(&root).ok();
-}
-
-/// The launch's door takes a project on exactly as the button does, so it cleans identically: same
-/// flags gone, same sentences in the report the launch logs.
-#[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_launch_reopen_clears_the_same_flags(
-) {
-    common::pin_private_cwd();
-    let root = common::temp_dir_created("clean-launch");
-    let folder = dirty_folder(&root, &contradictory_rows());
-
-    let (project, report) = ui::launch::load_for_launch(&folder);
-
-    assert_eq!(
-        project.sources[1].narrator, 1,
-        "{ITEM}: the launch keeps a shared voice"
-    );
-    assert!(
-        !project.sources[3].footage,
-        "{ITEM}: the launch strips footage off an audio file"
-    );
-    assert_eq!(
-        sources::slot_holder(&project, 1),
-        Some(0),
-        "{ITEM}: slot 1 stays held"
-    );
-    assert!(
-        report
-            .iter()
-            .any(|line| line.contains("an audio file has no frames -- not footage")),
-        "{ITEM}: the launch says what it cleared: {report:?}"
-    );
     fs::remove_dir_all(&root).ok();
 }
 

@@ -192,16 +192,6 @@ impl Stopped {
     }
 }
 
-/// S4: whether a subprocess that died should be read as stopped rather than as a failure.
-pub fn stopped_is_not_failure(stop_flag: bool, exit_killed: bool) -> bool {
-    stop_flag && exit_killed
-}
-
-/// S4: whether a stop takes effect right now.
-pub fn stop_takes_effect_between_subprocesses(stop_flag: bool, subprocess_running: bool) -> bool {
-    stop_flag && !subprocess_running
-}
-
 /// A run under way: which step, whether it is paused, and what it is working on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Run {
@@ -335,14 +325,6 @@ impl RunBar {
             }
         }
     }
-}
-
-/// Whether any of a run's log lines claims everything finished. Kept as a function so the rule
-/// "no `all done` line for one step" (S4) is asserted rather than eyeballed.
-pub fn announced_all_done(lines: &[String]) -> bool {
-    lines
-        .iter()
-        .any(|line| line.to_lowercase().contains("all done"))
 }
 
 /// The run bar's two buttons as they should be drawn right now.

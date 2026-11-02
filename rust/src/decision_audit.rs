@@ -1,7 +1,5 @@
 //! The five homes of a decision — directive B's audit table, `spec/12-decisions.md` §1.
 
-use crate::decision_homes;
-
 /// One of §1's five homes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Home {
@@ -75,14 +73,6 @@ pub fn change_is_announced(home: Home) -> bool {
     matches!(home, Home::ToolResult | Home::FinishAnswer)
 }
 
-/// Whether this directive-A home holds a number or a wording rather than a per-item judgement.
-pub fn is_number_or_wording(home: decision_homes::Home) -> bool {
-    matches!(
-        home,
-        decision_homes::Home::Policy | decision_homes::Home::Prompt
-    )
-}
-
 /// One of §1's examples, tied to the code path that actually makes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Example {
@@ -91,46 +81,4 @@ pub struct Example {
     pub what: &'static str,
     /// Where it happens, so the table cannot describe a decision this build does not make.
     pub lives_in: &'static str,
-}
-
-/// The table's examples, in the order §1 lists them.
-pub fn examples() -> [Example; 7] {
-    [
-        Example {
-            home: Home::ToolArgument,
-            what: "which lines are an abandoned attempt",
-            lives_in: "tools::retakes::Marks::mark_abandoned \u{2014} line numbers, never seconds",
-        },
-        Example {
-            home: Home::ToolResult,
-            what: "a segment's snapped edges and how far they moved",
-            lives_in: "tools::cutpass::Plan::add_segment's `span` + `moved`, snapped within \
-                      P.policy.snapToleranceSeconds",
-        },
-        Example {
-            home: Home::FinishAnswer,
-            what: "fewer segments than the target allows",
-            lives_in: "tools::cutpass::cut_problems, joined by finish_cut",
-        },
-        Example {
-            home: Home::FinishAnswer,
-            what: "a clip with no line",
-            lives_in: "narrate_pass::no_line_fault",
-        },
-        Example {
-            home: Home::WalkBack,
-            what: "placing a cut edge on the audio envelope",
-            lives_in: "edges::place_edges",
-        },
-        Example {
-            home: Home::PolicyOrPrompt,
-            what: "the 40 % ceiling on marks",
-            lives_in: "tools::retakes::RETAKE_CEIL = P.machine.retakeCeil",
-        },
-        Example {
-            home: Home::PolicyOrPrompt,
-            what: "clean it like a subtitler",
-            lives_in: "spec/prompts/captions.md",
-        },
-    ]
 }

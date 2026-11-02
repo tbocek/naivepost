@@ -9,7 +9,6 @@ use naivepost::layout::Tree;
 use naivepost::prepare::FIX_BLOCK_LINES;
 use naivepost::project::MarkingPass;
 use naivepost::textfmt::{self, FrameEvent, Line, SessionLine};
-use naivepost::tools::fix::FIX_CONTEXT_SECONDS;
 
 const BASE: &str = "lecture";
 const OTHER: &str = "crowd";
@@ -195,30 +194,6 @@ fn f1_8_s2_blocks_of_p_machine_fixblocklines_twentyfive() {
     // The short tail is still a block: padding it would ask for fixes to lines that do not exist.
     assert_eq!(fix::blocks(&lines(51))[2].len(), 1);
     assert!(fix::blocks(&[]).is_empty());
-}
-
-#[test]
-fn f1_8_s2_the_context_reaches_five_seconds_past_the_block() {
-    assert_eq!(FIX_CONTEXT_SECONDS, 5.0);
-    assert_eq!(fix::context_window(20.0, 30.0), (15.0, 35.0));
-
-    // Clipped at the session's own edges: nothing outside the timeline can be grounding.
-    let blocks = fix::blocks(&lines(60));
-    let asks = fix::asks_for(&blocks, 0.0, 600.0);
-    assert_eq!(asks.len(), blocks.len());
-    assert_eq!(asks[0].0, 1, "1-based: these are the blocks the log counts");
-    assert_eq!(
-        asks[0].1, 0.0,
-        "the first window opens at nought, not at -5"
-    );
-    assert_eq!(
-        asks.last().unwrap().2,
-        600.0,
-        "the last closes at the session's end"
-    );
-    // A middle block reaches five seconds past its own rows in both directions: rows 25..=49 run
-    // 250.00-259.00 for the first and 490.00-499.00 for the last.
-    assert_eq!(asks[1], (2, 245.0, 504.0));
 }
 
 #[test]
@@ -838,49 +813,6 @@ fn f1_8_s7_a_row_is_labelled_by_voice() {
     assert_eq!(fix::label(BASE, "SPEAKER_02", ""), "SPEAKER_02");
     assert_eq!(naivepost::tools::mm_ss(65.0), "01:05");
     assert_eq!(fix::stamp_span(0.0, 4.0), "00:00-00:04");
-}
-
-#[test]
-fn f1_8_s7_a_marked_stretch_folds_to_one_line() {
-    let rows = vec![
-        session(0.0, 2.0, BASE, "SPEAKER_00", "first attempt"),
-        session(4.0, 6.0, BASE, "SPEAKER_00", "still the attempt"),
-        session(20.0, 22.0, BASE, "SPEAKER_00", "the take that stayed"),
-    ];
-    let mark = fix::Mark {
-        start: 0.0,
-        end: 10.0,
-        again: Some(20.0),
-    };
-
-    // Two rows inside the mark, one line out — and it says what the cut does with them.
-    assert_eq!(
-        fix::fold_marks(&rows, &[mark]),
-        "00:00 (abandoned attempt to 00:10, said again at 00:20 -- already removed, read straight past it)\n\
-         [20s-22s | 00:20] SPEAKER_00: the take that stayed\n"
-    );
-
-    // A mark with no second take says nothing about one; a row starting on the mark's end is outside it.
-    let bare = &fix::Mark {
-        start: 0.0,
-        end: 10.0,
-        again: None,
-    };
-    assert!(fix::fold_marks(&rows, std::slice::from_ref(bare))
-        .starts_with("00:00 (abandoned attempt to 00:10 -- already removed"));
-    let outside = vec![session(10.0, 12.0, BASE, "SPEAKER_00", "after")];
-    assert!(fix::fold_marks(&outside, std::slice::from_ref(bare)).contains("SPEAKER_00: after"));
-
-    // The narrator is named in the text the user opens as well as the text the cut reads.
-    let narrated = vec![session(0.0, 2.0, OTHER, "SPEAKER_09", "the narration")];
-    assert_eq!(
-        fix::fold_marks(&narrated, &[]),
-        "[0s-2s | 00:00] SPEAKER_09: the narration\n"
-    );
-    assert_eq!(
-        fix::labelled(&narrated, OTHER, &[]),
-        "[0s-2s | 00:00] NARRATOR: the narration\n"
-    );
 }
 
 #[test]

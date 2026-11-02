@@ -1,6 +1,6 @@
 //! F3.3 Speed and stop by hand — `spec/06-effects.md` F3.3, steps S1–S4 and the arithmetic after them.
 
-use crate::cut::{EffectKind, Fx, Seg};
+use crate::cut::{EffectKind, Fx};
 use crate::fx_lane;
 use crate::fx_record;
 use crate::fx_zoom;
@@ -416,18 +416,6 @@ pub fn steps_of(fx: &Fx) -> Vec<Span> {
             step.to += from;
             step
         })
-        .collect()
-}
-
-pub fn render_stairs(fx: &[Fx], seg: &Seg) -> Vec<Span> {
-    rate_spans(fx)
-        .into_iter()
-        .map(|mut span| {
-            span.from = span.from.max(seg.s);
-            span.to = span.to.min(seg.e);
-            span
-        })
-        .filter(|span| span.to > span.from)
         .collect()
 }
 

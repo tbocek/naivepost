@@ -210,18 +210,6 @@ pub fn camera_clock_is_smoothed() -> bool {
 
 // --- preview and render, deliberately different --------------------------------------------------------------------
 
-/// §06-effects#2-the-lane-and-the-preview (`preview runs speed at one flat rate`): [`crate::cut_hear::rate_under`]
-/// answers the rate for the second under the line and nothing else.
-pub fn previews_flat_rate() -> bool {
-    true
-}
-
-/// §06-effects#2-the-lane-and-the-preview (`render follows ramps and averages overlaps`): the other half of the
-/// difference, stated here so the two can never be "unified" by someone who found only one of them.
-pub fn render_follows_ramps() -> bool {
-    true
-}
-
 /// §06-effects#2-the-lane-and-the-preview (`the two 1× sound answers cannot be previewed`; inventory/effects.md
 /// §A.3): `own` (1× to the effect's end) and `scene` (1× to the scene's end) both need the sound running at a
 /// different clock from the picture, which is what a preview with one player cannot do.
@@ -395,21 +383,6 @@ pub fn plate_shown(width_px: f64) -> bool {
     width_px > PLATE_MIN_PX
 }
 
-/// §06-effects#2-the-lane-and-the-preview (`The earliest covering effect's answer wins`, inventory/effects.md
-/// §A.3): what the speed under `t` does with its sound — the first effect that both covers the second and named
-/// an answer, in the order they were placed.
-pub fn sound_answer_at(fx: &[Fx], t: f64) -> Option<String> {
-    fx.iter()
-        .filter(|effect| effect.effect_kind() == Some(EffectKind::Speed))
-        .filter(|effect| !effect.snd.is_empty())
-        .filter(|effect| {
-            let (from, to) = effect.spans();
-            t >= from && t < to
-        })
-        .min_by(|a, b| a.t.total_cmp(&b.t))
-        .map(|effect| effect.snd.clone())
-}
-
 /// §06-effects#2-the-lane-and-the-preview (`"sound X s behind|ahead" plate once wider than 60 px`): the room
 /// the plate has to speak in.
 pub fn room_px(allocated: f64, requested: f64) -> f64 {
@@ -442,11 +415,6 @@ pub fn plate_debt_at(fx: &[Fx], t: f64) -> f64 {
 /// fade in and back out where delayed sound rejoins the picture — short enough not to hear, long enough that the
 /// rejoin does not click.
 pub const SOUND_DIP_SECONDS: f64 = 0.15;
-
-/// §06-effects#2-the-lane-and-the-preview: the rejoin's dip, read as a function so a caller cannot pick its own.
-pub fn rejoin_dip() -> f64 {
-    SOUND_DIP_SECONDS
-}
 
 /// `P.eng.effectMinSeconds` (spec/10-parameters.md §5.1: 0.1, "shortest an effect band may be dragged down
 /// to"; prototype `fxMinDur` in go/cut_fx.go).

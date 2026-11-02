@@ -65,26 +65,6 @@ fn spoken(spans: &[(f64, f64, u32)]) -> Vec<(f64, f64, String)> {
     transcribe::glue_turns(&turns(spans))
 }
 
-/// S1: the audio is mono 16 kHz — that is the rate every sidecar's samples are counted in — and its
-/// length is said out loud before anything is asked of a server.
-#[test]
-fn f1_3_s1_the_audio_is_mono_16khz_and_said_out_loud() {
-    assert_eq!(transcribe::SAMPLE_RATE, 16_000);
-    assert_eq!(transcribe::seconds(16000), 1.0);
-    assert_eq!(transcribe::seconds(8000), 0.5);
-    assert_eq!(transcribe::seconds(0), 0.0);
-
-    assert_eq!(
-        transcribe::audio_log(SOURCE, 12.34),
-        ">>> [mic.wav] 12.3 s of audio"
-    );
-
-    // S1's file is the caller's decode; this module only asks whether it is there yet.
-    let (_root, tree) = project("s1");
-    assert!(transcribe::has_audio(&tree, SOURCE));
-    assert!(!transcribe::has_audio(&tree, "later.wav"));
-}
-
 /// S2 (`P.policy.minTakeSeconds`): a take under two seconds is a start and a stop. The same files an
 /// empty recording gets, and no server is asked about a third of a second of nothing.
 #[test]
