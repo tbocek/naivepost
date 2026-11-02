@@ -430,7 +430,7 @@ fn fake_slots(slots: u32) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
                     most.fetch_max(now.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
                     std::thread::sleep(std::time::Duration::from_millis(30));
                     now.fetch_sub(1, Ordering::SeqCst);
-                    "{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"judge_text\",\"arguments\":\"{\\\"changed\\\":false,\\\"what\\\":\\\"same\\\"}\"}}]}}]}".to_string()
+                    "{\"choices\":[{\"message\":{\"content\":\"ok\",\"tool_calls\":[{\"function\":{\"name\":\"judge_text\",\"arguments\":\"{\\\"changed\\\":false,\\\"what\\\":\\\"same\\\"}\"}}]}}]}".to_string()
                 };
                 let _ = write!(
                     stream,
@@ -520,4 +520,107 @@ fn f1_6_s6_recordings_are_judged_side_by_side_up_to_the_servers_slots() {
     );
     assert_eq!(most, 1, "one slot, one ask at a time");
     assert_eq!(written, 3);
+}
+
+/// A project of three spoken recordings against a server of two slots, the settings pointed at it.
+fn three_transcripts(url: String) -> (std::path::PathBuf, Project, Tree) {
+    let (root, session, paths, conf, mut project, tree) = lecture_scene(url);
+    project.sources.clear();
+    for lane in ["one", "two", "three"] {
+        project.sources.push(Source {
+            path: format!("project:sources/{lane}.mkv"),
+            footage: true,
+            ..Default::default()
+        });
+        let rows = tree.transcript_tsv(lane);
+        std::fs::create_dir_all(rows.parent().unwrap()).unwrap();
+        std::fs::write(
+            rows,
+            format!("1.00\t5.00\tSPEAKER_00\twas in der aufnahme {lane} gesagt worden ist\n"),
+        )
+        .unwrap();
+    }
+    naivepost::project::save(&project, &session).unwrap();
+    settings::save(&paths, &conf).unwrap();
+    std::env::set_var("XDG_CONFIG_HOME", root.join("cfg"));
+    std::env::set_var("XDG_DATA_HOME", root.join("data"));
+    naivepost::startup::set_open_dir(&session);
+    (root, project, tree)
+}
+
+/// Fix's rows carry nothing from one recording to the next, so they run side by side up to the slots; the placement before them and the merge after them stay in their places.
+#[test]
+fn f1_8_recordings_are_fixed_side_by_side_up_to_the_servers_slots() {
+    let _scene = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (url, most) = fake_slots(2);
+    let (_root, project, tree) = three_transcripts(url);
+    let mut queue = naivepost::runqueue::Queue::new();
+    let stage = naivepost::fix_call::stage(&project);
+    let first_text = stage
+        .tasks
+        .iter()
+        .position(|task| task.program == naivepost::run_stages::TEXT_TASK)
+        .expect("a fix row");
+    let drive = naivepost::run_stages::drive_walk_watched_for_test(
+        &[naivepost::run_stages::Stage {
+            tasks: stage.tasks[first_text..first_text + 3].to_vec(),
+            ..stage
+        }],
+        &mut queue,
+        |_| {},
+        &[],
+        &mut |_, _| {},
+    );
+    std::env::remove_var("XDG_CONFIG_HOME");
+    std::env::remove_var("XDG_DATA_HOME");
+    assert!(
+        matches!(drive, naivepost::run_stages::Drive::Done { ran: 3, .. }),
+        "{drive:?}"
+    );
+    assert_eq!(most.load(std::sync::atomic::Ordering::SeqCst), 2);
+    for lane in ["one", "two", "three"] {
+        assert!(
+            tree.transcript_fixed_tsv(lane).exists(),
+            "{lane} got its file"
+        );
+    }
+}
+
+/// A track's batches are independent: answered side by side up to the slots, one at a time on a server that says one.
+#[test]
+fn f5_4_translation_batches_go_side_by_side_up_to_the_servers_slots() {
+    let _scene = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for (slots, expected) in [(2, 2), (1, 0)] {
+        let (url, most) = fake_slots(slots);
+        let (_root, _project, tree) = three_transcripts(url);
+        let asks: Vec<(String, Vec<usize>)> = (1..=4)
+            .map(|n| (format!("TRANSLATE {n}"), vec![n]))
+            .collect();
+        naivepost::produce_translate_ask::warm(&tree, &asks, &mut |_| {});
+        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::remove_var("XDG_DATA_HOME");
+        assert_eq!(
+            most.load(std::sync::atomic::Ordering::SeqCst),
+            expected,
+            "{slots} slot(s)"
+        );
+    }
+}
+
+/// The Settings row for the LLM says how many slots the server reports, the same count the parallel steps use.
+#[test]
+fn sec_03_shell_5_the_llm_row_says_the_servers_slots() {
+    let _scene = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (url, _) = fake_slots(4);
+    let (_root, _project, _tree) = three_transcripts(url);
+    let said = naivepost::settings_probe::probe("llm", "").expect("the row answers");
+    std::env::remove_var("XDG_CONFIG_HOME");
+    std::env::remove_var("XDG_DATA_HOME");
+    assert!(said.contains("4 slot(s)"), "{said}");
 }

@@ -198,6 +198,46 @@ pub fn ask(tree: &Tree, cancelled: &std::rc::Rc<dyn Fn() -> bool>) -> Box<Ask> {
     })
 }
 
+/// Have `asks` answered side by side up to the server's slots, each landing in the cache the walk then reads. An
+/// answer that cannot be stored (partial, or no answer) is simply asked again by the walk. One ask, or one slot: nothing to do here.
+pub fn warm(tree: &Tree, asks: &[(String, Vec<usize>)], log: &mut dyn FnMut(&str)) {
+    if asks.len() < 2 {
+        return;
+    }
+    let Some(at_once) = crate::rows_at_once::llm_slots().filter(|slots| *slots > 1) else {
+        return;
+    };
+    let Some(conf) = settings::from_environment()
+        .as_ref()
+        .and_then(|paths| settings::read(paths).ok())
+    else {
+        return;
+    };
+    let endpoint = services::llm_endpoint(&conf);
+    let _opened = crate::slot_gate::open_to(&endpoint.url, at_once);
+    log(&format!(
+        ">>> subtitles: {} batch(es), {at_once} at once -- the LLM server has the slots",
+        asks.len()
+    ));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..(at_once as usize).min(asks.len()) {
+            scope.spawn(|| loop {
+                let at = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some((message, numbers)) = asks.get(at) else {
+                    return;
+                };
+                let cancelled = crate::cancel_leg::cancel_check_now();
+                if cancelled() {
+                    return;
+                }
+                let _page = crate::exchange_leg::RowPage::open(&format!("b{}", at + 1));
+                let _ = ask_at(tree, &conf, message, numbers, &cancelled);
+            });
+        }
+    });
+}
+
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
 pub fn ask_at(
     tree: &Tree,

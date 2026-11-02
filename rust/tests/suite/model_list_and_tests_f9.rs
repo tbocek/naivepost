@@ -549,7 +549,8 @@ fn s5_completion(app: &adw::Application) {
     tag_this_case("s5");
     let fake = Fake::start(|path| match path {
         "/v1/chat/completions" => r#"{"choices":[{"message":{"content":"ok"}}]}"#.to_string(),
-        other => panic!("the LLM row sends one completion, saw {other}"),
+        "/health" => r#"{"status":"ok","slots":4}"#.to_string(),
+        other => panic!("the LLM row sends one completion and reads the slots, saw {other}"),
     });
     conf_pointing_at(&fake.url, "qwen2.5vl:7b");
     let window = build_shell(app);
@@ -582,10 +583,14 @@ fn s5_completion(app: &adw::Application) {
         "the row names its model: {said}"
     );
     assert!(
-        said.ends_with(": \"ok\""),
-        "and quotes what came back: {said}"
+        said.ends_with(": \"ok\" \u{b7} 4 slot(s)"),
+        "and quotes what came back, then the server's slots: {said}"
     );
-    let asked = fake.waited(1);
+    let asked: Vec<_> = fake
+        .waited(1)
+        .into_iter()
+        .filter(|(path, _)| path != "/health")
+        .collect();
     assert_eq!(asked.len(), 1, "one completion, as F0.13 says");
     assert_eq!(asked[0].0, "/v1/chat/completions");
     let body: serde_json::Value = serde_json::from_str(&asked[0].1).expect("the chat body is JSON");

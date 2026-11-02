@@ -424,34 +424,6 @@ where
         queue.job(stage.track, stage.name, stage.phase, stage.of);
         queue.push(stage.track, stage.tasks.len(), stage.kind);
         on_queue(queue, stage.name);
-        if let Some(at_once) = crate::rows_at_once::at_once_for(stage) {
-            match crate::rows_at_once::walk(
-                stage, at_once, queue, &paused, &stop_flag, &mut log, on_queue,
-            ) {
-                crate::rows_at_once::Walked::Done {
-                    ran: rows,
-                    skipped: passed,
-                } => {
-                    ran += rows;
-                    skipped += passed;
-                }
-                crate::rows_at_once::Walked::Stopped { ran: rows, left } => {
-                    return Drive::Stopped {
-                        ran: ran + rows,
-                        left,
-                    };
-                }
-                crate::rows_at_once::Walked::Failed(error) => {
-                    return Drive::Failed {
-                        stage: stage.name,
-                        error,
-                    };
-                }
-            }
-            queue.done(stage.track, 1.0);
-            on_queue(queue, stage.name);
-            continue;
-        }
         let total = stage.tasks.len();
         // The walk's own position. A stop reports THIS, not an arithmetic guess off the loop index:
         // a run stopped between two tasks leaves exactly the tasks that were never reached.
@@ -472,7 +444,54 @@ where
             .collect();
         let mut requests_total: usize = planned.iter().sum();
         let mut requests_done = 0usize;
+        let mut side_by_side_until = 0usize;
+        let mut slots_asked = false;
         for (index, task) in stage.tasks.iter().enumerate() {
+            if index < side_by_side_until {
+                continue;
+            }
+            if !slots_asked && crate::rows_at_once::starts_run(stage, index) {
+                slots_asked = true;
+                if let Some((at_once, range)) = crate::rows_at_once::at_once_for(stage, index) {
+                    side_by_side_until = range.end;
+                    let rows = range.len();
+                    match crate::rows_at_once::walk(
+                        stage,
+                        range,
+                        at_once,
+                        progress.done,
+                        queue,
+                        &paused,
+                        &stop_flag,
+                        &mut log,
+                        on_queue,
+                    ) {
+                        crate::rows_at_once::Walked::Done {
+                            ran: walked,
+                            skipped: passed,
+                        } => {
+                            ran += walked;
+                            skipped += passed;
+                            for _ in 0..rows {
+                                progress = progress.advanced();
+                            }
+                        }
+                        crate::rows_at_once::Walked::Stopped { ran: walked, left } => {
+                            return Drive::Stopped {
+                                ran: ran + walked,
+                                left: left + total - side_by_side_until,
+                            };
+                        }
+                        crate::rows_at_once::Walked::Failed(error) => {
+                            return Drive::Failed {
+                                stage: stage.name,
+                                error,
+                            };
+                        }
+                    }
+                    continue;
+                }
+            }
             let label = if total > 1 {
                 format!("{} of {total}, {}", index + 1, task.label)
             } else {

@@ -8,7 +8,7 @@
 
 ## 1. The four servers
 
-Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each server is given one of this app's requests at a time, and requests to different servers run side by side: a narration speaking on audio.cpp while the LLM writes a title, and two LLM jobs take turns, except the text gate's and Describe's recordings, which run side by side up to the slots the LLM server reports ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
+Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each server is given one of this app's requests at a time, and requests to different servers run side by side: a narration speaking on audio.cpp while the LLM writes a title, and two LLM jobs take turns, except the text gate's, Describe's and Fix's recordings and translation's batches, which run side by side up to the slots the LLM server reports ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
 
 | what | default | serves | API |
 |---|---|---|---|

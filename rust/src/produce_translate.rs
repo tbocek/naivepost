@@ -51,6 +51,38 @@ pub fn track(
         .collect()
 }
 
+/// §3.10's sentence PLUS the numbered lines: `subs::message` is only the heading.
+fn batch_request(part: &[(usize, String)], language: &str) -> String {
+    format!(
+        "{}\n{}",
+        subs::message(part.len(), &crate::roles::language_name(language)),
+        subs::numbered(part)
+    )
+}
+
+/// Every first ask of every language's track, as [`one_track`] will make it: batches share nothing, so
+/// [`crate::produce_translate_ask::warm`] can have them answered side by side before the walk reads them back.
+pub fn first_asks(
+    cues: &[subs::Cue],
+    session_language: &str,
+    ticked: &[String],
+) -> Vec<(String, Vec<usize>)> {
+    let original: Vec<(usize, String)> = (1..=cues.len())
+        .map(|number| (number, subs::sent_text(&cues[number - 1])))
+        .collect();
+    let mut asks = Vec::new();
+    for language in subs::track_languages(session_language, ticked) {
+        for range in subs::batches(cues.len()) {
+            let part = &original[range.0..range.1];
+            asks.push((
+                batch_request(part, &language),
+                part.iter().map(|(number, _)| *number).collect(),
+            ));
+        }
+    }
+    asks
+}
+
 /// One language: numbered originals, batches, one re-ask, then the merge onto the original cues. Everything said goes through `log`.
 fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut(&str)) -> Tracked {
     let said = crate::roles::language_name(language);
@@ -65,12 +97,7 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut
         let part: Vec<(usize, String)> = original[range.0..range.1].to_vec();
         let numbers: Vec<usize> = part.iter().map(|(number, _)| *number).collect();
         let mut batch = subs::Batch::new(range);
-        // §3.10's sentence PLUS the numbered lines: `subs::message` is only the heading.
-        let request = format!(
-            "{}\n{}",
-            subs::message(part.len(), &crate::roles::language_name(language)),
-            subs::numbered(&part)
-        );
+        let request = batch_request(&part, language);
         if let Ok(answers) = ask(&request, &numbers) {
             for (number, text) in answers {
                 // A rejected line (unasked number, empty text) stays missing; `missing` decides the re-ask.

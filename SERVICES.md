@@ -90,9 +90,10 @@ PRODUCE  ───────────────────────�
    the video half touch no common file, so a model thinking about a title no
    longer leaves the encoder idle.
 
-4. **Text gate and Describe, one recording per LLM slot.** Recordings run side
-   by side up to the `slots` in the LLM server's `/health`; one slot, or none
-   reported, runs them in turn.
+4. **Text gate, Describe and Fix, one recording per LLM slot; translation, one
+   batch per slot.** They run side by side up to the `slots` in the LLM server's
+   `/health`; one slot, or none reported, runs them in turn. The Settings row for
+   the LLM shows the count.
 
 Everything else is a loop.
 
@@ -105,7 +106,6 @@ Ordered by what it would actually save on a session like a lecture.
 | # | what | why it is safe | what it costs |
 |---|---|---|---|
 | 1 | **Translation ‖ clip encodes** | The translated `.srt` is only needed by the final mux, which happens after every clip is encoded. Today the translation (LLM, GPU) finishes before the first clip is encoded (ffmpeg, CPU). | On the 10:29 lecture: translate took 3m 03s of a 5m 18s Produce. Nearly all of it is recoverable. |
-| 3 | **Fix the transcripts, block by block** | Blocks carry no state between them — each request is a block plus the window of context around it, and each answer is validated against its own block. | Second-longest LLM job; every block is independent. |
 | 4 | **The retake pool, 3 at once** | The three calls are already identical by design and their answers are pooled. Running them concurrently changes nothing about the result. | Gaming only. Cuts that pass to a third of its wall clock. |
 | 5 | **Clip encodes, N at a time** | Each clip is its own ffmpeg invocation writing its own file; only the concat list needs them all. | The whole encode is CPU-bound and single-threaded per clip today. |
 | 6 | **Diarization ‖ ASR+alignment**, within one recording | Diarization reads the wav and answers turns; it never reads `words.json`. Only `mergeSegments` needs both. | Both hit audio.cpp, so this only helps if that server will hold two models and serve them at once. |
