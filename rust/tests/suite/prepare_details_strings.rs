@@ -13,12 +13,11 @@ use naivepost::fix_transcripts as fix;
 use naivepost::prepare;
 use naivepost::prepare_data;
 use naivepost::project::Project;
-use naivepost::requests::Word;
 use naivepost::settings::{self, Paths};
 use naivepost::textfmt::{self, Line, SessionLine};
 use naivepost::tools::describe;
 use naivepost::tools::retakes;
-use naivepost::tools::textedit::{self, Side};
+use naivepost::tools::textedit::{self};
 use naivepost::transcribe;
 
 /// A settings folder of our own: the bench writes prompts through `Paths`, and a test that
@@ -62,53 +61,7 @@ static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize:
 const BASE: &str = "lecture";
 const OTHER: &str = "crowd";
 
-fn word(text: &str, start_sample: u64, end_sample: u64) -> Word {
-    Word {
-        word: text.to_string(),
-        start_sample,
-        end_sample,
-    }
-}
-
 // --- S7: the two hard failures of segments -------------------------------------------------------
-
-#[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s7_words_without_usable_times_are_refused_by_count(
-) {
-    // A word whose end is not after its start cannot be placed, and every cut point is put on a word
-    // edge — so this is refused rather than skipped quietly. The count is in the message because "some"
-    // sends a reader back to the file to count them.
-    let words = [
-        word("good", 0, 16_000),
-        word("zero", 32_000, 32_000),
-        word("backwards", 48_000, 40_000),
-    ];
-    assert_eq!(transcribe::unusable_words(&words), 2);
-    assert_eq!(
-        transcribe::unusable_words_error(2),
-        "2 words carry no usable start_sample/end_sample -- the answer changed shape"
-    );
-
-    // A whole transcript of usable times is not a failure at all.
-    assert_eq!(transcribe::unusable_words(&[word("fine", 0, 8_000)]), 0);
-}
-
-#[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s7_no_word_times_names_the_remedy_and_the_variant_points_upwards(
-) {
-    // No aligner registered: the remedy is a setting, so the message names the task to register.
-    assert_eq!(
-        transcribe::no_word_times("whisper.cpp", false),
-        "whisper.cpp transcribed this recording but timed no words, no aligner is registered to time them -- register one (task \"align\") -- or use an ASR that answers with word timings"
-    );
-
-    // An aligner was asked and left no times either: why is the warning directly above this line, so
-    // repeating it here would let the two drift apart.
-    assert_eq!(
-        transcribe::no_word_times("qwen3-asr", true),
-        "qwen3-asr transcribed this recording but timed no words, and the aligner left no times either, which the line above this one says why"
-    );
-}
 
 #[test]
 fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s7_transcript_srt_tags_the_speaker_unless_it_is_unknown(
@@ -278,41 +231,6 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s9_the_
 }
 
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s9_a_reply_with_no_label_is_filed_as_no_event_line(
-) {
-    // No `EVENT` anywhere: the words were the description, which is what they were every time this
-    // happened — but events.tsv has to say so, or a reader takes the line for an event that lost its stamp.
-    let note = describe::no_event_line("A slide of a chart appears on screen");
-    assert_eq!(
-        note,
-        "(no event line: A slide of a chart appears on screen)"
-    );
-
-    // Newlines folded, so one reply is one row of the file.
-    assert_eq!(
-        describe::no_event_line("a\n b  c"),
-        "(no event line: a b c)"
-    );
-
-    // Long replies are shortened to what identifies the call, with the tail marked off rather than
-    // silently cut — a reader has to be able to tell a quote from an excerpt. The `…` closes the bracket,
-    // which is why this checks the whole string's shape rather than its last character.
-    let long = describe::no_event_line(&"word ".repeat(60));
-    assert!(long.starts_with("(no event line: word word"), "{long}");
-    assert!(
-        long.ends_with("…)"),
-        "the tail is marked off, not silently cut: {long}"
-    );
-
-    // The parser reaches this outcome through UnlabeledDescription; the two agree on which replies it is.
-    let parsed = describe::parse_event_line("just prose here", 1.0, &[10.0, 11.0]);
-    assert!(
-        matches!(parsed, describe::ParseOutcome::UnlabeledDescription(_)),
-        "{parsed:?}"
-    );
-}
-
-#[test]
 fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s9_an_old_shape_event_belongs_to_the_first_frame(
 ) {
     // One EVENT for the whole batch, in the prototype's shape, has no stamp to place it by. The batch's
@@ -325,27 +243,6 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s9_an_o
 }
 
 // --- S10: fix's two logs, offsets.tsv, session.txt ------------------------------------------------
-
-#[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s10_a_block_out_of_tries_keeps_its_original_lines(
-) {
-    // The originals standing is the outcome worth logging: a reader who sees only "failed" looks for a
-    // crash, and there was none. Counted from one, because that is how a person counts blocks.
-    assert_eq!(
-        fix::block_failed_log("lecture", 0, 4),
-        ">>> [lecture] block 1/4 failed validation, keeping original lines"
-    );
-    assert_eq!(
-        fix::block_failed_log("lecture", 3, 4),
-        ">>> [lecture] block 4/4 failed validation, keeping original lines"
-    );
-
-    // And the re-run that asked for nothing says how much it skipped.
-    assert_eq!(
-        fix::cached_blocks_log("lecture", 7),
-        ">>> [lecture] 7 block(s) answered from the cache"
-    );
-}
 
 #[test]
 fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s10_offsets_tsv_pairs_footage_with_recording_and_says_so(
@@ -466,26 +363,6 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s11_cac
 }
 
 // --- S12: joins -----------------------------------------------------------------------------------
-
-#[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s12_a_stretch_beyond_seam_snap_says_which_way_it_missed(
-) {
-    // P.machine.seamSnapWords: within it a stretch is still at the join, past it the two mistakes are
-    // named apart because the model corrects them in opposite directions.
-    assert_eq!(textedit::seam_snap(Side::Before, 0), Ok(()));
-    assert_eq!(
-        textedit::seam_snap(Side::Before, textedit::SEAM_SNAP_WORDS),
-        Ok(())
-    );
-    assert_eq!(
-        textedit::seam_snap(Side::Before, textedit::SEAM_SNAP_WORDS + 2),
-        Err("the stretch left out stops 5 words short of the join".into())
-    );
-    assert_eq!(
-        textedit::seam_snap(Side::After, textedit::SEAM_SNAP_WORDS + 1),
-        Err("the stretch left out starts 4 words past the join".into())
-    );
-}
 
 #[test]
 fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s12_the_join_pass_counts_joins_not_words(

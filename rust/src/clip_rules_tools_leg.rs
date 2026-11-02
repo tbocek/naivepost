@@ -8,23 +8,6 @@ use crate::tools::Tool;
 /// Run one §3.7 ask as a tool conversation.
 type Ask<'a> = &'a mut (dyn FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String> + 'a);
 
-pub fn run_over_batch(
-    step: &str,
-    messages: Vec<Message>,
-    offered: &[Tool],
-    batch: &mut Clips,
-    ask: Ask<'_>,
-) -> Run {
-    run_over_batch_from(
-        step,
-        &tool_loop::Turn::default(),
-        messages,
-        offered,
-        batch,
-        ask,
-    )
-}
-
 /// One answered round: what the model was shown, and its calls with each result already written on them.
 #[derive(Clone)]
 pub struct Round {

@@ -12,19 +12,16 @@ use crate::cut_screen;
 use crate::fx_aspect;
 use crate::fx_zoom;
 use crate::ui::cut_folds::page_recordings;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::cut_svg::{svg_armed, svg_drag_ended};
 use crate::ui::cut_text_hand::{press_aspect, text_armed, text_drag_ended};
 use crate::ui::cut_zoom_hand::{
     preview_panel, set_camera_layer_down, set_zoom_armed, set_zoom_form, zoom_armed,
-    zoom_drag_ended, zoom_entry, zoom_form_box, zoom_form_open, LAST_ZOOM_WINDOW,
+    zoom_drag_ended, zoom_entry, zoom_form_box, zoom_form_open,
 };
 use crate::ui::window as ui;
 use crate::ui::window_bench::refresh_cut_readouts;
-
-thread_local! {
-    static CUT_HISTORIES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut::History>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub fn note_edit(window: &adw::ApplicationWindow) {
     let history = cut_history(window);
@@ -36,27 +33,42 @@ pub fn note_edit(window: &adw::ApplicationWindow) {
 pub(crate) fn cut_history(
     _window: &adw::ApplicationWindow,
 ) -> Rc<std::cell::RefCell<cut::History>> {
-    let held = CUT_HISTORIES.with(|slot| slot.borrow().last().cloned());
+    let held = WINDOW_PAGE.with(
+        |WindowPage {
+             cut_histories: slot,
+             ..
+         }| slot.borrow().last().cloned(),
+    );
     if let Some(held) = held {
         return held;
     }
     let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(
         &ui::newest_review_cut(),
     )));
-    CUT_HISTORIES.with(|slot| slot.borrow_mut().push(fresh.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             cut_histories: slot,
+             ..
+         }| slot.borrow_mut().push(fresh.clone()),
+    );
     fresh
 }
 
 pub fn reopen_history_on(cut_: &cut::Cut) {
-    CUT_HISTORIES.with(|slot| {
-        let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(cut_)));
-        let mut slot = slot.borrow_mut();
-        if let Some(latest) = slot.last_mut() {
-            *latest = fresh;
-        } else {
-            slot.push(fresh);
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             cut_histories: slot,
+             ..
+         }| {
+            let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(cut_)));
+            let mut slot = slot.borrow_mut();
+            if let Some(latest) = slot.last_mut() {
+                *latest = fresh;
+            } else {
+                slot.push(fresh);
+            }
+        },
+    );
 }
 
 pub fn press_undo(window: &adw::ApplicationWindow) -> String {
@@ -159,11 +171,15 @@ fn land_history(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
 
 /// Write a cut back as the page's current one, so the readouts, the verbs and every later flow see it.
 pub(crate) fn publish_cut(cut_: &cut::Cut) {
-    ui::REVIEW_CUTS.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = cut_.clone();
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             review_cuts: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = cut_.clone();
+            }
+        },
+    );
 }
 
 pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
@@ -359,26 +375,29 @@ pub(crate) fn wire_history_keys(window: &adw::ApplicationWindow) {
         glib::Propagation::Stop
     });
     window.add_controller(controller.clone());
-    HISTORY_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
-}
-
-thread_local! {
-    static HISTORY_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             history_keys: cell, ..
+         }| *cell.borrow_mut() = Some(controller),
+    );
 }
 
 /// This window's history key controller, newest window winning like `line_key_controller`.
 pub fn history_key_controller() -> Option<gtk::EventControllerKey> {
-    HISTORY_KEYS.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             history_keys: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 pub fn zoom_gesture() -> Option<gtk::GestureDrag> {
-    ZOOM_GESTURES.with(|cell| cell.borrow().clone())
-}
-
-thread_local! {
-    static ZOOM_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             zoom_gestures: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
 
 pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
@@ -457,7 +476,12 @@ pub(crate) fn wire_zoom_drag(window: &adw::ApplicationWindow) {
         crate::ui::cut_preview_frame::note_box(None, &win_end);
     });
     panel.add_controller(gesture.clone());
-    ZOOM_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             zoom_gestures: cell,
+             ..
+         }| *cell.borrow_mut() = Some(gesture),
+    );
 }
 
 pub(crate) fn wire_aspect_choice(window: &adw::ApplicationWindow) {
@@ -486,12 +510,17 @@ pub(crate) fn wire_aspect_choice(window: &adw::ApplicationWindow) {
 }
 
 pub(crate) fn zoom_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_ZOOM_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
-            .unwrap_or(false)
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_zoom_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
+                .unwrap_or(false)
+        },
+    )
 }
 
 pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
@@ -568,12 +597,17 @@ pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
 
 /// Read one of the ending checks back from THIS window's tree.
 pub(crate) fn zoom_check(name: &str) -> Option<gtk::CheckButton> {
-    LAST_ZOOM_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| ui::find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_zoom_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| ui::find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        },
+    )
 }
 
 pub fn press_zoom_cancel(window: &adw::ApplicationWindow) -> String {

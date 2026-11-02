@@ -6,7 +6,7 @@
 
 use naivepost::cut::{Fx, Seg};
 use naivepost::cut_effect_decisions::Candidate;
-use naivepost::project::{CutMode, MarkingPass, Policy};
+use naivepost::project::Policy;
 use naivepost::suggest::{self, Refuse};
 use naivepost::tools::{self, cutpass};
 
@@ -318,18 +318,6 @@ fn f2_14_s2b_a_context_ruling_out_all_three_passes_asks_for_none() {
             naivepost::policy::Pass::Decorations
         ]
     );
-}
-
-#[test]
-fn f2_14_s2b_the_words_mode_never_offers_the_model_cut() {
-    // P.policy.cutMode
-    let mut words = Policy::default();
-    words.cut_mode.value = CutMode::Words;
-    assert!(!suggest::model_cut_offered(&words, MarkingPass::Retakes));
-
-    let mut model = Policy::default();
-    model.cut_mode.value = CutMode::Model;
-    assert!(suggest::model_cut_offered(&model, MarkingPass::Retakes));
 }
 
 #[test]

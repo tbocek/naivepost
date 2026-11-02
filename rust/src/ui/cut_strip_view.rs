@@ -1,10 +1,6 @@
 //! §05-cut#7-rules bullet 8 — `the tracks are a window drawn under a translate`.
 
-thread_local! {
-    /// The strip's own scroll in px.
-    static SCROLL: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
-}
-
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 /// The strip's own pixels-per-second: the placeholder `select-surface` draws at the fixed open-at zoom
 /// (`crate::ui::window::SELECT_SURFACE_PPS`, 4 px/s) with no gutter and no scroll of its own, and every surface
 /// on it (ruler / picture row / wave strip / lane / effects lane) plus each widget's box width is sized against
@@ -16,12 +12,12 @@ pub fn pps() -> f64 {
 /// How far into the timeline the strip's left edge sits, in px — the translate everything else is measured
 /// against.
 pub fn scroll_px() -> f64 {
-    SCROLL.with(|cell| cell.get())
+    CUT_PAGE.with(|CutPage { scroll: cell, .. }| cell.get())
 }
 
 /// The strip's scroll, forced to a known px for a check.
 pub fn set_scroll_for_test(px: f64) -> f64 {
-    SCROLL.with(|cell| {
+    CUT_PAGE.with(|CutPage { scroll: cell, .. }| {
         cell.set(px);
         cell.get()
     })

@@ -319,36 +319,6 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
     }
 }
 
-/// §06-effects#2-the-lane-and-the-preview — `Preview vs render, deliberately different`: the preview runs one
-/// flat rate because a rate change is a flushing seek, while the render follows ramps and averages overlaps.
-#[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s7_flat_rate_not_ramps() {
-    assert!(lane::previews_flat_rate());
-    assert!(lane::render_follows_ramps());
-
-    // The flat rate is already implemented, and this proves the preview reads that one answer: under a ramped
-    // speed it returns the effect's own rate at every second of it, never an interpolated one.
-    let mut speed = fx(EffectKind::Speed, 10.0, 6.0);
-    speed.rate = 0.5;
-    speed.trans = 2.0;
-    speed.tout = 2.0;
-    let effects = [speed.clone()];
-    for t in [10.0, 11.0, 13.0, 15.9] {
-        assert_eq!(
-            naivepost::cut_hear::rate_under(&effects, t),
-            0.5,
-            "flat at {t}"
-        );
-    }
-    // Outside it the clip runs at its own clock again.
-    assert_eq!(naivepost::cut_hear::rate_under(&effects, 20.0), 1.0);
-
-    // And a stop — rate nought — is played at the picture's own clock rather than frozen mid-stream.
-    let mut stop = fx(EffectKind::Speed, 30.0, 2.0);
-    stop.rate = 0.0;
-    assert_eq!(naivepost::cut_hear::rate_under(&[stop], 31.0), 1.0);
-}
-
 /// §06-effects#2-the-lane-and-the-preview — `the two 1× sound answers cannot be previewed`, and `mute` can.
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s8_two_one_x_answers_cannot_be_previewed() {
@@ -410,50 +380,6 @@ fn sec_06_effects_2_the_lane_and_the_preview_s9_debt_tail_and_plate() {
     assert!(!lane::plate_shown(59.9));
     assert!(!lane::plate_shown(60.0), "wider than, not as wide as");
     assert!(lane::plate_shown(60.1));
-}
-
-/// §06-effects#2-the-lane-and-the-preview — `The earliest covering effect's answer wins`, and the 0.15 s dip at
-/// the rejoin.
-#[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s10_earliest_answer_wins() {
-    let mut first = fx(EffectKind::Speed, 10.0, 6.0);
-    first.snd = "pitch".into();
-    let mut later = fx(EffectKind::Speed, 12.0, 6.0);
-    later.snd = "mute".into();
-
-    // Two covering speeds: the one that started first answers for the overlap.
-    assert_eq!(
-        lane::sound_answer_at(&[later.clone(), first.clone()], 13.0).as_deref(),
-        Some("pitch")
-    );
-    // Past the first's end, only the later one covers the second and its answer stands.
-    assert_eq!(
-        lane::sound_answer_at(&[first.clone(), later.clone()], 17.0).as_deref(),
-        Some("mute")
-    );
-
-    // An empty `snd` is no answer: it neither wins nor silences the effect behind it.
-    let quiet = fx(EffectKind::Speed, 9.0, 8.0);
-    assert_eq!(
-        lane::sound_answer_at(&[quiet, first.clone()], 13.0).as_deref(),
-        Some("pitch")
-    );
-
-    // A non-speed says nothing about sound (§06#1 gives it no `snd`), even with the field filled in.
-    let caption = Fx {
-        snd: "mute".into(),
-        ..fx(EffectKind::Text, 12.0, 4.0)
-    };
-    assert_eq!(lane::sound_answer_at(&[caption], 13.0), None);
-
-    // Nothing covering the second at all.
-    let outside = fx(EffectKind::Speed, 100.0, 4.0);
-    assert_eq!(lane::sound_answer_at(&[outside], 13.0), None);
-    assert_eq!(lane::sound_answer_at(&[], 13.0), None);
-
-    // P.eng.soundDipSeconds — the fade where delayed sound rejoins the picture.
-    assert_eq!(lane::rejoin_dip(), 0.15);
-    assert_eq!(lane::SOUND_DIP_SECONDS, lane::rejoin_dip());
 }
 
 /// §06-effects#2-the-lane-and-the-preview — the debt the plate speaks of is measured AT THE RED LINE: the

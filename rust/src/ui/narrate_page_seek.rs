@@ -4,6 +4,7 @@
 use crate::narrate_preview;
 use crate::narrate_preview_leg;
 use crate::narrate_screen;
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 
 /// ‹‹ back three seconds; the clock is what the button reports, §1 giving it no sentence of its
 /// own.
@@ -41,11 +42,6 @@ fn snap_reference(tree: &crate::layout::Tree, segs: Option<&[crate::cut::Seg]>) 
     cut
 }
 
-thread_local! {
-    static PENDING_SCRUB: std::cell::RefCell<Option<(f64, glib::SourceId)>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// The scrub bar's drag, debounced (§1's slider, inventory §A.4's `debounced 120 ms`).
 pub fn note_scrub_drag(
     window: &adw::ApplicationWindow,
@@ -54,32 +50,47 @@ pub fn note_scrub_drag(
     forward: bool,
 ) {
     let segs: Vec<crate::cut::Seg> = segs.map(|s| s.to_vec()).unwrap_or_default();
-    PENDING_SCRUB.with(|pending| {
-        if let Some((_, id)) = pending.borrow_mut().take() {
-            id.remove();
-        }
-        let id = glib::timeout_add_local(
-            std::time::Duration::from_millis(narrate_screen::SEEK_DEBOUNCE_MS),
-            {
-                let window = window.clone();
-                move || {
-                    // Clear first: the seek repaints, and that repaint must not find a drag still
-                    // owed.
-                    PENDING_SCRUB.with(|pending| pending.borrow_mut().take());
-                    seek_preview(&window, target, Some(&segs), forward);
-                    glib::ControlFlow::Break
-                }
-            },
-        );
-        *pending.borrow_mut() = Some((target, id));
-    });
+    NARRATE_PAGE.with(
+        |NarratePage {
+             pending_scrub: pending,
+             ..
+         }| {
+            if let Some((_, id)) = pending.borrow_mut().take() {
+                id.remove();
+            }
+            let id = glib::timeout_add_local(
+                std::time::Duration::from_millis(narrate_screen::SEEK_DEBOUNCE_MS),
+                {
+                    let window = window.clone();
+                    move || {
+                        // Clear first: the seek repaints, and that repaint must not find a drag still
+                        // owed.
+                        NARRATE_PAGE.with(
+                            |NarratePage {
+                                 pending_scrub: pending,
+                                 ..
+                             }| pending.borrow_mut().take(),
+                        );
+                        seek_preview(&window, target, Some(&segs), forward);
+                        glib::ControlFlow::Break
+                    }
+                },
+            );
+            *pending.borrow_mut() = Some((target, id));
+        },
+    );
 }
 
 /// What the scrub bar is waiting to seek to, if a drag is mid-flight. Test-only readback: it proves
 /// a drag was held by the debounce rather than acted on per pixel, which is otherwise invisible
 /// from outside.
 pub fn pending_scrub_for_test() -> Option<f64> {
-    PENDING_SCRUB.with(|pending| pending.borrow().as_ref().map(|(target, _)| *target))
+    NARRATE_PAGE.with(
+        |NarratePage {
+             pending_scrub: pending,
+             ..
+         }| pending.borrow().as_ref().map(|(target, _)| *target),
+    )
 }
 
 /// S4: a transport seek in one place — the picture is cued at the second asked for, and the page's

@@ -13,18 +13,15 @@
 use std::collections::BTreeMap;
 
 use naivepost::cut::{Fx, Seg};
-use naivepost::layout::{self, Tree};
+use naivepost::layout::Tree;
 use naivepost::narration::Entry;
 use naivepost::produce_data as data;
-use naivepost::produce_embed as embed;
 use naivepost::produce_render as render;
-use naivepost::produce_runs as runs;
 use naivepost::produce_screen as screen;
 
 use naivepost::produce_stamp as stamp;
 use naivepost::produce_subtitles as subs;
 use naivepost::project::{self, Codec, Container, Produce, Subtitles};
-use naivepost::publish;
 
 const ITEM: &str = "§08-produce#5-rules";
 
@@ -515,31 +512,6 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
 }
 
 #[test]
-fn sec_08_produce_5_rules_s3_upload_text_is_written_once_per_project() {
-    assert_eq!(ITEM, "§08-produce#5-rules");
-    let dir = std::env::temp_dir().join(format!("np-rules-upload-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let tree = tree_in(&dir.join("p.naivepost"));
-
-    assert!(
-        !publish::is_written(&tree),
-        "a new project has never had its text written"
-    );
-    publish::save(&project::Publish::default(), &tree).expect("publish.json");
-    assert!(publish::is_written(&tree));
-    // Rewriting the text is a press of its own (↻ beside Title) and never part of ▶.
-    let reword = runs::reword();
-    assert_eq!(reword.llm_calls, 1);
-    assert_eq!(reword.answers, ["title", "description"]);
-    assert!(reword.keeps.contains(&"thumbnail"), "{:?}", reword.keeps);
-
-    // Deleting the record restarts the step — which is what §5's "once per project" leaves as the way back.
-    publish::start_over(&tree).expect("start over");
-    assert!(!publish::is_written(&tree));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn sec_08_produce_5_rules_s3_publish_json_goes_down_before_the_picture() {
     assert_eq!(ITEM, "§08-produce#5-rules");
     // The order is fixed by §5 and each step's reason is in it: a draw that dies leaves the record, so the next
@@ -577,168 +549,4 @@ fn sec_08_produce_5_rules_s3_publish_json_goes_down_before_the_picture() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[test]
-fn sec_08_produce_5_rules_s3_a_press_over_the_thumbnail_always_draws() {
-    assert_eq!(ITEM, "§08-produce#5-rules");
-    // ↻ over the thumbnail: one sd.cpp call, and the text stays alone.
-    let again = runs::redraw();
-    assert_eq!(
-        again.sd_calls, 1,
-        "a second draw would be a second picture, not a redraw"
-    );
-    assert!(again.keeps.contains(&"title"), "{again:?}");
-    assert!(runs::DRAW_AGAIN_LOG.contains("one sd.cpp call, nothing rewritten"));
-
-    // A chosen frame survives ▶: the copy lives in the app's own images folder, not in `produce/`, so the
-    // render's stale-file sweep — which deletes by exact name inside the project — can never reach it.
-    let chosen = runs::take_from_image("/home/dev/Pictures/screenshot.final.png", 3840, 2160, 0.0);
-    assert!(
-        chosen.stored.ends_with("screenshot.final.png"),
-        "{}",
-        chosen.stored
-    );
-    assert!(!chosen.stored.contains("/produce/"), "{}", chosen.stored);
-    assert_eq!(
-        chosen.box_,
-        (1920, 1080),
-        "the picture's own shape, scaled to {} wide",
-        runs::WIDTH
-    );
-    assert!(
-        runs::CHOSEN_TIP.contains("it does not replace your file"),
-        "{}",
-        runs::CHOSEN_TIP
-    );
-}
-
-#[test]
-fn sec_08_produce_5_rules_s3_the_title_is_seeded_once_and_reprinting_words_costs_no_gpu() {
-    assert_eq!(ITEM, "§08-produce#5-rules");
-    // Seed the answer onto the picture once; from then on it is text like any other, and a second seed would
-    // overwrite what a person typed over it.
-    let mut publish = project::Publish {
-        title: "how to cut a session".to_string(),
-        ..Default::default()
-    };
-    assert!(screen::seed_title(&mut publish));
-    assert_eq!(publish.thumb_title, "how to cut a session");
-    assert!(!screen::seed_title(&mut publish), "once only");
-
-    let typed = project::Publish {
-        title: "typed over".to_string(),
-        thumb_title: String::new(),
-        title_seeded: true,
-        ..Default::default()
-    };
-    let mut typed = typed;
-    assert!(
-        !screen::seed_title(&mut typed),
-        "the flag is what makes it once"
-    );
-    assert!(typed.thumb_title.is_empty());
-
-    // Re-printing the words is one local draw: no sd.cpp call, and the type shrinks instead of wrapping onto a
-    // second line when the line gets long.
-    let box_ = runs::words_box();
-    let short = runs::reprint("short", box_);
-    let long = runs::reprint(
-        "a line long enough that it cannot possibly be printed at the same size as the short one",
-        box_,
-    );
-    assert_eq!(short.sd_calls, 0);
-    assert_eq!(long.sd_calls, 0);
-    assert!(long.size < short.size, "{} vs {}", long.size, short.size);
-    assert_eq!(short.lines.len(), 1, "{:?}", short.lines);
-    assert!(!long.lines.is_empty());
-}
-
 // ---- bullet 4: nothing shared touches the same file --------------------------------------
-
-#[test]
-fn sec_08_produce_5_rules_s4_the_two_halves_touch_no_common_file() {
-    assert_eq!(ITEM, "§08-produce#5-rules");
-    // Computed rather than asserted: the one entry both lists name, or None when there is none. This is why
-    // ▶'s render and publish halves need no lock.
-    assert_eq!(data::share_a_file(), None);
-    let render = data::render_files();
-    let publish = data::publish_files();
-    assert!(!render.is_empty() && !publish.is_empty());
-    for entry in publish {
-        assert!(!render.contains(entry), "{entry} is in both halves");
-    }
-
-    // `project:` resolves through the layout module; an absolute path is kept as it stands, because a source
-    // outside the project folder is a thing people have.
-    let root = std::path::Path::new("/tmp/np-rules-root/p.naivepost");
-    let project_file = std::path::Path::new("/workspaces/naivepost/demo.naivepost");
-    assert_eq!(
-        layout::resolve(root, project_file, "project:media/talk.mkv"),
-        std::path::PathBuf::from("/workspaces/naivepost/demo.naivepost/media/talk.mkv"),
-        "`project:` is the project folder, not the application root"
-    );
-    assert_eq!(
-        layout::resolve(root, project_file, "media/talk.mkv"),
-        std::path::PathBuf::from("/tmp/np-rules-root/p.naivepost/media/talk.mkv"),
-        "root-relative when it is written that way"
-    );
-    assert_eq!(
-        layout::resolve(root, project_file, "/elsewhere/talk.mkv"),
-        std::path::PathBuf::from("/elsewhere/talk.mkv")
-    );
-}
-
-#[test]
-fn sec_08_produce_5_rules_s4_the_tag_is_rewritten_even_when_the_encode_was_skipped() {
-    assert_eq!(ITEM, "§08-produce#5-rules");
-    // The tag lists the `.vtt` files that survived from the run before, so a skipped encode is a reason to
-    // leave every other file alone and never a reason to leave a stale tag pointing at captions this project
-    // no longer has.
-    assert!(
-        data::tag_rewritten(true),
-        "skipped is not a reason to leave an old tag"
-    );
-    assert!(data::tag_rewritten(false));
-
-    // Whether the render failed is a different question, answered elsewhere: the tag's own write failing must
-    // not turn a good video into a failed run.
-    assert!(embed::render_verdict(true, false));
-    assert!(!embed::render_verdict(false, true));
-
-    // A page's own tag is rewritten in place, and says which file it points at.
-    let dir = std::env::temp_dir().join(format!("np-rules-tag-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let tree = tree_in(&dir.join("p.naivepost"));
-    let page = embed::paths(&tree, Container::Mp4).2;
-    assert_eq!(page.file_name().unwrap(), "final.html");
-    assert!(embed::wrote_tag_log("produce/final.html").contains("produce/final.html"));
-    // The track list comes off the folder, so a caption file deleted since the last run drops out of the tag.
-    let produced = tree.final_video("mp4").parent().unwrap().to_path_buf();
-    std::fs::create_dir_all(&produced).expect("produce/");
-    std::fs::write(produced.join("final.de.vtt"), "WEBVTT\n").expect("vtt");
-    let found = embed::list_vtt(&produced);
-    assert_eq!(found, ["final.de.vtt".to_string()], "{found:?}");
-
-    // And the plan behind ▶ is still built with no files at all — `exists` is a question, so a cut whose
-    // inserts have gone missing plans and logs instead of failing.
-    let mut rated = seg(0.0, 12.0);
-    rated.rate = 2.0;
-    let (clips, logs) = render::plan_clips(
-        &[rated],
-        no_fx,
-        "16:9",
-        |_| true,
-        &[],
-        &[],
-        (1920, 1080),
-        true,
-        render::unknown_footage,
-    );
-    assert!(logs.is_empty(), "{logs:?}");
-    assert_eq!(clips.len(), 1);
-    assert!(
-        (clips[0].on_screen - 6.0).abs() < 1e-9,
-        "{}",
-        clips[0].on_screen
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-}

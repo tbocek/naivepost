@@ -164,13 +164,6 @@ pub fn cycle_narrator(project: &mut Project, index: usize) -> u32 {
     next
 }
 
-pub fn slot_holder(project: &Project, slot: u32) -> Option<usize> {
-    project
-        .sources
-        .iter()
-        .position(|source| source.narrator == slot && slot != 0)
-}
-
 pub fn is_narrator_mic(source: &Source) -> bool {
     source.narrator != 0 && !source.footage
 }
@@ -323,24 +316,4 @@ pub fn tracks_face(source: &Source, stream_count: usize) -> Option<String> {
         return None;
     }
     Some(format!("{}/{}", ticked_tracks(source).len(), stream_count))
-}
-
-/// Each ticked track becomes a lane, mixed like a separate recording (§4). Spelled
-/// `{stem}-t{track}` so two tracks of one file never share a name.
-pub fn split_lanes(project: &Project) -> Vec<String> {
-    project
-        .sources
-        .iter()
-        .filter(|source| source.tracks.len() > 1)
-        .flat_map(|source| {
-            let stem = base_name(&source.path).rsplit_once('.').map_or_else(
-                || base_name(&source.path).to_string(),
-                |(stem, _)| stem.to_string(),
-            );
-            source
-                .tracks
-                .iter()
-                .map(move |track| format!("{stem}-t{track}"))
-        })
-        .collect()
 }

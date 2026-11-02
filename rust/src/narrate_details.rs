@@ -17,11 +17,6 @@ pub const MAX_EXTEND_SECONDS: f64 = crate::narrate_preview::MAX_EXTEND_SECONDS;
 /// Kept out of [`crate::params::narrate`] on purpose (§07-narrate#4 lists it among values a rule does not read yet).
 pub const REFERENCE_WANTED_SECONDS: f64 = 14.0;
 
-/// §5 (`the Replace tick is remembered per project, never on by default`): a re-roll overwrites a take someone may have heard.
-pub fn replace_tick_default() -> bool {
-    false
-}
-
 // ---- the Inputs row (F4.2) -------------------------------------------------------
 
 /// The row's first half: `N clip(s) · mm:ss` of video, or the one sentence that says why there is none.
@@ -274,11 +269,6 @@ pub fn no_takes_left() -> &'static str {
     "no takes left \u{2014} the seconds are chosen for you again on the next line spoken"
 }
 
-/// §6: nothing picked in this session at all, unlike [`no_takes_left`].
-pub fn no_takes_yet() -> &'static str {
-    "no takes yet \u{2014} drag across the wave and press \u{ff0b}"
-}
-
 /// §6: the walk finished by itself, every take played; silence with ⏹ still on the button would read as a hang.
 pub fn takes_played() -> &'static str {
     "takes played"
@@ -314,12 +304,6 @@ pub fn commit_status(what: &str, picked: usize, seconds: f64, wanted: f64) -> St
 }
 
 // ---- the preview's bound (F4.5) ---------------------------------------------------
-
-/// §6 (`Preview`): a gap is held only while the speaking line is within its clip's end plus [`MAX_EXTEND_SECONDS`]; past that the line is simply late.
-/// P.eng.narrationMaxExtendSeconds; [`crate::narrate_preview::tick`] acts on it.
-pub fn preview_hold_bound() -> f64 {
-    MAX_EXTEND_SECONDS
-}
 
 // ---- helpers ---------------------------------------------------------------------
 

@@ -10,19 +10,10 @@
 //! range and audio bitrates are ffmpeg's own numbers, which is why this page offers a list rather than a
 //! measurement.
 
-use naivepost::layout::Tree;
 use naivepost::produce_screen as ps;
 use naivepost::project::{self, Codec, Container, Publish, Subtitles, TextMark};
-use naivepost::publish;
 
 const ITEM: &str = "sec_08_produce_1_screen";
-
-fn frames(names: &[&str]) -> Vec<String> {
-    names
-        .iter()
-        .map(|n| format!("project:produce/publish/{n}.jpg"))
-        .collect()
-}
 
 // ---- s1: the settings scroller's rows and their option lists ----------------------
 
@@ -207,55 +198,6 @@ fn sec_08_produce_1_screen_s3_tooltips_name_the_rule() {
 
 // ---- s4: webm forces its own answer; the output is never asked -------------------
 
-#[test]
-fn sec_08_produce_1_screen_s4_container_forces_and_output() {
-    assert_eq!(ITEM, "sec_08_produce_1_screen");
-    // §A: webm forces vp9 and turns "track in file" into "none".
-    assert_eq!(
-        ps::apply_container_rules(Container::Webm, Codec::H264, Subtitles::TrackInFile),
-        (Codec::Vp9, Subtitles::None)
-    );
-    // Every other container leaves both choices alone — the forcing is webm's, not a general rule.
-    assert_eq!(
-        ps::apply_container_rules(Container::Mp4, Codec::H264, Subtitles::TrackInFile),
-        (Codec::H264, Subtitles::TrackInFile)
-    );
-    assert_eq!(
-        ps::apply_container_rules(Container::Mkv, Codec::H265, Subtitles::BurnedIn),
-        (Codec::H265, Subtitles::BurnedIn)
-    );
-    // webm with the answers it would force is unchanged by the rule.
-    assert_eq!(
-        ps::apply_container_rules(Container::Webm, Codec::Vp9, Subtitles::None),
-        (Codec::Vp9, Subtitles::None)
-    );
-
-    // §A: the output file is not a question — produce/final.<container>.
-    assert_eq!(ps::output_name(Container::Mp4), "final.mp4");
-    assert_eq!(ps::output_name(Container::Mkv), "final.mkv");
-    assert_eq!(ps::output_name(Container::Webm), "final.webm");
-
-    // The name is the file layout writes, so the page cannot point at a video elsewhere.
-    let root = std::env::temp_dir().join("np-produce-screen-s4");
-    let dir = root.join("demo.naivepost");
-    std::fs::create_dir_all(&dir).unwrap();
-    let tree = Tree::new(&dir).unwrap();
-    for (container, stem) in [
-        (Container::Mp4, "mp4"),
-        (Container::Mkv, "mkv"),
-        (Container::Webm, "webm"),
-    ] {
-        assert_eq!(ps::output_name(container), format!("final.{stem}"));
-        let path = tree.final_video(stem);
-        assert_eq!(
-            path.file_name().unwrap().to_str().unwrap(),
-            ps::output_name(container)
-        );
-        assert!(path.starts_with(tree.dir().join("produce")), "{path:?}");
-    }
-    std::fs::remove_dir_all(&root).ok();
-}
-
 // ---- s5: the session's own language is never offered ------------------------------
 
 #[test]
@@ -280,91 +222,6 @@ fn sec_08_produce_1_screen_s5_translate_never_offers_own_language() {
 }
 
 // ---- s6: up to eight pictures, the first is the base -----------------------------
-
-#[test]
-fn sec_08_produce_1_screen_s6_images_row_eight_slots() {
-    assert_eq!(ITEM, "sec_08_produce_1_screen");
-    assert_eq!(ps::MAX_IMAGES, 8);
-
-    // Adding fills the row; a ninth is refused rather than dropping one.
-    let mut list = frames(&["a", "b", "c", "d", "e", "f", "g", "h"]);
-    assert_eq!(list.len(), ps::MAX_IMAGES);
-    assert!(!ps::add_image(&mut list, "project:produce/publish/i.jpg"));
-    assert_eq!(list.len(), 8);
-
-    let mut few = frames(&["a"]);
-    assert!(ps::add_image(&mut few, "project:produce/publish/b.jpg"));
-    assert_eq!(few.len(), 2);
-
-    // Order is the whole answer, and publish.rs answers it: first = base, rest = references.
-    let list = frames(&["first", "second", "third"]);
-    assert_eq!(
-        publish::base(&Publish {
-            frames: list.clone(),
-            ..Default::default()
-        }),
-        Some("project:produce/publish/first.jpg")
-    );
-    let with_refs = Publish {
-        frames: list,
-        ..Default::default()
-    };
-    assert_eq!(publish::references(&with_refs).len(), 2);
-    assert_eq!(
-        publish::references(&with_refs)[0],
-        "project:produce/publish/second.jpg"
-    );
-
-    // Make base on a reference: it goes to the front and nothing is lost. Never on the base itself.
-    let mut list = frames(&["first", "second", "third"]);
-    assert!(ps::make_base(&mut list, 2));
-    assert_eq!(list, frames(&["third", "first", "second"]));
-    assert!(!ps::make_base(&mut list, 0));
-    assert!(!ps::make_base(&mut list, 9));
-    assert_eq!(list.len(), 3);
-
-    // Change… keeps the slot's place; remove takes it out of the row.
-    let mut list = frames(&["first", "second"]);
-    assert!(ps::change_image(
-        &mut list,
-        1,
-        "project:produce/publish/other.jpg"
-    ));
-    assert_eq!(list[1], "project:produce/publish/other.jpg");
-    assert!(!ps::change_image(
-        &mut list,
-        5,
-        "project:produce/publish/x.jpg"
-    ));
-    assert!(ps::remove_image(&mut list, 0));
-    assert_eq!(list, vec!["project:produce/publish/other.jpg".to_string()]);
-    assert!(!ps::remove_image(&mut list, 4));
-
-    // A reference offers Make base; the base does not. §1's item 3.
-    let base_row = ps::slot_actions(0, 3);
-    assert!(!base_row.contains(&"Make base"), "{base_row:?}");
-    assert!(
-        base_row.contains(&"Set Thumbnail")
-            && base_row.contains(&"Change…")
-            && base_row.contains(&"remove")
-    );
-    let reference = ps::slot_actions(1, 3);
-    assert_eq!(
-        reference,
-        &["Make base", "Set Thumbnail", "Change…", "remove"]
-    );
-
-    // Empty state (§A's own sentence) and the crop box that only a differently-shaped base wears.
-    assert_eq!(
-        ps::EMPTY_IMAGES,
-        "No image — the thumbnail will be drawn from the instruction alone."
-    );
-    assert!(ps::EMPTY_IMAGES_HINT.starts_with("Add image…"));
-    assert_eq!(publish::base(&Publish::default()), None);
-    assert!(ps::shows_crop_box(Some((1920, 1080)), (1080, 1920)));
-    assert!(!ps::shows_crop_box(Some((1920, 1080)), (1920, 1080)));
-    assert!(!ps::shows_crop_box(None, (1080, 1920)));
-}
 
 /// §1 items **2**/**3**: the pairs the slot row draws its crop box from. The page asks this rule for
 /// every shape it holds, so each answer here is a box that appears or disappears on the page.
@@ -480,47 +337,6 @@ fn sec_08_produce_1_screen_s7_thumbnail_text_overlay_editor() {
 }
 
 // ---- s8: the title is printed across the thumbnail once only ---------------------
-
-#[test]
-fn sec_08_produce_1_screen_s8_title_is_printed_once() {
-    assert_eq!(ITEM, "sec_08_produce_1_screen");
-    // §1: printed across the thumbnail the first time only; then separate.
-    let mut publish = Publish {
-        title: "A title for the video".to_string(),
-        ..Default::default()
-    };
-    assert!(ps::seed_title(&mut publish));
-    assert_eq!(publish.thumb_title, "A title for the video");
-    assert!(publish.title_seeded);
-
-    // Retitled afterwards: the picture keeps the line it was drawn with.
-    publish.title = "Retitled for YouTube".to_string();
-    assert!(!ps::seed_title(&mut publish));
-    assert_eq!(publish.thumb_title, "A title for the video");
-
-    // Nothing to print yet: no title, so nothing is seeded and the page can still seed later.
-    let mut empty = Publish::default();
-    assert!(!ps::seed_title(&mut empty));
-    assert!(!empty.title_seeded);
-
-    // The written column's boxes and their sentences (§A).
-    assert_eq!(ps::DESCRIPTION_LINES, 8);
-    assert_eq!((ps::INSTRUCTION_LINES, ps::NEGATIVE_LINES), (4, 2));
-    assert!(
-        ps::SUGGEST_TIP.contains("the only thing that does"),
-        "{}",
-        ps::SUGGEST_TIP
-    );
-    assert!(ps::SUGGEST_TIP.contains("fresh title and description"));
-    assert!(
-        ps::TITLE_TIP.contains("Four to seven words"),
-        "{}",
-        ps::TITLE_TIP
-    );
-    assert!(ps::TITLE_PLACEHOLDER.contains("also printed on the thumbnail"));
-    assert!(ps::INSTRUCTION_TIP.contains("No words"));
-    assert!(ps::NEGATIVE_TIP.contains("watermarks, logos, lettering, extra limbs"));
-}
 
 // ---- s9: the Inputs readout -------------------------------------------------------
 

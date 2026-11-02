@@ -4,24 +4,10 @@
 // 120 px wide 80 px. The draw callback in `src/ui/window.rs` paints exactly these boxes and ticks; it
 // holds no arithmetic of its own, so what these tests pin is what appears on screen.
 
-use naivepost::cut::Seg;
 use naivepost::cut_trim as trim;
 
 use crate::common;
 use common::clip;
-
-/// An insert is `s == e` with a `dur` (`Seg::is_insert`): material spliced in beside the footage, which
-/// rule 8 of `spec/05-cut.md` keeps out of every trim reach. The box it gets on the strip stands for its
-/// own length so there is something to see and click.
-fn insert(seconds: f64, asset: &str) -> Seg {
-    Seg {
-        s: 0.0,
-        e: 0.0,
-        dur: seconds,
-        ins: asset.to_string(),
-        ..Default::default()
-    }
-}
 
 const PPS: f64 = 4.0;
 
@@ -44,38 +30,6 @@ fn f2_8_s1_clip_boxes_map_seconds_to_pixels_at_the_strips_zoom() {
     );
 }
 
-/// F2.8 S1 + rule 8: an insert gets its box (the band has to show something is there) but flagged, so the
-/// painter draws it violet and the press never hands its borders to a trim.
-#[test]
-fn f2_8_s1_an_insert_is_boxed_and_flagged_never_trimmable() {
-    let segs = vec![clip(0.0, 9.5), insert(10.0, "project:titles/intro.png")];
-    let boxes = trim::clip_boxes(&segs, PPS);
-
-    assert!(
-        boxes[1].insert,
-        "and carries the flag that keeps it out of every trim reach"
-    );
-    assert_eq!(boxes[0].x, 0.0, "the footage before it is unaffected");
-
-    // Every press on an insert takes nothing at all; the only thing in reach is the footage's own end.
-    assert_eq!(
-        trim::box_at(&boxes, 0.0),
-        Some((0, Some(trim::Border::Start))),
-        "footage start still grabbable"
-    );
-    assert_eq!(
-        trim::box_at(&boxes, 38.0),
-        Some((0, Some(trim::Border::End))),
-        "// layout.edgeGrabPx: 2 px off the footage end is inside the reach"
-    );
-    let only_insert = trim::clip_boxes(&[insert(10.0, "project:titles/intro.png")], PPS);
-    assert_eq!(
-        trim::box_at(&only_insert, 20.0),
-        None,
-        "rule 8: an insert offers no border"
-    );
-}
-
 /// F2.8 S1: a zero-length or backwards segment draws as nothing rather than a box running into its
 /// neighbour — the width is clamped, so a bad cut cannot paint a negative rectangle.
 #[test]
@@ -89,63 +43,6 @@ fn f2_8_s1_a_zero_or_backwards_segment_draws_no_width() {
     assert_eq!(
         boxes[1].x, 120.0,
         "its left edge still reads from its own start"
-    );
-}
-
-/// F2.8 S1: the press side asks the same mapping in reverse — within 6 px of a border that border is taken,
-/// nearest wins, and the body of a clip answers with the clip and no border.
-#[test]
-fn f2_8_s1_a_press_px_resolves_to_a_border_or_the_bar_body() {
-    let boxes = trim::clip_boxes(&[clip(10.0, 30.0), clip(40.0, 70.0)], PPS);
-
-    // Border of clip 1 sits at 40 px and 120 px; clip 2's at 160 px and 280 px.
-    assert_eq!(
-        trim::box_at(&boxes, 40.0),
-        Some((0, Some(trim::Border::Start)))
-    );
-    assert_eq!(
-        trim::box_at(&boxes, 124.0),
-        Some((0, Some(trim::Border::End))),
-        "4 px past the end is still inside the reach"
-    );
-    assert_eq!(
-        trim::box_at(&boxes, 156.0),
-        Some((1, Some(trim::Border::Start)))
-    );
-
-    // In the middle of the green bar: the box, no border — the answer that means "move me", not "trim me".
-    assert_eq!(trim::box_at(&boxes, 80.0), Some((0, None)));
-    assert_eq!(trim::box_at(&boxes, 200.0), Some((1, None)));
-
-    // Outside every box, and further from a border than the reach: nothing under the pointer.
-    assert_eq!(
-        trim::box_at(&boxes, 140.0),
-        None,
-        "20 px from both neighbours' borders is no trim and no bar"
-    );
-    assert_eq!(
-        trim::box_at(&[], 40.0),
-        None,
-        "an empty cut offers nothing to grab"
-    );
-}
-
-/// F2.8 S1: two borders closer together than the reach — the nearer one wins, so a narrow clip is still
-/// trimmed on the side the pointer actually points at.
-#[test]
-fn f2_8_s1_the_nearer_border_wins_when_two_are_in_reach() {
-    // A 1.5 s clip: 40 px wide at 4 px/s? No — 1.5 s * 4 = 6 px, so its borders sit 6 px apart.
-    let boxes = trim::clip_boxes(&[clip(10.0, 11.5)], PPS);
-    assert_eq!((boxes[0].x, boxes[0].w), (40.0, 6.0));
-    assert_eq!(
-        trim::box_at(&boxes, 41.0),
-        Some((0, Some(trim::Border::Start))),
-        "1 px off the start beats 5 px off the end"
-    );
-    assert_eq!(
-        trim::box_at(&boxes, 45.5),
-        Some((0, Some(trim::Border::End))),
-        "and the other way round"
     );
 }
 

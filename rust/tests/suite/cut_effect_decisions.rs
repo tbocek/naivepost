@@ -476,14 +476,6 @@ fn sec_12_decisions_cut_and_effects_s19_effects_are_clamped_and_only_the_count_r
 // --- row 20: withdrawn tools and switched-off thinking, announced --------------------------------------------------------
 
 #[test]
-fn sec_12_decisions_cut_and_effects_s20_web_tools_ride_the_first_attempt_only() {
-    assert!(roles::cut_attempt(1).web_tools);
-    assert!(!roles::cut_attempt(2).web_tools);
-    assert!(ced::web_tools_withdrawn(2));
-    assert!(!ced::web_tools_withdrawn(1));
-}
-
-#[test]
 fn sec_12_decisions_cut_and_effects_s20_thinking_off_after_an_all_reasoning_reply() {
     // Reasoned and wrote nothing → the retry asks for content alone. Any other failure keeps thinking.
     assert!(!roles::cut_retry_thinking(true, true));

@@ -1,8 +1,5 @@
 //! §02-services.md §4 Degraded modes: what each missing piece does to a job.
 
-use crate::roles::Job;
-use crate::tools::{self, Tool};
-
 pub use crate::tools::cutpass::SNAP_TOLERANCE_SECONDS;
 
 /// A run of samples at or under this is silence. P.machine.silenceThresholdDB
@@ -108,90 +105,12 @@ pub fn web_available(firefox: &str, flatpak: bool) -> bool {
     !firefox.is_empty() && !firefox.eq_ignore_ascii_case("off")
 }
 
-pub fn offered_offline(job: Job, firefox: &str, flatpak: bool) -> Vec<Tool> {
-    let offered = tools::offered(job);
-    if web_available(firefox, flatpak) {
-        return offered;
-    }
-    offered
-        .into_iter()
-        .filter(|tool| !matches!(tool, Tool::WebSearch | Tool::WebRead))
-        .collect()
-}
-
-pub fn forgot_job(status: u16) -> bool {
-    matches!(status, 404 | 410)
-}
-
-pub fn forgot_job_message(id: &str, status: u16) -> String {
-    format!("sd.cpp forgot job {id} ({status}) -- it was probably restarted mid-draw")
-}
-
-pub fn can_draw(supported_modes: Option<&[&str]>) -> bool {
-    match supported_modes {
-        None => true,
-        Some(modes) if modes.is_empty() => true,
-        Some(modes) => modes.contains(&"draw"),
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderOutcome {
     /// Video and thumbnail both there.
     Complete,
     /// The video is there; the thumbnail half did not happen. Carries why.
     ThumbnailFailed(String),
-}
-
-pub fn finish_render(sd_down: bool, thumbnail: Result<(), String>) -> (RenderOutcome, Vec<String>) {
-    if let Err(reason) = thumbnail {
-        // The status is inside the reason's text rather than beside it, so a forgotten job is spotted by
-        // reading the sentence that came back — the only thing this module is given.
-        let line = match parse_status(&reason) {
-            Some(status) if forgot_job(status) => forgot_job_message(&parse_id(&reason), status),
-            _ => format!("thumbnail failed -- {reason}"),
-        };
-        return (RenderOutcome::ThumbnailFailed(line.clone()), vec![line]);
-    }
-    if sd_down {
-        let line =
-            "sd.cpp is down -- the thumbnail was not drawn, the video is complete".to_string();
-        return (RenderOutcome::ThumbnailFailed(line.clone()), vec![line]);
-    }
-    (RenderOutcome::Complete, Vec::new())
-}
-
-fn parse_status(reason: &str) -> Option<u16> {
-    let mut rest = reason;
-    while let Some(at) = rest.find("HTTP ") {
-        let digits = &rest[at + 5..];
-        let end = digits
-            .find(|c: char| !c.is_ascii_digit())
-            .unwrap_or(digits.len());
-        if let Ok(value) = digits[..end].parse::<u16>() {
-            return Some(value);
-        }
-        rest = &digits[end..];
-    }
-    None
-}
-
-fn parse_id(reason: &str) -> String {
-    match reason.find("job ") {
-        Some(at) => {
-            let rest = &reason[at + 4..];
-            let end = rest.find([' ', '(']).unwrap_or(rest.len());
-            rest[..end].to_string()
-        }
-        None => String::new(),
-    }
-}
-
-pub fn settings_test_path(sd_probe_status: u16) -> Option<&'static str> {
-    match sd_probe_status {
-        404 => Some(SETTINGS_FALLBACK),
-        _ => None,
-    }
 }
 
 pub fn tools_refused(error: &str) -> bool {
@@ -249,12 +168,4 @@ pub fn cut_off(finish_reason: &str) -> bool {
 pub enum AfterCutOff {
     KeepCalls,
     Retry(String),
-}
-
-pub fn after_cut_off(tools_active: bool, calls: usize) -> AfterCutOff {
-    if tools_active && calls > 0 {
-        AfterCutOff::KeepCalls
-    } else {
-        AfterCutOff::Retry(CUTOFF_RETRY.to_string())
-    }
 }

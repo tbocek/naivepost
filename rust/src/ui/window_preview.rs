@@ -13,14 +13,9 @@ use crate::cut_review;
 use crate::preview::{self, Player, Press};
 use crate::run;
 use crate::ui::cut_cameras::hand_preview_back;
-use crate::ui::window::{find_status, find_widget_by_name, NO_RECORDING_STATUS, REVIEW_CUTS};
+use crate::ui::window::{find_status, find_widget_by_name, NO_RECORDING_STATUS};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use crate::ui::window_selection::preview_playhead;
-
-thread_local! {
-    /// One window's preview state, beside `SESSION`; newest slot wins.
-    static PREVIEW_PLAYERS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Player>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
 
 pub fn play_recording_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "play-recording-button")?
@@ -58,27 +53,42 @@ pub fn review_lanes() -> Vec<cut::Lane> {
 }
 
 pub fn preview_player() -> Player {
-    PREVIEW_PLAYERS.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|player| *player.borrow())
-            .unwrap_or_default()
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             preview_players: slots,
+             ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|player| *player.borrow())
+                .unwrap_or_default()
+        },
+    )
 }
 
 /// This window's live preview handle, the newest registered player; shared by every accessor below.
 pub(crate) fn live_player() -> Option<Rc<RefCell<Player>>> {
-    PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             preview_players: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    )
 }
 
 /// Give this window its own preview slot. Narrate registers it from `narrate_page::wire` too, since §5 makes the run bar read that page's transport.
 pub fn register_preview_player_slot() {
-    PREVIEW_PLAYERS.with(|slots| {
-        slots
-            .borrow_mut()
-            .push(Rc::new(std::cell::RefCell::new(Player::default())))
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             preview_players: slots,
+             ..
+         }| {
+            slots
+                .borrow_mut()
+                .push(Rc::new(std::cell::RefCell::new(Player::default())))
+        },
+    );
 }
 
 /// Publish what the run bar draws for this window's preview ([`crate::run::controls`] reads the transport off the player). No-op with no slot.
@@ -130,7 +140,12 @@ pub fn press_play_recording(window: &adw::ApplicationWindow, runs: &[(f64, f64)]
     let Some(status) = find_status(window.upcast_ref()) else {
         panic!("the window has no status line");
     };
-    let Some(player) = PREVIEW_PLAYERS.with(|slots| slots.borrow().last().cloned()) else {
+    let Some(player) = WINDOW_PAGE.with(
+        |WindowPage {
+             preview_players: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    ) else {
         panic!("the window has no preview player");
     };
     let pressed = preview::press_recording(&mut player.borrow_mut(), runs);
@@ -194,11 +209,15 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
 
 /// Put this window's cut where ▶✂✂ can read it; until then `build_window` seeds an empty one and a press answers S1's refusal.
 pub fn seed_review_cut(cut_: &cut::Cut) {
-    REVIEW_CUTS.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = cut_.clone();
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             review_cuts: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = cut_.clone();
+            }
+        },
+    );
     // F2.10/F2.11: rows, fold badges and ⇲ Lane's "anything rolling" read this page's session spans, so a cut seeded after open moves them. A session DECLARED through `set_session_recordings` is never rewritten.
     if !crate::ui::cut_folds::session_declared() {
         crate::ui::cut_folds::set_session_recordings(&crate::ui::cut_session::session_or_kept(
@@ -208,8 +227,12 @@ pub fn seed_review_cut(cut_: &cut::Cut) {
 }
 
 pub fn newest_review_cut() -> cut::Cut {
-    REVIEW_CUTS
-        .with(|slots| slots.borrow().last().map(|slot| slot.borrow().clone()))
+    WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 review_cuts: slots, ..
+             }| slots.borrow().last().map(|slot| slot.borrow().clone()),
+        )
         .unwrap_or_default()
 }
 

@@ -6,6 +6,7 @@ use gtk4 as gtk;
 use crate::narrate_band::{self as band, BandPaint};
 use crate::narrate_screen as screen;
 use crate::ui::cut_wave_rows;
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 use crate::wave_build;
 
 /// The lane's height, from the module that catalogues it (`narrate.bandLanePx`).
@@ -65,15 +66,18 @@ pub fn attach(window: &adw::ApplicationWindow) {
     // GTK hands `drag-update` and `drag-end` the OFFSET from the press, so the pointer's x is the press plus it.
     let move_win = window.clone();
     drag.connect_drag_update(move |_g, dx, _y| {
-        note_motion(PRESS_X.with(|slot| slot.get()) + dx);
+        note_motion(NARRATE_PAGE.with(|NarratePage { press_x: slot, .. }| slot.get()) + dx);
         repaint(&move_win);
     });
     let end_win = window.clone();
     drag.connect_drag_end(move |_g, dx, _y| {
-        finish_drag(&end_win, PRESS_X.with(|slot| slot.get()) + dx);
+        finish_drag(
+            &end_win,
+            NARRATE_PAGE.with(|NarratePage { press_x: slot, .. }| slot.get()) + dx,
+        );
     });
     lane.add_controller(drag.clone());
-    DRAG.with(|slot| *slot.borrow_mut() = Some(drag));
+    NARRATE_PAGE.with(|NarratePage { drag: slot, .. }| *slot.borrow_mut() = Some(drag));
 
     let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     wheel.set_name(Some("wheel-take-band"));
@@ -124,7 +128,11 @@ pub fn note_lane_size(window: &adw::ApplicationWindow) {
         Some(scroller) => scroller,
         None => return,
     };
-    let viewport = VIEW_WIDTH.with(|slot| slot.get());
+    let viewport = NARRATE_PAGE.with(
+        |NarratePage {
+             view_width: slot, ..
+         }| slot.get(),
+    );
     if viewport <= 0.0 {
         return;
     }
@@ -142,12 +150,25 @@ pub fn note_lane_size(window: &adw::ApplicationWindow) {
 pub const POINTER_COLOUR: (f64, f64, f64, f64) = (0.85, 0.25, 0.25, 0.35);
 
 fn note_pointer(x: f64) {
-    let inside = (0.0..=LANE_WIDTH.with(|slot| slot.get())).contains(&x);
-    POINTER_X.with(|slot| slot.set(if inside { x } else { -1.0 }));
+    let inside = (0.0..=NARRATE_PAGE.with(
+        |NarratePage {
+             lane_width: slot, ..
+         }| slot.get(),
+    ))
+        .contains(&x);
+    NARRATE_PAGE.with(
+        |NarratePage {
+             pointer_x: slot, ..
+         }| slot.set(if inside { x } else { -1.0 }),
+    );
 }
 
 pub fn pointer_px() -> f64 {
-    POINTER_X.with(|slot| slot.get())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             pointer_x: slot, ..
+         }| slot.get(),
+    )
 }
 
 pub fn show_only_with_recording(window: &adw::ApplicationWindow) {
@@ -196,40 +217,15 @@ pub fn painted_seconds() -> Option<f64> {
 }
 
 pub fn band_gesture_for_test() -> Option<gtk::GestureDrag> {
-    DRAG.with(|slot| slot.borrow().clone())
+    NARRATE_PAGE.with(|NarratePage { drag: slot, .. }| slot.borrow().clone())
 }
 
 pub fn set_selection_for_test(_window: &adw::ApplicationWindow, span: (f64, f64)) {
-    SELECTION.with(|slot| *slot.borrow_mut() = Some(span));
-}
-
-thread_local! {
-    /// The drag this window put on the band, so a test can reach the one the page installed.
-    static DRAG: std::cell::RefCell<Option<gtk::GestureDrag>> =
-        const { std::cell::RefCell::new(None) };
-    /// Fit-relative zoom of the view. 1.0 = the whole recording across the lane.
-    static ZOOM: std::cell::Cell<f64> = const { std::cell::Cell::new(1.0) };
-    /// Px scrolled from the recording's start; never outside the file ([`band::clamp_view`]).
-    static OFFSET: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
-    /// The red ▶-start bar, in seconds of the recording.
-    static RED_BAR: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
-    /// Has anyone put the red bar down yet? Until then it rides the cut's playhead.
-    static RED_BAR_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The preview's second the bar last followed ([`follow_head`]).
-    static HEAD_SEEN: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
-    /// The live selection in seconds: written by motion, emptied by a click.
-    static SELECTION: std::cell::RefCell<Option<(f64, f64)>> =
-        const { std::cell::RefCell::new(None) };
-    /// The drag's press second, so release can ask `screen::take_press` with both ends.
-    static PRESS_X: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
-    /// The pointer's x in lane px, or negative when it is off the band.
-    static POINTER_X: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
-    static VIEW_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(240.0) };
-    /// The lane's own painted width: the whole recording at the zoom, scrolled through by the scroller.
-    static LANE_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(240.0) };
-    static WALK_HEAD: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
-    /// The recording's seconds, as last handed to the painter.
-    static DURATION: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    NARRATE_PAGE.with(
+        |NarratePage {
+             selection: slot, ..
+         }| *slot.borrow_mut() = Some(span),
+    );
 }
 
 pub fn painted_view_for_test() -> (f64, f64) {
@@ -241,7 +237,11 @@ pub fn painted_view_for_test() -> (f64, f64) {
 }
 
 pub fn view_width_for_test() -> f64 {
-    VIEW_WIDTH.with(|slot| slot.get())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             view_width: slot, ..
+         }| slot.get(),
+    )
 }
 
 pub const RED_BAR_COLOUR: (u8, u8, u8) = (219, 51, 46);
@@ -290,21 +290,25 @@ pub fn repaint(window: &adw::ApplicationWindow) {
 
 /// The view's fit-relative zoom.
 pub fn zoom() -> f64 {
-    ZOOM.with(|slot| slot.get())
+    NARRATE_PAGE.with(|NarratePage { zoom: slot, .. }| slot.get())
 }
 
 /// The view's offset in px.
 pub fn offset() -> f64 {
-    OFFSET.with(|slot| slot.get())
+    NARRATE_PAGE.with(|NarratePage { offset: slot, .. }| slot.get())
 }
 
 /// The red ▶-start bar's second.
 pub fn red_bar() -> f64 {
-    RED_BAR.with(|slot| slot.get())
+    NARRATE_PAGE.with(|NarratePage { red_bar: slot, .. }| slot.get())
 }
 
 pub fn red_bar_or(session: f64) -> f64 {
-    match RED_BAR_SEEN.with(|slot| slot.get()) {
+    match NARRATE_PAGE.with(
+        |NarratePage {
+             red_bar_seen: slot, ..
+         }| slot.get(),
+    ) {
         true => red_bar(),
         false => band_second_of(session).unwrap_or(session.max(0.0)),
     }
@@ -319,50 +323,91 @@ fn band_second_of(session: f64) -> Option<f64> {
 }
 
 pub fn follow_head(session: f64) {
-    if HEAD_SEEN.with(|slot| slot.replace(session)) == session {
+    if NARRATE_PAGE.with(
+        |NarratePage {
+             head_seen: slot, ..
+         }| slot.replace(session),
+    ) == session
+    {
         return;
     }
-    if RED_BAR_SEEN.with(|slot| slot.get()) {
+    if NARRATE_PAGE.with(
+        |NarratePage {
+             red_bar_seen: slot, ..
+         }| slot.get(),
+    ) {
         if let Some(at) = band_second_of(session) {
-            RED_BAR.with(|slot| slot.set(at));
+            NARRATE_PAGE.with(|NarratePage { red_bar: slot, .. }| slot.set(at));
         }
     }
 }
 
 pub fn red_bar_seen_for_test() -> bool {
-    RED_BAR_SEEN.with(|slot| slot.get())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             red_bar_seen: slot, ..
+         }| slot.get(),
+    )
 }
 
 pub fn live_selection() -> Option<(f64, f64)> {
-    SELECTION.with(|slot| *slot.borrow())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             selection: slot, ..
+         }| *slot.borrow(),
+    )
 }
 
 /// Put the red bar at a second (the door a test and any future shortcut use).
 pub fn set_red_bar(seconds: f64) {
-    RED_BAR.with(|slot| slot.set(seconds.max(0.0)));
-    RED_BAR_SEEN.with(|slot| slot.set(true));
+    NARRATE_PAGE.with(|NarratePage { red_bar: slot, .. }| slot.set(seconds.max(0.0)));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             red_bar_seen: slot, ..
+         }| slot.set(true),
+    );
 }
 
 pub fn clear_hand() {
-    SELECTION.with(|slot| *slot.borrow_mut() = None);
-    POINTER_X.with(|slot| slot.set(-1.0));
-    ZOOM.with(|slot| slot.set(1.0));
-    OFFSET.with(|slot| slot.set(0.0));
-    RED_BAR.with(|slot| slot.set(0.0));
-    RED_BAR_SEEN.with(|slot| slot.set(false));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             selection: slot, ..
+         }| *slot.borrow_mut() = None,
+    );
+    NARRATE_PAGE.with(
+        |NarratePage {
+             pointer_x: slot, ..
+         }| slot.set(-1.0),
+    );
+    NARRATE_PAGE.with(|NarratePage { zoom: slot, .. }| slot.set(1.0));
+    NARRATE_PAGE.with(|NarratePage { offset: slot, .. }| slot.set(0.0));
+    NARRATE_PAGE.with(|NarratePage { red_bar: slot, .. }| slot.set(0.0));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             red_bar_seen: slot, ..
+         }| slot.set(false),
+    );
 }
 
 fn note_press(x: f64) {
-    PRESS_X.with(|slot| slot.set(x));
-    SELECTION.with(|slot| *slot.borrow_mut() = None);
+    NARRATE_PAGE.with(|NarratePage { press_x: slot, .. }| slot.set(x));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             selection: slot, ..
+         }| *slot.borrow_mut() = None,
+    );
 }
 
 fn note_motion(x: f64) {
-    SELECTION.with(|slot| *slot.borrow_mut() = selected(x));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             selection: slot, ..
+         }| *slot.borrow_mut() = selected(x),
+    );
 }
 
 fn selected(x: f64) -> Option<(f64, f64)> {
-    let press = PRESS_X.with(|slot| slot.get());
+    let press = NARRATE_PAGE.with(|NarratePage { press_x: slot, .. }| slot.get());
     // [`screen::take_press`] owns the slop and direction rule; only its CASE is
     // asked here, because the seconds come from this lane's own offset and px/s, which that rule does not
     // know about. A click (SetBar) selects nothing — it moves the red bar instead.
@@ -382,12 +427,20 @@ fn selected(x: f64) -> Option<(f64, f64)> {
 
 fn finish_drag(window: &adw::ApplicationWindow, x: f64) {
     match selected(x) {
-        Some(span) => SELECTION.with(|slot| *slot.borrow_mut() = Some(span)),
+        Some(span) => NARRATE_PAGE.with(
+            |NarratePage {
+                 selection: slot, ..
+             }| *slot.borrow_mut() = Some(span),
+        ),
         None => {
             let (start, pps) = view();
             let at = band::x_to_second(x, start, pps);
             set_red_bar(at);
-            SELECTION.with(|slot| *slot.borrow_mut() = None);
+            NARRATE_PAGE.with(
+                |NarratePage {
+                     selection: slot, ..
+                 }| *slot.borrow_mut() = None,
+            );
             crate::ui::narrate_page_take::band_clicked(window, at);
         }
     }
@@ -398,14 +451,28 @@ fn finish_drag(window: &adw::ApplicationWindow, x: f64) {
 fn zoom_by(window: &adw::ApplicationWindow, steps: f64) {
     if zoom() <= 1.0 {
         // Leaving fit: what shows now is the width every later zoom is measured against.
-        VIEW_WIDTH.with(|slot| slot.set(LANE_WIDTH.with(|lane| lane.get())));
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 view_width: slot, ..
+             }| {
+                slot.set(NARRATE_PAGE.with(
+                    |NarratePage {
+                         lane_width: lane, ..
+                     }| lane.get(),
+                ))
+            },
+        );
     }
     let (duration, view) = size();
     let before = band::px_per_second(zoom(), duration, view);
     let adjustment = scroller_of(window).map(|scroller| scroller.hadjustment());
     let scrolled = adjustment.as_ref().map_or(0.0, |a| a.value());
     // The second under the pointer stays under it (the view's middle when the pointer is off the band).
-    let pointer = POINTER_X.with(|slot| slot.get());
+    let pointer = NARRATE_PAGE.with(
+        |NarratePage {
+             pointer_x: slot, ..
+         }| slot.get(),
+    );
     let anchor = if pointer >= 0.0 {
         pointer
     } else {
@@ -413,7 +480,7 @@ fn zoom_by(window: &adw::ApplicationWindow, steps: f64) {
     };
     let (second, on_screen) = (anchor / before.max(f64::EPSILON), anchor - scrolled);
     let zoom = band::zoom_step(zoom(), -steps);
-    ZOOM.with(|slot| slot.set(zoom));
+    NARRATE_PAGE.with(|NarratePage { zoom: slot, .. }| slot.set(zoom));
     note_lane_size(window);
     let after = band::px_per_second(zoom, duration, view);
     if let Some(adjustment) = adjustment {
@@ -440,19 +507,31 @@ fn scroller_of(window: &adw::ApplicationWindow) -> Option<gtk::ScrolledWindow> {
 
 /// Where the take walk's playhead stands (seconds of the recording), or none.
 pub fn set_walk_head(at: Option<f64>) {
-    WALK_HEAD.with(|slot| slot.set(at.unwrap_or(-1.0)));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             walk_head: slot, ..
+         }| slot.set(at.unwrap_or(-1.0)),
+    );
 }
 
 /// The take walk's playhead, for a test: negative while no walk plays.
 pub fn walk_head() -> f64 {
-    WALK_HEAD.with(|slot| slot.get())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             walk_head: slot, ..
+         }| slot.get(),
+    )
 }
 
 /// `(duration, width)` of the view as last painted.
 fn size() -> (f64, f64) {
     (
-        DURATION.with(|slot| slot.get()),
-        VIEW_WIDTH.with(|slot| slot.get()),
+        NARRATE_PAGE.with(|NarratePage { duration: slot, .. }| slot.get()),
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 view_width: slot, ..
+             }| slot.get(),
+        ),
     )
 }
 
@@ -464,7 +543,11 @@ fn view() -> (f64, f64) {
 
 /// The lane's width as the last paint saw it, for a wheel that pans before a repaint.
 fn view_width() -> f64 {
-    VIEW_WIDTH.with(|slot| slot.get())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             view_width: slot, ..
+         }| slot.get(),
+    )
 }
 
 pub fn painted_surface_for_test(
@@ -565,13 +648,22 @@ fn stamp(path: &std::path::Path) -> Result<(i64, i64), String> {
 pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     // `width` is the LANE: at fit it is also what shows, zoomed in it is the whole recording at the zoom, and
     // px/s is measured against what shows (`VIEW_WIDTH`), so the lane is exactly the recording's width.
-    LANE_WIDTH.with(|slot| slot.set(width));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             lane_width: slot, ..
+         }| slot.set(width),
+    );
     if zoom() <= 1.0 {
-        VIEW_WIDTH.with(|slot| slot.set(width));
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 view_width: slot, ..
+             }| slot.set(width),
+        );
     }
     let state = crate::ui::narrate_page::read_state();
     let seconds = painted_seconds();
-    DURATION.with(|slot| slot.set(seconds.unwrap_or(0.0).max(0.1)));
+    NARRATE_PAGE
+        .with(|NarratePage { duration: slot, .. }| slot.set(seconds.unwrap_or(0.0).max(0.1)));
     let (duration, view) = size();
     let pps = band::px_per_second(zoom(), duration, view);
     // Keep the lane as wide as the file it draws. GTK gives no size-allocate hook to hang this on and the
@@ -594,7 +686,11 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         offset: offset(),
         pps,
         red_bar: red_bar_or(state.session),
-        pointer_x: POINTER_X.with(|slot| slot.get()),
+        pointer_x: NARRATE_PAGE.with(
+            |NarratePage {
+                 pointer_x: slot, ..
+             }| slot.get(),
+        ),
         selection: live_selection(),
         takes: state.takes.clone(),
         session: state.session,
@@ -606,7 +702,11 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     });
     // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
     plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
-    let head = WALK_HEAD.with(|slot| slot.get());
+    let head = NARRATE_PAGE.with(
+        |NarratePage {
+             walk_head: slot, ..
+         }| slot.get(),
+    );
     plan.playhead_px = (head >= 0.0).then(|| band::second_to_px(head, offset(), pps));
 
     // 1. The envelope, or the sentence that says it is not ready: §1's "reading the recording…"
@@ -757,7 +857,7 @@ fn envelope_of(
 }
 
 #[derive(Clone, PartialEq)]
-struct EnvelopeKey {
+pub(crate) struct EnvelopeKey {
     dir: std::path::PathBuf,
     voice: String,
     tape: crate::narrate_tape::Tape,
@@ -765,12 +865,7 @@ struct EnvelopeKey {
 }
 
 /// The peaks [`envelope_of`] answers.
-type Peaks = Result<(f64, Vec<u8>), String>;
-
-thread_local! {
-    static ENVELOPE: std::cell::RefCell<Option<(EnvelopeKey, Option<Peaks>)>> =
-        const { std::cell::RefCell::new(None) };
-}
+pub(crate) type Peaks = Result<(f64, Vec<u8>), String>;
 
 fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
     let tree = crate::ui::window::narrate_session_tree().ok_or("no session folder open")?;
@@ -791,7 +886,7 @@ fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
             .map(|file| (file.clone(), stamp(file).ok()))
             .collect(),
     };
-    let held = ENVELOPE.with(|slot| {
+    let held = NARRATE_PAGE.with(|NarratePage { envelope: slot, .. }| {
         slot.borrow()
             .as_ref()
             .filter(|(read_for, _)| *read_for == key)
@@ -802,7 +897,8 @@ fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
         Some(None) => return Err(READING.to_string()),
         None => {}
     }
-    ENVELOPE.with(|slot| *slot.borrow_mut() = Some((key.clone(), None)));
+    NARRATE_PAGE
+        .with(|NarratePage { envelope: slot, .. }| *slot.borrow_mut() = Some((key.clone(), None)));
     crate::ui::background::run(
         "take band envelope",
         move || envelope_of(&tree, &tape, &reference),
@@ -810,7 +906,7 @@ fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
             if let Err(why) = &peaks {
                 crate::ui::window::log_line(&format!("take band: {why}"));
             }
-            let current = ENVELOPE.with(|slot| {
+            let current = NARRATE_PAGE.with(|NarratePage { envelope: slot, .. }| {
                 let mut slot = slot.borrow_mut();
                 match slot.as_mut() {
                     Some((read_for, answer)) if *read_for == key => {
@@ -844,12 +940,6 @@ fn draw_envelope(cr: &cairo::Context, peaks: &[u8], width: f64, lane_top: f64, l
     cut_wave_rows::draw_columns(cr, &levels, bot, lane_h - 2.0);
 }
 
-thread_local! {
-    /// The project and tape the page's takes were last read for.
-    static TAPE_SEEN: std::cell::RefCell<Option<(std::path::PathBuf, crate::narrate_tape::Tape)>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 fn follow_tape() {
     let Some(tree) = crate::ui::window::narrate_session_tree() else {
         return;
@@ -862,7 +952,11 @@ fn follow_tape() {
     // Keyed on the tape, not the voice's id: `own` and `narrator1` are the same narrator on the same tape.
     let now = Some((tree.dir().to_path_buf(), tape));
     // The first look at a project only notes the tape: the page was seeded off disk on it when it was loaded.
-    let before = TAPE_SEEN.with(|seen| seen.replace(now.clone()));
+    let before = NARRATE_PAGE.with(
+        |NarratePage {
+             tape_seen: seen, ..
+         }| seen.replace(now.clone()),
+    );
     if before.as_ref().map(|seen| &seen.0) != Some(&tree.dir().to_path_buf()) || before == now {
         return;
     }

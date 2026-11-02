@@ -1,9 +1,8 @@
 //! F3.6 Volume by hand — `spec/06-effects.md` F3.6, steps S1–S5, and `spec/inventory/effects.md` §A.6.
 
-use crate::cut::{EffectKind, Fx};
+use crate::cut::Fx;
 use crate::cut_hear;
 use crate::cut_speed;
-use crate::fx_lane;
 use crate::fx_record;
 use crate::fx_zoom;
 use crate::tools;
@@ -217,8 +216,4 @@ pub fn heard_while_paused(fx: &[Fx], t: f64) -> f64 {
         return 0.0;
     }
     cut_hear::gain_under(fx, t)
-}
-
-pub fn gain_has_no_visual() -> bool {
-    !fx_lane::drawn_paused(EffectKind::Volume)
 }

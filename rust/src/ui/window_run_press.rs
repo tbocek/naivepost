@@ -17,6 +17,7 @@ use crate::runqueue;
 use crate::shell::Shell;
 use crate::ui::window as ui;
 use crate::ui::window::{paint_progress, paint_run_bar};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The transport every run-bar paint and the ▶ press read: this window's live preview, never a default, or `run::RunBar::press`'s S2
 /// ("playback beats the page's action") could not fire while a preview plays or waits parked (§11 §2).
@@ -130,13 +131,18 @@ pub(crate) fn wire_play(
         let produce_asked = run::step(shell.borrow().page) == run::Step::Produce;
         // F2.14's ▶ on the Cut page is Suggest, refused or answered before the bar opens (`cut_suggest_press::on_play`).
         let suggest_asked = run::step(shell.borrow().page) == run::Step::Suggest;
-        let live = ui::PLAY_SESSION.with(|slots| {
-            slots
-                .borrow()
-                .last()
-                .map(|held| held.borrow().clone())
-                .unwrap_or_else(|| project.clone())
-        });
+        let live = WINDOW_PAGE.with(
+            |WindowPage {
+                 play_session: slots,
+                 ..
+             }| {
+                slots
+                    .borrow()
+                    .last()
+                    .map(|held| held.borrow().clone())
+                    .unwrap_or_else(|| project.clone())
+            },
+        );
         // §11 §2 is the table this press asks first: what ▶ means on THIS page now. Its transport answer lands BEFORE any page step, so a playing or
         // parked preview cannot be interrupted by Suggest, write-and-speak or render.
         let has_cut = !crate::ui::window_preview::newest_review_cut()
@@ -284,8 +290,13 @@ pub(crate) fn wire_play(
         if matches!(pressed, run::Pressed::Started { .. }) {
             // F0.7's second door: a context nobody has derived from is derived before the step reads it, so ▶ never runs on a lagging policy; only when the tracker says so.
             let context = ui::user_context();
-            if ui::POLICY_TRACKERS
-                .with(|trackers| trackers.borrow().last().cloned())
+            if WINDOW_PAGE
+                .with(
+                    |WindowPage {
+                         policy_trackers: trackers,
+                         ..
+                     }| trackers.borrow().last().cloned(),
+                )
                 .is_some_and(|tracker| tracker.borrow().needs_derive(&context))
             {
                 // Prepare asks the live model on its worker (§03-shell §1); a test's own answerer answers at once, so it is asked here.
@@ -330,12 +341,16 @@ pub(crate) fn wire_play(
                 }
             }
             // F1.1 S1-S4, S5's audio.cpp preflight and F1.7's plan are Prepare's worker's ([`super::prepare_worker`]). S3 snapshots the LIVE session: a source added after `build_window` is part of this run.
-            let asked = ui::PLAY_SESSION.with(|s| {
-                s.borrow()
-                    .last()
-                    .map(|h| h.borrow().clone())
-                    .unwrap_or_else(|| project.clone())
-            });
+            let asked = WINDOW_PAGE.with(
+                |WindowPage {
+                     play_session: s, ..
+                 }| {
+                    s.borrow()
+                        .last()
+                        .map(|h| h.borrow().clone())
+                        .unwrap_or_else(|| project.clone())
+                },
+            );
             let snapshot = run::snapshot_sources(&asked);
             runqueue::start_run(
                 &mut bar.borrow_mut(),
@@ -373,8 +388,13 @@ pub(crate) fn wire_play(
                             *queue.borrow_mut() = walked;
                             if stage != counted_at {
                                 counted_at = stage.clone();
-                                let session = ui::PLAY_SESSION
-                                    .with(|s| s.borrow().last().map(|h| h.borrow().clone()));
+                                let session = WINDOW_PAGE.with(
+                                    |WindowPage {
+                                         play_session: s, ..
+                                     }| {
+                                        s.borrow().last().map(|h| h.borrow().clone())
+                                    },
+                                );
                                 if let Some(session) = session {
                                     let window = crate::ui::window::main_window();
                                     crate::ui::window::paint_readouts_for(

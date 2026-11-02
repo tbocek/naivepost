@@ -135,23 +135,6 @@ fn sample(entry: &Value, keys: &[&str]) -> Option<u64> {
     None
 }
 
-/// Voice separation's answer: the paths of the two stems on the server.
-pub fn stem_paths(body: &Value) -> Result<(Stems, ServerPath, ServerPath), String> {
-    let reply = answer(body);
-    let path = |keys: &[&str]| {
-        keys.iter()
-            .filter_map(|key| reply.get(*key).and_then(Value::as_str))
-            .next()
-            .and_then(ServerPath::from_upload)
-    };
-    let voice = path(&["voice", "vocals", "stem_voice"])
-        .ok_or_else(|| format!("the audio.cpp server answered {body} -- no voice stem path"))?;
-    let rest = path(&["rest", "accompaniment", "other", "stem_rest"]).ok_or_else(|| {
-        format!("the audio.cpp server answered {body} -- no accompaniment stem path")
-    })?;
-    Ok((Stems::Both, voice, rest))
-}
-
 /// Which half a separation reply names: both at once (the usual shape) or the one a chunk asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stems {
@@ -833,20 +816,6 @@ pub fn upload_bytes(
 /// The scratch folder this door's chunks and uploads live in, under the session when one is open.
 fn scratch_dir() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_default().join("scratch")
-}
-
-pub fn write_scratch(
-    tree: &Option<Tree>,
-    source: &str,
-    file: &str,
-    plan: &[String],
-    body: &serde_json::Value,
-) -> Result<(), String> {
-    let dir = match tree {
-        Some(tree) => tree.asr_scratch(source),
-        None => scratch_dir(),
-    };
-    write_scratch_at(&dir, file, plan, body)
 }
 
 fn write_scratch_at(

@@ -11,40 +11,34 @@ use gtk4 as gtk;
 
 use crate::runqueue::{self, Queue};
 use crate::shell::NARRATION_AUTOSAVE;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use crate::ui::{narrate_page, narrate_text, window};
 
 /// The live shell of the showing window, via the newest-slot rule.
 fn live_shell() -> Option<Rc<RefCell<crate::shell::Shell>>> {
-    window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
-}
-
-thread_local! {
-    /// The clock every beat is measured against: elapsed real time from an `Instant` plus whatever [`advance_clock_for_test`] added. The shell's `Pending` stores absolute deadlines on it so a second clock would make every `writable` answer "not yet".
-    static CLOCK: std::cell::OnceCell<Instant> = const { std::cell::OnceCell::new() };
-
-    static SHIFT: std::cell::Cell<Duration> = const { std::cell::Cell::new(Duration::ZERO) };
-
-    /// Whether an autosave timer stands. Typing re-arms the beat, not the timer, so a burst of keystrokes costs one write.
-    static AUTOSAVE_STANDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-
-    static PULSE: std::cell::Cell<Option<glib::SourceId>> = const { std::cell::Cell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| shells.borrow().last().cloned(),
+    )
 }
 
 /// Where the UI clock stands, as the absolute [`Duration`] the shell's `Pending` speaks in (see `window::mark_narration_owed`).
 fn elapsed() -> Duration {
-    let base = CLOCK.with(|clock| {
+    let base = WINDOW_PAGE.with(|WindowPage { clock, .. }| {
         let instant = *clock.get_or_init(Instant::now);
         instant
     });
-    base.elapsed() + SHIFT.with(|shift| shift.get())
+    base.elapsed() + WINDOW_PAGE.with(|WindowPage { shift, .. }| shift.get())
 }
 
 /// Move the clock forward by `extra` so a check can watch a beat come due without waiting 400 ms; never called by the program.
 pub fn advance_clock_for_test(extra: Duration) {
-    CLOCK.with(|clock| {
+    WINDOW_PAGE.with(|WindowPage { clock, .. }| {
         clock.get_or_init(Instant::now);
     });
-    SHIFT.with(|shift| shift.set(shift.get() + extra));
+    WINDOW_PAGE.with(|WindowPage { shift, .. }| shift.set(shift.get() + extra));
 }
 
 /// Whether a timer is worth standing: exactly when the shell owes a write and names when; keeps an untouched Narrate page from ticking.
@@ -61,17 +55,32 @@ pub fn arm_autosave(window: &adw::ApplicationWindow) {
     if !needs_timer(shell.borrow().narration_pending.owe(), owed) {
         return;
     }
-    if AUTOSAVE_STANDING.with(|standing| standing.replace(true)) {
+    if WINDOW_PAGE.with(
+        |WindowPage {
+             autosave_standing: standing,
+             ..
+         }| standing.replace(true),
+    ) {
         return;
     }
     let held = window.clone();
     glib::timeout_add_local(NARRATION_AUTOSAVE, move || {
         let Some(shell) = live_shell() else {
-            AUTOSAVE_STANDING.with(|standing| standing.set(false));
+            WINDOW_PAGE.with(
+                |WindowPage {
+                     autosave_standing: standing,
+                     ..
+                 }| standing.set(false),
+            );
             return glib::ControlFlow::Break;
         };
         if !shell.borrow().narration_pending.owe() {
-            AUTOSAVE_STANDING.with(|standing| standing.set(false));
+            WINDOW_PAGE.with(
+                |WindowPage {
+                     autosave_standing: standing,
+                     ..
+                 }| standing.set(false),
+            );
             return glib::ControlFlow::Break;
         }
         if !shell.borrow().narration_pending.writable(elapsed()) {
@@ -79,7 +88,12 @@ pub fn arm_autosave(window: &adw::ApplicationWindow) {
         }
         // Due: write through the door that reads every row box; the next keystroke arms a fresh timer.
         flush_now(&held);
-        AUTOSAVE_STANDING.with(|standing| standing.set(false));
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 autosave_standing: standing,
+                 ..
+             }| standing.set(false),
+        );
         glib::ControlFlow::Break
     });
 }
@@ -99,7 +113,11 @@ fn flush_now(window: &adw::ApplicationWindow) {
 
 /// The live bar of the showing window, newest last, like [`live_shell`]; lets a test start a run as ▶ does (`runqueue::start_run`).
 pub fn run_bar(_window: &adw::ApplicationWindow) -> Option<Rc<RefCell<crate::run::RunBar>>> {
-    window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_bar: bars, ..
+         }| bars.borrow().last().cloned(),
+    )
 }
 
 /// The queue's line for [`status_from_queue`]: the label to write and whether a run owns it now.
@@ -138,18 +156,18 @@ pub fn arm_pulse(
         let running = bar.borrow().running.is_some();
         let fraction = queue.borrow().fraction();
         if !should_pulse(running, fraction) {
-            PULSE.with(|held| held.replace(None));
+            WINDOW_PAGE.with(|WindowPage { pulse: held, .. }| held.replace(None));
             return glib::ControlFlow::Break;
         }
         progress.pulse();
         glib::ControlFlow::Continue
     });
-    PULSE.with(|held| held.replace(Some(id)));
+    WINDOW_PAGE.with(|WindowPage { pulse: held, .. }| held.replace(Some(id)));
 }
 
 /// Take down a standing pulse timer; ⏹ calls it. Returns whether one was there.
 pub fn stop_pulse() -> bool {
-    match PULSE.with(|held| held.take()) {
+    match WINDOW_PAGE.with(|WindowPage { pulse: held, .. }| held.take()) {
         Some(id) => {
             id.remove();
             true
@@ -160,7 +178,7 @@ pub fn stop_pulse() -> bool {
 
 /// Whether a pulse timer stands now. Test-only: reading the `Cell<Option<SourceId>>` needs ownership so this removes what it finds.
 pub fn pulse_standing_for_test() -> bool {
-    match PULSE.with(|held| held.take()) {
+    match WINDOW_PAGE.with(|WindowPage { pulse: held, .. }| held.take()) {
         Some(id) => {
             id.remove();
             true

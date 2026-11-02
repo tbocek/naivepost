@@ -5,13 +5,12 @@
 // its sound questions. Only the clauses nothing else had written down live in naivepost::narrate_rules, and those
 // are exercised here too — a rule restated twice is a rule that can be changed in one place only.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::common;
 use common::seg;
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_hear;
-use naivepost::narrate_data::{self, Take};
 use naivepost::narrate_preview as view;
 use naivepost::narrate_rules as rules;
 use naivepost::narrate_screen as page;
@@ -396,90 +395,11 @@ fn sec_07_narrate_5_rules_s10_the_run_bar_belongs_to_the_preview_once_it_started
 
 // --- clause 11: cache keys stable, nothing deletes old wavs --------------------------------------------------------------
 
-/// §07-narrate#5-rules (`cache keys stable, nothing deletes old wavs`): a take is never cleaned up, because the key
-/// is frozen and derived from what was spoken — so the only files this page removes are the built reference and its
-/// base.
-#[test]
-fn sec_07_narrate_5_rules_s11_nothing_here_deletes_a_take() {
-    let (root, tree) = tree("s11");
-
-    // A take: spoken audio, never swept.
-    assert!(rules::deletes_a_spoken_take(
-        &tree.tts_wav("0123456789abcdef")
-    ));
-
-    // Everything the invalidation does remove, and the record — none of them takes.
-    for path in [
-        tree.voice_ref_wav(),
-        tree.voice_ref_base_wav(),
-        tree.sample_wav("aria", "a1b2c3d4e5f6"),
-        tree.narration_json(),
-    ] {
-        assert!(
-            !rules::deletes_a_spoken_take(&path),
-            "{} is not a take",
-            path.display()
-        );
-    }
-
-    // The key that makes deleting unnecessary: frozen, and named by what was spoken.
-    let entry = Entry {
-        s: 1.5,
-        e: 34.7,
-        text: "We start with \u{2026}".to_string(),
-        emotion: "calm".to_string(),
-        ..Default::default()
-    };
-    let key = narration::tts_key(&entry, None, None);
-    assert_eq!(key, "25e0.85|We start with \u{2026}|calm");
-    let file = narration::tts_file(&key);
-    assert_eq!(file.len(), 16, "{file}");
-    assert!(
-        file.chars()
-            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
-        "{file} is not lowercase hex"
-    );
-
-    // A line nobody re-rolled keeps the key it had before the voice picker and the re-roll existed; rolling salts
-    // it, which is a new take rather than an old one to throw away.
-    let rolled = narration::tts_key(&Entry { roll: 3, ..entry }, None, None);
-    assert!(rolled.contains("|3#"), "{rolled}");
-    assert_ne!(narration::tts_file(&key), narration::tts_file(&rolled));
-
-    let _: &Path = tree.dir();
-    let _ = std::fs::remove_dir_all(&root);
-}
-
 // --- clause 12: hand-picked takes never re-ranked -------------------------------------------------------------------------
 
 /// §07-narrate#5-rules (`hand-picked takes never re-ranked`): chosen seconds win outright — no cap, no
 /// diarization, no ordering by quality. P.eng.takeMinSeconds is the only floor they meet.
 // P.eng.takeMinSeconds
-#[test]
-fn sec_07_narrate_5_rules_s12_hand_picked_takes_are_never_re_ranked() {
-    assert!(!rules::takes_are_hand_picked(&[]));
-    assert!(rules::takes_are_hand_picked(&[Take { s: 4.0, e: 9.0 }]));
-
-    // Unsorted, overlapping and partly too short: the clean-up puts them in time order and merges what touches —
-    // it never decides one take is worth more than another.
-    let kept = narrate_data::clean_takes(&[
-        Take { s: 8.0, e: 20.0 },
-        Take { s: 2.0, e: 3.0 },
-        Take { s: 7.0, e: 9.0 },
-        Take { s: 40.0, e: 40.1 },
-    ]);
-    assert_eq!(
-        kept,
-        vec![Take { s: 2.0, e: 3.0 }, Take { s: 7.0, e: 20.0 }],
-        "a twelve-second take does not overtake a one-second one; time order is the only order"
-    );
-    assert!(rules::takes_are_hand_picked(&kept));
-
-    // The floor is the seconds floor and nothing else: 0.4 s of speech or it goes, however good it sounds.
-    assert_eq!(page::TAKE_MIN_SECONDS, 0.4);
-    assert!(narrate_data::clean_takes(&[Take { s: 1.0, e: 1.3 }]).is_empty());
-}
-
 // --- clause 13: a voice not on offer leaves the picker empty ---------------------------------------------------------------
 
 /// §07-narrate#5-rules (`a voice not on offer leaves the picker empty rather than pointing at the wrong speaker`):

@@ -147,12 +147,6 @@ pub fn frame_seconds(changes: &[f64], duration: f64, grid: f64) -> Vec<f64> {
     out
 }
 
-/// S3: whether this take is shorter than one step of the grid, in which case its first frame is its
-/// only one ([`frame_seconds`] explains why the rule is about the take and not about each scene).
-pub fn short_take_seconds(duration: f64, grid: f64) -> bool {
-    duration > 0.0 && duration <= grid
-}
-
 /// S3: how many extraction processes to run.
 pub fn workers(cpus: usize, jobs: usize) -> usize {
     if jobs <= TINY_JOB_FRAMES {

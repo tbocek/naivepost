@@ -15,10 +15,9 @@
 //! * a hit is answered before the gate and before the exchange log — s6.
 
 use naivepost::layout::Tree;
-use naivepost::llm_cache::{self, Ahead, Request, Stored};
+use naivepost::llm_cache::{self, Request, Stored};
 use naivepost::narrate_pass;
 use naivepost::produce_subtitles as subs;
-use naivepost::requests::Outcome;
 use naivepost::roles::Job;
 use serde_json::{json, Value};
 use sha2::Digest;
@@ -386,19 +385,3 @@ fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities()
 }
 
 // --- S6: a hit comes ahead of the gate and the page ------------------------------------------------------
-
-#[test]
-fn sec_09_llm_and_tools_6_cache_s6_a_hit_is_answered_before_the_gate_and_the_exchange_log() {
-    assert!(
-        llm_cache::hit_answered_ahead(Ahead::Gate),
-        "a hit takes no slot"
-    );
-    assert!(
-        llm_cache::hit_answered_ahead(Ahead::ExchangeLog),
-        "a hit opens no page section"
-    );
-    // Which is why a resumed run's `llm/` page holds only the calls actually made. The hit is not
-    // invisible though: it leaves its own row in requests.tsv (§10), spelled `cache` and carrying
-    // no time on the wire, so the file shows what a re-run saved.
-    assert_eq!(Outcome::Cache.to_string(), "cache");
-}

@@ -292,65 +292,6 @@ fn f3_11_s4_the_apps_defaults_per_kind() {
 
 // --- S4/S5: gain 1 and no gain are ignored, 0 is kept --------------------------------------------------------------------------
 
-/// S4 (`gain of 1 or none ignored, 0 kept`): a volume that asks for no change is not a refusal the model has to fix — it
-/// is nothing at all — while silence is a decision someone can mean and reaches the record.
-#[test]
-fn f3_11_s5_gain_1_and_no_gain_are_ignored_and_zero_is_kept() {
-    let clips = five_clips();
-
-    // No gain field: an omitted JSON number means "make it different, you decide", and §F3.11 says ignore that rather
-    // than guess a level.
-    let none = pass::place(&clips, &[call(1, "volume", 1.0, 4.0, None)]);
-    assert_eq!(none.answers, vec![Answer::Ignored]);
-    assert!(none.effects.is_empty(), "{:?}", none.effects);
-
-    // A gain of exactly 1 is the same nothing. Answered here rather than by §3.7's tool — which replies "a volume gain of
-    // 1 changes nothing -- leave the audio alone" — because that sentence reads as a fault to act on when nothing is
-    // wrong, and §F3.11 calls this case ignored, not skipped.
-    let untouched = pass::place(&clips, &[call(1, "volume", 1.0, 4.0, Some(1.0))]);
-    assert_eq!(
-        untouched.answers,
-        vec![Answer::Ignored],
-        "{:?}",
-        untouched.answers
-    );
-    assert!(untouched.effects.is_empty());
-    assert!(untouched.usable());
-
-    // A gain of 0 is silence and stays: the whole reason a session says "do not use this audio".
-    let hush = pass::place(&clips, &[call(1, "volume", 1.0, 4.0, Some(0.0))]);
-    let Answer::Placed(fx) = &hush.answers[0] else {
-        panic!("silence was not placed: {:?}", hush.answers[0]);
-    };
-    assert_close("the gain is nought", fx.gain, 0.0);
-    assert!(fx_record::gain_is_silence(fx));
-    // Ramped like any other volume — a silence that arrives on one sample is a cut in the audio. The span asked for was
-    // 1.0..4.0, so d = 3.0 and the ramp is min(1, 3/4) = 0.75: this record's length decides, not the call's offsets.
-    assert_close("its length", fx.dur, 3.0);
-    assert_close("ramped in", fx.trans, 0.75);
-
-    // And the three outcomes together: ignored, refused and placed in one reply, with the fault staying empty and exactly
-    // one effect reaching the cut.
-    let mixed = pass::place(
-        &clips,
-        &[
-            call(1, "volume", 1.0, 4.0, None),
-            call(2, "blur", 1.0, 4.0, None),
-            call(3, "zoom", 1.0, 4.0, None),
-        ],
-    );
-    assert_eq!(mixed.fault, None);
-    assert_eq!(mixed.effects.len(), 1, "{:?}", mixed.effects);
-    assert_eq!(
-        mixed
-            .answers
-            .iter()
-            .map(|a| matches!(a, Answer::Placed(_)))
-            .collect::<Vec<_>>(),
-        vec![false, false, true]
-    );
-}
-
 // --- S5: the three lines and the budget of two rounds ------------------------------------------------------------------------------
 
 /// S5 (`two rounds fail → "!!! effects: no usable answer -- the cut stands without them"`): with an ASCII `--`, verified

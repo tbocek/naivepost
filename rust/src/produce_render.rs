@@ -446,19 +446,6 @@ pub fn sped_up_log(no: usize, speech: f64, room: f64, tempo: f64) -> String {
 /// P.eng.laneMinMixSeconds (§10: 0.1, inventory §B `overlap ≥ 0.1 s`): the shortest overlap worth an ffmpeg input.
 pub const LANE_MIN_MIX_SECONDS: f64 = 0.1;
 
-pub fn lane_report(lane: &str, mixed: usize, total: usize) -> String {
-    format!("{lane} is mixed into {mixed} of the {total} clips")
-}
-
-/// The lane runs but every clip it underlies leaves it out (a `quiet` list); returns the tail of §B's sentence, which starts with the lane's name.
-pub fn lane_left_out(lane: &str) -> String {
-    format!("{lane} runs under 0 clip(s) and every one of them leaves it out \u{2014} it is not in the render")
-}
-
-pub fn lane_not_running(lane: &str) -> String {
-    format!("{lane} was not running while any clip was \u{2014} it is not in the render")
-}
-
 fn lane_heard(lane: &Lane, seg: &Seg) -> bool {
     seg.hears(&lane.name) && cut_hear::lane_covers(lane, cut_hear::lane_seconds(lane, seg.s), seg.s)
 }
@@ -1007,16 +994,6 @@ fn video_graph(
         ));
     }
     graph
-}
-
-pub fn command_log(no: usize, argv: &[String]) -> String {
-    format!(">>> clip {no}: ffmpeg {}", argv.join(" ").trim_start())
-}
-
-/// S5 (`size mismatch vs clip 0 logged`): the join is a stream copy and cannot mix sizes. Compares PROBED frame sizes
-/// ([`crate::produce_probe::probe`], asked by `produce_exec::walk`), never byte counts.
-pub fn join_mismatch(first: (i32, i32), size: (i32, i32)) -> Option<String> {
-    (size != first).then(|| JOIN_MISMATCH.to_string())
 }
 
 /// The sentence [`join_mismatch`] says, spelled once for the walk and the rule test (§B).

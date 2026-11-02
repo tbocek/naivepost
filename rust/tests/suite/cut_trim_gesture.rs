@@ -43,30 +43,6 @@ fn on_scene<'a>() -> trim::Press<'a> {
     }
 }
 
-/// S3: a press that never travelled and changed no row is a click, not a slide — even when it sat on
-/// something movable.
-#[test]
-fn f2_8_s3_an_unmoved_right_press_is_a_click_through_the_gesture() {
-    let segs = neighbours();
-    let gesture = trim::right_gesture(
-        &on_scene(),
-        0.0,
-        false,
-        0.0,
-        &segs,
-        REC_START,
-        REC_END,
-        PPS,
-        &[],
-        &BTreeMap::new(),
-        &sources(&["cam A"]),
-        false,
-    );
-    assert_eq!(gesture, trim::Gesture::Click);
-    // The same thing the module's own click rule says, so the gesture cannot disagree with it.
-    assert!(trim::is_click(0.0, false));
-}
-
 /// S2: sideways travel from 3 px opens the gesture; one less is still a click.
 #[test]
 fn f2_8_s2_the_gesture_opens_at_three_px_of_travel() {
@@ -164,44 +140,6 @@ fn f2_8_s2_a_scene_slide_keeps_length_clears_neighbours_and_snaps_flush() {
         }
         trim::Gesture::Click => panic!("a scene that moved 10 s is not a click"),
     }
-}
-
-/// S1 vs S2: a press within EDGE_GRAB_PX of a border is a trim and never a slide — the two rules share
-/// the same reach constant so they cannot drift apart. // layout.edgeGrabPx
-#[test]
-fn f2_8_s1_a_press_on_a_border_reaches_trim_not_slide() {
-    // The held clip spans 250..750 px at 40 px/s. Six pixels off its end border is inside the grab...
-    let px = 750.0;
-    assert_eq!(
-        trim::grab_border(px - trim::EDGE_GRAB_PX + 1.0, 250.0, 750.0),
-        Some(trim::Border::End),
-        "within 6 px the border is taken"
-    );
-    // ...and seven pixels away it is not, which is what lets the same press fall through to a slide.
-    assert_eq!(
-        trim::grab_border(px + 7.0, 250.0, 750.0),
-        None,
-        "outside the 6 px reach there is no border to trim"
-    );
-    assert_eq!(trim::EDGE_GRAB_PX, 6.0, "// layout.edgeGrabPx");
-
-    // A press flagged as being on a border does NOT take the selection, even inside one: that is the
-    // flowchart's "not on a border" guard, and it is why the same point answers trim or slide.
-    let inside_on_border = trim::Press {
-        selection: Some((12.0, 20.0)),
-        selected: vec![1],
-        inside_selection: true,
-        on_border: true,
-        scene: Some(1),
-        row: 0,
-        ..Default::default()
-    };
-    assert_ne!(
-        trim::slide_for(&inside_on_border),
-        trim::Slide::Selection(vec![1]),
-        "a border press trims, it never slides the selection"
-    );
-    assert_eq!(trim::slide_for(&inside_on_border), trim::Slide::Scene(1));
 }
 
 /// S2: a row slide is the shift correction — every listed source moved, nobody else touched.

@@ -100,11 +100,6 @@ pub fn press_recording(player: &mut Player, runs: &[(f64, f64)]) -> Press {
 
 // --- S3: while playing -------------------------------------------------------------------------------
 
-/// Where the line is after `elapsed`, given it was at `from`.
-pub fn play_advance(from: f64, elapsed: f64, _cut_only: bool) -> f64 {
-    from + elapsed
-}
-
 /// §B's status for a fold ▶ walked into, verbatim apart from the time it names.
 pub fn unfolded_status(t: f64) -> String {
     format!("unfolded {} \u{2014} \u{25b6} ran into it", tools::mm_ss(t))
@@ -156,10 +151,6 @@ pub fn preload_target(runs: &[(f64, f64)], t: f64) -> Option<f64> {
     }
 }
 
-pub fn opens_ahead(remaining_seconds: f64) -> bool {
-    remaining_seconds <= PRELOAD_LEAD_SECONDS
-}
-
 // --- S4: the clock and the line ------------------------------------------------------------------------
 
 /// How often the line follows the player: spec/10-parameters.md:133's "tick 100 ms" (no `P.*` row of its
@@ -168,11 +159,6 @@ pub const TICK_MS: u64 = 100;
 
 /// The same beat in seconds, for a clock that walks by it: one tick's worth of picture.
 pub const TICK_SECONDS: f64 = TICK_MS as f64 / 1000.0;
-
-/// S4: the line follows the player ten times a second.
-pub fn follows_per_second() -> usize {
-    1000 / TICK_MS as usize
-}
 
 /// The clock between two ticks (§D: "liveClock extrapolates ≤ one tick at the current rate, monotone").
 pub fn live_clock(base: f64, since_ms: u64, rate: f64) -> f64 {

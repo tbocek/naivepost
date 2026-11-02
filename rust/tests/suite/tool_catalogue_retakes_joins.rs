@@ -486,22 +486,3 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_keeping_is_an_answer_
     assert_eq!(small.get_words(Side::Before, 2), vec!["two", "three"]);
     assert_eq!(small.get_words(Side::After, 2), vec!["four", "five"]);
 }
-
-/// The app still re-derives the deleted stretch to check it is one stretch at the join.
-#[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_two_stretches_are_not_one_join() {
-    // One run, on one side: that is a stretch at the join.
-    assert!(textedit::one_stretch_at_join(&[3], &[]));
-    assert!(textedit::one_stretch_at_join(&[], &[7]));
-
-    // Nothing at all is not a stretch -- it is keep_join, which is a different answer.
-    assert!(!textedit::one_stretch_at_join(&[], &[]));
-    // A zero-length run names words that are not there: a gap, not a stretch.
-    assert!(!textedit::one_stretch_at_join(&[0], &[]));
-
-    // Two runs on one side are two stretches with live words between them.
-    assert!(!textedit::one_stretch_at_join(&[2, 3], &[]));
-    // And one run on each side is a join in the middle of what would be removed.
-    assert!(!textedit::one_stretch_at_join(&[2], &[2]));
-    assert!(!textedit::one_stretch_at_join(&[1, 1, 1], &[]));
-}

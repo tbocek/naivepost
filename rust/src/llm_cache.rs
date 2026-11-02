@@ -177,8 +177,3 @@ pub enum Ahead {
     /// The exchange log of §7 — a hit opens no page section.
     ExchangeLog,
 }
-
-/// A hit is answered before either: check the cache, return on a hit, only then take a slot and open a page section. The hit is still recorded in `requests.tsv` (`Outcome::Cache`, no wire time, §10).
-pub fn hit_answered_ahead(_stage: Ahead) -> bool {
-    true
-}

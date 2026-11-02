@@ -2,14 +2,13 @@
 //! at its size budget). Everything here answers one question: which extracted frame of a recording
 //! stands where on the row, and what pixels it may spend.
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc;
 
 use gtk4::prelude::*;
 
 use crate::ui::cut_colours::{FILM_GROUND, SLATE};
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::{clock, ui::cut_tracks};
 
 /// Inventory §D's `thumbBatch 6`: the live tape's thumbnails are "decoded in a worker in batches of
@@ -25,19 +24,22 @@ pub fn first_second(paths: &[std::path::PathBuf]) -> f64 {
         .unwrap_or(0.0)
 }
 
-thread_local! {
-    /// §7: "a draw must never block on a decode", so the LIVE page's picture row draws placeholder
-    /// cells and reads no pixels at all. Set-only because a snapshot process is one-shot: there is
-    /// no second page to return to a non-decoding state.
-    static DECODE_FRAMES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 pub fn allow_frame_decoding() {
-    DECODE_FRAMES.with(|flag| flag.set(true));
+    CUT_PAGE.with(
+        |CutPage {
+             decode_frames: flag,
+             ..
+         }| flag.set(true),
+    );
 }
 
 pub(crate) fn frame_decoding_allowed() -> bool {
-    DECODE_FRAMES.with(|flag| flag.get())
+    CUT_PAGE.with(
+        |CutPage {
+             decode_frames: flag,
+             ..
+         }| flag.get(),
+    )
 }
 
 pub fn draw_picture_rows(
@@ -148,34 +150,33 @@ fn paint_frame_cell(
 
 // ---- the live page's decodes: a worker, a cache, a repaint ---------------------------------------
 
-type ThumbKey = (PathBuf, i32);
+pub(crate) type ThumbKey = (PathBuf, i32);
 
 /// What the worker hands back: the key, and the frame's premultiplied ARGB32 pixels with their
 /// width and height (`None` when the file would not decode). Plain bytes, because a cairo surface
 /// may only live on its thread.
 type Decoded = Vec<(ThumbKey, Option<(Vec<u8>, i32, i32)>)>;
 
-thread_local! {
-    /// Decoded frames by (file, row height): `Some` once landed, `None` for a file that would not decode.
-    static THUMBS: RefCell<HashMap<ThumbKey, Option<cairo::ImageSurface>>> = RefCell::new(HashMap::new());
-    static ASKED: RefCell<HashSet<ThumbKey>> = RefCell::new(HashSet::new());
-    static WORKER: RefCell<Option<mpsc::Sender<ThumbKey>>> = const { RefCell::new(None) };
-    static BANDS: RefCell<Vec<glib::WeakRef<gtk4::DrawingArea>>> = const { RefCell::new(Vec::new()) };
-}
-
 pub fn thumbs_for_test() -> (usize, usize) {
     (
-        THUMBS.with(|thumbs| thumbs.borrow().values().filter(|t| t.is_some()).count()),
-        ASKED.with(|asked| asked.borrow().len()),
+        CUT_PAGE.with(|CutPage { thumbs, .. }| {
+            thumbs.borrow().values().filter(|t| t.is_some()).count()
+        }),
+        CUT_PAGE.with(
+            |CutPage {
+                 picture_rows_asked: asked,
+                 ..
+             }| asked.borrow().len(),
+        ),
     )
 }
 
 pub fn note_band(band: &gtk4::DrawingArea) {
-    BANDS.with(|bands| bands.borrow_mut().push(band.downgrade()));
+    CUT_PAGE.with(|CutPage { bands, .. }| bands.borrow_mut().push(band.downgrade()));
 }
 
 pub fn repaint_bands() {
-    BANDS.with(|bands| {
+    CUT_PAGE.with(|CutPage { bands, .. }| {
         bands.borrow_mut().retain(|band| match band.upgrade() {
             Some(band) => {
                 band.queue_draw();
@@ -190,17 +191,23 @@ pub fn repaint_bands() {
 /// for it once.
 fn decoded(path: &std::path::Path, height: i32) -> Option<cairo::ImageSurface> {
     let key: ThumbKey = (path.to_path_buf(), height);
-    if let Some(found) = THUMBS.with(|thumbs| thumbs.borrow().get(&key).cloned()) {
+    if let Some(found) = CUT_PAGE.with(|CutPage { thumbs, .. }| thumbs.borrow().get(&key).cloned())
+    {
         return found;
     }
-    if ASKED.with(|asked| asked.borrow_mut().insert(key.clone())) {
+    if CUT_PAGE.with(
+        |CutPage {
+             picture_rows_asked: asked,
+             ..
+         }| asked.borrow_mut().insert(key.clone()),
+    ) {
         ask_worker(key);
     }
     None
 }
 
 fn ask_worker(key: ThumbKey) {
-    WORKER.with(|worker| {
+    CUT_PAGE.with(|CutPage { worker, .. }| {
         let mut worker = worker.borrow_mut();
         if worker.is_none() {
             let (ask, asked) = mpsc::channel::<ThumbKey>();
@@ -235,8 +242,15 @@ fn ask_worker(key: ThumbKey) {
                 while let Ok(batch) = told.try_recv() {
                     for (key, pixels) in batch {
                         let surface = pixels.and_then(|(bytes, w, h)| surface_of(&bytes, w, h));
-                        THUMBS.with(|thumbs| thumbs.borrow_mut().insert(key.clone(), surface));
-                        ASKED.with(|asked| asked.borrow_mut().remove(&key));
+                        CUT_PAGE.with(|CutPage { thumbs, .. }| {
+                            thumbs.borrow_mut().insert(key.clone(), surface)
+                        });
+                        CUT_PAGE.with(
+                            |CutPage {
+                                 picture_rows_asked: asked,
+                                 ..
+                             }| asked.borrow_mut().remove(&key),
+                        );
                         landed = true;
                     }
                 }

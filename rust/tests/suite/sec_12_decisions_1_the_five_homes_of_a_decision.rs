@@ -20,7 +20,6 @@
 
 use naivepost::cut_effect_decisions::Candidate;
 use naivepost::decision_audit::{self, Home};
-use naivepost::decision_homes;
 use naivepost::exchanges::ToolCall;
 use naivepost::suggest;
 use naivepost::tool_loop::{self, Turn};
@@ -28,12 +27,6 @@ use naivepost::tools::{self, cutpass, Tool};
 use naivepost::ui;
 use std::cell::RefCell;
 use std::rc::Rc;
-
-/// The fifth home, asked of the one table that owns it: a `P.policy.` row or a shipped prompt key routes
-/// there, anything else is somebody else's home.
-fn policy_home(id: &str) -> bool {
-    decision_homes::home_of(id).is_some_and(decision_audit::is_number_or_wording)
-}
 
 // ---- the loop harness ------------------------------------------------------------------
 
@@ -321,35 +314,3 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_walk_back_is_audited_and_n
 }
 
 // ---- s5: policy / prompt --------------------------------------------------------------
-
-/// Row 5: what lives here is a number or a wording, never a per-item judgement — so every field the policy
-/// catalogue offers routes to that home, and an id that routes elsewhere is not offered as one. §F0.7 has
-/// no form any more, so the fact is about the CATALOGUE and the table, not about a window: the same fields
-/// the derivation validates and `get_context` offers are the ones the home covers.
-#[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s5_policy_home_rows_are_policy() {
-    // Not the fifth home at all: an engineering constant and a machine setting are fixed before the
-    // conversation and decide how the app or the servers run, not what this video becomes.
-    assert!(!policy_home("layout.thing"));
-    assert!(!policy_home("preview.padSeconds"));
-    assert_eq!(
-        decision_homes::home_of("layout.thing"),
-        Some(decision_homes::Home::Engineering),
-        "a bare prefixed id is engineering, which is why nothing may offer it as a policy row"
-    );
-    // Both halves of the fifth home: a `P.policy.` row and a shipped prompt key.
-    assert!(policy_home("P.policy.cutMode"));
-    assert!(
-        policy_home("captions"),
-        "a prompt wording is the same kind of non-decision"
-    );
-    // Every field the derivation may be told, and nothing else: the catalogue is the closed list §F0.7 S3
-    // validates against, so if one of its rows ever routed elsewhere, a derived value would have no home.
-    for entry in naivepost::policy::derived_fields() {
-        assert!(
-            policy_home(entry.id),
-            "{} is not the policy home",
-            entry.field
-        );
-    }
-}

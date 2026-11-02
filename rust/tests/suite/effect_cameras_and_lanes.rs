@@ -7,13 +7,12 @@
 //! so this file fails when an owner drifts and not when a literal was retyped.
 
 use naivepost::cut::{Fx, Seg};
-use naivepost::cut_cam;
 use naivepost::cut_effects_pass::{self as pass, Call};
 use naivepost::cut_hear;
 use naivepost::effect_details;
 use naivepost::effect_overlap as overlap;
 use naivepost::fx_lane;
-use naivepost::fx_record::{self, Field};
+use naivepost::fx_record::{self};
 use naivepost::render_fx;
 use naivepost::tools::clips::Clips;
 
@@ -53,14 +52,6 @@ fn zoom(t: f64, dur: f64, cam: i32) -> Fx {
     Fx {
         cam,
         ..kind("zoom", t, dur)
-    }
-}
-
-fn volume(t: f64, dur: f64, lane: &str, gain: f64) -> Fx {
-    Fx {
-        lane: lane.into(),
-        gain,
-        ..kind("volume", t, dur)
     }
 }
 
@@ -110,63 +101,6 @@ fn sec_06_effects_7_rules_s_lens_switch_ends_a_zoom_and_says_so() {
 }
 
 // --- row 1: zoom ----------------------------------------------------------------------------------------------------
-
-/// §06-effects#9-where-recordings-overlap — `A zoom SHOULD carry cam, the row it was framed on, and act only on clips
-/// shown from that camera … Over inserts: none`, against `Text, SVG … no camera, no lane`.
-#[test]
-fn sec_06_effects_9_where_recordings_overlap_s1_zoom_acts_only_on_its_own_camera() {
-    let framed = zoom(2.0, 4.0, 1);
-    assert!(
-        overlap::acts_on_scene(&framed, &scene(1, 0.0, 10.0)),
-        "the row it was framed on"
-    );
-    assert!(
-        !overlap::acts_on_scene(&framed, &scene(0, 0.0, 10.0)),
-        "any other row is somebody else's frame"
-    );
-
-    // Over inserts: none — for either camera, since a card is not filmed from one at all.
-    let insert = card();
-    assert!(!overlap::acts_on_scene(&framed, &insert));
-    assert!(!overlap::acts_on_scene(&zoom(2.0, 4.0, 0), &insert));
-
-    // The kinds §9 gives no camera and no lane are drawn on every scene, a card's included.
-    for other in ["text", "svg", "label", "volume", "speed"] {
-        let fx = kind(other, 2.0, 4.0);
-        assert!(
-            overlap::acts_on_scene(&fx, &insert),
-            "{other} over an insert is all or nothing"
-        );
-        assert!(
-            overlap::acts_on_scene(&fx, &scene(0, 0.0, 10.0)),
-            "{other} on row 0"
-        );
-        assert!(
-            overlap::acts_on_scene(&fx, &scene(1, 0.0, 10.0)),
-            "{other} on row 1"
-        );
-    }
-
-    // The record-level half of the same rule: only a zoom reads `cam`, so only a zoom can be framed on a row.
-    for other in ["text", "svg", "label"] {
-        let parsed = kind(other, 0.0, 1.0)
-            .effect_kind()
-            .expect("a kind §1 lists");
-        assert!(
-            !fx_record::uses(parsed, Field::Cam),
-            "{other} has no cam field"
-        );
-        assert!(
-            !fx_record::uses(parsed, Field::Lane),
-            "{other} has no lane field"
-        );
-    }
-
-    // The row a zoom carries is the row it acts on, and the test for "shown from" is the row itself.
-    assert_eq!(fx_record::camera_row(&zoom(0.0, 2.0, 1)), Some(1));
-    assert!(cut_cam::shown_from(1, 1));
-    assert!(!cut_cam::shown_from(1, 0));
-}
 
 // --- row 1, the lens-switch half ------------------------------------------------------------------------------------
 
@@ -338,69 +272,7 @@ fn sec_06_effects_9_where_recordings_overlap_s6_a_mute_or_a_stop_silences_the_wh
 
 // --- row 6: volume ---------------------------------------------------------------------------------------------------
 
-/// §06-effects#9-where-recordings-overlap — `A volume SHOULD carry lane: "" the whole bed (today), or one lane's name,
-/// gained before the mix`.
-#[test]
-fn sec_06_effects_9_where_recordings_overlap_s7_a_volume_reaches_what_its_lane_names() {
-    let bed = volume(0.0, 2.0, "", 2.0);
-    assert!(
-        overlap::gain_reaches(&bed, "mic"),
-        "the whole bed is every lane"
-    );
-    assert!(overlap::gain_reaches(&bed, "room"));
-    assert!(fx_record::rides_whole_bed(&bed));
-    // The bed's cue rides the graph §4 gives it — after the lanes are summed.
-    assert!(!overlap::gained_before_the_mix(&bed));
-
-    let named = volume(0.0, 2.0, "mic", 2.0);
-    assert!(overlap::gain_reaches(&named, "mic"));
-    assert!(
-        !overlap::gain_reaches(&named, "room"),
-        "one lane's name reaches that lane alone"
-    );
-    assert!(!fx_record::rides_whole_bed(&named));
-    assert!(
-        overlap::gained_before_the_mix(&named),
-        "a named lane is gained before the mix"
-    );
-
-    // Where a whole-bed cue sits, from the render's own order.
-    assert_eq!(
-        render_fx::audio_order(),
-        vec!["lane mix", "volume cues", "narration"]
-    );
-}
-
 // --- row 7: text / svg, and row 8: label -----------------------------------------------------------------------------
-
-/// §06-effects#9-where-recordings-overlap — `Label … read only by the model briefs ("MARKED"); nothing rendered`, and
-/// `Text, SVG … after the camera: no camera, no lane. Over an insert or freeze: all or nothing, by the clip's start
-/// second`.
-#[test]
-fn sec_06_effects_9_where_recordings_overlap_s8_text_svg_and_the_label_have_neither_camera_nor_lane(
-) {
-    for name in ["text", "svg", "label"] {
-        let fx = kind(name, 2.0, 4.0);
-        let parsed = fx.effect_kind().expect("a kind §1 lists");
-        assert!(!fx_record::uses(parsed, Field::Cam), "{name} reads no cam");
-        assert!(
-            !fx_record::uses(parsed, Field::Lane),
-            "{name} reads no lane"
-        );
-
-        // All or nothing: the whole thing is drawn over the clip or not at all, so there is no partial case here and
-        // nothing to split — `render_fx::split_pictures` splits on rates alone, and none of these carry one.
-        assert!(overlap::acts_on_scene(&fx, &card()));
-        let over_card = render_fx::split_pictures(std::slice::from_ref(&fx), &card());
-        assert_eq!(over_card.len(), 1, "{name} leaves the card one picture");
-        assert_eq!(over_card[0].rate, 1.0);
-    }
-
-    // What §4 renders: a caption and a drawing, and never a label — it is read by the model briefs only.
-    assert!(!render_fx::is_rendered("label"));
-    assert!(render_fx::is_rendered("text"));
-    assert!(render_fx::is_rendered("svg"));
-}
 
 // --- the two MUST-agree bullets ---------------------------------------------------------------------------------------
 

@@ -7,22 +7,30 @@
 
 use crate::layout;
 use crate::narration;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// Write the owed narration for `window`, then settle the flag so nothing writes it twice.
 pub(crate) fn flush_held_narration() {
-    let owed = crate::ui::window::WINDOW_SHELLS.with(|shells| {
-        shells
-            .borrow()
-            .last()
-            .map(|shell| shell.borrow().narration_pending.owe())
-            .unwrap_or(false)
-    });
+    let owed = WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| {
+            shells
+                .borrow()
+                .last()
+                .map(|shell| shell.borrow().narration_pending.owe())
+                .unwrap_or(false)
+        },
+    );
     if !owed {
         return;
     }
-    let Some(dir) =
-        crate::ui::window_line_step::SESSION_DIRS.with(|held| held.borrow().last().cloned())
-    else {
+    let Some(dir) = WINDOW_PAGE.with(
+        |WindowPage {
+             session_dirs: held, ..
+         }| held.borrow().last().cloned(),
+    ) else {
         return;
     };
     let Some(tree) = layout::Tree::new(&dir).ok() else {
@@ -33,12 +41,17 @@ pub(crate) fn flush_held_narration() {
         .map(|existing| existing.silent)
         .unwrap_or_default();
     let page_lines = crate::ui::narrate_page::read_state().entries;
-    let held_lines = crate::ui::window_selection::HELD_NARRATION.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|held| held.borrow().entries.clone())
-    });
+    let held_lines = WINDOW_PAGE.with(
+        |WindowPage {
+             held_narration: slots,
+             ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|held| held.borrow().entries.clone())
+        },
+    );
     // The page's copy first, the window's held record over it: that is what a tab leave would have written.
     for entries in [page_lines, held_lines.unwrap_or_default()] {
         if entries.is_empty() {
@@ -57,9 +70,12 @@ pub(crate) fn flush_held_narration() {
             crate::ui::window_logs::say_failure(&line);
         }
     }
-    if let Some(shell) =
-        crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
-    {
+    if let Some(shell) = WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| shells.borrow().last().cloned(),
+    ) {
         shell.borrow_mut().narration_pending.flush();
     }
     // The live project reaches disk here too (§2 S6).

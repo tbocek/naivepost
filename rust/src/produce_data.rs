@@ -73,22 +73,6 @@ pub fn scratch_srt(tree: &Tree) -> PathBuf {
     tree.clips_dir().join(render::final_srt_name())
 }
 
-/// A translation's draft beside the cue sheet: `produce/clips/final.<code>.srt`. §3 names it among
-/// the scratch files because that is where a translated track lands before F5.2 S9 writes its
-/// sidecar beside the video — [`crate::produce_subtitles`] answers the cues, this answers where the
-/// answer is put down.
-pub fn scratch_translation_srt(tree: &Tree, code: &str) -> PathBuf {
-    let stem = render::final_srt_name().replace(".srt", "");
-    tree.clips_dir().join(format!("{stem}.{code}.srt"))
-}
-
-/// One clip's encode: `produce/clips/c<no>_<stamp>.<container>`. The stamp is in the name because
-/// [`render::clear_scratch`] empties the folder rather than reusing it — see [`crate::produce_render::clip_stem`].
-pub fn clip_path(tree: &Tree, no: usize, stamp: &str, container: &str) -> PathBuf {
-    tree.clips_dir()
-        .join(format!("{}.{}", render::clip_stem(no, stamp), container))
-}
-
 // --- the three groups, read off the disk ---------------------------------------------
 
 /// §6's five extras in `produce/clips/`, next to §3's four. §3's line names "encodes, final.srt,
@@ -174,12 +158,6 @@ pub fn resolve(tree: &Tree, rel: &str) -> Option<PathBuf> {
     }
 }
 
-/// §3's sidecar entry spelled for one language: the two files beside the video that a track of this
-/// run writes.
-pub fn sidecar_files(stem: &str, code: Option<&str>) -> [String; 2] {
-    render::sidecar_names(stem, code)
-}
-
 /// The poster's quality as the spec asks for it (§F5.5's "JPEG 90") and as ffmpeg takes it.
 pub fn poster_quality() -> (u8, &'static str) {
     (
@@ -201,30 +179,6 @@ pub fn in_produce(tree: &Tree, path: &Path) -> bool {
 
 // --- §08 §5's fourth bullet: the two halves of ▶ --------------------------------------
 
-/// The files ▶'s **render** half writes — everything §3 lists that is not under `publish/`, taken
-/// by [`Kind`] rather than by an index someone would have to recount when §3 grows.
-pub fn render_files() -> &'static [&'static str] {
-    &DATA_FILES[..10]
-}
-
-pub fn publish_files() -> &'static [&'static str] {
-    // §3's list has exactly one `publish/` entry today.
-    DATA_FILES
-        .iter()
-        .filter(|entry| kind(entry) == Kind::State)
-        .copied()
-        .collect::<Vec<_>>()
-        .leak()
-}
-
-/// §5: "the two halves touch no common file", computed rather than asserted.
-pub fn share_a_file() -> Option<&'static str> {
-    render_files()
-        .iter()
-        .copied()
-        .find(|entry| publish_files().contains(entry))
-}
-
 /// §5 fixes this order, and each step's reason is in it: the record goes down **before** the
 /// picture is drawn (a draw that dies leaves the record, so the next ▶ finishes the job instead of
 /// starting it over), then the picture, then the `<video>` tag.
@@ -233,8 +187,3 @@ pub const WRITE_ORDER: [&str; 3] = [
     "publish/thumbnail.png",
     "final.html",
 ];
-
-/// §5: the `<video>` tag is rewritten even when the encode was skipped.
-pub fn tag_rewritten(_skipped_encode: bool) -> bool {
-    true
-}

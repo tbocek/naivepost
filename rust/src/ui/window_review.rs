@@ -4,6 +4,7 @@
 use adw::prelude::*;
 
 use crate::cut;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// F3.12 S1–S5: hold this window's effects to the cut as it will actually play, and say what went.
 ///
@@ -56,9 +57,13 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
 /// Write this window's cut's segment list, keeping lanes, shifts, rows and folds as they were; the write side
 /// of [`newest_review_cut`](super::window_preview::newest_review_cut), used by the verb doors.
 pub(crate) fn set_review_segs(segs: &[cut::Seg]) {
-    super::window::REVIEW_CUTS.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            slot.borrow_mut().segs = segs.to_vec();
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             review_cuts: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                slot.borrow_mut().segs = segs.to_vec();
+            }
+        },
+    );
 }

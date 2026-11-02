@@ -182,33 +182,6 @@ impl Join {
     }
 }
 
-/// Whether the words named for one side come to exactly one stretch at the join.
-pub fn one_stretch_at_join(before_runs: &[usize], after_runs: &[usize]) -> bool {
-    // One stretch total: exactly one side gives one run, and the other gives none.
-    let runs = before_runs.len() + after_runs.len();
-    if runs != 1 {
-        return false;
-    }
-    // A zero-length run is not a stretch at all — it is the gap §3.5 refuses.
-    before_runs
-        .iter()
-        .chain(after_runs.iter())
-        .all(|length| *length > 0)
-}
-
-/// Whether a dropped stretch sits at the join, and what it says when it does not.
-pub fn seam_snap(side: Side, gap: usize) -> Result<(), String> {
-    if gap <= SEAM_SNAP_WORDS {
-        return Ok(());
-    }
-    // The refusal names which way the stretch missed the join, because the two mistakes are corrected in
-    // opposite directions — one has to reach further, the other fall short.
-    Err(match side {
-        Side::Before => format!("the stretch left out stops {gap} words short of the join"),
-        Side::After => format!("the stretch left out starts {gap} words past the join"),
-    })
-}
-
 pub fn joins_repaired_log(repaired: usize, cached: usize) -> String {
     format!(">>> text edit: {repaired} join(s) repaired, {cached} from the cache")
 }

@@ -40,11 +40,6 @@ pub fn hand_the_free_width_to(row: &gtk::Widget) {
     }
 }
 
-/// Badge **13**'s width: what the row has LEFT once every other part of it has been served.
-pub fn progress_px(row_w: i32, badges: i32, readouts: i32, gaps: i32) -> i32 {
-    (row_w - badges - readouts - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX)
-}
-
 /// The widths GTK actually gave the run-bar row's parts, as `(name, left edge, width)` in the window's own
 /// coordinates — how the shell shot and §1's screen tests read badge 13 instead of guessing from the PNG.
 pub fn drawn_row_widths(row: &gtk::Widget) -> Vec<(String, f64, f64)> {

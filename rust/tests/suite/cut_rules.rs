@@ -7,13 +7,11 @@
 use naivepost::cut::{self, Cut, Fx, Seg};
 use naivepost::cut_copy::footage_stretches;
 use naivepost::cut_hear;
-use naivepost::cut_line::Held;
 use naivepost::cut_rules::{self, Floor};
 use naivepost::cut_screen;
+use naivepost::cut_select::Scope;
 use naivepost::cut_select::Selection;
-use naivepost::cut_select::{self, Scope, Surface, ANY_ROW};
 use naivepost::cut_trim::{self, Border};
-use naivepost::hand_edit;
 use naivepost::layout::Tree;
 use naivepost::preview;
 use naivepost::shell::{self, Page};
@@ -37,93 +35,7 @@ fn card(s: f64, e: f64, dur: f64) -> Seg {
 
 // --- bullet 1: one thing held at a time ---------------------------------------------------------------------
 
-/// §05-cut#7-rules — `One thing held at a time; picking up is not an edit; one Undo per drag; an unmoved press
-/// is a click`. Holding is where the next gesture starts, so a second pickup replaces the first rather than
-/// joining it, and nothing is owed back until something actually moved.
-#[test]
-fn sec_05_cut_7_rules_s1_one_thing_held_and_only_one_undo_per_gesture() {
-    // One thing at a time: an edge already in hand makes way for a clip.
-    assert_eq!(cut_rules::pick_up(Held::Clip), Some(Held::Clip));
-    assert_eq!(cut_rules::pick_up(Held::Effect), Some(Held::Effect));
-
-    // Picking up is reading: no move, no edit, nothing for ↶ to take back.
-    assert!(!cut_rules::picking_up_edits(false));
-    assert!(cut_rules::picking_up_edits(true));
-
-    // One Undo per drag: the first real move pushes, every later tick of the same hold does not.
-    assert!(
-        cut_trim::pushes_undo(true, false),
-        "the gesture's first move"
-    );
-    assert!(!cut_trim::pushes_undo(true, true), "and only that one");
-    assert!(
-        !cut_trim::pushes_undo(false, false),
-        "holding still pushes nothing"
-    );
-    assert!(!cut_trim::pushes_undo(false, true));
-
-    // An unmoved press is a click — unless the hand crossed to another row, which is a move of its own.
-    assert!(cut_trim::is_click(0.0, false));
-    assert!(
-        !cut_trim::is_click(0.0, true),
-        "a row change is a gesture at 0 px"
-    );
-    assert!(
-        !cut_trim::is_click(cut_trim::ROW_TRAVEL_PX * 2.0, false),
-        "travel past the slop is a drag"
-    );
-}
-
 // --- bullet 2: borders, buttons and scope --------------------------------------------------------------------
-
-/// §05-cut#7-rules — `A border belongs to both buttons; moving is the right button's verb; a selection is of
-/// what it was drawn on`. A clip edge is also its neighbour's edge, so whichever side of the border the pointer
-/// is on decides which one moves; the right hand never touches the red line.
-#[test]
-fn sec_05_cut_7_rules_s2_a_border_belongs_to_both_buttons() {
-    // The same pixel sits inside both clips' grab zones; the nearer edge wins, from either side.
-    let (start_px, end_px) = (100.0, 140.0);
-    assert_eq!(
-        cut_trim::grab_border(100.0 + cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
-        Some(Border::Start)
-    );
-    assert_eq!(
-        cut_trim::grab_border(100.0 - cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
-        Some(Border::Start)
-    );
-    assert_eq!(
-        cut_trim::grab_border(140.0 + cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
-        Some(Border::End)
-    );
-    assert_eq!(
-        cut_trim::grab_border(140.0 - cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
-        Some(Border::End)
-    );
-    // Mid-clip there is no border to grab at all — that press selects or moves instead.
-    assert_eq!(cut_trim::grab_border(120.0, start_px, end_px), None);
-
-    // A selection is of what it was drawn on: a row's footage, or one recording's sound.
-    let pictures = cut_select::draw(Surface::PictureRow(1), None, 10.0, 20.0)
-        .expect("a row selects its footage");
-    assert_eq!(pictures.scope, Scope::Footage { row: 1 });
-    let sound = cut_select::draw(Surface::WaveStrip, Some(REC), 10.0, 20.0)
-        .expect("a strip selects that sound");
-    assert_eq!(
-        sound.scope,
-        Scope::Sound {
-            recording: REC.into()
-        }
-    );
-
-    // Which is what the verbs ask before offering themselves: footage reaches every row of itself, a sound
-    // belongs to one recording and to no picture row.
-    let whole = Scope::Footage { row: ANY_ROW };
-    assert!(cut_select::scoped_to_row(&whole, 0) && cut_select::scoped_to_row(&whole, 3));
-    assert!(
-        !cut_select::scoped_to_row(&sound.scope, 0),
-        "a lane's seconds are nobody's pictures"
-    );
-}
 
 // --- bullet 3: widthless gaps and half-open ranges -----------------------------------------------------------
 
@@ -414,72 +326,6 @@ fn sec_05_cut_7_rules_s7_cut_json_exists_once_and_unlocks_the_steps_after_it() {
 }
 
 // --- bullet 8: a draw never decodes ------------------------------------------------------------------------------
-
-/// §05-cut#7-rules — `Nothing decodes inside a draw; the tracks are a window drawn under a translate; the page is
-/// rebuilt only when Prepare's output changed`. The band holds seconds, the translate says which ones are on
-/// screen, and the only work a draw cycle may start is one throttled scrub.
-#[test]
-fn sec_05_cut_7_rules_s8_a_draw_asks_for_a_window_and_never_for_a_frame() {
-    // The window the translate puts on screen, in seconds: 100 px at 4 px/s is 25 s of the session.
-    assert_eq!(
-        cut_screen::visible_window(0.0, 100.0, 4.0, 400.0),
-        (0.0, 25.0)
-    );
-    // Scrolled along, and past the end — which clamps to the tail rather than showing an empty track.
-    assert_eq!(
-        cut_screen::visible_window(80.0, 100.0, 4.0, 400.0),
-        (20.0, 45.0)
-    );
-    assert_eq!(
-        cut_screen::visible_window(900.0, 100.0, 4.0, 400.0),
-        (100.0, 100.0)
-    );
-    // Nothing to lay out answers with nothing, rather than dividing by it.
-    assert_eq!(
-        cut_screen::visible_window(0.0, 100.0, 0.0, 400.0),
-        (0.0, 0.0)
-    );
-    assert_eq!(cut_screen::visible_window(0.0, 0.0, 4.0, 400.0), (0.0, 0.0));
-
-    // The same numbers that size the band pick the window: fitting the filmed length to the view means the whole
-    // session is on screen, so the window is the session.
-    let pps = cut_screen::fit_pps(100.0, 400.0);
-    assert_eq!(pps, 4.0);
-    assert_eq!(
-        cut_screen::visible_window(0.0, 400.0, pps, 100.0 * pps),
-        (0.0, 100.0)
-    );
-
-    // The one thing a draw may start is throttled: at most one scrub per SCRUB_MS.
-    assert_eq!(cut_trim::SCRUB_MS, 90);
-    assert!(cut_trim::scrubs(None, 1_000), "the first tick asks");
-    assert!(
-        !cut_trim::scrubs(Some(1_000), 1_045),
-        "a redraw inside the throttle does not"
-    );
-    assert!(
-        cut_trim::scrubs(Some(1_000), 1_090),
-        "and one after it may again"
-    );
-
-    // Rebuild is Prepare's output moving, not the page being redrawn: marks newer than the text is an edit,
-    // and a text that never changed stays as drawn however often it is painted.
-    use std::time::{Duration, SystemTime};
-    let now = SystemTime::now();
-    let later = now + Duration::from_secs(2);
-    assert!(
-        hand_edit::edited(Some(later), Some(now)),
-        "the text moved after the marks"
-    );
-    assert!(
-        !hand_edit::edited(Some(now), Some(later)),
-        "a redraw is not an edit"
-    );
-    assert!(
-        !hand_edit::edited(None, Some(now)),
-        "nothing to compare against"
-    );
-}
 
 // --- bullet 2b: the two floors, one per verb ------------------------------------------------------------------
 

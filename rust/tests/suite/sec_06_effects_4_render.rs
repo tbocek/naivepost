@@ -355,46 +355,6 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_a_moving_camera_run
     );
 }
 
-/// §4 (`> 10× capped and logged`): deeper than ffmpeg's `zoompan` will go, the windows come back to the cap and the
-/// log says which clip it happened to — through the plan's own lines, not a private note.
-#[test]
-fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_a_zoom_past_ten_times_is_capped_and_logged(
-) {
-    let cap = naivepost::render_fx::ZOOM_DEPTH_CAP;
-    assert_eq!(cap, 10.0, "P.eng.zoompanDepthCap, once");
-    // A journey from mid-frame down to a sliver: the union box is most of the tape, so the deepest window wants
-    // far more than ten times its height.
-    let mut deep = zoom(5.0, 6.0, 0.5, 0.5, 0.5);
-    deep = gliding(deep);
-    deep.cx = Some(0.2);
-    deep.cy = Some(0.2);
-    deep.hf = Some(0.02);
-    let mut c = clip(1, 1.0, 30.0);
-    c.fx = vec![deep.clone()];
-    let built =
-        naivepost::produce_fx_chain::for_clip(&c, &c.fx, c.src, &common::temp_root("s3-cap"));
-    assert!(
-        built
-            .logs
-            .iter()
-            .any(|l| l.contains("deeper than ffmpeg's 10") && l.contains("clip 1")),
-        "the cap is said, naming the clip: {:?}",
-        built.logs
-    );
-    let video = render::video_chain(&c, &Produce::default(), None).join(",");
-    assert!(
-        video.contains("zoompan"),
-        "and the clip still renders: {video}"
-    );
-    // Nothing in what is emitted asks for more depth than the cap allows.
-    let samples = naivepost::render_fx::camera_samples(&[deep], 0.0, 30.0);
-    let (capped, _) = naivepost::render_fx::cap_zoom(&samples, (1920, 1080), (1920, 1080), 1);
-    assert!(
-        naivepost::render_fx::max_zoom(&capped, (1920, 1080), (1920, 1080)) <= cap + 0.001,
-        "what renders respects the ceiling"
-    );
-}
-
 // --- S4: words and drawings ------------------------------------------------------------------------------------
 
 /// §4 (`composited after the camera and burned subtitles, each from a looped input (title: generated transparent

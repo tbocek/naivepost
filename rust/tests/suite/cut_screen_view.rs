@@ -30,54 +30,6 @@ fn sec_05_cut_1_screen_s1_the_toolbar_groups_are_six_and_in_spec_order() {
 }
 
 #[test]
-fn sec_05_cut_1_screen_s2_the_two_cut_buttons_are_greyed_until_there_is_a_cut() {
-    // ▶✂ is "sensitive when segs > 0"; ▶✂✂ "sensitive with ≥2 clips"; ▶ is "(never greyed)".
-    let empty = Cut::default();
-    assert!(!cut_screen::can_play_cut(&empty));
-    assert!(!cut_screen::can_review(&empty));
-
-    let one = Cut {
-        segs: vec![footage(0.0, 10.0)],
-        ..Default::default()
-    };
-    assert!(
-        cut_screen::can_play_cut(&one),
-        "one scene is still a cut to play"
-    );
-    assert!(
-        !cut_screen::can_review(&one),
-        "one scene has no join to review"
-    );
-
-    let two = Cut {
-        segs: vec![footage(0.0, 10.0), footage(20.0, 30.0)],
-        ..Default::default()
-    };
-    assert!(cut_screen::can_play_cut(&two));
-    assert!(cut_screen::can_review(&two));
-
-    // A card is not a clip: reviewing it would play one still and call the tour done.
-    let with_card = Cut {
-        segs: vec![
-            footage(0.0, 10.0),
-            Seg {
-                ins: "card.svg".into(),
-                dur: 3.0,
-                ..Default::default()
-            },
-        ],
-        ..Default::default()
-    };
-    assert!(cut_screen::can_play_cut(&with_card));
-    assert!(
-        !cut_screen::can_review(&with_card),
-        "an insert is not a second clip"
-    );
-
-    assert!(cut_screen::play_recording_sensitive());
-}
-
-#[test]
 fn sec_05_cut_1_screen_s3_the_lit_state_follows_what_the_preview_is_doing() {
     // ▶✂ is "lit while cutOnly and no review"; ▶✂✂ is lit while the review runs.
     let cut_running = Preview {

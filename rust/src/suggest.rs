@@ -7,9 +7,6 @@ use crate::cut_clamp;
 use crate::cut_effect_decisions::{self as decisions, Candidate};
 pub use crate::cut_suggest_passes::order as passes_switched_on;
 use crate::decision_audit;
-use crate::policy::{self};
-use crate::project::{MarkingPass, Policy};
-use crate::roles::{self, Job};
 use crate::timeline;
 use crate::tools::{self, cutpass};
 
@@ -277,11 +274,6 @@ pub fn message_over(
         dead_air_block(dead_air_max),
         session_txt
     )
-}
-
-/// Whether the model cut is asked for at all; under `CutMode::Words` no call is made.
-pub fn model_cut_offered(policy_: &Policy, marking_pass: MarkingPass) -> bool {
-    roles::job_applies(Job::ModelCut, marking_pass, policy::cut_mode_of(policy_))
 }
 
 /// The whole-cut checks as a problem list, worst first ([`cutpass::cut_problems`]'s order; the tool phrases the complaint).

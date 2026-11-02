@@ -12,8 +12,8 @@ use crate::project::MarkingPass;
 use crate::project::Project;
 use crate::runqueue;
 use crate::shell::Page;
-use crate::ui::window as ui;
 use crate::ui::window::{depth, has_label, tab_buttons, UiState};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The switching state as the window currently shows it — for the tests that drive a real click.
 pub fn state(window: &adw::ApplicationWindow) -> UiState {
@@ -93,7 +93,12 @@ pub fn outputs_sentence(window: &adw::ApplicationWindow) -> Option<String> {
 }
 /// Mark this window's narration write as owed — the state a half-typed line leaves behind.
 pub fn mark_narration_owed() {
-    if let Some(shell) = ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
+    if let Some(shell) = WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| shells.borrow().last().cloned(),
+    ) {
         shell
             .borrow_mut()
             .narration_pending
@@ -115,8 +120,13 @@ pub fn paint_project_title() {
         return;
     };
     let dir = crate::startup::open_dir_if_set().unwrap_or_else(crate::startup::open_dir);
-    let tab = ui::WINDOW_SHELLS
-        .with(|shells| shells.borrow().last().cloned())
+    let tab = WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 window_shells: shells,
+                 ..
+             }| shells.borrow().last().cloned(),
+        )
         .map(|shell| shell.borrow().page.label().to_string())
         .unwrap_or_default();
     super::header_title::paint(&title, &dir, &tab);
@@ -125,21 +135,31 @@ pub fn paint_project_title() {
 /// The same read, for a painter that has no window handle (the shared readout repaint in
 /// `window_bench::paint_readouts`).
 pub fn project_title_of() -> Option<gtk::Label> {
-    HEADER_TITLES.with(|titles| titles.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             header_titles: titles,
+             ..
+         }| titles.borrow().last().cloned(),
+    )
 }
 
 fn push_project_title(label: &gtk::Label) {
-    HEADER_TITLES.with(|titles| titles.borrow_mut().push(label.clone()));
-}
-
-thread_local! {
-    static HEADER_TITLES: RefCell<Vec<gtk::Label>> = const { RefCell::new(Vec::new()) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             header_titles: titles,
+             ..
+         }| titles.borrow_mut().push(label.clone()),
+    );
 }
 
 /// §1 badge **6** — the header ⓘ (not the per-page copies), newest slot wins so a test reads the
 /// button this window built rather than one left over from an earlier window in the same process.
 pub fn tab_info_button() -> Option<gtk::Button> {
-    ui::INFO_BUTTON.with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             info_button: slots, ..
+         }| slots.borrow().last().cloned(),
+    )
 }
 /// The §1 header ⓘ's tooltip — the door a test reads instead of matching a raw glyph.
 pub fn tab_info_parts() -> Option<(String, String)> {
@@ -197,12 +217,12 @@ pub fn open_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 }
 /// The sources of the project this window currently holds.
 pub fn session_handle() -> Rc<RefCell<Project>> {
-    ui::SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .expect("the window has a session")
 }
 pub fn session_sources() -> Vec<String> {
-    ui::SESSION.with(|slots| {
+    WINDOW_PAGE.with(|WindowPage { session: slots, .. }| {
         slots
             .borrow()
             .last()
@@ -220,7 +240,12 @@ pub fn session_sources() -> Vec<String> {
 /// The run bar's queue (F0.5) this window shows, so a test reads the state `drive_page` writes
 /// rather than only the painted fraction.
 pub fn run_queue(_window: &adw::ApplicationWindow) -> Option<Rc<RefCell<runqueue::Queue>>> {
-    ui::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_queue: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    )
 }
 /// The run's progress bar (F0.5 S2), found the same way as [`play_button`].
 pub fn progress_bar(window: &adw::ApplicationWindow) -> Option<gtk::ProgressBar> {
@@ -263,7 +288,7 @@ pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckBu
 /// The step the run bar is holding, if any — read off `RunBar::running` rather than off a button's
 /// face.
 pub fn running_step() -> Option<crate::run::Step> {
-    ui::RUN_BARS.with(|bars| {
+    WINDOW_PAGE.with(|WindowPage { run_bars: bars, .. }| {
         bars.borrow()
             .last()
             .and_then(|bar| bar.borrow().running.as_ref().map(|run| run.step))
@@ -272,14 +297,24 @@ pub fn running_step() -> Option<crate::run::Step> {
 /// The marking pass the LIVE session runs under — the same field `▶` reads when it decides whether
 /// F1.9's retake pass or F1.10's joins pass speaks.
 pub fn marking_pass(_window: &adw::ApplicationWindow) -> MarkingPass {
-    ui::PLAY_SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 play_session: slots,
+                 ..
+             }| slots.borrow().last().cloned(),
+        )
         .map(|session| session.borrow().policy.marking_pass.value)
         .unwrap_or(MarkingPass::Retakes)
 }
 /// Move the live session's marking pass, as saving a project that names Joins would.
 pub fn set_marking_pass(pass: MarkingPass) {
-    if let Some(session) = ui::PLAY_SESSION.with(|slots| slots.borrow().last().cloned()) {
+    if let Some(session) = WINDOW_PAGE.with(
+        |WindowPage {
+             play_session: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    ) {
         session.borrow_mut().policy.marking_pass.value = pass;
     }
 }
@@ -356,7 +391,12 @@ pub fn view_stack(window: &adw::ApplicationWindow) -> Option<adw::ViewStack> {
 /// The newest window's re-entrancy latch (`wire_switching`'s own), so a flow that moves the stack
 /// itself can hold off the notify handler exactly as a bounce does.
 pub fn switch_latch() -> Option<Rc<std::cell::Cell<bool>>> {
-    ui::WINDOW_SWITCH_LATCH.with(|latch| latch.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_switch_latch: latch,
+             ..
+         }| latch.borrow().clone(),
+    )
 }
 
 /// The status line, named rather than searched for by text: an empty label is the ordinary state and

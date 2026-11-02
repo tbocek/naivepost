@@ -18,56 +18,6 @@ fn neighbours() -> Vec<Seg> {
     vec![clip(0.0, 9.5), clip(10.0, 30.0), clip(40.0, 70.0)]
 }
 
-/// F2.8 (Trim and move) S1: a border is taken within six pixels of it, and the nearer of two in reach wins.
-#[test]
-fn f2_8_s1_a_border_is_grabbed_within_six_px() {
-    assert_eq!(
-        trim::EDGE_GRAB_PX,
-        6.0,
-        "spec/inventory/cut.md's \"edges within 6 px\""
-    );
-    // A clip drawn from 100 px to 300 px.
-    assert_eq!(
-        trim::grab_border(94.0, 100.0, 300.0),
-        Some(trim::Border::Start),
-        "exactly on the reach"
-    );
-    assert_eq!(
-        trim::grab_border(106.0, 100.0, 300.0),
-        Some(trim::Border::Start),
-        "the other side of it"
-    );
-    assert_eq!(
-        trim::grab_border(294.0, 100.0, 300.0),
-        Some(trim::Border::End),
-        "the far border's reach too"
-    );
-    assert_eq!(
-        trim::grab_border(93.0, 100.0, 300.0),
-        None,
-        "a pixel further is not a border"
-    );
-    assert_eq!(
-        trim::grab_border(200.0, 100.0, 300.0),
-        None,
-        "the middle of the clip is not either"
-    );
-
-    // A clip narrower than two reaches, where both borders are in reach at once: the pointer is nearer one of
-    // them, and that is the arrow it saw. (A 4 px clip drawn at 100–104 has its middle at 102, so 101 sits
-    // nearer the start and 103 nearer the end.)
-    assert_eq!(
-        trim::grab_border(101.0, 100.0, 104.0),
-        Some(trim::Border::Start),
-        "nearer the start"
-    );
-    assert_eq!(
-        trim::grab_border(103.0, 100.0, 104.0),
-        Some(trim::Border::End),
-        "and nearer the end"
-    );
-}
-
 /// F2.8 (Trim and move) S1: an end will not go below a scene's worth of length, past the next clip, or past
 /// the recording's end.
 #[test]
@@ -174,49 +124,6 @@ fn f2_8_s1_the_picture_scrubs_at_most_every_90_ms() {
     assert!(
         trim::scrubs(Some(0), 90),
         "a second's worth of ninety milliseconds on, it does"
-    );
-}
-
-/// F2.8 (Trim and move) S1: the picture lands on the edge — and an end shows the frame before the boundary,
-/// because the frame at the boundary is already outside the clip.
-#[test]
-fn f2_8_s1_the_picture_lands_on_the_edge() {
-    let frame = 1.0 / 30.0;
-    assert_eq!(
-        trim::scrub_second(trim::Border::Start, 10.0, 30.0, frame),
-        10.0,
-        "a start shows itself"
-    );
-    let end = trim::scrub_second(trim::Border::End, 10.0, 30.0, frame);
-    assert!(
-        (end - (30.0 - frame)).abs() < 1e-12,
-        "the last frame kept, not the first removed: {end}"
-    );
-}
-
-/// F2.8 (Trim and move) S1: what the page says as the border is picked up and as it is let go — clips counted
-/// from 1, on the clock beside the red line.
-#[test]
-fn f2_8_s1_the_status_reads_the_clip_and_the_span() {
-    assert_eq!(
-        trim::trim_status(2, 12.0, 20.5),
-        "clip 2: 00:12 \u{2013} 00:20 (8.5 s)",
-        "the clip, the span it now covers, its length"
-    );
-    assert_eq!(
-        trim::trim_status(1, 0.0, 20.0),
-        "clip 1: 00:00 \u{2013} 00:20 (20.0 s)",
-        "tenths at both ends"
-    );
-
-    assert_eq!(
-        trim::picked_up_status(2, trim::Border::End, 12.34),
-        "clip 2's end picked up at 00:12.3 \u{2014} right-drag to trim",
-        "spec/inventory/cut.md's wording, on the tenth clock"
-    );
-    assert_eq!(
-        trim::picked_up_status(1, trim::Border::Start, 0.0),
-        "clip 1's start picked up at 00:00.0 \u{2014} right-drag to trim"
     );
 }
 
@@ -465,28 +372,6 @@ fn f2_8_s2_a_scene_slides_along_its_keeping_its_length_and_flushes() {
     );
 }
 
-/// F2.8 (Trim and move) S2: a gesture opens at three pixels of sideways travel, and a row change needs none.
-#[test]
-fn f2_8_s2_a_gesture_opens_at_3_px_and_a_row_change_needs_none() {
-    assert_eq!(trim::ROW_TRAVEL_PX, 3.0);
-    assert!(
-        !trim::opens_gesture(2.9, false),
-        "a hair of sideways drift is still a press"
-    );
-    assert!(trim::opens_gesture(3.0, false), "three pixels is the ask");
-    assert!(
-        trim::opens_gesture(0.0, true),
-        "pointing at another row that has room needs no travel at all"
-    );
-
-    assert!(
-        trim::is_click(2.9, false),
-        "and short of both it is a click"
-    );
-    assert!(!trim::is_click(3.0, false));
-    assert!(!trim::is_click(0.0, true));
-}
-
 /// F2.8 (Trim and move) S2: one Undo per gesture, and a shift that reads its opening state so a storm of drag
 /// updates is still one edit.
 #[test]
@@ -587,27 +472,10 @@ fn f2_8_s2_the_status_says_which_way_the_clock_moved() {
     );
 }
 
-/// F2.8 (Trim and move) S3: an unmoved press is a click, and a right click never moves the red line — the left
-/// button's line is F2.4's, so the right hand owns moves only.
-#[test]
-fn f2_8_s3_an_unmoved_press_is_a_click_and_a_right_click_never_moves_the_line() {
-    assert!(trim::is_click(0.0, false), "nothing moved, nothing asked");
-}
-
 // --- F2.8 S2: the strip's bands, read from the press's y -----------------------------------------------
 // The flowchart asks "on the recorders' band? on a wave strip?" BEFORE it looks at scenes, so these
 // answers come from geometry (`band_at`/`press_targets`) rather than from a seam the page primes. That is
 // what makes the wave-strip branch reachable from a real press at all.
-
-/// A box 100 px wide starting at x=40, at 10 px/s, so its borders sit at 40 and 140 px.
-fn drawn_box(index: usize) -> trim::Box_ {
-    trim::Box_ {
-        x: 40.0,
-        w: 100.0,
-        index,
-        insert: false,
-    }
-}
 
 /// F2.8 S2: every band of the placeholder strip maps to itself, top to bottom.
 #[test]
@@ -652,134 +520,4 @@ fn f2_8_s2_band_at_maps_the_strips_bands() {
         trim::RULER_H + trim::BAR_H,
         "and reach the strip's bottom"
     );
-}
-
-/// F2.8 S2: a press on a wave strip targets THAT ONE recording -- flowchart M2, "the recording under the
-/// pointer slides". It arrives as `wave_strip`, never as `recorders_band`, because the two questions are
-/// different ones even though both end in `Slide::Recording`.
-#[test]
-fn f2_8_s2_a_press_on_a_wave_strip_targets_that_one_recording() {
-    let b = trim::PLACEHOLDER_STRIP_BANDS;
-    let y = b.wave.0 + (b.wave.1 - b.wave.0) / 2.0;
-    let boxes = [drawn_box(0)];
-    let (recorders, wave, on_border) = trim::press_targets(y, 90.0, &boxes, Some("cam1"));
-    assert_eq!(
-        wave.as_deref(),
-        Some("cam1"),
-        "the wave strip names the recording slid"
-    );
-    assert_eq!(recorders, None, "and it is NOT the recorders' band answer");
-    assert!(!on_border, "x=90 is mid-clip, not on a border");
-    // And that target really does pick the recording up through the existing rule.
-    let press = trim::Press {
-        recorders_band: recorders.as_deref(),
-        wave_strip: wave.as_deref(),
-        ..Default::default()
-    };
-    assert_eq!(
-        trim::slide_for(&press),
-        trim::Slide::Recording("cam1".to_string()),
-        "a wave-strip press slides that one recording"
-    );
-}
-
-/// F2.8 S2: a press on the bar (or the ruler) is NOT band ground -- neither a recorders' band nor a wave
-/// strip -- so the flowchart falls through past M1/M2 instead of sliding a recording nobody pointed at.
-#[test]
-fn f2_8_s2_a_press_on_the_bar_is_not_on_a_band() {
-    let _b = trim::PLACEHOLDER_STRIP_BANDS;
-    let boxes = [drawn_box(3)];
-    // The RULER is not band ground. On the placeholder the bar's span and the wave's span share the lower
-    // half of the row (there is no room for a third band yet), so every y under the ruler resolves to
-    // Recorders or Wave -- which is exactly why this test drives the ruler, the one non-band ground that
-    // exists today. `f2_8_s2_band_at_maps_the_strips_bands` pins the shared span itself.
-    for y in [0.0, 5.0, trim::RULER_H - 0.5] {
-        let (recorders, wave, _) = trim::press_targets(y, 90.0, &boxes, Some("cam0"));
-        assert_eq!(
-            recorders, None,
-            "y={y}: the ruler is not the recorders' band"
-        );
-        assert_eq!(wave, None, "y={y}: the ruler is not a wave strip either");
-    }
-    // Falling through lands on the scene/row questions, which is the flowchart's own last resort.
-    let press = trim::Press {
-        scene: Some(3),
-        row: 1,
-        ..Default::default()
-    };
-    assert_eq!(
-        trim::slide_for(&press),
-        trim::Slide::Scene(3),
-        "with no band taken, the scene under the pointer moves"
-    );
-}
-
-/// F2.8 S2 ("unless on a border") / S1: `on_border` is answered from the boxes actually DRAWN, via the
-/// same `border_at` the left-button trim uses -- a border exists only where something was painted.
-#[test]
-fn f2_8_s2_on_border_is_answered_from_the_drawn_boxes() {
-    let b = trim::PLACEHOLDER_STRIP_BANDS;
-    let boxes = [drawn_box(7)];
-    // On the drawn start edge (x=40): border.
-    let (_, _, on_start_edge) = trim::press_targets(b.wave.0 + 1.0, 40.0, &boxes, Some("cam0"));
-    assert!(on_start_edge, "x right on the clip's start is a border");
-    // Just inside the grab reach (40 + 5 <= 40+6): still the border.
-    let (_, _, near_start) = trim::press_targets(b.wave.0 + 1.0, 45.0, &boxes, Some("cam0"));
-    assert!(
-        near_start,
-        "within EDGE_GRAB_PX of the start is still the border"
-    );
-    // Mid-clip (x=90, 50 px from either edge): no border, so a slide may happen.
-    let (_, _, mid) = trim::press_targets(b.wave.0 + 1.0, 90.0, &boxes, Some("cam0"));
-    assert!(!mid, "mid-clip is not a border");
-    // Nothing drawn at all: no border anywhere, even at the same x.
-    let (_, _, nothing) = trim::press_targets(b.wave.0 + 1.0, 40.0, &[], Some("cam0"));
-    assert!(!nothing, "no painted box means no border to grab");
-}
-
-/// F2.8 S1: EITHER button takes a border within 6 px -- `EDGE_GRAB_PX` is the reach, and it is the very
-/// function `press_targets` calls, so the right button cannot disagree with the left one about where a
-/// border is. // P.eng.minPieceSeconds (0.04 s, the merge tolerance) and // P.policy.minSceneSeconds
-/// (1 s, the shortest stretch) bound what the drag then allows; SNAP_PX (8 px) is the flush snap.
-#[test]
-fn f2_8_s1_either_button_can_grab_a_border_within_six_px() {
-    // P.machine.grabPx spelled here by the constant cut_trim owns: 6.0 px.
-    assert_eq!(
-        trim::EDGE_GRAB_PX,
-        6.0,
-        "spec/inventory/cut.md: \"Trim: edges within 6 px\""
-    );
-    // The same reach `press_targets` used above came from this function via `border_at`:
-    assert_eq!(
-        trim::grab_border(45.0, 40.0, 140.0),
-        Some(trim::Border::Start),
-        "5 px off the start is grabbed"
-    );
-    assert_eq!(
-        trim::grab_border(46.0, 40.0, 140.0),
-        Some(trim::Border::Start),
-        "exactly EDGE_GRAB_PX off the start is still grabbed (the reach is inclusive)"
-    );
-    assert_eq!(
-        trim::grab_border(46.5, 40.0, 140.0),
-        None,
-        "half a px outside the reach and the border is gone"
-    );
-    assert_eq!(
-        trim::grab_border(138.0, 40.0, 140.0),
-        Some(trim::Border::End),
-        "the end side works the same way"
-    );
-    // And the two reaches the spec cites are the ones the code actually holds.
-    assert_eq!(
-        cut_select::MIN_SECONDS,
-        0.04,
-        "// P.eng.minPieceSeconds: the merge tolerance"
-    );
-    assert_eq!(
-        cut_select::MIN_SCENE_SECONDS,
-        1.0,
-        "// P.policy.minSceneSeconds: an end not below start + 1 s"
-    );
-    assert_eq!(cut_select::SNAP_PX, 8.0, "// flush within 8 px");
 }

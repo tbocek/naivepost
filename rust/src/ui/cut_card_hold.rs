@@ -12,6 +12,7 @@ use gtk4 as gtk;
 use crate::cut_insert;
 use crate::prepare::base_name as card_name;
 use crate::timeline;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::{self, cut_card_preview, cut_tracks, cut_view};
 
 /// The status line's answer when the press landed on footage: the hand is left EXACTLY as it was, so a card
@@ -60,15 +61,14 @@ pub fn press(window: &adw::ApplicationWindow, seconds: f64) -> String {
     said
 }
 
-thread_local! {
-    /// The hold gesture of the band built most recently, for a test; [`wire`] attaches and forgets it.
-    static CARD_HOLD_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// The band's card-hold gesture. Test-only reader (as `ui::zoom_gesture`).
 pub fn card_hold_gesture_for_test() -> Option<gtk::GestureClick> {
-    CARD_HOLD_CLICKS.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             card_hold_clicks: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
 
 /// Attach the hold to a painted band. Every button, because [`holds_card`] decides which presses count;
@@ -87,7 +87,12 @@ pub fn wire(window: &adw::ApplicationWindow, surface: &gtk::DrawingArea) {
         press(&win, seconds);
     });
     surface.add_controller(gesture.clone());
-    CARD_HOLD_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
+    CUT_PAGE.with(
+        |CutPage {
+             card_hold_clicks: cell,
+             ..
+         }| *cell.borrow_mut() = Some(gesture),
+    );
 }
 
 /// The span a scene draws its bars through. Test-only reader: a check presses at the x the ink was painted at.

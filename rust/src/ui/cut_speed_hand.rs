@@ -10,11 +10,13 @@ use crate::cut_speed;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::cut_label_hand::label_entry_of as speed_entry_of;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo, log_line,
     press_band_esc, record_edit, refresh_effects_lane, save_insert_cut, selection, trim_seconds,
-    zoom_field_row, INSERT_PLACE_KNOWN,
+    zoom_field_row,
 };
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 // --- F3.3 Speed and stop by hand: the press, the form, the Apply ----------------------------------------------
 
@@ -25,7 +27,12 @@ pub fn press_speed_item(window: &adw::ApplicationWindow) -> String {
     let band = selection()
         .filter(|band| band.length() > 0.0)
         .map(|band| (band.start, band.end));
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    let known = WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| *cell.borrow(),
+    ) == Some(true);
     let line = known.then(|| crate::ui::cut_lane::paste_line());
     match cut_speed::press(band, line) {
         cut_speed::Pressed::Refused => {
@@ -80,7 +87,12 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     for old in stale {
         holder.remove(&old);
     }
-    LAST_SPEED_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             last_speed_window: cell,
+             ..
+         }| *cell.borrow_mut() = Some(window.clone()),
+    );
 
     let heading = gtk::Label::new(Some(&cut_speed::form_title(fx.t, fx.dur)));
     heading.set_xalign(0.0);
@@ -202,51 +214,64 @@ pub(crate) fn form_of(fx: &cut::Fx) -> cut_speed::Form {
 
 /// F3.3 S2/S3: the form waiting on the page, before Apply; what a widget test reads ([`cut_speed::Form`]).
 pub fn speed_form_open() -> Option<cut_speed::Form> {
-    SPEED_FORM.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             speed_form: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 fn set_speed_form(form: Option<cut_speed::Form>) {
-    SPEED_FORM.with(|cell| *cell.borrow_mut() = form);
-}
-
-thread_local! {
-    /// The form a Speed press left waiting; `None` is no form open, which also hides the holder.
-    static SPEED_FORM: std::cell::RefCell<Option<cut_speed::Form>> =
-        const { std::cell::RefCell::new(None) };
-
-    /// The window whose speed form was last shown, so the field readers look in THIS window's tree.
-    static LAST_SPEED_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
+    CUT_PAGE.with(
+        |CutPage {
+             speed_form: cell, ..
+         }| *cell.borrow_mut() = form,
+    );
 }
 
 /// Read one of the speed form's entries back from THIS window's tree.
 fn speed_entry(name: &str) -> Option<gtk::Entry> {
-    LAST_SPEED_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_speed_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        },
+    )
 }
 
 /// Read one of the speed form's dropdowns back from THIS window's tree.
 fn speed_dropdown(name: &str) -> Option<gtk::DropDown> {
-    LAST_SPEED_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_speed_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        },
+    )
 }
 
 /// Does THIS window own the live speed form? Two windows holding one would put Apply's write into whichever tree is reached first.
 fn speed_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_SPEED_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
-            .unwrap_or(false)
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_speed_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
+                .unwrap_or(false)
+        },
+    )
 }
 
 /// The rate the form stands on right now: a listed row's own number, or the typed box when Custom is showing.
@@ -265,14 +290,19 @@ fn speed_rate_from_form(stored: &cut_speed::Form) -> f64 {
 
 /// Is THIS window's typed rate box live? Read by a test to assert the greying; live only while the dropdown stands on `Custom…` (index == RATES.len()).
 pub fn speed_custom_rate_visible() -> bool {
-    LAST_SPEED_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), "speed-field-custom"))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-            .map(|entry| entry.is_sensitive())
-            .unwrap_or(false)
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_speed_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), "speed-field-custom"))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+                .map(|entry| entry.is_sensitive())
+                .unwrap_or(false)
+        },
+    )
 }
 
 fn refresh_custom_rate_sensitivity(drop: &gtk::DropDown, custom: &gtk::Entry) {
@@ -437,16 +467,20 @@ pub(crate) fn wire_band_esc(window: &adw::ApplicationWindow) {
         }
     });
     window.add_controller(controller.clone());
-    BAND_ESC_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
-}
-
-thread_local! {
-    /// The band's Esc controller, kept so a test can fire a real Escape through it.
-    static BAND_ESC_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
-        const { std::cell::RefCell::new(None) };
+    CUT_PAGE.with(
+        |CutPage {
+             band_esc_keys: cell,
+             ..
+         }| *cell.borrow_mut() = Some(controller),
+    );
 }
 
 /// This window's band-Esc controller, so a test can see it is attached. `None` on a page that drew none.
 pub fn band_esc_controller() -> Option<gtk::EventControllerKey> {
-    BAND_ESC_KEYS.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             band_esc_keys: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }

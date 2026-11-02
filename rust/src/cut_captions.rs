@@ -24,16 +24,6 @@ pub const KEEP_SWEARING_DEFAULT: bool = true;
 pub const CLEANING_RULE: &str = "Clean the words as a subtitler would: no ehm, no ehh, no stutters \
                                 (\"I I\" is \"I\"), no repeated words, sentence case, the swearing kept.";
 
-const SWEARING_CLAUSE: &str = ", the swearing kept";
-
-/// What the model is told about cleaning the words.
-pub fn cleaning_rule(keep_swearing: bool) -> String {
-    if keep_swearing {
-        return CLEANING_RULE.to_string();
-    }
-    CLEANING_RULE.replace(SWEARING_CLAUSE, "")
-}
-
 pub fn clip_line(n: u32, length: f64) -> String {
     format!("CLIP {n}: {length:.1} s long")
 }
@@ -162,19 +152,6 @@ pub fn session_start(clips_in: &[(u32, f64)], clip: u32) -> f64 {
         seconds += length;
     }
     seconds
-}
-
-pub fn on_the_timeline_at(start: f64, span: (f64, f64), text: &str) -> Fx {
-    let dur = span.1 - span.0;
-    Fx {
-        kind: "text".into(),
-        t: start + span.0,
-        dur,
-        trans: fade(dur),
-        tout: fade(dur),
-        text: text.to_string(),
-        ..Default::default()
-    }
 }
 
 pub fn skipped(first: u32, last: u32) -> String {

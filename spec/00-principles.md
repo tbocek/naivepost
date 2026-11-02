@@ -22,7 +22,7 @@ Four workflows, in order, one tab and one ▶ each: **Prepare → Cut → Narrat
 6. **Every model reply is walked back onto the timeline** (kept footage only, snapped edges, marked stretches removed, effects clamped) before the page sees it.
 7. **Preview equals render.** The same functions compute camera path, text fitting, fades, sound ducking and clip clock for preview and ffmpeg.
 8. **Observability never breaks the work.** Every model exchange is written as a readable page; a failure to record is a log line, never a failed step.
-9. **The GUI thread owns the widgets, and never waits.** Runners read snapshots and caches; a fence test keeps pipeline code from reaching a widget. Nothing that can block runs on the GUI thread: no subprocess waited on (ffmpeg, ffprobe, firefox), no server call (the LLM, audio.cpp, sd.cpp, a model list, a health check), no sleep, no join on a worker, no walk over a media folder. Such work runs on a worker thread; the GUI thread takes its log lines, progress and answer from a poll (every 50 ms) and paints them. A button whose work is on a worker shows that it is busy rather than waiting for it (rewrite rule; the first rewrite ran the whole Prepare walk, the policy derivation, the retake pass and the audio.cpp preflight inside the ▶ handler, and the window went "Not Responding" for minutes; see [`03-shell.md` §1](03-shell.md#1-the-window)).
+9. **The GUI thread owns the widgets, and never waits.** Runners read snapshots and caches and hand their log lines to the window through `ui::window::log_line`. Nothing that can block runs on the GUI thread: no subprocess waited on (ffmpeg, ffprobe, firefox), no server call (the LLM, audio.cpp, sd.cpp, a model list, a health check), no sleep, no join on a worker, no walk over a media folder. Such work runs on a worker thread; the GUI thread takes its log lines, progress and answer from a poll (every 50 ms) and paints them. A button whose work is on a worker shows that it is busy rather than waiting for it (rewrite rule; the first rewrite ran the whole Prepare walk, the policy derivation, the retake pass and the audio.cpp preflight inside the ▶ handler, and the window went "Not Responding" for minutes; see [`03-shell.md` §1](03-shell.md#1-the-window)).
 10. **Measured, not assumed.** Changes to how a model is asked are scored against a hand-made cut, the unchanged prompt as control (several such measurements are in the prototype's comments; numbers in [`10-parameters.md`](10-parameters.md)).
 
 ## 3. Rewrite directive A — no implicit behaviour
@@ -31,13 +31,13 @@ The prototype encodes hundreds of decisions as constants: a file under 2 s is si
 
 | Home | Meaning | Examples |
 |---|---|---|
-| **Machine setting** | Settings dialog / settings file; about this computer | server URLs, model ids, ffmpeg path, voices folder |
-| **Project setting** | Stored in the project file; shown on a tab | frame interval, language, encoder settings |
-| **Editing policy** | Stored in the project; derived from the User Context by a model call, else defaults; changed by changing the User Context | minimum take length, dead-air threshold, review pad, words per caption row, target length |
-| **Prompt** | The twelve prompts, per machine, resettable | how a job is worded |
+| **Machine setting** | Settings dialog / settings file; about this computer | server URLs, model ids, ffmpeg path, voices folder, subtitle languages |
+| **Project setting** | Stored in the project file; shown on a tab | encoder settings |
+| **Editing policy** | Stored in the project; derived from the User Context by a model call, else defaults; changed by changing the User Context | marking pass, cut mode, which cut-stage passes run, target length, language |
+| **Prompt** | The fourteen prompts: a section of the project's profile replaces a step's wording; otherwise a `prompts/<key>.txt` on this machine, else the shipped text | how a job is worded |
 | **Engineering constant** | Fixed in code: about the machine, not the edit (pixel sizes, timeouts, cache formats) | 6 px grab reach, 100 ms tick, cache magic |
 
-The **editing policy** is new: a JSON object in the project (`policy` in `naivepost.json`) holding every value that decides what the video becomes. Fields and defaults: [`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults). Filled two ways: a value a model derived from the User Context via `tool:set_policy` (flow [F0.7](03-shell.md#f07-derive-the-editing-policy-new) in [`03-shell.md`](03-shell.md)), else the shipped default. There is no form: to change a value, the user says so in the User Context, and the log says what the model set and why.
+The **editing policy** is new: a JSON object in the project (`policy` in `naivepost.json`) holding nine fields: markingPass, cutMode, captionsPass, speedPass, decorationsPass, targetLengthSeconds and language, which the model may set, and narrationRewrite and keepSwearing, which keep their defaults unless the file says otherwise. The other `P.policy.*` numbers (dead air, review pad, caption row width and so on) are constants in the module whose rule uses them, catalogued in `rust/src/params.rs`; the project cannot change them yet. Fields and defaults: [`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults). The nine fields are filled two ways: a value a model derived from the User Context via `tool:set_policy` (flow [F0.7](03-shell.md#f07-derive-the-editing-policy-new) in [`03-shell.md`](03-shell.md)), else the shipped default. There is no form: to change a value, the user says so in the User Context, and the log says what the model set and why.
 
 Rule of thumb: if changing the number could change which frames or words end up in the video, it is policy; if it only changes how the app looks, waits or caches, it is an engineering constant.
 
@@ -47,7 +47,7 @@ The prototype asks for a whole answer as strict JSON, parses and validates it, a
 
 Design rules for tools:
 
-- Every job has a `finish` tool (or a named terminal tool such as `finish_cut`) ending the flow; a job that stops calling tools without finishing is asked once to finish, then treated as done with what it produced.
+- A job with a tool flow has a `finish` tool (or a named terminal tool such as `finish_cut`) ending it; a job that stops calling tools without finishing is asked once to finish, then treated as done with what it produced. Four jobs differ: `policy` has only `get_context` and `set_policy`, and the text gate only `judge_text`; the transcript fix and the join repair are offered no tools at all and answer in one reply, which the app checks, a refusal saying why so the retry hears it ([`12-decisions.md` §3](12-decisions.md#3-where-the-prototype-overrules-the-model--and-where-that-decision-moves), entries 5 and 7).
 - Reading tools hand out material in pieces (`get_lines(from, to)`, `get_frames(clip)`) so a 64-minute session is not one 450 kB prompt (context budgets: [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-new)). Every job handed an extract — a window of words, two lines of context a side, four frames — MUST also have the tool fetching more, or the window silently bounds what the model can get right.
 - Writing tools carry the prototype parsers' validation; the result is `ok` plus the normalised item, or a one-sentence actionable problem.
 - **A tool result says what the app made of the item**, not merely that it was accepted: the snapped edges and how far they moved, the seconds a mark really takes out, the rate after clamping, the caption after being pulled inside its clip. Wherever the prototype changes an answer behind the model's back, the rewrite returns that change as the tool's answer or, if it comes later, reports it at `finish`. Audit of every such place: [`12-decisions.md`](12-decisions.md).
@@ -73,7 +73,7 @@ The timeline is the first place this applies. Its components, each with its own 
 
 | component | shows | sends out |
 |---|---|---|
-| ruler | the clock, folds as seams | a press: put the line there |
+| ruler | seconds of footage (a gap between recordings is no jump), folds as seams | a press: put the line there |
 | selection band | kept scenes (green), the selection (blue), fold badges | add / drop / resize a scene, select, fold |
 | camera row | one camera's pictures, recording edges (amber), a whole take a join removed (yellow), the lens | pick up, slide, select footage, watch this row |
 | sound strip | a recording's own sound under its pictures | select that recording's sound |
@@ -96,9 +96,9 @@ Prototype: the Cut page is one editor (`cutEditor`, `cut.go`, 6 874 lines) that 
 
 - **No styles.** The prototype's Style dropdown (Lecture / Gaming) is gone: the User Context says what kind of video this is, and the policy derived from it ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)) picks the flows — P.policy.markingPass (joins / retakes / none), P.policy.cutMode (words / model) and which cut-stage passes run (captionsPass, speedPass, decorationsPass). The rewrite asks no job the context rules out.
 - **Languages** for subtitles become a settings list (code, ISO-639-2 tag, name), not three constants.
-- **Cards** (SVG inserts) stay a folder of files with a declared-inputs convention; the two built-ins are shipped files, not code.
-- **Narrator slots** stay four; the number is a policy default.
-- **Frame-interval stops, encoder option lists** stay shipped lists, in one table the settings can extend.
+- **Cards** (SVG inserts) stay a folder of files with a declared-inputs convention; the built-ins (the tier board and its badges) are shipped text, written into `assets/` on first use.
+- **Narrator slots** stay four; the number is a constant in code (`NARRATOR_SLOTS`).
+- **Encoder option lists** stay shipped lists in code. The frame-interval stops are gone with the Freq row: frames sit on a fixed 250 ms grid.
 
 ## 7. Glossary
 
@@ -121,7 +121,7 @@ Every `.png` in `img/` is a screenshot of the prototype on a real project. The r
 
 - **Run bar:** the chain dropdown ("1 steps") is gone, and nothing stands in its place: ▶ runs the visible step ([`03-shell.md` §2](03-shell.md#2-the-run-bar)).
 - **Prepare's Freq row:** the whole row is gone, Freq with it (the text gate decides which frames describe sees), as are the frame-size dropdown ("Original") and the Style dropdown ("Lecture") ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it), [§6](#6-generalisations) here).
-- **Sources rows:** the prototype's ✂ split-the-voice toggle is drawn as 🗣 ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)).
+- **Sources rows:** the prototype's ✂ split-the-voice toggle is drawn as a speaker icon (`audio-speakers-symbolic`), called 🗣 in the flows and ✂ in the row key the app shows ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)).
 
 An `.svg` in `img/` is a proposed screen the prototype lacks, drawn in its style.
 

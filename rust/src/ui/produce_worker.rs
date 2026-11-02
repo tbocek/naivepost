@@ -6,6 +6,7 @@
 use crate::produce_translate::SpawnSlot;
 use crate::ui::produce_languages::DrawSlot;
 use crate::ui::produce_page::ProduceState;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 /// What a Produce walk carries from the window thread to its worker.
 pub(crate) struct Carried {
@@ -34,15 +35,9 @@ impl Carried {
     }
 }
 
-thread_local! {
-    /// A press of the page is on its worker: a second press is ignored until the first one's answer lands, so
-    /// two walks never write `publish.json` or the video at once.
-    static BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// Whether a page press is on its worker now.
 pub fn busy() -> bool {
-    BUSY.with(std::cell::Cell::get)
+    PAGE.with(|page| page.busy.get())
 }
 
 /// Run one page press on a worker: `work` gets the page as the press found it and answers on the worker;
@@ -57,7 +52,7 @@ pub(crate) fn press<T: Send + 'static>(
     if busy() {
         return false;
     }
-    BUSY.with(|flag| flag.set(true));
+    PAGE.with(|ProducePage { busy: flag, .. }| flag.set(true));
     if let Some(button) = button.as_ref() {
         button.set_sensitive(false);
     }
@@ -69,7 +64,7 @@ pub(crate) fn press<T: Send + 'static>(
             work()
         },
         move |answer| {
-            BUSY.with(|flag| flag.set(false));
+            PAGE.with(|ProducePage { busy: flag, .. }| flag.set(false));
             if let Some(button) = button.as_ref() {
                 button.set_sensitive(true);
             }

@@ -10,22 +10,21 @@ pub const FORM_BUTTONS: [&str; 2] = ["Apply", "Cancel"];
 use crate::cut;
 use crate::cut_speed;
 use crate::fx_band;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     find_status, find_widget_by_name, live_form_answer_is_undo, record_edit, refresh_effects_lane,
-    save_insert_cut, selection, INSERT_PLACE_KNOWN,
+    save_insert_cut, selection,
 };
-
-thread_local! {
-    /// Per-form-kind debounce state: when the last keystroke landed, and whether a timer is already waiting for the
-    /// pause to run out. `false` means none is, which is what makes a burst cost ONE commit: the first keystroke
-    /// arms the timer, the rest only move the stamp.
-    static FORM_STAMPS: std::cell::RefCell<std::collections::HashMap<String, (std::time::Instant, bool)>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-}
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The line, known only if this session ever placed one.
 pub(crate) fn known_line() -> Option<f64> {
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    let known = WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| *cell.borrow(),
+    ) == Some(true);
     known.then(|| crate::ui::cut_lane::paste_line())
 }
 
@@ -108,15 +107,19 @@ pub fn wire_live_fields(
         let on_outer = commit.clone();
         let _ = &on_outer;
         entry.connect_changed(move |_| {
-            let pending = FORM_STAMPS.with(|cell| {
-                let mut map = cell.borrow_mut();
-                let slot = map
-                    .entry(stamp_key.clone())
-                    .or_insert((std::time::Instant::now(), false));
-                // Restamp first: the timer, when it fires, measures the PAUSE since the most recent keystroke.
-                slot.0 = std::time::Instant::now();
-                std::mem::replace(&mut slot.1, true)
-            });
+            let pending = CUT_PAGE.with(
+                |CutPage {
+                     form_stamps: cell, ..
+                 }| {
+                    let mut map = cell.borrow_mut();
+                    let slot = map
+                        .entry(stamp_key.clone())
+                        .or_insert((std::time::Instant::now(), false));
+                    // Restamp first: the timer, when it fires, measures the PAUSE since the most recent keystroke.
+                    slot.0 = std::time::Instant::now();
+                    std::mem::replace(&mut slot.1, true)
+                },
+            );
             if pending {
                 // A timer is already on its way; the restamp above is all the restart it needs — that is the whole
                 // difference between a debounce and a per-character write.
@@ -128,22 +131,30 @@ pub fn wire_live_fields(
             glib::timeout_add_local(
                 std::time::Duration::from_millis(fx_band::DEBOUNCE_MS as u64),
                 move || {
-                    let elapsed_ms = FORM_STAMPS.with(|cell| {
-                        cell.borrow()
-                            .get(&fired_key)
-                            .map(|(since, _)| since.elapsed().as_secs_f64() * 1000.0)
-                            .unwrap_or(fx_band::DEBOUNCE_MS)
-                    });
+                    let elapsed_ms = CUT_PAGE.with(
+                        |CutPage {
+                             form_stamps: cell, ..
+                         }| {
+                            cell.borrow()
+                                .get(&fired_key)
+                                .map(|(since, _)| since.elapsed().as_secs_f64() * 1000.0)
+                                .unwrap_or(fx_band::DEBOUNCE_MS)
+                        },
+                    );
                     // The gate itself, not a guess: a keystroke that arrived during the wait pushes the stamp forward,
                     // so `keystroke_lands` says no and the timer waits one more pause.
                     if !fx_band::keystroke_lands(elapsed_ms, fx_band::DEBOUNCE_MS) {
                         return glib::ControlFlow::Continue;
                     }
-                    FORM_STAMPS.with(|cell| {
-                        if let Some(slot) = cell.borrow_mut().get_mut(&fired_key) {
-                            slot.1 = false;
-                        }
-                    });
+                    CUT_PAGE.with(
+                        |CutPage {
+                             form_stamps: cell, ..
+                         }| {
+                            if let Some(slot) = cell.borrow_mut().get_mut(&fired_key) {
+                                slot.1 = false;
+                            }
+                        },
+                    );
                     on_fired(&fired_win);
                     glib::ControlFlow::Break
                 },

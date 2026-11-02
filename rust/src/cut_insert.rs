@@ -620,16 +620,6 @@ pub fn edit_verb(held: bool) -> &'static str {
     }
 }
 
-/// F2.12 S6: what a mode switch does to the seconds under the card. `Some(true)` takes them (BETWEEN → OVER),
-/// `Some(false)` returns them (OVER → BETWEEN), `None` means no footage changes.
-pub fn switching_takes_footage(from: Mode, to: Mode) -> Option<bool> {
-    match (from, to) {
-        (Mode::Between, Mode::Over) => Some(true),
-        (Mode::Over, Mode::Between) => Some(false),
-        _ => None,
-    }
-}
-
 // --- S7: what the preview shows while it plays -----------------------------------------------------------------
 
 /// F2.12 S7 (`cards render at 8 fps`): frames a second for anything that moves — §I's `insPreviewFPS`.

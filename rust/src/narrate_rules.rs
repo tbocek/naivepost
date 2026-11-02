@@ -5,7 +5,7 @@
 //! ([`crate::shell::refit`]), the preview rules in [`crate::narrate_preview`], and the voice picker
 //! ([`narrator_slot`], [`picker_row`], [`missing_voice`]). It owns no widget, the record, speaking or the render.
 
-use crate::narrate_data::{Take, OWN_VOICE};
+use crate::narrate_data::OWN_VOICE;
 use crate::narrate_screen::{VoiceOption, CAPTIONS};
 use crate::run::{Transport, NARRATOR_SLOTS};
 
@@ -23,22 +23,6 @@ pub fn voice_is_captions(voice: &str) -> bool {
 /// have a transport is [`crate::run::transport_for`]'s.
 pub fn bar_serves_the_preview(transport: Transport) -> bool {
     transport.started
-}
-
-/// §5 (`cache keys stable, nothing deletes old wavs`): would removing this file throw away a line somebody
-/// heard? A take is never cleaned up (the key is frozen, derived from what was spoken). Only the built voice
-/// reference and its base ([`crate::narrate_data::drop_reference`]) are removed.
-pub fn deletes_a_spoken_take(removed: &std::path::Path) -> bool {
-    removed
-        .ancestors()
-        .any(|dir| dir.file_name() == Some(std::ffi::OsStr::new("tts")))
-}
-
-/// §5 (`hand-picked takes never re-ranked`): did somebody choose the seconds to clone from? Chosen takes win
-/// outright (F4.6's `hand-picked takes?` yes-branch); [`crate::narrate_data::clean_takes`] sorts and merges but
-/// never ranks, its one floor being P.eng.takeMinSeconds ([`crate::narrate_screen::TAKE_MIN_SECONDS`]).
-pub fn takes_are_hand_picked(takes: &[Take]) -> bool {
-    !takes.is_empty()
 }
 
 /// §5 (`a voice not on offer leaves the picker empty`): which narrator slot does this id name? `own` is slot 1

@@ -5,7 +5,7 @@
 //! [`crate::publish`]'s answer.
 
 use crate::produce_runs::even;
-use crate::project::{Codec, Container, Publish, Subtitles, TextMark};
+use crate::project::{Codec, Container, Subtitles, TextMark};
 use crate::tools::mm_ss;
 
 /// The rows of the settings scroller, in §A's order, so a test can pin the list against the table.
@@ -138,16 +138,6 @@ pub fn apply_container_rules(
     }
 }
 
-/// §A: the output is `produce/final.<container>` ([`crate::layout::Tree::final_video`]); the name only.
-pub fn output_name(container: Container) -> String {
-    let stem = match container {
-        Container::Mp4 => "mp4",
-        Container::Mkv => "mkv",
-        Container::Webm => "webm",
-    };
-    format!("final.{stem}")
-}
-
 /// §A's ↻ Transcode: an encode with no model call.
 pub const TRANSCODE_TIP: &str = "Encode the video again from the cut and these settings — no model call, and the thumbnail and the upload text are left alone";
 
@@ -227,15 +217,6 @@ pub fn make_base(frames: &mut Vec<String>, slot: usize) -> bool {
     }
     let chosen = frames.remove(slot);
     frames.insert(0, chosen);
-    true
-}
-
-/// §1's remove. The last picture going leaves the empty state.
-pub fn remove_image(frames: &mut Vec<String>, slot: usize) -> bool {
-    if slot >= frames.len() {
-        return false;
-    }
-    frames.remove(slot);
     true
 }
 
@@ -483,20 +464,6 @@ pub const TITLE_TIP: &str = "Four to seven words. The first thumbnail takes it a
 
 /// §A's description box: eight lines, roughly what YouTube shows before "more".
 pub const DESCRIPTION_LINES: usize = 8;
-
-/// §1 (`printed across the thumbnail the first time only; then separate`): `title_seeded` is the page's memory
-/// of having printed it. True when this call copied.
-pub fn seed_title(publish: &mut Publish) -> bool {
-    if publish.title_seeded || !publish.thumb_title.trim().is_empty() {
-        return false;
-    }
-    if publish.title.trim().is_empty() {
-        return false;
-    }
-    publish.thumb_title = publish.title.clone();
-    publish.title_seeded = true;
-    true
-}
 
 /// §1: with no cut there is nothing to produce; the page says it in the other pages' words.
 pub const NO_CUT_LINE: &str = crate::narrate_details::NO_CUT_LINE;

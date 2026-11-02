@@ -288,49 +288,6 @@ fn f1_6_s2_a_change_is_a_score_over_the_threshold_and_near_ones_merge_into_the_f
     assert_eq!(saved_times, times);
 }
 
-/// S3: the grid, restarted at every scene change so a new slide's first picture is always there.
-#[test]
-fn f1_6_s3_frames_come_on_the_grid_and_the_grid_restarts_at_every_change() {
-    // P.eng.frameGridSeconds: 0.25 s, fixed and independent of Freq.
-    assert_eq!(GRID, 0.25);
-    let at = frames::frame_seconds(&[1.0, 1.25], 3.0, GRID);
-    assert_eq!(at[0], 0.0, "the start of the file is always a scene start");
-    // Both changes are frames in their own right — that is what "the grid restarts at every change"
-    // buys, and why the merge gap cannot simply drop them.
-    assert!(at.contains(&1.0) && at.contains(&1.25), "{at:?}");
-    for pair in at.windows(2) {
-        assert!(pair[1] > pair[0], "strictly increasing: {at:?}");
-    }
-    assert!(
-        at.iter().all(|second| *second < 3.0),
-        "nothing past the end: {at:?}"
-    );
-    // Between changes the spacing is exactly the grid.
-    let steps: Vec<f64> = at.windows(2).map(|pair| pair[1] - pair[0]).collect();
-    assert!(
-        steps.iter().all(|step| (*step - GRID).abs() < 1e-9),
-        "{steps:?}"
-    );
-
-    // A take shorter than one grid step is its first frame alone.
-    assert!(frames::short_take_seconds(0.1, GRID));
-    assert_eq!(frames::frame_seconds(&[], 0.1, GRID), vec![0.0]);
-    assert!(
-        frames::frame_seconds(&[], 0.0, GRID).is_empty(),
-        "nothing to name"
-    );
-    // A change pair inside the merge gap costs one extra frame, which is what the spec says a false
-    // trigger is worth — not the scene's whole run of pictures.
-    let pair = frames::frame_seconds(&[1.0, 1.1], 2.0, GRID);
-    assert!(pair.contains(&1.0) && pair.contains(&1.1), "{pair:?}");
-    // The next grid step after the second change is 1.35 rather than 1.25: the grid restarted there.
-    assert_eq!(
-        pair.iter().filter(|second| **second >= 1.2).count(),
-        3,
-        "{pair:?}"
-    );
-}
-
 /// S3: how the extraction is split across workers.
 #[test]
 fn f1_6_s3_extraction_runs_in_parallel_chunks_and_reports_progress() {

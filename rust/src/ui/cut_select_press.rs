@@ -6,6 +6,7 @@ use gtk4 as gtk;
 use crate::cut::Cut;
 use crate::cut_select::{self, Part, Surface};
 use crate::timeline;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::{cut_folds, cut_tracks, cut_view, window as ui};
 
 /// The band's geometry and pointer maths for one press, in one place so the widget handler and a test
@@ -177,32 +178,33 @@ fn lane_row_at(geo: &Geometry, y_px: f64) -> usize {
     ((y_px - geo.bands.fx.0) / row_px).floor().max(0.0) as usize
 }
 
-// The second this window's placeholder-strip drag began at, newest-slot rule like `SELECT_GESTURES` in
-// `window.rs`.
-thread_local! {
-    static DRAG_BEGINS: std::cell::RefCell<Vec<Option<f64>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
 /// Remember where this window's drag started, in session seconds.
 pub(crate) fn set_drag_begin(at: f64) {
-    DRAG_BEGINS.with(|slots| {
-        let mut slots = slots.borrow_mut();
-        if let Some(slot) = slots.last_mut() {
-            *slot = Some(at);
-        } else {
-            slots.push(Some(at));
-        }
-    });
+    CUT_PAGE.with(
+        |CutPage {
+             drag_begins: slots, ..
+         }| {
+            let mut slots = slots.borrow_mut();
+            if let Some(slot) = slots.last_mut() {
+                *slot = Some(at);
+            } else {
+                slots.push(Some(at));
+            }
+        },
+    );
 }
 
 /// The second this window's drag began at, `None` before any press.
 pub(crate) fn drag_begin() -> Option<f64> {
-    DRAG_BEGINS.with(|slots| slots.borrow().last().copied().flatten())
+    CUT_PAGE.with(
+        |CutPage {
+             drag_begins: slots, ..
+         }| slots.borrow().last().copied().flatten(),
+    )
 }
 
 #[derive(Debug, Clone)]
-struct Drag {
+pub(crate) struct Drag {
     from: f64,
     /// The surface chosen at begin and never re-chosen (S1: scope is what it was DRAWN on).
     surface: Surface,
@@ -210,20 +212,20 @@ struct Drag {
     start_x: f64,
 }
 
-thread_local! {
-    static DRAGS: std::cell::RefCell<Vec<std::rc::Rc<std::cell::RefCell<Option<Drag>>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
 fn current_drag() -> std::rc::Rc<std::cell::RefCell<Option<Drag>>> {
-    DRAGS.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            return slot.clone();
-        }
-        let fresh = std::rc::Rc::new(std::cell::RefCell::new(None));
-        slots.borrow_mut().push(fresh.clone());
-        fresh
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             select_press_drags: slots,
+             ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                return slot.clone();
+            }
+            let fresh = std::rc::Rc::new(std::cell::RefCell::new(None));
+            slots.borrow_mut().push(fresh.clone());
+            fresh
+        },
+    )
 }
 
 /// The drag in flight, if any — read out of its cell by value (`Drag` is `Clone`), because borrowing the
@@ -345,17 +347,20 @@ pub fn attach(window: &adw::ApplicationWindow) {
         end(&done);
     });
     band.add_controller(gesture.clone());
-    BAND_SELECT_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
-}
-
-thread_local! {
-    /// This window's band gesture, kept here because `attach` is the only thing that writes it and a test
-    /// firing it is the only thing that reads it back.
-    static BAND_SELECT_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
-        const { std::cell::RefCell::new(None) };
+    CUT_PAGE.with(
+        |CutPage {
+             band_select_gestures: cell,
+             ..
+         }| *cell.borrow_mut() = Some(gesture),
+    );
 }
 
 /// The PAINTED band's selection gesture ([`attach`]), for a test that fires it the way GTK does.
 pub fn band_selection_gesture_for_test() -> Option<gtk::GestureDrag> {
-    BAND_SELECT_GESTURES.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             band_select_gestures: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }

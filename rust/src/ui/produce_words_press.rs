@@ -7,6 +7,7 @@ use gtk4 as gtk;
 
 use crate::produce_screen as screen;
 use crate::ui::produce_page::{read_state, widget_in, widget_in_root, ProduceState};
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 /// One ✎ chip per word box on the picture (§1 item 7: "✎ to reword"). Rebuilt whole so a removed mark
 /// leaves no chip behind.
@@ -214,7 +215,7 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
         let (_, _, wide, high) = where_();
         let (xs, ys) = unless_shift(g, targets_beside(&read_state(), grab.hold, wide, high));
         let rect = moved(&grab, dx, dy, &xs, &ys);
-        DRAGGING.with(|now| {
+        PAGE.with(|ProducePage { dragging: now, .. }| {
             *now.borrow_mut() = Some((grab.hold, screen::box_fractions(rect, wide, high)))
         });
         show_widget_of(grab.hold, false);
@@ -224,7 +225,7 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
     gesture.connect_drag_end(move |g, offset_x, offset_y| {
         let (left, top, wide, high) = on_picture();
         if let Some(grab) = held.take() {
-            DRAGGING.with(|now| *now.borrow_mut() = None);
+            PAGE.with(|ProducePage { dragging: now, .. }| *now.borrow_mut() = None);
             show_widget_of(grab.hold, true);
             // A press that never travelled is not an edit of the box it landed on: its ✎ is the chip below.
             if offset_x.abs() < 2.0 && offset_y.abs() < 2.0 {
@@ -267,26 +268,26 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
         );
     });
     picture.add_controller(gesture.clone());
-    WORDS_GESTURE.with(|held| *held.borrow_mut() = Some(gesture));
+    PAGE.with(
+        |ProducePage {
+             words_gesture: held,
+             ..
+         }| *held.borrow_mut() = Some(gesture),
+    );
 }
 
 /// The box being dragged and where the hand has it now, in fractions of the picture, or `None` between
 /// drags. The plate paints a held box from here so the words follow the hand.
 pub fn dragging() -> Option<(Hold, crate::project::TitleBox)> {
-    DRAGGING.with(|now| *now.borrow())
-}
-
-thread_local! {
-    /// [`dragging`]'s answer: set on every step of a drag that holds a box, cleared when it ends.
-    static DRAGGING: std::cell::RefCell<Option<(Hold, crate::project::TitleBox)>> =
-        const { std::cell::RefCell::new(None) };
-    /// The picture's drag controller, kept so a test can fire a real drag; nothing in the program asks for it.
-    static WORDS_GESTURE: std::cell::RefCell<Option<gtk::GestureDrag>> = const {
-        std::cell::RefCell::new(None)
-    };
+    PAGE.with(|ProducePage { dragging: now, .. }| *now.borrow())
 }
 
 /// The thumbnail picture's drag gesture, for a test driving the overlay editor through the real widget. Program code never calls this.
 pub fn words_gesture_for_test(_window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
-    WORDS_GESTURE.with(|held| held.borrow().clone())
+    PAGE.with(
+        |ProducePage {
+             words_gesture: held,
+             ..
+         }| held.borrow().clone(),
+    )
 }

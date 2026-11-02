@@ -328,10 +328,6 @@ pub fn render_stroke_width(size: f64) -> f64 {
     edge_radius(size) * 2.0
 }
 
-pub fn preview_is_the_render() -> bool {
-    true
-}
-
 pub const SNAP_PX: f64 = 10.0;
 
 pub const MIN_BOX_PX: f64 = 16.0;
@@ -342,10 +338,6 @@ pub fn frame_lines(frame_px: f64) -> [f64; 3] {
 
 pub fn move_lines(edge_px: f64, size_px: f64) -> [f64; 3] {
     [edge_px, edge_px + size_px / 2.0, edge_px + size_px]
-}
-
-pub fn resize_lines(edge_px: f64) -> [f64; 1] {
-    [edge_px]
 }
 
 pub fn snap_to(to: f64, lines: &[f64], reach_px: f64) -> f64 {
@@ -417,10 +409,6 @@ pub fn resize_box(from: Box_, edge: Edge, to_px: f64, frame: (f64, f64)) -> Box_
         }
     }
     Box_::from_px(x, y, w, h, frame.0, frame.1).clamp()
-}
-
-pub fn press_without_travel_toggles_play() -> bool {
-    true
 }
 
 pub const EDGE_GRIP_PX: f64 = 8.0;

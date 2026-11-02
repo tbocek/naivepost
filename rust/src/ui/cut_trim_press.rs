@@ -5,6 +5,7 @@
 use crate::cut::Cut;
 use crate::cut_trim::{self, Band, StripBands};
 use crate::timeline::Recording;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window;
 use adw::prelude::*;
 
@@ -206,8 +207,12 @@ fn press_move_core(
     pps: f64,
 ) -> cut_trim::Gesture {
     let (recorders_band, wave_strip, on_border, scene, press_second) = scope;
-    let cut_ = MOVE_OPEN
-        .with(|cell| cell.borrow().clone())
+    let cut_ = CUT_PAGE
+        .with(
+            |CutPage {
+                 move_open: cell, ..
+             }| cell.borrow().clone(),
+        )
         .unwrap_or_else(window::newest_review_cut);
     let band = window::selection();
     let band_name = recorders_band
@@ -307,37 +312,49 @@ pub fn paint_laid_pieces_in(
     }
 }
 
-thread_local! {
-    /// Has this gesture's hold already spent its Undo step? One act of the hand is one step
-    /// (`cut_trim::pushes_undo`). Reset at `drag-begin`.
-    static MOVE_PUSHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The cut as the hold's press found it, set at `drag-begin`, dropped at the release; `None` with no hold open.
-    static MOVE_OPEN: std::cell::RefCell<Option<crate::cut::Cut>> = const { std::cell::RefCell::new(None) };
-    /// The folds THIS drag opened, as spans, so the release refolds exactly those.
-    static DRAG_FOLDS: std::cell::RefCell<Vec<[f64; 2]>> = const { std::cell::RefCell::new(Vec::new()) };
-    /// The folds the gesture in flight asked to open, newest write last: what `ui::open_folds` reads.
-    static DRAG_OPEN: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
 /// The move gesture's `drag-begin`: start the hold clean, so the first real move is the one that pushes.
 pub fn begin_move() {
-    MOVE_PUSHED.with(|cell| cell.set(false));
+    CUT_PAGE.with(
+        |CutPage {
+             move_pushed: cell, ..
+         }| cell.set(false),
+    );
     // Every update measures its travel from the cut as the press found it, or eight one-second moves would slide eight seconds.
-    MOVE_OPEN.with(|cell| *cell.borrow_mut() = Some(window::newest_review_cut()));
+    CUT_PAGE.with(
+        |CutPage {
+             move_open: cell, ..
+         }| *cell.borrow_mut() = Some(window::newest_review_cut()),
+    );
     // §7: the file waits for the release; every write until `end_move` is refused at the writer.
     crate::cut_save::begin_gesture();
-    DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());
-    DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
+    CUT_PAGE.with(
+        |CutPage {
+             drag_folds: cell, ..
+         }| cell.borrow_mut().clear(),
+    );
+    CUT_PAGE.with(
+        |CutPage {
+             drag_open: cell, ..
+         }| cell.borrow_mut().clear(),
+    );
 }
 
 /// Has this hold already spent its Undo step?
 fn already_pushed() -> bool {
-    MOVE_PUSHED.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             move_pushed: cell, ..
+         }| cell.get(),
+    )
 }
 
 /// The folds the drag in flight opened, newest write last.
 pub fn open_folds() -> Vec<usize> {
-    DRAG_OPEN.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             drag_open: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 /// The folds the rule asked to open, as the cut's own fold spans.
@@ -377,12 +394,28 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
     }
     let opened = fold_spans(&cut_, open);
     if opened.is_empty() {
-        DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());
-        DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
+        CUT_PAGE.with(
+            |CutPage {
+                 drag_folds: cell, ..
+             }| cell.borrow_mut().clear(),
+        );
+        CUT_PAGE.with(
+            |CutPage {
+                 drag_open: cell, ..
+             }| cell.borrow_mut().clear(),
+        );
     } else {
         // Open them through F2.11's own door (a fold is a view: saved, no Undo step), remembered by span for the release.
-        DRAG_FOLDS.with(|cell| *cell.borrow_mut() = opened.clone());
-        DRAG_OPEN.with(|cell| *cell.borrow_mut() = open.clone());
+        CUT_PAGE.with(
+            |CutPage {
+                 drag_folds: cell, ..
+             }| *cell.borrow_mut() = opened.clone(),
+        );
+        CUT_PAGE.with(
+            |CutPage {
+                 drag_open: cell, ..
+             }| *cell.borrow_mut() = open.clone(),
+        );
         let mut cut_open = cut_.clone();
         for span in opened.iter() {
             cut_open
@@ -398,7 +431,11 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         crate::ui::window_history_zoom::amend_edit(window, &cut_);
     } else {
         crate::ui::window::record_edit(window, &cut_);
-        MOVE_PUSHED.with(|cell| cell.set(true));
+        CUT_PAGE.with(
+            |CutPage {
+                 move_pushed: cell, ..
+             }| cell.set(true),
+        );
     }
     // NOT a file write: this runs on every mouse-move; §7's one writer stays at the gesture's end.
     true
@@ -419,7 +456,7 @@ pub fn end_release() {
 /// S1 on release: what a trim settles once the hand lets go. A neighbour landed against within a frame joins,
 /// and effects over what the trim took away are clamped. Mid-drag a join would lose the far side of a border.
 pub fn land_trim(window: &adw::ApplicationWindow) {
-    let Some((index, border)) = TRIMMED.with(std::cell::Cell::take) else {
+    let Some((index, border)) = CUT_PAGE.with(|page| page.trimmed.take()) else {
         return;
     };
     let mut cut_ = window::newest_review_cut();
@@ -436,20 +473,26 @@ pub fn land_trim(window: &adw::ApplicationWindow) {
     window::clamp_effects_to_cut(window);
 }
 
-thread_local! {
-    /// The border this hold has moved, settled by [`land_trim`].
-    static TRIMMED: std::cell::Cell<Option<(usize, cut_trim::Border)>> = const { std::cell::Cell::new(None) };
-}
-
 /// F2.8 S2 ("refold after"): the drag released. Put back exactly the folds this drag opened, newest span first
 /// so a shifted list lands where it was; a fold the user had already opened is not this drag's to close.
 pub fn end_move(window: &adw::ApplicationWindow) {
-    MOVE_OPEN.with(|cell| cell.borrow_mut().take());
-    let opened =
-        DRAG_FOLDS.with(|cell: &std::cell::RefCell<Vec<[f64; 2]>>| cell.borrow_mut().split_off(0));
+    CUT_PAGE.with(
+        |CutPage {
+             move_open: cell, ..
+         }| cell.borrow_mut().take(),
+    );
+    let opened = CUT_PAGE.with(|page| page.drag_folds.borrow_mut().split_off(0));
     if opened.is_empty() {
-        DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
-        MOVE_PUSHED.with(|cell| cell.set(false));
+        CUT_PAGE.with(
+            |CutPage {
+                 drag_open: cell, ..
+             }| cell.borrow_mut().clear(),
+        );
+        CUT_PAGE.with(
+            |CutPage {
+                 move_pushed: cell, ..
+             }| cell.set(false),
+        );
         // The hold still moved the edge, so the release still writes it, fold or no fold.
         crate::cut_save::end_gesture();
         crate::ui::window::save_insert_cut(&crate::ui::window::newest_review_cut());
@@ -467,8 +510,16 @@ pub fn end_move(window: &adw::ApplicationWindow) {
     crate::cut_save::end_gesture();
     crate::ui::cut_folds::save_folds(&cut_);
     crate::ui::cut_folds::refresh_fold_badges(window);
-    DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
-    MOVE_PUSHED.with(|cell| cell.set(false));
+    CUT_PAGE.with(
+        |CutPage {
+             drag_open: cell, ..
+         }| cell.borrow_mut().clear(),
+    );
+    CUT_PAGE.with(
+        |CutPage {
+             move_pushed: cell, ..
+         }| cell.set(false),
+    );
 }
 
 /// F2.8 S1: where the border the hand just landed on actually is in the cut, so the page asks the PLAYER for
@@ -535,7 +586,7 @@ pub fn press_border_move(
             }
         }
     }
-    TRIMMED.with(|held| held.set(Some((index, border))));
+    CUT_PAGE.with(|CutPage { trimmed: held, .. }| held.set(Some((index, border))));
     let status = cut_
         .segs
         .get(index)

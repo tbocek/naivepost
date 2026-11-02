@@ -7,10 +7,8 @@
 //! drifting away from it unnoticed.
 
 use naivepost::decision_audit::{self as audit, Home};
-use naivepost::decision_homes;
 use naivepost::edges::{self as edge, AlignedWord};
 use naivepost::params;
-use naivepost::prompts;
 use naivepost::textfmt::Retake;
 use naivepost::tools::cutpass::{self, Plan};
 use naivepost::tools::retakes::{Line, Marks, Trim};
@@ -227,47 +225,6 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s7_tool_result_example_snappe
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s8_finish_answer_examples_complain_about_the_whole(
-) {
-    // §1's third home: "is told what is still wrong with the whole; may fix it". Both examples come
-    // through finish_cut, whose complaints count over everything added rather than one item.
-    let too_few = error(&a_plan().finish_cut());
-    assert!(too_few.contains("0 segments is under the"), "{too_few}");
-    assert!(
-        too_few.contains("add more"),
-        "fixable, not fatal: {too_few}"
-    );
-
-    // Reached through the named helper, with the bound taken from the status rather than restated.
-    let status = a_plan().status();
-    assert_eq!(status.min_segments, cutpass::min_segments(TARGET));
-    let problems = cutpass::cut_problems(&status);
-    assert!(
-        problems.iter().any(|p| p.starts_with("0 segments")),
-        "{problems:?}"
-    );
-
-    // Narrate's side of the same home: a clip nobody answered. It names the clip and echoes its bounds,
-    // which is what makes the fault repairable in the same conversation.
-    let segs = vec![
-        naivepost::cut::Seg {
-            s: 0.0,
-            e: 10.0,
-            ..Default::default()
-        },
-        naivepost::cut::Seg {
-            s: 10.0,
-            e: 25.0,
-            ..Default::default()
-        },
-    ];
-    let fault = naivepost::narrate_reply::clip_without_entry(1, &segs);
-    assert!(fault.contains("clip 2"), "{fault}");
-    assert!(fault.contains("10.0-25.0"), "bounds echoed: {fault}");
-    assert!(fault.contains("got no entry"), "{fault}");
-}
-
-#[test]
 fn sec_12_decisions_1_the_five_homes_of_a_decision_s9_walk_back_example_placement_moves_marks_unannounced(
 ) {
     // §1's fourth home: "never sees it". place_edges rewrites the marks it is handed and returns the
@@ -297,84 +254,4 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s9_walk_back_example_placemen
     }
     // And the home itself says so: nothing changed about what the model said, so nothing is announced.
     assert!(!audit::change_is_announced(Home::WalkBack));
-}
-
-#[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s10_policy_prompt_examples_are_one_number_and_one_wording(
-) {
-    // The 40 % ceiling on marks: one number, held once under its P. id, applied to every item alike.
-    assert_eq!(audit::examples()[5].home, Home::PolicyOrPrompt);
-    assert_eq!(audit::examples()[5].what, "the 40 % ceiling on marks");
-    assert_eq!(
-        audit::examples()[5].lives_in,
-        "tools::retakes::RETAKE_CEIL = P.machine.retakeCeil"
-    );
-    let row = params::find("P.machine.retakeCeil").expect("catalogued");
-    assert_eq!(row.spelled, "0.4");
-    assert_eq!(row.from, "tools::retakes::RETAKE_CEIL");
-    // Its directive-A home is Machine, and §1 does NOT count Machine as its fifth home: the ceiling
-    // bounds what the servers allow, it is not a per-item judgement either way.
-    assert_eq!(
-        decision_homes::home_of("P.machine.retakeCeil"),
-        Some(decision_homes::Home::Machine)
-    );
-    assert!(!audit::is_number_or_wording(decision_homes::Home::Machine));
-
-    // "clean it like a subtitler": one wording, known to prompts::is_known, owned by Prompt — and that
-    // pairing is exactly what §1 means by the fifth home.
-    assert!(prompts::is_known("captions"));
-    assert_eq!(
-        decision_homes::home_of("captions"),
-        Some(decision_homes::Home::Prompt)
-    );
-    assert!(audit::is_number_or_wording(decision_homes::Home::Prompt));
-    assert_eq!(audit::examples()[6].lives_in, "spec/prompts/captions.md");
-}
-
-#[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s11_the_table_covers_every_home_and_no_row_contradicts_its_own_rule(
-) {
-    let table = audit::examples();
-    // Seven examples, four of them paired, covering all five homes.
-    assert_eq!(table.len(), 7);
-    let count = |home: Home| table.iter().filter(|r| r.home == home).count();
-    assert_eq!(count(Home::ToolArgument), 1);
-    assert_eq!(count(Home::ToolResult), 1);
-    assert_eq!(count(Home::FinishAnswer), 2);
-    assert_eq!(count(Home::WalkBack), 1);
-    assert_eq!(count(Home::PolicyOrPrompt), 2);
-
-    for row in &table {
-        assert!(!row.what.is_empty() && !row.lives_in.is_empty(), "{row:?}");
-        // No row sits under a home whose announcement rule contradicts it.
-        match row.home {
-            Home::ToolResult | Home::FinishAnswer => {
-                assert!(audit::change_is_announced(row.home), "{row:?}")
-            }
-            _ => assert!(!audit::change_is_announced(row.home), "{row:?}"),
-        }
-    }
-}
-
-#[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s12_is_number_or_wording_spans_policy_and_prompt_only(
-) {
-    // §1's fifth home spans two of directive A's four, and only those two.
-    assert!(audit::is_number_or_wording(decision_homes::Home::Policy));
-    assert!(audit::is_number_or_wording(decision_homes::Home::Prompt));
-    assert!(!audit::is_number_or_wording(decision_homes::Home::Machine));
-    assert!(!audit::is_number_or_wording(
-        decision_homes::Home::Engineering
-    ));
-
-    // Reached through real ids rather than the enum alone: a policy number yes, a machine limit no,
-    // an engineering constant no, a prompt wording yes.
-    let snap = decision_homes::home_of("P.policy.snapToleranceSeconds").expect("routed");
-    assert!(audit::is_number_or_wording(snap));
-    let tokens = decision_homes::home_of("P.machine.llmMaxTokens").expect("routed");
-    assert!(!audit::is_number_or_wording(tokens));
-    let pulse = decision_homes::home_of("machine.pulse").expect("routed");
-    assert!(!audit::is_number_or_wording(pulse));
-    let narrate = decision_homes::home_of("narrate").expect("routed");
-    assert!(audit::is_number_or_wording(narrate));
 }

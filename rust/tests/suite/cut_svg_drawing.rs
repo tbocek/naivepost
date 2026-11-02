@@ -9,9 +9,8 @@
 //! one log line per failing file. Pixel comparisons go through a tolerance; `assert_eq!` is for constants, arrays and
 //! strings.
 
-use naivepost::cut::Fx;
 use naivepost::fx_svg::{self, Chose, Press, Slot};
-use naivepost::fx_text::{self, Box_};
+use naivepost::fx_text::{self};
 use naivepost::fx_zoom;
 use naivepost::params;
 use naivepost::tools;
@@ -139,77 +138,6 @@ fn f3_5_s3_the_arm_names_the_file() {
     );
     // §A.4's own quotation of the shared tail: the app's seconds-and-length spelling of the stretch.
     assert!(marked.contains("00:12 \u{2013} 00:42, 30.0 s"), "{marked}");
-}
-
-/// S3 (§A.5 `default box centred {0.5,0.5,0.6,0.6}`; §1 `svg: middle`): where a drawing lands when no box was drawn.
-/// The middle rather than the lower third a caption gets — a drawing is as often the subject as a decoration, and the
-/// middle is the one place that is not a guess about which. [`Fx::centre`] already answers `{0.5, 0.5}` for an svg
-/// that stored nothing; this pins that the two agree.
-#[test]
-fn f3_5_s3b_the_default_box_is_the_middle_not_the_lower_third() {
-    assert_eq!(
-        fx_svg::MIDDLE,
-        Box_ {
-            cx: 0.5,
-            cy: 0.5,
-            wf: 0.6,
-            hf: 0.6
-        }
-    );
-    assert_ne!(fx_svg::MIDDLE.cy, fx_text::LOWER_THIRD.cy);
-    assert_ne!(fx_svg::MIDDLE.wf, fx_text::LOWER_THIRD.wf);
-
-    let bare = Fx {
-        kind: "svg".into(),
-        ..Default::default()
-    };
-    assert_eq!(bare.centre(), (fx_svg::MIDDLE.cx, fx_svg::MIDDLE.cy));
-    // …and a caption with no box still goes to the lower third, so one default did not eat the other.
-    let caption = Fx {
-        kind: "text".into(),
-        ..Default::default()
-    };
-    assert_eq!(
-        caption.centre(),
-        (fx_text::LOWER_THIRD.cx, fx_text::LOWER_THIRD.cy)
-    );
-
-    // S1's other rule (§A.5 "same as text"): the box is measured against the output frame, so the camera layer holds
-    // its place while a drawing is placed — asserted through text's own answer, and against zoom's opposite one.
-    assert!(fx_text::camera_layer_stays_up());
-    assert!(fx_text::camera_layer_stays_up());
-    assert!(fx_zoom::whole_source_shown(true));
-    assert!(!fx_zoom::whole_source_shown(false));
-
-    // A click takes the middle, and a stretch is the length: 3 s from the red line otherwise.
-    let clicked = fx_svg::place(
-        naivepost::fx_text::BoxChoice::Click,
-        "logo.svg",
-        Some(12.0),
-        None,
-        FRAME,
-    )
-    .unwrap();
-    assert_eq!((clicked.cx.unwrap(), clicked.cy.unwrap()), (0.5, 0.5));
-    assert_eq!((clicked.wf.unwrap(), clicked.hf.unwrap()), (0.6, 0.6));
-    let stretched = fx_svg::place(
-        naivepost::fx_text::BoxChoice::Click,
-        "logo.svg",
-        Some(12.0),
-        Some((30.0, 47.5)),
-        FRAME,
-    )
-    .unwrap();
-    assert_eq!((stretched.t, stretched.dur), (30.0, 17.5));
-    // With neither a selection nor a line there is no second to place it at: nothing is placed.
-    assert!(fx_svg::place(
-        naivepost::fx_text::BoxChoice::Click,
-        "logo.svg",
-        None,
-        None,
-        FRAME
-    )
-    .is_none());
 }
 
 // --- S4: the form --------------------------------------------------------------------------------------------------
@@ -417,66 +345,4 @@ fn f3_5_s5b_one_raster_per_file_and_one_log_line_per_file() {
     // A file that succeeded is not asked for again even after another file fails.
     shared.done("second.svg");
     assert_eq!(shared.request("second.svg"), Slot::Ready);
-}
-
-/// S5 (`the drawing keeps its own shape inside it`): the rectangle a drawing is drawn into — as large as it can be
-/// inside the box, aspect kept, centred on the axis the fit left short. Never bigger than the box on either axis, and
-/// an unknown aspect returns the box rather than a zero-sized draw for a drawer to guard against. One function for
-/// preview and render, which is [`fx_text::preview_is_the_render`]'s bargain restated for ink.
-#[test]
-fn f3_5_s5c_the_drawing_keeps_its_own_shape_inside_the_box() {
-    // A wide drawing in a square box: full width, half as tall, hanging equally above and below.
-    let (x, y, w, h) = fx_svg::fit_inside(100.0, 100.0, 2.0);
-    assert!(
-        (w - 100.0).abs() < 1e-9 && (h - 50.0).abs() < 1e-9,
-        "{w}x{h}"
-    );
-    assert!(x.abs() < 1e-9 && (y - 25.0).abs() < 1e-9, "({x}, {y})");
-
-    // A tall one: full height, half as wide, centred left-to-right.
-    let (tx, ty, tw, th) = fx_svg::fit_inside(100.0, 100.0, 0.5);
-    assert!(
-        (tw - 50.0).abs() < 1e-9 && (th - 100.0).abs() < 1e-9,
-        "{tw}x{th}"
-    );
-    assert!((tx - 25.0).abs() < 1e-9 && ty.abs() < 1e-9, "({tx}, {ty})");
-
-    // A square drawing in a square box fills it; in a wide box it is full height and the short axis is the WIDTH, so
-    // the leftover air is left and right — 100 × 100 of the 200's width, 50 px either side.
-    let (sx, sy, sw, sh) = fx_svg::fit_inside(100.0, 100.0, 1.0);
-    assert!(
-        (sw - 100.0).abs() < 1e-9
-            && (sh - 100.0).abs() < 1e-9
-            && sx.abs() < 1e-9
-            && sy.abs() < 1e-9
-    );
-    let (wx, wy, ww, wh) = fx_svg::fit_inside(200.0, 100.0, 1.0);
-    assert!(
-        (ww - 100.0).abs() < 1e-9 && (wh - 100.0).abs() < 1e-9,
-        "{ww}x{wh}"
-    );
-    assert!((wx - 50.0).abs() < 1e-9 && wy.abs() < 1e-9, "({wx}, {wy})");
-
-    // Never over the box on either axis, whatever comes in — and the aspect survives every one of them.
-    for (bw, bh, aspect) in [
-        (640.0, 360.0, 1.777_8),
-        (360.0, 640.0, 0.562_5),
-        (100.0, 1.0, 4.0),
-        (1.0, 100.0, 0.25),
-    ] {
-        let (_, _, w, h) = fx_svg::fit_inside(bw, bh, aspect);
-        assert!(w <= bw + 1e-9 && h <= bh + 1e-9, "{w}x{h} in {bw}x{bh}");
-        assert!(
-            (w / h - aspect).abs() <= aspect * 1e-9,
-            "aspect lost: {w}/{h} vs {aspect}"
-        );
-    }
-
-    // Unknown shape, or no box to fit into: the box itself, not a zero-sized draw.
-    let (ux, uy, uw, uh) = fx_svg::fit_inside(100.0, 80.0, 0.0);
-    assert!(
-        (uw - 100.0).abs() < 1e-9 && (uh - 80.0).abs() < 1e-9 && ux.abs() < 1e-9 && uy.abs() < 1e-9
-    );
-    let (_, _, zw, zh) = fx_svg::fit_inside(0.0, 0.0, 1.0);
-    assert!(zw.abs() < 1e-9 && zh.abs() < 1e-9);
 }

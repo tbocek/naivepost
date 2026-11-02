@@ -9,12 +9,13 @@ use gtk4 as gtk;
 
 use crate::cut_select::{self, Surface};
 use crate::cut_trim;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::cut_select_press::Geometry;
 use crate::ui::{cut_trim_press, cut_view};
 
 /// One border drag in hand: which clip, which end, and the press it started from.
 #[derive(Debug, Clone, Copy)]
-struct BorderDrag {
+pub(crate) struct BorderDrag {
     index: usize,
     border: cut_trim::Border,
     press_x: f64,
@@ -22,19 +23,9 @@ struct BorderDrag {
     pushed: bool,
 }
 
-thread_local! {
-    static LEFT: std::cell::RefCell<Option<BorderDrag>> = const { std::cell::RefCell::new(None) };
-    static RIGHT: std::cell::RefCell<Option<RightPress>> = const { std::cell::RefCell::new(None) };
-    /// The thumbnail-size grip in hand (§1 badge 2): how many rows sit above the edge taken, and the height the
-    /// thumbnails had at the press.
-    static GRIP: std::cell::Cell<Option<(usize, u32)>> = const { std::cell::Cell::new(None) };
-    /// A drag on the line above the sound strip: the strip's height at the press.
-    static WAVE_GRIP: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
-}
-
 /// A right press: where it landed, the border it landed on (if any), and whether it has travelled yet.
 #[derive(Debug, Clone)]
-struct RightPress {
+pub(crate) struct RightPress {
     x: f64,
     y: f64,
     border: Option<(usize, cut_trim::Border)>,
@@ -118,14 +109,8 @@ pub fn cursor_at(x: f64, y: f64) -> Option<&'static str> {
     on_a_bar.then_some("grab")
 }
 
-thread_local! {
-    /// The pointer the band last asked for: set only when it changes, since asking the display for a pointer
-    /// it already shows at every motion event is a round trip for nothing.
-    static SHOWN: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
-}
-
 fn show_cursor(band: &gtk::Widget, name: Option<&'static str>) {
-    if SHOWN.with(|shown| shown.replace(name)) == name {
+    if CUT_PAGE.with(|CutPage { shown, .. }| shown.replace(name)) == name {
         return;
     }
     band.set_cursor_from_name(name);
@@ -162,10 +147,16 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
         let rows = crate::ui::cut_tracks::rows_for_press(&scene);
         let wave = grip == Some(crate::ui::cut_tracks::Grip::Wave)
             && crate::ui::cut_band_marks::mark_at(&scene, rows, x, y).is_none();
-        GRIP.with(|held| held.set(above.map(|above| (above, crate::ui::cut_tracks::thumb_px()))));
-        WAVE_GRIP.with(|held| held.set(wave.then(crate::ui::cut_tracks::row_wave_px)));
+        CUT_PAGE.with(|CutPage { grip: held, .. }| {
+            held.set(above.map(|above| (above, crate::ui::cut_tracks::thumb_px())))
+        });
+        CUT_PAGE.with(
+            |CutPage {
+                 wave_grip: held, ..
+             }| held.set(wave.then(crate::ui::cut_tracks::row_wave_px)),
+        );
         if above.is_some() || wave {
-            LEFT.with(|cell| *cell.borrow_mut() = None);
+            CUT_PAGE.with(|CutPage { left: cell, .. }| *cell.borrow_mut() = None);
             gesture.set_state(gtk::EventSequenceState::Claimed);
             return;
         }
@@ -175,7 +166,7 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             Surface::PictureRow(_) | Surface::SelectionBand
         );
         let taken = on_trim_ground.then(|| border_under(&geo, x)).flatten();
-        LEFT.with(|cell| {
+        CUT_PAGE.with(|CutPage { left: cell, .. }| {
             *cell.borrow_mut() = taken.map(|(index, border)| BorderDrag {
                 index,
                 border,
@@ -191,7 +182,7 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     });
     let win = window.clone();
     left.connect_drag_update(move |_g, dx, dy| {
-        if let Some((above, was)) = GRIP.with(std::cell::Cell::get) {
+        if let Some((above, was)) = CUT_PAGE.with(|page| page.grip.get()) {
             crate::ui::window_history_zoom::press_thumb(
                 &win,
                 crate::cut_screen::thumb_dragged(was, above, dy),
@@ -199,43 +190,52 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             return;
         }
         // The line stays under the hand: up makes the strip taller by what the hand moved.
-        if let Some(was) = WAVE_GRIP.with(std::cell::Cell::get) {
+        if let Some(was) = CUT_PAGE.with(|page| page.wave_grip.get()) {
             crate::ui::window_history_zoom::press_wave(&win, was - dy);
             return;
         }
-        let held = LEFT.with(|cell| *cell.borrow());
+        let held = CUT_PAGE.with(|CutPage { left: cell, .. }| *cell.borrow());
         if let Some(mut drag) = held {
             let x = drag.press_x + dx;
             trim_to(&win, &mut drag, x, false);
-            LEFT.with(|cell| *cell.borrow_mut() = Some(drag));
+            CUT_PAGE.with(|CutPage { left: cell, .. }| *cell.borrow_mut() = Some(drag));
         }
     });
     let win = window.clone();
     left.connect_drag_end(move |_g, dx, dy| {
-        if let Some((above, was)) = GRIP.with(|held| held.take()) {
+        if let Some((above, was)) = CUT_PAGE.with(|CutPage { grip: held, .. }| held.take()) {
             crate::ui::window_history_zoom::press_thumb(
                 &win,
                 crate::cut_screen::thumb_dragged(was, above, dy),
             );
             return;
         }
-        if let Some(was) = WAVE_GRIP.with(|held| held.take()) {
+        if let Some(was) = CUT_PAGE.with(
+            |CutPage {
+                 wave_grip: held, ..
+             }| held.take(),
+        ) {
             crate::ui::window_history_zoom::press_wave(&win, was - dy);
             return;
         }
-        if let Some(mut drag) = LEFT.with(|cell| cell.borrow_mut().take()) {
+        if let Some(mut drag) = CUT_PAGE.with(|CutPage { left: cell, .. }| cell.borrow_mut().take())
+        {
             let x = drag.press_x + dx;
             trim_to(&win, &mut drag, x, true);
         }
     });
     band.add_controller(left.clone());
-    LEFT_GESTURE.with(|held| *held.borrow_mut() = Some(left));
+    CUT_PAGE.with(
+        |CutPage {
+             left_gesture: held, ..
+         }| *held.borrow_mut() = Some(left),
+    );
 
     let right = gtk::GestureDrag::new();
     right.set_button(3);
     right.connect_drag_begin(move |_g, x, y| {
         let geo = Geometry::of();
-        RIGHT.with(|cell| {
+        CUT_PAGE.with(|CutPage { right: cell, .. }| {
             *cell.borrow_mut() = Some(RightPress {
                 x,
                 y,
@@ -247,7 +247,8 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     });
     let win = window.clone();
     right.connect_drag_update(move |gesture, dx, _dy| {
-        let Some(mut press) = RIGHT.with(|cell| cell.borrow().clone()) else {
+        let Some(mut press) = CUT_PAGE.with(|CutPage { right: cell, .. }| cell.borrow().clone())
+        else {
             return;
         };
         if !press.travelled {
@@ -290,11 +291,11 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             );
         }
         cut_view::repaint_page(&win);
-        RIGHT.with(|cell| *cell.borrow_mut() = Some(press));
+        CUT_PAGE.with(|CutPage { right: cell, .. }| *cell.borrow_mut() = Some(press));
     });
     let win = window.clone();
     right.connect_drag_end(move |_g, _dx, _dy| {
-        let press = RIGHT.with(|cell| cell.borrow_mut().take());
+        let press = CUT_PAGE.with(|CutPage { right: cell, .. }| cell.borrow_mut().take());
         if press.is_some_and(|press| press.travelled) {
             cut_trim_press::end_move(&win);
             cut_trim_press::end_release();
@@ -304,13 +305,12 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     band.add_controller(right);
 }
 
-thread_local! {
-    /// The band's left-button drag, kept so a test can fire the grip and the border drags the way GTK does.
-    static LEFT_GESTURE: std::cell::RefCell<Option<gtk::GestureDrag>> = const { std::cell::RefCell::new(None) };
-}
-
 /// The PAINTED band's left-button drag ([`wire`]): the thumbnail-size grip and the clip borders. Test-only
 /// reader: the page wires the gesture and never asks for it back.
 pub fn band_left_gesture_for_test() -> Option<gtk::GestureDrag> {
-    LEFT_GESTURE.with(|held| held.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             left_gesture: held, ..
+         }| held.borrow().clone(),
+    )
 }

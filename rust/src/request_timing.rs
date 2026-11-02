@@ -278,15 +278,6 @@ pub fn summary_line(tallies: &[ServiceTally]) -> String {
     format!(">>> requests: {}", parts.join("; "))
 }
 
-/// The share of a service's time that went on waiting for its server rather than working.
-pub fn wait_share(tally: &ServiceTally) -> Option<f64> {
-    let total = tally.wait_s + tally.on_wire_s;
-    if total <= 0.0 {
-        return None;
-    }
-    Some(tally.wait_s / total)
-}
-
 /// File the line a cache hit owes §10: "A reply served from the cache is a line too, marked as such
 /// with no time on the wire, so the file shows what a re-run saved."
 pub fn record_cached(tree: &crate::layout::Tree, mut base: crate::requests::Request) {

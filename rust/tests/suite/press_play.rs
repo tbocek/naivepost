@@ -6,7 +6,6 @@
 //! on screen only draws [`run::controls`] and forwards a click to [`run::RunBar::press`], so all of
 //! it is testable without a window (spec/00-principles.md §5).
 
-use naivepost::cut;
 use naivepost::project::{Project, Source};
 use naivepost::run::{
     self as run, Controls, Finish, Pressed, Run, RunBar, Snapshot, Step, Transport, NARRATOR_SLOTS,
@@ -36,18 +35,6 @@ fn with_footage() -> Project {
         sources: vec![Source {
             path: "cam.mp4".to_string(),
             footage: true,
-            ..Default::default()
-        }],
-        ..Default::default()
-    }
-}
-
-/// A project with no footage at all: the step's own refusal (F2.14's `NO_CUT_YET`) is what ▶ gets
-/// to hear on it, not a lock — §1 keeps Narrate and Produce unlocked for exactly that reason.
-fn without_footage() -> Project {
-    Project {
-        sources: vec![Source {
-            path: "voice.wav".to_string(),
             ..Default::default()
         }],
         ..Default::default()
@@ -351,44 +338,6 @@ fn f0_2_s4_each_page_runs_its_own_step_alone() {
     assert_eq!(Step::Suggest.label(), "Cut");
     assert_eq!(Step::Narrate.label(), "Narrate");
     assert_eq!(Step::Produce.label(), "Produce");
-}
-
-#[test]
-fn f0_2_s4_a_refusal_reaches_the_status_line() {
-    // S4: "its own refusals apply". The step refuses at its own start; the bar only carries the
-    // sentence to the status line and ends the run.
-    let project = without_footage();
-    let mut bar = RunBar::default();
-    bar.press(Page::Narrate, Transport::default(), &project);
-
-    let lines = bar.finish(Finish::Refused {
-        reason: cut::NO_CUT_YET.to_string(),
-    });
-    assert!(
-        lines.iter().any(|line| line == cut::NO_CUT_YET),
-        "the refusal must be said, not swallowed: {lines:?}"
-    );
-    assert_eq!(bar.status, cut::NO_CUT_YET);
-    assert!(bar.running.is_none(), "a refused step is not still running");
-    assert!(!run::announced_all_done(&lines));
-}
-
-#[test]
-fn f0_2_s4_no_all_done_line_for_one_step() {
-    // S4's last sentence: no "all done" line for one step — that sentence belongs to F0.4's chain,
-    // which is the only thing that ran all four.
-    let mut bar = bar_with_run(Step::Narrate);
-    let lines = bar.finish(Finish::Done);
-    assert_eq!(lines, vec!["Narrate done".to_string()]);
-    assert!(!run::announced_all_done(&lines));
-    assert!(bar.running.is_none(), "the run is over");
-
-    // A bar with no run at all still answers: a finish that arrives late says "<empty> done" rather
-    // than panicking, because the callback that posts it cannot know the run already ended.
-    let mut empty = RunBar::default();
-    let lines = empty.finish(Finish::Done);
-    assert!(!run::announced_all_done(&lines), "{lines:?}");
-    assert!(empty.running.is_none());
 }
 
 #[test]

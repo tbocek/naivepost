@@ -134,45 +134,6 @@ pub fn audio_task(job: Job) -> Option<AudioTask> {
     }
 }
 
-/// Whether this job's answer is spoken after the model gives it (§2's `→ TTS` arrow).
-///
-/// Narrate is the only row with the arrow. The thumbnail is an image drawn by sd.cpp, so nothing follows it.
-pub fn answers_after_tts(job: Job) -> bool {
-    matches!(job, Job::Narrate)
-}
-
-/// The family string that means the short ASR chunk (qwen3: 60 s, else 300). Matched case-insensitively as a substring, since it is whatever the server declared (§1's `AudioModel::family`).
-pub fn asr_chunk_is_qwen_family(family: &str) -> bool {
-    family.to_ascii_lowercase().contains("qwen3")
-}
-
-/// How long an ASR chunk may be after `oom_retries` out-of-memory answers.
-///
-/// Each halves the chunk down to the 20 s floor: shorter than a sentence transcribes worse than it would have failed.
-pub fn asr_chunk_seconds(family: &str, oom_retries: u32) -> f64 {
-    let start = if asr_chunk_is_qwen_family(family) {
-        ASR_CHUNK_QWEN_SECONDS
-    } else {
-        ASR_CHUNK_MAX_SECONDS
-    };
-    // Halved by doubling the divisor, not a loop: no way to spin on a huge retry count.
-    (start / (1u32 << oom_retries.min(16)) as f64).max(ASR_CHUNK_MIN_SECONDS)
-}
-
-pub fn diar_ladder() -> [f64; 3] {
-    DIAR_WINDOWS_SECONDS
-}
-
-/// The window for attempt `attempt`, counting from 0.
-///
-/// Past the end of the ladder the smallest window repeats: the window only shrinks.
-pub fn diar_window(attempt: usize) -> f64 {
-    DIAR_WINDOWS_SECONDS
-        .get(attempt)
-        .copied()
-        .unwrap_or(DIAR_WINDOWS_SECONDS[DIAR_WINDOWS_SECONDS.len() - 1])
-}
-
 /// How many vision calls `frames` frames take: four a call.
 pub fn vision_batches(frames: usize) -> usize {
     let per_call = VISION_FRAMES_PER_CALL as usize;
@@ -225,18 +186,6 @@ pub fn cut_attempt(attempt: u32) -> CutAttempt {
 /// Whether attempt `attempt` was the last one allowed.
 pub fn cut_attempts_exhausted(attempt: u32) -> bool {
     attempt >= LLM_ATTEMPTS
-}
-
-/// How many identical retake calls are pooled into one (§2's "three runs pooled").
-pub fn retake_runs_pooled() -> u32 {
-    RETAKE_RUNS_POOLED
-}
-
-/// Calls needed for `calls` distinct stretches.
-///
-/// Pooling is about repeats, not volume: three identical calls become one, N different stay N, so this equals the count of distinct stretches.
-pub fn retake_batches(calls: usize) -> usize {
-    calls
 }
 
 /// Whether sd.cpp is asked for a thumbnail.
@@ -330,29 +279,4 @@ pub fn language_name(code: &str) -> String {
         .iter()
         .find(|(known, _, _)| known.eq_ignore_ascii_case(code.trim()))
         .map_or_else(|| code.trim().to_string(), |(_, _, name)| name.to_string())
-}
-
-/// How many translation calls `languages` takes: one per language (§2).
-pub fn subtitle_calls(languages: &[&str]) -> usize {
-    languages.len()
-}
-
-/// The respelled transcript, with the times and speakers of the original.
-///
-/// §2: "times and speakers unchanged, enforced": this never reads a time or speaker out of `respelled`. It also refuses a reply whose line count differs,
-/// since pairing words with other lines' times reads like a success.
-pub fn clean_transcript<T: Clone>(
-    originals: &[(f64, f64, String, T)],
-    respelled: &[String],
-) -> Option<Vec<(f64, f64, String, String)>> {
-    if respelled.len() != originals.len() {
-        return None;
-    }
-    Some(
-        originals
-            .iter()
-            .zip(respelled)
-            .map(|((start, end, speaker, _), text)| (*start, *end, speaker.clone(), text.clone()))
-            .collect(),
-    )
 }

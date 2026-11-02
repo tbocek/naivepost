@@ -12,8 +12,8 @@ use crate::layout;
 use crate::policy;
 use crate::project::Origin;
 use crate::ui::settings;
-use crate::ui::window::SESSION;
 use crate::ui::window_doors::find_widget_by_name;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
     let window = window.clone();
@@ -25,8 +25,8 @@ pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindo
 pub fn live_session_policy() -> crate::project::Policy {
     // A run's worker holds no window session: it reads the policy the run saved before its first stage
     // (F1.1 S2), which is the one it runs under.
-    SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .map(|project| project.borrow().policy.clone())
         .or_else(|| {
             crate::project::load(&crate::startup::open_dir())
@@ -43,7 +43,9 @@ pub fn write_policy_field(
     because: &str,
     origin: Origin,
 ) -> policy::Applied {
-    let Some(project) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+    let Some(project) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    else {
         return policy::Applied::Refused("this window holds no session".to_string());
     };
     let proposal = policy::Proposal {
@@ -74,7 +76,7 @@ fn stamp_origin(policy: &mut crate::project::Policy, field: &str, origin: Origin
 }
 
 /// Who answers one derivation request, injected so a check can stub the HTTP layer (`POLICY_SENDERS`).
-type PolicySenders = std::cell::RefCell<
+pub(crate) type PolicySenders = std::cell::RefCell<
     Vec<
         Rc<
             std::cell::RefCell<
@@ -84,62 +86,59 @@ type PolicySenders = std::cell::RefCell<
     >,
 >;
 
-thread_local! {
-    static POLICY_SENDERS: PolicySenders = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    /// Per-window record of which User Context the policy was derived from (F0.7). Newest last.
-    pub(crate) static POLICY_TRACKERS: std::cell::RefCell<Vec<Rc<RefCell<policy::Tracker>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    static POLICY_DEBOUNCE: std::cell::RefCell<Vec<glib::SourceId>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
 pub fn main_window() -> adw::ApplicationWindow {
     built_window().expect("a policy request happens inside a built window")
 }
 
 pub fn built_window() -> Option<adw::ApplicationWindow> {
-    POLICY_WATCH_WINDOW.with(|watch| watch.borrow().clone())
-}
-
-thread_local! {
-    pub(crate) static POLICY_WATCH_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             policy_watch_window: watch,
+             ..
+         }| watch.borrow().clone(),
+    )
 }
 
 pub fn set_policy_sender_for_tests(
     sender: impl FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal> + 'static,
 ) {
-    POLICY_SENDERS.with(|senders| {
-        senders
-            .borrow_mut()
-            .push(Rc::new(std::cell::RefCell::new(sender)))
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             policy_senders: senders,
+             ..
+         }| {
+            senders
+                .borrow_mut()
+                .push(Rc::new(std::cell::RefCell::new(sender)))
+        },
+    );
 }
 
 /// The window's User Context text, read through the session the bench writes.
 pub(crate) fn user_context() -> String {
-    SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .map(|session| session.borrow().context.clone())
         .unwrap_or_default()
 }
 
 /// The window's User Context text, as the bench and `derive_policy` read it.
 pub fn set_session_context(text: &str) {
-    if let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) {
+    if let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    {
         session.borrow_mut().context = text.to_string();
     }
 }
 
 pub fn policy_is_current(context: &str) -> bool {
-    POLICY_TRACKERS
-        .with(|trackers| trackers.borrow().last().cloned())
+    WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 policy_trackers: trackers,
+                 ..
+             }| trackers.borrow().last().cloned(),
+        )
         .is_some_and(|tracker| !tracker.borrow().needs_derive(context))
 }
 
@@ -155,14 +154,21 @@ fn live_policy_answer(
 
 pub fn derive_policy() -> policy::Derived {
     let context = user_context();
-    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+    let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    else {
         return policy::Derived {
             used_defaults: true,
             ..policy::Derived::default()
         };
     };
     let mut policy = session.borrow().policy.clone();
-    let derived = match POLICY_SENDERS.with(|senders| senders.borrow().last().cloned()) {
+    let derived = match WINDOW_PAGE.with(
+        |WindowPage {
+             policy_senders: senders,
+             ..
+         }| senders.borrow().last().cloned(),
+    ) {
         Some(sender) => policy::derive(&mut policy, &context, &mut *sender.borrow_mut()),
         None => policy::derive(&mut policy, &context, &mut live_policy_answer),
     };
@@ -170,7 +176,12 @@ pub fn derive_policy() -> policy::Derived {
 }
 
 pub(crate) fn answerer_installed() -> bool {
-    POLICY_SENDERS.with(|senders| !senders.borrow().is_empty())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             policy_senders: senders,
+             ..
+         }| !senders.borrow().is_empty(),
+    )
 }
 
 pub(crate) fn apply_derivation(
@@ -178,7 +189,9 @@ pub(crate) fn apply_derivation(
     derived: policy::Derived,
     context: &str,
 ) {
-    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+    let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    else {
         return;
     };
     let derived = finish_derivation(&session, policy, derived, context);
@@ -212,8 +225,13 @@ fn finish_derivation(
     }
     // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
     // what stops every ▶ from re-asking about a context nobody intends to fill.
-    if let Some(tracker) = POLICY_TRACKERS
-        .with(|trackers| trackers.borrow().last().cloned())
+    if let Some(tracker) = WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 policy_trackers: trackers,
+                 ..
+             }| trackers.borrow().last().cloned(),
+        )
         .filter(|_| !derived.model_fault)
     {
         tracker.borrow_mut().mark_derived(context);
@@ -246,25 +264,39 @@ fn finish_derivation(
 
 pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
     let held = window.clone();
-    POLICY_DEBOUNCE.with(|pending| {
-        if let Some(id) = pending.borrow_mut().pop() {
-            id.remove();
-        }
-        let id = glib::timeout_add_local(
-            std::time::Duration::from_millis(policy::DEBOUNCE_MS),
-            move || {
-                POLICY_DEBOUNCE.with(|p| p.borrow_mut().clear());
-                if POLICY_SENDERS.with(|senders| senders.borrow().is_empty()) {
-                    derive_in_background(&held);
-                } else {
-                    let derived = derive_policy();
-                    say_status(&held, &derived);
-                }
-                glib::ControlFlow::Break
-            },
-        );
-        pending.borrow_mut().push(id);
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             policy_debounce: pending,
+             ..
+         }| {
+            if let Some(id) = pending.borrow_mut().pop() {
+                id.remove();
+            }
+            let id = glib::timeout_add_local(
+                std::time::Duration::from_millis(policy::DEBOUNCE_MS),
+                move || {
+                    WINDOW_PAGE.with(
+                        |WindowPage {
+                             policy_debounce: p, ..
+                         }| p.borrow_mut().clear(),
+                    );
+                    if WINDOW_PAGE.with(
+                        |WindowPage {
+                             policy_senders: senders,
+                             ..
+                         }| senders.borrow().is_empty(),
+                    ) {
+                        derive_in_background(&held);
+                    } else {
+                        let derived = derive_policy();
+                        say_status(&held, &derived);
+                    }
+                    glib::ControlFlow::Break
+                },
+            );
+            pending.borrow_mut().push(id);
+        },
+    );
 }
 
 fn say_status(window: &adw::ApplicationWindow, derived: &policy::Derived) {
@@ -275,21 +307,24 @@ fn say_status(window: &adw::ApplicationWindow, derived: &policy::Derived) {
     }
 }
 
-thread_local! {
-    static DERIVE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-}
-
 fn derive_in_background(window: &adw::ApplicationWindow) {
     let context = user_context();
-    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+    let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    else {
         return;
     };
     let policy = session.borrow().policy.clone();
     let live = live_session_policy();
-    let generation = DERIVE_GENERATION.with(|newest| {
-        newest.set(newest.get() + 1);
-        newest.get()
-    });
+    let generation = WINDOW_PAGE.with(
+        |WindowPage {
+             derive_generation: newest,
+             ..
+         }| {
+            newest.set(newest.get() + 1);
+            newest.get()
+        },
+    );
     let (tell, told) = std::sync::mpsc::channel();
     let asked = context.clone();
     std::thread::spawn(move || {
@@ -307,7 +342,12 @@ fn derive_in_background(window: &adw::ApplicationWindow) {
                 for line in said {
                     crate::ui::window::log_line(&line);
                 }
-                let newest = DERIVE_GENERATION.with(|newest| newest.get()) == generation;
+                let newest = WINDOW_PAGE.with(
+                    |WindowPage {
+                         derive_generation: newest,
+                         ..
+                     }| newest.get(),
+                ) == generation;
                 if newest && user_context() == context {
                     let derived = finish_derivation(&session, policy, derived, &context);
                     say_status(&held, &derived);

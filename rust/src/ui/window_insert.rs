@@ -11,6 +11,7 @@ use crate::startup;
 pub use crate::ui::cut_folds::save_folds as save_insert_cut;
 use crate::ui::cut_form_frame;
 use crate::ui::window as ui;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 // --- F2.12: insert a card, still, video or sound ---------------------------------------------------------
 
@@ -53,17 +54,16 @@ pub(crate) struct InsertOpen {
     pub(crate) fields: Vec<cut_insert::Field>,
 }
 
-thread_local! {
-    static INSERT_OPEN: std::cell::RefCell<Option<InsertOpen>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 pub fn insert_open() -> Option<(String, f64, f64)> {
-    INSERT_OPEN.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|open| (open.path.clone(), open.at, open.seconds))
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             insert_open: cell, ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .map(|open| (open.path.clone(), open.at, open.seconds))
+        },
+    )
 }
 
 /// F2.12 S4: draw the form from a [`cut_insert::FormPlan`].
@@ -186,14 +186,18 @@ pub(crate) fn show_insert_form(
     // §S4: the form replaces the idle readings while it is open.
     cut_form_frame::set_readings(window, false);
 
-    INSERT_OPEN.with(|cell| {
-        *cell.borrow_mut() = Some(InsertOpen {
-            path: path.to_string(),
-            at,
-            seconds: plan.seconds,
-            fields,
-        })
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             insert_open: cell, ..
+         }| {
+            *cell.borrow_mut() = Some(InsertOpen {
+                path: path.to_string(),
+                at,
+                seconds: plan.seconds,
+                fields,
+            })
+        },
+    );
     holder.set_visible(true);
 
     let win = window.clone();
@@ -263,7 +267,11 @@ pub(crate) fn refresh_insert_tick(window: &adw::ApplicationWindow) {
 }
 
 pub fn close_insert_form(window: &adw::ApplicationWindow) -> String {
-    INSERT_OPEN.with(|cell| *cell.borrow_mut() = None);
+    WINDOW_PAGE.with(
+        |WindowPage {
+             insert_open: cell, ..
+         }| *cell.borrow_mut() = None,
+    );
     if let Some(holder) = insert_form_box(window) {
         holder.set_visible(false);
     }
@@ -289,7 +297,11 @@ fn card_arrival(path: &str, answers: &[(String, String)]) -> Option<String> {
 /// [`cut_insert::FormAnswer::from_form`] and [`cut_insert::place`], saves the cut through the same door the
 /// folds use, and returns [`cut_insert::Placed::status`] (or the refusal). No rule lives here.
 pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
-    let Some(open) = INSERT_OPEN.with(|cell| cell.borrow().clone()) else {
+    let Some(open) = WINDOW_PAGE.with(
+        |WindowPage {
+             insert_open: cell, ..
+         }| cell.borrow().clone(),
+    ) else {
         return cut_insert::NO_LINE_YET.to_string();
     };
     let fallback = open.seconds;
@@ -331,7 +343,11 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
         Ok(placed) => {
             ui::record_edit(window, &cut_);
             save_insert_cut(&cut_);
-            INSERT_OPEN.with(|cell| *cell.borrow_mut() = None);
+            WINDOW_PAGE.with(
+                |WindowPage {
+                     insert_open: cell, ..
+                 }| *cell.borrow_mut() = None,
+            );
             if let Some(holder) = insert_form_box(window) {
                 holder.set_visible(false);
             }
@@ -373,26 +389,25 @@ pub fn press_insert(window: &adw::ApplicationWindow) -> String {
     format!("{} \u{2014} choose the file", title)
 }
 
-thread_local! {
-    static LOGO_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static INSERT_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
 /// How many Insert choosers have been raised. A test's look; the program never asks.
 pub fn insert_asks_for_test() -> usize {
-    INSERT_ASKS.with(std::cell::Cell::get)
+    WINDOW_PAGE.with(|page| page.insert_asks.get())
 }
 
 /// How many Logo… choosers have been raised. A test's look; the program never asks.
 pub fn logo_asks_for_test() -> usize {
-    LOGO_ASKS.with(std::cell::Cell::get)
+    WINDOW_PAGE.with(|page| page.logo_asks.get())
 }
 
 /// F2.12 S4: Logo… beside a logo field opens an image chooser over the insert folder, several files at once
 /// (the prototype's `pickLogos`). The answer goes through [`answer_logos`].
 #[allow(deprecated)] // the same GtkFileChooser API `open_insert_chooser` keeps, for the same reason
 fn open_logo_chooser(window: &adw::ApplicationWindow, key: &str) {
-    LOGO_ASKS.with(|asks| asks.set(asks.get() + 1));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             logo_asks: asks, ..
+         }| asks.set(asks.get() + 1),
+    );
     let chooser = gtk::FileChooserNative::builder()
         .title("Logos for this field")
         .modal(true)
@@ -449,7 +464,11 @@ pub(crate) fn open_insert_chooser(
     sound_only: bool,
     at: f64,
 ) {
-    INSERT_ASKS.with(|asks| asks.set(asks.get() + 1));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             insert_asks: asks, ..
+         }| asks.set(asks.get() + 1),
+    );
     let chooser = gtk::FileChooserNative::builder()
         .title(title)
         .modal(true)
@@ -611,7 +630,12 @@ pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
 /// Whether this session has been told where its red line stands. `false` is a page that has never
 /// had a line placed, which is what makes S1's refusal reachable.
 pub fn place_known() -> bool {
-    ui::INSERT_PLACE_KNOWN.with(|cell| cell.borrow().unwrap_or(false))
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| cell.borrow().unwrap_or(false),
+    )
 }
 
 pub(crate) fn press_insert_from_button(window: &adw::ApplicationWindow) -> String {

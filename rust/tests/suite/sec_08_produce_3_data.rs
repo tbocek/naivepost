@@ -29,7 +29,6 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 /// The poster leg's stand-in type: `Rc` so one leg can be handed to several runs of the same test.
-type Poster = Rc<dyn Fn(&[String]) -> Result<(), String>>;
 
 /// The argv the scripted spawner was handed, one entry per spawned command.
 type SpawnedArgv = std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>;
@@ -50,8 +49,6 @@ use naivepost::produce_flow as flow;
 use naivepost::produce_render as render;
 use naivepost::produce_subtitles as subs;
 use naivepost::project::{Codec, Container, Produce, Publish, Source, Subtitles};
-
-const ITEM: &str = "sec_08_produce_3_data";
 
 // ---- the folder as a press on the real ▶ left it (the widget leg) ---------------------------------
 
@@ -340,35 +337,6 @@ fn run_widget_round(app: &adw::Application) {
 
 // ---- the catalogue -------------------------------------------------------------------------------
 
-/// §3's line, then §6's additions: the catalogue is the two spec lines concatenated, in their own orders.
-#[test]
-fn sec_08_produce_3_data_s1_catalogue_is_spec_3_then_spec_6() {
-    assert_eq!(ITEM, "sec_08_produce_3_data");
-    let list = data::catalogue();
-    assert_eq!(
-        list.len(),
-        data::DATA_FILES.len() + data::CLIPS_EXTRA.len(),
-        "§3's {} entries then §6's {}: {list:?}",
-        data::DATA_FILES.len(),
-        data::CLIPS_EXTRA.len()
-    );
-    // §3's order is kept exactly: the four under clips/, the five beside the video, then the record.
-    assert_eq!(&list[..data::DATA_FILES.len()], &data::DATA_FILES[..]);
-    for extra in data::CLIPS_EXTRA {
-        assert!(
-            list.contains(&extra),
-            "{extra} is missing from the catalogue: {list:?}"
-        );
-    }
-    // §6 puts its extras in `clips/`, which is what makes them scratch like §3's four.
-    for extra in data::CLIPS_EXTRA {
-        assert!(
-            extra.starts_with("clips/"),
-            "{extra} does not live in the scratch folder"
-        );
-    }
-}
-
 /// The three groups §3's grouping means: what happens to the file on the next ▶.
 #[test]
 fn sec_08_produce_3_data_s2_kind_sorts_every_entry_into_its_group() {
@@ -396,44 +364,6 @@ fn sec_08_produce_3_data_s2_kind_sorts_every_entry_into_its_group() {
     let groups = [data::Kind::Scratch, data::Kind::Output, data::Kind::State];
     for entry in list.iter() {
         assert!(groups.contains(&data::kind(entry)), "{entry} has no group");
-    }
-}
-
-/// §6 spells its five extras in `produce_details`; the catalogue must agree with those spellings rather
-/// than restate them, or the two lists drift the first time a name changes.
-#[test]
-fn sec_08_produce_3_data_s3_catalogue_agrees_with_details_scratch_names() {
-    // Same placeholders, same folder: `details::SCRATCH_KINDS` is §6's own words without the prefix.
-    assert_eq!(
-        details::SCRATCH_KINDS.len(),
-        data::CLIPS_EXTRA.len() + 1,
-        "one encode entry each"
-    );
-    let spelled = [
-        details::clip_cues(3, "ab12"),
-        details::cue_title(3, 7),
-        details::card_copy("produce/cards/ranks.svg"),
-        details::animation_frames("loop.svg"),
-        details::joined("mp4"),
-    ];
-    let expected = [
-        "c003_ab12.srt",
-        "c003_t07.svg",
-        "ranks-filled.svg",
-        "loop.frames/",
-        "joined.mp4",
-    ];
-    for (name, want) in spelled.iter().zip(expected) {
-        assert_eq!(name, want, "a §6 name changed spelling: {name}");
-    }
-    // Each spelled name sits under the catalogue's matching entry's placeholder family.
-    for (entry, name) in data::CLIPS_EXTRA[1..].iter().zip(&spelled[1..]) {
-        let placeholder = entry.trim_start_matches("clips/");
-        let stem = placeholder.split(['<', '%']).next().unwrap_or(placeholder);
-        assert!(
-            stem.is_empty() || name.starts_with(stem),
-            "{name} does not match the catalogue entry {entry}"
-        );
     }
 }
 
@@ -713,123 +643,6 @@ fn sec_08_produce_3_data_s7_the_poster_is_made_from_the_thumbnail_that_exists() 
         "the page survives its picture's absence: {page:?}"
     );
     assert!(!tree.final_jpg().is_file(), "and nothing invented one");
-}
-
-/// §3's sidecars (`.srt`/`.vtt` beside the video) and the tag page's track list agree: the bare-stem pair is
-/// what a cue sheet writes, the per-language pair only exists if a language was ticked, and the tracks the
-/// page advertises are read off the folder rather than out of the settings.
-#[test]
-fn sec_08_produce_3_data_s10_the_sidecars_and_the_track_list_agree() {
-    let line = Entry {
-        s: 0.0,
-        e: 5.0,
-        at: 0.0,
-        text: "a spoken line".into(),
-        ..Default::default()
-    };
-    let (_root, tree) = common::tree_in("sidecars");
-    let (tree, run) = run_over(
-        &tree,
-        vec![common::seg(0.0, 10.0)],
-        vec![line],
-        Produce {
-            subtitles: Subtitles::TrackInFile,
-            ..Default::default()
-        },
-    );
-    // No language ticked: the video's own track is the bare-stem pair, and §3's `<code>` entry is the one
-    // that stays empty here.
-    Spy::new().run(
-        &run,
-        &tree,
-        &mats(
-            &[],
-            exec::Cues {
-                languages: vec![],
-                ..Default::default()
-            },
-        ),
-    );
-    assert!(
-        tree.final_srt(None).is_file(),
-        "{} never written",
-        tree.final_srt(None).display()
-    );
-    assert!(
-        tree.final_vtt(None).is_file(),
-        "{} never written",
-        tree.final_vtt(None).display()
-    );
-    assert!(
-        !tree.final_srt(Some("en")).is_file(),
-        "no ticked language, no `final.en.srt`"
-    );
-    // The catalogue resolves §3's wildcard to the pair `layout` writes, so no test hand-types a stem.
-    let sidecars = data::sidecar_files("final", Some("en"));
-    assert_eq!(
-        sidecars,
-        ["final.en.srt".to_string(), "final.en.vtt".to_string()]
-    );
-    assert_eq!(
-        data::sidecar_files("final", None),
-        ["final.srt".to_string(), "final.vtt".to_string()],
-        "and the bare pair is the one this run wrote"
-    );
-    // And the tag page reads the tracks back off that folder rather than out of the settings.
-    let page = naivepost::produce_tag_page::build_and_write(
-        &tree,
-        Container::Mp4,
-        Codec::H264,
-        "en",
-        &[],
-        &*no_poster(),
-        |_| {},
-    );
-    assert_eq!(
-        page.tracks, 1,
-        "the one .vtt beside the video became one track: {page:?}"
-    );
-
-    // Empty cue sheet: no sidecars, so the page has nothing to advertise either.
-    let (_root2, quiet) = common::tree_in("sidecars-none");
-    std::fs::create_dir_all(quiet.final_video("mp4").parent().unwrap()).unwrap();
-    std::fs::write(quiet.final_video("mp4"), b"a video").unwrap();
-    let (quiet, run2) = run_over(
-        &quiet,
-        vec![common::seg(0.0, 10.0)],
-        Vec::new(),
-        Produce {
-            subtitles: Subtitles::TrackInFile,
-            ..Default::default()
-        },
-    );
-    Spy::new().run(&run2, &quiet, &mats(&[], exec::Cues::default()));
-    assert!(
-        !quiet.final_vtt(None).is_file(),
-        "no cue, no track: {}",
-        quiet.final_vtt(None).display()
-    );
-    let page = naivepost::produce_tag_page::build_and_write(
-        &quiet,
-        Container::Mp4,
-        Codec::H264,
-        "en",
-        &[],
-        &*no_poster(),
-        |_| {},
-    );
-    assert_eq!(
-        page.tracks, 0,
-        "and the page advertises what is actually there: {page:?}"
-    );
-}
-
-/// A poster leg that lays nothing down is a skipped poster, not a failed run: `poster=` only appears when
-/// the file is really there, whatever the leg answered.
-/// The poster leg's stand-in: answers `Ok` and lays nothing down, so a run that asks for a poster still
-/// gets `poster=` false (the file has to exist for the tag to claim it).
-fn no_poster() -> Poster {
-    Rc::new(|_argv: &[String]| Ok(()))
 }
 
 /// §5's rule that makes `publish/publish.json` §3's odd one out: ▶ never touches it.

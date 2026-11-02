@@ -13,6 +13,7 @@ use gtk4 as gtk;
 
 use crate::profile::{self, Field, Kind, Template};
 use crate::project::{ProfileUse, Project};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// A text area is at least this share of the window's height (a third), and takes what the form leaves besides.
 pub const TEXTAREA_SHARE: i32 = 3;
@@ -228,7 +229,8 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
 }
 
 pub fn follow_profile_produce() {
-    let Some(session) = crate::ui::window::SESSION.with(|slots| slots.borrow().last().cloned())
+    let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
     else {
         return;
     };
@@ -289,7 +291,12 @@ fn keep_produce(produce: &crate::project::Produce, name: &str, rows: &[(String, 
 
 /// F0.7's debounced derivation follows a context change made here, as it follows a typed one.
 fn derive_policy() {
-    if let Some(window) = crate::ui::window::POLICY_WATCH_WINDOW.with(|w| w.borrow().clone()) {
+    if let Some(window) = WINDOW_PAGE.with(
+        |WindowPage {
+             policy_watch_window: w,
+             ..
+         }| w.borrow().clone(),
+    ) {
         crate::ui::window::schedule_policy_derive(&window);
     }
 }
@@ -570,8 +577,8 @@ pub fn refusal(project: &Project) -> Option<String> {
 }
 
 pub(crate) fn sets_row(row: &str) -> Option<String> {
-    let used = crate::ui::window::SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    let used = WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .and_then(|session| session.borrow().profile.clone())?;
     let template = template_of(&used.name).ok()?;
     template

@@ -5,7 +5,9 @@ use adw::prelude::*;
 use crate::narrate_preview_media::file_stem;
 use crate::preview::{self, Press};
 use crate::ui::cut_folds;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::log_line;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use crate::{layout, play_back, timeline, ui};
 
 /// The label the toolbar ships (§1's transport table): ▶ while nothing of ours runs.
@@ -61,7 +63,7 @@ fn source_file(base: &str) -> Option<String> {
 /// open project's source of that name, resolved by §2's one path rule.
 pub(crate) fn recording_file(base: &str) -> Option<std::path::PathBuf> {
     let root = std::env::current_dir().unwrap_or_default();
-    let written = crate::ui::window::SESSION.with(|slots| {
+    let written = WINDOW_PAGE.with(|WindowPage { session: slots, .. }| {
         slots.borrow().last().and_then(|project| {
             project
                 .borrow()
@@ -78,10 +80,6 @@ pub(crate) fn recording_file(base: &str) -> Option<std::path::PathBuf> {
 /// How near the line must be to the player's own second to be the player's move rather than a
 /// person's: two ticks.
 const SAME_SECOND_S: f64 = 0.25;
-
-thread_local! {
-    static IN_VIDEO: std::cell::Cell<Option<(f64, f64)>> = const { std::cell::Cell::new(None) };
-}
 
 /// F2.1 through the built-in player: the recording the picture shows at session second `at`, from
 /// that second of its file, playing or held on the frame, on the preview's own picture.
@@ -102,7 +100,8 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
     };
     match crate::play_built_in::cue(&file, local, play) {
         Ok(()) => {
-            IN_VIDEO.with(|cell| cell.set(Some((at - local, recording.end))));
+            CUT_PAGE
+                .with(|CutPage { in_video: cell, .. }| cell.set(Some((at - local, recording.end))));
             crate::ui::cut_picture::show_video(window);
             true
         }
@@ -130,7 +129,7 @@ pub fn follow_in_video(window: &adw::ApplicationWindow, at: f64) -> bool {
 
 /// Where the built-in player stands, as a session second: what ▶'s line follows (F2.1 S4).
 pub fn video_second() -> Option<f64> {
-    let (start, end) = IN_VIDEO.with(|cell| cell.get())?;
+    let (start, end) = CUT_PAGE.with(|CutPage { in_video: cell, .. }| cell.get())?;
     if crate::play_built_in::ended() {
         return Some(end);
     }

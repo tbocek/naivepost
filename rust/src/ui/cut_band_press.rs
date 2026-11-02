@@ -8,11 +8,12 @@ use gtk4 as gtk;
 
 use crate::cut_select;
 use crate::fx_band;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::{cut_trim_press, window as ui};
 
 /// One drag of one bar, remembered between the toolkit's three signals. GTK gives `drag_begin` the absolute press and the others only the OFFSET, so the press position must survive for `fx_band::grab_at`.
 #[derive(Debug, Clone, Copy)]
-struct BarDrag {
+pub(crate) struct BarDrag {
     /// Which record this bar stands for (`fx-bar-<index>`).
     index: usize,
     /// Where inside the bar the press landed, px from its left edge.
@@ -24,20 +25,6 @@ struct BarDrag {
     took_hold: bool,
     /// The band's start when this gesture picked it up: `drag-update` offsets are measured from the press, so the target is measured from there, or each tick would recount the last one's travel.
     anchor_t: f64,
-}
-
-thread_local! {
-    static DRAGS: std::cell::RefCell<Option<BarDrag>> = const { std::cell::RefCell::new(None) };
-    /// The window the CURRENT gesture belongs to: a closed GTK window survives and its controllers keep answering, so an old gesture must not be read against another window's cut.
-    static ACTIVE: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-    /// This window's bar gestures, newest last, each tagged with the record its bar stands for.
-    static GESTURES: std::cell::RefCell<Vec<(BarSlot, gtk::GestureDrag)>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-    /// Is a bar drag in flight, so the whole gesture costs ONE history entry?
-    static IN_FLIGHT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Has this drag already spent its single Undo step?
-    static HISTORY_SPENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Attach ONE drag gesture to one effects-lane bar, from the build-once closure that creates it, so a refresh never stacks a second controller (the ✕ follows the same rule). Left button only: the right belongs to trim/move (F2.8).
@@ -53,49 +40,69 @@ pub fn wire_bar(window: &adw::ApplicationWindow, index: usize, bar: &gtk::Widget
     let done = slot.window.clone();
     let tagged = slot.clone();
     gesture.connect_drag_begin(move |_g, x, _y| {
-        ACTIVE.with(|cell| *cell.borrow_mut() = Some(slot.window.clone()));
+        CUT_PAGE
+            .with(|CutPage { active: cell, .. }| *cell.borrow_mut() = Some(slot.window.clone()));
         // The bar's DRAWN width is its size request (`refresh_effects_lane`, floored at 48 px); an unallocated bar reports 0 for `width()`.
         let width_px = f64::from(holder.size_request().0).max(1.0);
-        DRAGS.with(|cell| {
-            *cell.borrow_mut() = Some(BarDrag {
-                index: slot.index,
-                bar_x_px: x,
-                width_px,
-                travel_px: 0.0,
-                took_hold: false,
-                anchor_t: 0.0,
-            })
-        });
-        HISTORY_SPENT.with(|cell| cell.set(false));
+        CUT_PAGE.with(
+            |CutPage {
+                 band_press_drags: cell,
+                 ..
+             }| {
+                *cell.borrow_mut() = Some(BarDrag {
+                    index: slot.index,
+                    bar_x_px: x,
+                    width_px,
+                    travel_px: 0.0,
+                    took_hold: false,
+                    anchor_t: 0.0,
+                })
+            },
+        );
+        CUT_PAGE.with(
+            |CutPage {
+                 history_spent: cell,
+                 ..
+             }| cell.set(false),
+        );
         begin_in_flight();
     });
     gesture.connect_drag_update(move |_g, dx, dy| {
         // Only the NEWEST window's gestures answer: `common::release_last_window` closes a check's window but GTK does not destroy it.
-        if !ACTIVE.with(|cell| cell.borrow().as_ref().is_some_and(|live| live == &upd)) {
+        if !CUT_PAGE.with(|CutPage { active: cell, .. }| {
+            cell.borrow().as_ref().is_some_and(|live| live == &upd)
+        }) {
             return;
         }
         update(&upd, dx, dy);
     });
     gesture.connect_drag_end(move |_g, _dx, _dy| {
-        if !ACTIVE.with(|cell| cell.borrow().as_ref().is_some_and(|live| live == &done)) {
+        if !CUT_PAGE.with(|CutPage { active: cell, .. }| {
+            cell.borrow().as_ref().is_some_and(|live| live == &done)
+        }) {
             return;
         }
         end();
     });
     bar.add_controller(gesture.clone());
-    GESTURES.with(|cell| cell.borrow_mut().push((tagged, gesture)));
+    CUT_PAGE.with(|CutPage { gestures: cell, .. }| cell.borrow_mut().push((tagged, gesture)));
 }
 
 /// Which record a wired gesture stands for, so a test can ask for THE gesture of one bar (every bar shares this thread-local list).
 #[derive(Clone)]
-struct BarSlot {
+pub(crate) struct BarSlot {
     window: adw::ApplicationWindow,
     index: usize,
 }
 
 /// S1/S2/S3 of one update: ask the seam what this press turned out to be, and once it is a hold, move the band by the pixels travelled at the lane's zoom.
 fn update(window: &adw::ApplicationWindow, dx: f64, dy: f64) {
-    let Some(mut drag) = DRAGS.with(|cell| *cell.borrow()) else {
+    let Some(mut drag) = CUT_PAGE.with(
+        |CutPage {
+             band_press_drags: cell,
+             ..
+         }| *cell.borrow(),
+    ) else {
         return;
     };
     drag.travel_px = (dx * dx + dy * dy).sqrt();
@@ -110,14 +117,24 @@ fn update(window: &adw::ApplicationWindow, dx: f64, dy: f64) {
             false,
         );
         let fx_band::Press::Hold { t, .. } = answer else {
-            DRAGS.with(|cell| *cell.borrow_mut() = Some(drag));
+            CUT_PAGE.with(
+                |CutPage {
+                     band_press_drags: cell,
+                     ..
+                 }| *cell.borrow_mut() = Some(drag),
+            );
             return;
         };
         drag.took_hold = true;
         // The pick-up tells us where the band started; every later tick measures its travel from there.
         drag.anchor_t = t;
     }
-    DRAGS.with(|cell| *cell.borrow_mut() = Some(drag));
+    CUT_PAGE.with(
+        |CutPage {
+             band_press_drags: cell,
+             ..
+         }| *cell.borrow_mut() = Some(drag),
+    );
     move_held(window, dx, drag);
 }
 
@@ -150,7 +167,12 @@ fn move_held(window: &adw::ApplicationWindow, dx: f64, drag: BarDrag) {
 
 /// The release: the file gets its ONE write (§7's one writer; mid-drag ticks were refused), the gesture ends, and the hand keeps its hold (S2: it drops only when the line walks off the band or Esc).
 fn end() {
-    DRAGS.with(|cell| *cell.borrow_mut() = None);
+    CUT_PAGE.with(
+        |CutPage {
+             band_press_drags: cell,
+             ..
+         }| *cell.borrow_mut() = None,
+    );
     end_in_flight();
 }
 
@@ -169,31 +191,58 @@ fn band_snap_marks(held: &crate::cut::Fx) -> Vec<f64> {
 
 /// Is a bar drag in flight? Read by `ui::drag_held_band`.
 pub fn band_drag_in_flight() -> bool {
-    IN_FLIGHT.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             in_flight: cell, ..
+         }| cell.get(),
+    )
 }
 
 /// Does THIS tick take the drag's single Undo entry? True the first time, false after.
 pub fn take_history_step() -> bool {
-    HISTORY_SPENT.with(|cell| {
-        if cell.get() {
-            return false;
-        }
-        cell.set(true);
-        true
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             history_spent: cell,
+             ..
+         }| {
+            if cell.get() {
+                return false;
+            }
+            cell.set(true);
+            true
+        },
+    )
 }
 
 /// Begin of a gesture: `cut.json` waits for the release, and the history starts unspent.
 fn begin_in_flight() {
     crate::cut_save::begin_gesture();
-    IN_FLIGHT.with(|cell| cell.set(true));
-    HISTORY_SPENT.with(|cell| cell.set(false));
+    CUT_PAGE.with(
+        |CutPage {
+             in_flight: cell, ..
+         }| cell.set(true),
+    );
+    CUT_PAGE.with(
+        |CutPage {
+             history_spent: cell,
+             ..
+         }| cell.set(false),
+    );
 }
 
 /// Release: allow writes again and let the file have the state the hand LEFT, via the trim release's door (`end_release` = `cut_save::end_gesture()` + one `save_insert_cut`).
 fn end_in_flight() {
-    IN_FLIGHT.with(|cell| cell.set(false));
-    HISTORY_SPENT.with(|cell| cell.set(false));
+    CUT_PAGE.with(
+        |CutPage {
+             in_flight: cell, ..
+         }| cell.set(false),
+    );
+    CUT_PAGE.with(
+        |CutPage {
+             history_spent: cell,
+             ..
+         }| cell.set(false),
+    );
     cut_trim_press::end_release();
 }
 
@@ -202,8 +251,8 @@ pub fn bar_gesture_for_test(
     window: &adw::ApplicationWindow,
     index: usize,
 ) -> Option<gtk::GestureDrag> {
-    ACTIVE.with(|cell| *cell.borrow_mut() = Some(window.clone()));
-    GESTURES.with(|cell| {
+    CUT_PAGE.with(|CutPage { active: cell, .. }| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(|CutPage { gestures: cell, .. }| {
         cell.borrow()
             .iter()
             .rev()

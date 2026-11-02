@@ -6,6 +6,8 @@
 
 Raw material for the spec, read off go/prep.go, prepedit.go, sources.go, transcript.go, align.go, audiocpp.go, separate.go, describe.go, retake.go, retake_edge.go, textedit.go, syscontext.go, prompts.go, subwords.go, pipeline.go.
 
+This file records the prototype; the app's behaviour is [`04-prepare.md`](../04-prepare.md). Where they differ most: no Freq, Frame size, Language or Style controls and no prompt rows on the page (frames on a 250 ms grid restarted at scene changes, language and marking pass from the User Context, prompts per profile); a text gate stage before describe; describe through tools; stages run frames, speech, then separation; text gate, describe and fix recordings run side by side up to the LLM server's `/health` slots; the default ASR is `qwen3-asr`; a join is answered as quoted `drop_before`/`drop_after`.
+
 ## A. UI
 
 Page: horizontal paned opened at half; left = sources column, right = the prompt bench.

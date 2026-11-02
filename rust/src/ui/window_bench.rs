@@ -20,6 +20,7 @@ use crate::run;
 use crate::runqueue;
 use crate::shell::{Page, Shell};
 use crate::ui::window as ui;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// §1's readout as the row draws it: the label is what `shell` computed, so this file adds no prefix of its own
 /// to it — §1 badge **15**'s word "Outputs:" is a separate label in front of the folder button (`window.rs`).
@@ -27,26 +28,29 @@ const INPUTS_PREFIX: &str = "Inputs: ";
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 const OUTPUTS_FOLDER_TIP: &str = "Open this project's output folder";
 
-// §1's badges **2**-**5**: the bench's heading row and its one text box. Everything the row says —
-// title, mark, Reset's liveness — is asked of [`bench`]; the widgets only forward.
-thread_local! {
-    static BENCH_OPEN_ROW: std::cell::RefCell<Option<usize>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// Ask the next bench built in this thread to open on `index`. Snapshot-only seam; see
 /// [`BENCH_OPEN_ROW`].
 pub fn set_bench_open_row(index: usize) {
-    BENCH_OPEN_ROW.with(|slot| *slot.borrow_mut() = Some(index));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             bench_open_row: slot,
+             ..
+         }| *slot.borrow_mut() = Some(index),
+    );
 }
 
 fn bench_open_row(count: usize) -> usize {
-    BENCH_OPEN_ROW.with(|slot| {
-        // Read ONCE and cleared: a second window built in the same process (a test round, or a second
-        // shell) must open on its own default rather than inherit the ask that was made for another.
-        let asked = slot.borrow_mut().take();
-        asked.filter(|index| *index < count).unwrap_or(0)
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             bench_open_row: slot,
+             ..
+         }| {
+            // Read ONCE and cleared: a second window built in the same process (a test round, or a second
+            // shell) must open on its own default rather than inherit the ask that was made for another.
+            let asked = slot.borrow_mut().take();
+            asked.filter(|index| *index < count).unwrap_or(0)
+        },
+    )
 }
 
 pub(crate) fn bench_box(
@@ -234,7 +238,12 @@ pub(crate) fn bench_box(
         reset_for_text.set_visible(bench::shows_reset(&current, edited));
         reset_for_text.set_sensitive(bench::shows_reset(&current, edited));
         if bench::is_context(&current) {
-            if let Some(window) = ui::POLICY_WATCH_WINDOW.with(|w| w.borrow().clone()) {
+            if let Some(window) = WINDOW_PAGE.with(
+                |WindowPage {
+                     policy_watch_window: w,
+                     ..
+                 }| w.borrow().clone(),
+            ) {
                 ui::schedule_policy_derive(&window);
             }
         }
@@ -286,7 +295,12 @@ fn paint_bench(
 pub(crate) fn paint_tabs_for(window: &adw::ApplicationWindow, project: &Project) {
     let (Some(switcher), Some(shell)) = (
         ui::find_switcher(window.upcast_ref()),
-        ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_shells: shells,
+                 ..
+             }| shells.borrow().last().cloned(),
+        ),
     ) else {
         return;
     };
@@ -329,7 +343,12 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
 
 pub fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, dir: &Path) {
     let (Some(shell), Some(inputs), Some(folder), Some(outputs)) = (
-        ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_shells: shells,
+                 ..
+             }| shells.borrow().last().cloned(),
+        ),
         ui::inputs_readout(window),
         ui::outputs_folder_button(window),
         ui::outputs_readout(window),
@@ -435,16 +454,9 @@ struct Readings {
     outputs_tip: Option<String>,
 }
 
-thread_local! {
-    /// How many readout repaints were asked; a landing paints only when it answers the newest.
-    static READOUT_ASKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-    /// Readouts read on the window thread itself: none ever should; a test reads it.
-    static READ_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
 /// How many readouts were read on this (the window's) thread.
 pub fn readouts_read_here_for_test() -> usize {
-    READ_HERE.with(std::cell::Cell::get)
+    WINDOW_PAGE.with(|page| page.read_here.get())
 }
 
 pub(crate) fn paint_readouts(
@@ -457,10 +469,14 @@ pub(crate) fn paint_readouts(
     outputs_folder: &gtk::Button,
     outputs_label: &gtk::Label,
 ) {
-    let asked = READOUT_ASKS.with(|asks| {
-        asks.set(asks.get() + 1);
-        asks.get()
-    });
+    let asked = WINDOW_PAGE.with(
+        |WindowPage {
+             readout_asks: asks, ..
+         }| {
+            asks.set(asks.get() + 1);
+            asks.get()
+        },
+    );
     let held = (
         shell.clone(),
         project.clone(),
@@ -475,7 +491,11 @@ pub(crate) fn paint_readouts(
         "readouts",
         move || {
             if !super::background::on_worker() {
-                READ_HERE.with(|count| count.set(count.get() + 1));
+                WINDOW_PAGE.with(
+                    |WindowPage {
+                         read_here: count, ..
+                     }| count.set(count.get() + 1),
+                );
             }
             let (shell, project, tree, cut, narration) = held;
             let tree = tree.as_ref();
@@ -487,7 +507,12 @@ pub(crate) fn paint_readouts(
             }
         },
         move |read: Readings| {
-            if READOUT_ASKS.with(|asks| asks.get()) == asked {
+            if WINDOW_PAGE.with(
+                |WindowPage {
+                     readout_asks: asks, ..
+                 }| asks.get(),
+            ) == asked
+            {
                 inputs_label.set_text(&format!("{INPUTS_PREFIX}{}", read.inputs));
                 // §1 badge **6**: the Inputs row's tooltip is per-file. Prepare has one; every other page's
                 // row clears it rather than keeping a stale per-source list from the tab just left.
@@ -529,7 +554,11 @@ pub(crate) fn paint_readouts(
             shell.output_dir(tree).display()
         )));
     }
-    if let Some(info) = ui::INFO_BUTTON.with(|slots| slots.borrow().last().cloned()) {
+    if let Some(info) = WINDOW_PAGE.with(
+        |WindowPage {
+             info_button: slots, ..
+         }| slots.borrow().last().cloned(),
+    ) {
         info.set_tooltip_text(Some(&shell.info_tip()));
     }
 }
@@ -558,7 +587,9 @@ pub fn repaint_run_bar(window: &adw::ApplicationWindow) {
     ) else {
         return;
     };
-    let Some(bar) = crate::ui::window::RUN_BARS.with(|bars| bars.borrow().last().cloned()) else {
+    let Some(bar) =
+        WINDOW_PAGE.with(|WindowPage { run_bars: bars, .. }| bars.borrow().last().cloned())
+    else {
         return;
     };
     let Ok(bar) = bar.try_borrow() else {

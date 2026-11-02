@@ -11,10 +11,8 @@ use naivepost::cut_hear;
 use naivepost::cut_select;
 use naivepost::cut_speed;
 use naivepost::cut_speed_pass;
-use naivepost::cut_trim;
 use naivepost::effect_rules;
 use naivepost::fx_record::{self, Field};
-use naivepost::fx_svg;
 use naivepost::fx_text;
 use naivepost::fx_zoom;
 use naivepost::render_fx;
@@ -356,35 +354,6 @@ fn sec_06_effects_7_rules_s9_only_speed_touches_the_clip_list() {
 
 // --- clause 10: camera windows have no width, overlay boxes do --------------------------------------------------------
 
-/// §06-effects#7-rules (`camera windows have no width, overlay boxes do`): a window's width is the frame's aspect
-/// read off its height; an overlay's box carries its own.
-#[test]
-fn sec_06_effects_7_rules_s10_camera_windows_have_no_width_overlay_boxes_do() {
-    use cut_mod::EffectKind;
-    assert!(
-        !fx_record::uses(EffectKind::Zoom, Field::Wf),
-        "a window has no width of its own"
-    );
-    assert!(fx_record::uses(EffectKind::Text, Field::Wf));
-    assert!(fx_record::uses(EffectKind::Svg, Field::Wf));
-    // The fractions a zoom stores are off the source frame, which is what makes one height enough.
-    assert!(fx_record::fractions_read_off_source_frame(EffectKind::Zoom));
-
-    let window = Fx {
-        kind: "zoom".into(),
-        t: 0.0,
-        dur: 2.0,
-        cx: Some(0.5),
-        cy: Some(0.5),
-        hf: Some(0.5),
-        ..Default::default()
-    };
-    assert!(window.wf.is_none(), "and the record holds none");
-    // An overlay's box, by contrast, cannot be built without one: `wf` is a plain field of it.
-    let box_ = fx_text::LOWER_THIRD;
-    assert!(box_.wf > 0.0 && box_.hf > 0.0, "{box_:?}");
-}
-
 // --- clause 11: the box belongs to the picture not the form -------------------------------------------------------------
 
 /// §06-effects#7-rules (`the box belongs to the picture not the form`): wherever a box arrives from it is held
@@ -481,58 +450,6 @@ fn sec_06_effects_7_rules_s12_forms_find_effects_by_value() {
 }
 
 // --- clause 13: one Undo per visit, empty effects never placed, a click is not a drag -------------------------------------
-
-/// §06-effects#7-rules (`one Undo per visit, drag or hold`, `empty effects are never placed`, `a click is not a
-/// drag`): the three bounds on what a gesture may cost and what a form may place.
-#[test]
-fn sec_06_effects_7_rules_s13_one_undo_per_visit_empty_never_placed_and_a_click_is_not_a_drag() {
-    assert!(
-        !cut_trim::pushes_undo(true, true),
-        "the second move of one drag is not a second edit"
-    );
-    assert!(
-        !cut_trim::pushes_undo(false, false),
-        "a press that moved nothing owes nothing back"
-    );
-
-    assert!(cut_trim::is_click(cut_trim::ROW_TRAVEL_PX - 1.0, false));
-    assert!(
-        !cut_trim::is_click(cut_trim::ROW_TRAVEL_PX, false),
-        "travel is a drag"
-    );
-
-    // Empty effects: no words, no file, no gain.
-    let blank = |words: &str| fx_text::Form {
-        t: 1.0,
-        dur: 2.0,
-        trans: 0.3,
-        tout: 0.3,
-        curve: "Linear".into(),
-        words: words.into(),
-        on: fx_text::LOWER_THIRD,
-    };
-    assert_eq!(
-        fx_text::apply(&blank("   ")),
-        Err(fx_text::NO_WORDS.to_string())
-    );
-    let no_file = fx_svg::Form {
-        t: 1.0,
-        dur: 2.0,
-        trans: 0.3,
-        tout: 0.3,
-        curve: "Linear".into(),
-        file: "  ".into(),
-        on: fx_text::LOWER_THIRD,
-    };
-    assert_eq!(fx_svg::apply(&no_file), Err(fx_svg::NO_FILE.to_string()));
-
-    let mut batch = Clips::new(&[(1, 0.0, 10.0)]);
-    let refusal = json(&batch.add_effect(1, "volume", 1.0, 3.0, Some(1.0), None));
-    assert_eq!(
-        refusal["error"],
-        "a volume gain of 1 changes nothing -- leave the audio alone"
-    );
-}
 
 // --- clause 14: framing is done paused, and the hit order on the picture ----------------------------------------------
 
@@ -694,25 +611,6 @@ fn sec_06_effects_7_rules_s17_the_lane_draws_what_the_render_does() {
 }
 
 // --- clause 18: static card files are finished pictures ----------------------------------------------------------------------
-
-/// §06-effects#7-rules (`static card files are finished pictures`): a card is drawn at the render's frame size and
-/// every animation starts at 0 and waits, so the file opened in a browser is the finished badge.
-#[test]
-fn sec_06_effects_7_rules_s18_static_card_files_are_finished_pictures() {
-    assert!(cut_cards::is_frame_size(cut_cards::CANVAS));
-    let (w, h) = cut_cards::CANVAS;
-    assert!(
-        !cut_cards::is_frame_size((w / 2, h / 2)),
-        "a half-size file is not a card"
-    );
-
-    // Waits at the start and reaches the end: the state with nothing run yet is the finished one.
-    assert!(cut_cards::starts_at_zero_and_waits(&[0.0, 0.4, 1.0]));
-    assert!(
-        !cut_cards::starts_at_zero_and_waits(&[0.25, 1.0]),
-        "caught mid-move when nothing has run"
-    );
-}
 
 // --- clause 19: a path with ? is not a file -------------------------------------------------------------------------------------
 

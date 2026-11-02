@@ -321,21 +321,6 @@ pub const TIER: &str = "tier";
 /// tiers are read aloud in.
 pub const TIER_ROWS: [&str; 6] = ["S", "A", "B", "C", "D", "F"];
 
-/// S6: is this the size a card is drawn at?
-pub fn is_frame_size(size: (i32, i32)) -> bool {
-    size == CANVAS
-}
-
-pub fn starts_at_zero_and_waits(key_times: &[f64]) -> bool {
-    let (Some(first), Some(last)) = (key_times.first(), key_times.last()) else {
-        return false;
-    };
-    if key_times.len() < 2 || *first != 0.0 || *last != 1.0 {
-        return false;
-    }
-    key_times.windows(2).all(|pair| pair[0] < pair[1])
-}
-
 /// One row's entry: `Name|logo.png`, and the logo is optional because most rows have nothing to show.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Item {
@@ -359,18 +344,6 @@ pub fn parse_items(list: &str) -> Vec<Item> {
             },
         })
         .collect()
-}
-
-/// The inverse of [`parse_items`], exact enough that a form's Save cannot reformat someone's list.
-pub fn join_items(items: &[Item]) -> String {
-    items
-        .iter()
-        .map(|item| match &item.logo {
-            Some(logo) => format!("{}|{}", item.name, logo),
-            None => item.name.clone(),
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// One arrival on the board's `new` list, with its own timing.

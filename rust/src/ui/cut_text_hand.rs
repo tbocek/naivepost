@@ -13,6 +13,7 @@ use crate::fx_text;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::cut_label_hand::label_entry_of as text_entry_of;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_refused, log_line,
     preview_picture_px, record_edit, refresh_effects_lane, refresh_selection_readout, trim_seconds,
@@ -65,7 +66,12 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     };
     holder.set_visible(false);
     cut_form_frame::clear_children(&holder);
-    LAST_TEXT_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             last_text_window: cell,
+             ..
+         }| *cell.borrow_mut() = Some(window.clone()),
+    );
 
     let heading = gtk::Label::new(Some(&fx_text::form_title(fx.t)));
     heading.set_xalign(0.0);
@@ -172,7 +178,11 @@ fn caption_form_of(fx: &cut::Fx) -> fx_text::Form {
 }
 
 pub fn text_armed() -> bool {
-    TEXT_ARMED.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             text_armed: cell, ..
+         }| cell.get(),
+    )
 }
 
 /// Take the caption arm down WITHOUT touching an open form — the mirror of `cut_svg::release_svg_arm_only`.
@@ -181,27 +191,27 @@ pub fn release_text_arm_only() {
 }
 
 fn set_text_armed(armed: bool) {
-    TEXT_ARMED.with(|cell| cell.set(armed));
+    CUT_PAGE.with(
+        |CutPage {
+             text_armed: cell, ..
+         }| cell.set(armed),
+    );
 }
 
 pub fn text_form_open() -> Option<fx_text::Form> {
-    TEXT_FORM.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             text_form: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 fn set_text_form(form: Option<fx_text::Form>) {
-    TEXT_FORM.with(|cell| *cell.borrow_mut() = form);
-}
-
-thread_local! {
-    static TEXT_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-
-    static TEXT_FORM: std::cell::RefCell<Option<fx_text::Form>> =
-        const { std::cell::RefCell::new(None) };
-
-    static LAST_TEXT_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-
-    static TEXT_FORM_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    CUT_PAGE.with(
+        |CutPage {
+             text_form: cell, ..
+         }| *cell.borrow_mut() = form,
+    );
 }
 
 /// Read one of the caption form's entries back from THIS window's tree.
@@ -211,11 +221,21 @@ fn text_entry(name: &str) -> Option<gtk::Entry> {
 
 /// The window that last drew a caption form, if any — the owner `text_form_owner` compares against.
 fn current_text_window() -> Option<adw::ApplicationWindow> {
-    LAST_TEXT_WINDOW.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             last_text_window: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
 
 fn text_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_TEXT_WINDOW.with(|cell| cut_form_buttons::owns_form(&cell.borrow(), window))
+    CUT_PAGE.with(
+        |CutPage {
+             last_text_window: cell,
+             ..
+         }| cut_form_buttons::owns_form(&cell.borrow(), window),
+    )
 }
 
 pub fn press_text_apply(window: &adw::ApplicationWindow) -> String {
@@ -276,17 +296,22 @@ pub fn text_type_words(window: &adw::ApplicationWindow, words: &str) -> String {
 }
 
 fn text_words() -> Option<String> {
-    LAST_TEXT_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), "text-field-words"))
-            .and_then(|w| w.downcast::<gtk::TextView>().ok())
-            .map(|view| {
-                let buffer = view.buffer();
-                let (start, end) = buffer.bounds();
-                buffer.text(&start, &end, true).to_string()
-            })
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_text_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), "text-field-words"))
+                .and_then(|w| w.downcast::<gtk::TextView>().ok())
+                .map(|view| {
+                    let buffer = view.buffer();
+                    let (start, end) = buffer.bounds();
+                    buffer.text(&start, &end, true).to_string()
+                })
+        },
+    )
 }
 
 pub fn press_text_cancel(window: &adw::ApplicationWindow) -> String {

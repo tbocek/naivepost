@@ -226,25 +226,6 @@ fn f0_3_s3_flag_cancel_and_kill_all() {
     );
 }
 
-/// S4: a subprocess that died because we killed it is not a failure, and the stop only lands in the gap
-/// between subprocesses rather than mid-call.
-#[test]
-fn f0_3_s4_stopped_subprocess_is_not_a_failure() {
-    // Killed with the stop flag up: the user asked for it.
-    assert!(run::stopped_is_not_failure(true, true));
-    // Same exit with the flag clear: a real crash, and must read as one.
-    assert!(!run::stopped_is_not_failure(false, true));
-    // Nothing killed: nothing to excuse either way.
-    assert!(!run::stopped_is_not_failure(true, false));
-    assert!(!run::stopped_is_not_failure(false, false));
-
-    // Where the stop takes effect: only between subprocesses. Mid-call it waits, for the same reason
-    // ▶ pauses "after the current stage" — interrupting halfway leaves a half-written file.
-    assert!(run::stop_takes_effect_between_subprocesses(true, false));
-    assert!(!run::stop_takes_effect_between_subprocesses(true, true));
-    assert!(!run::stop_takes_effect_between_subprocesses(false, false));
-}
-
 /// S5: a stop that reached Describe arms exactly one restart-from-the-start; reading it clears it.
 #[test]
 fn f0_3_s5_a_stop_inside_describe_arms_a_restart_from_the_start() {
@@ -371,45 +352,6 @@ fn f0_3_s3_the_button_leg_terminates_every_registered_child() {
             "ended by the stop leg's signal: {status:?}"
         );
     }
-}
-
-/// S4: a child that was already gone when the stop reached it is neither reported nor a failure — and
-/// signalling it twice never raises an error either way.
-#[test]
-fn f0_3_s4_a_child_already_gone_is_not_reported_and_not_a_failure() {
-    let _turn = crate::common::describe_flags_turn();
-    let mut child = std::process::Command::new("sleep")
-        .arg("0.1")
-        .spawn()
-        .expect("spawn a short sleep");
-    let pid = child.id();
-    // Let it finish on its own, so the pid is dead before anything signals it.
-    let finished = child.wait().expect("the short sleep finishes");
-    assert!(finished.success(), "it ended by itself, unaided");
-
-    let mut bar = bar_with_run(run::Step::Prepare, false);
-    let mut procs = Subprocesses::default();
-    procs.register(pid);
-    let stopped = bar.press_stop(Page::Prepare, Transport::default(), false, &mut procs);
-    let killed = match &stopped {
-        run::Stopped::RunStopped { killed } => killed.clone(),
-        other => panic!("expected the run to stop, got {other:?}"),
-    };
-
-    // First pass: the pid is already reaped, so nothing is reported as signalled.
-    let first_pass = naivepost::stop_legs::signal(&killed);
-    assert!(
-        first_pass.is_empty(),
-        "a gone pid is not claimed as killed: {first_pass:?}"
-    );
-    // And again: still nothing, and no error surfaced anywhere.
-    let second_pass = naivepost::stop_legs::signal(&killed);
-    assert!(
-        second_pass.is_empty(),
-        "signalling a gone pid twice stays quiet: {second_pass:?}"
-    );
-    // The rule S4 states, applied to the same fact: with the stop flag up, the death reads as stopped.
-    assert!(run::stopped_is_not_failure(true, true));
 }
 
 /// S5: the arming comes from the stage seam, not from a literal the caller remembers to pass.

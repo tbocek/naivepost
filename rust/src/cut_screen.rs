@@ -4,7 +4,7 @@
 //! without a display (spec/00-principles.md §5; tooltips from spec/inventory/cut.md §A). Timeline numbers have no `P.*` rows: they are spec/10-parameters.md:133's "timeline" line.
 
 use crate::cut::Cut;
-use crate::{prepare, tools};
+use crate::tools;
 
 /// Horizontal padding of every Cut-toolbar button, in px: at 2 px the verbs' icons touched. The bar must still fit §1's 1240 px floor
 /// (asserted by `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`).
@@ -216,11 +216,6 @@ pub struct Preview {
     pub cut_only: bool,
     /// ▶✂✂ is running: one join after the other.
     pub reviewing: bool,
-}
-
-/// ▶ is never greyed (§A).
-pub fn play_recording_sensitive() -> bool {
-    true
 }
 
 /// ▶✂ needs something to skip to (§A: "sensitive when segs > 0").
@@ -601,35 +596,6 @@ pub fn idle_readouts(
 
 // --- The picture band's grid (§1: "on the 250 ms grid restarted at each scene change") ----------
 
-/// Seconds one thumbnail slot spans: a `thumb_px` row of `w:h` shape is that wide, and zoom sets px per second.
-pub fn slot_seconds(thumb_px: u32, aspect: &str, pps: f64) -> f64 {
-    let (w, h) = parse_aspect(aspect);
-    if pps <= 0.0 || h == 0 {
-        return 0.0;
-    }
-    (thumb_px as f64 * w / h as f64) / pps
-}
-
-/// Does the band have a picture at every zoom? True while one slot spans no more than
-/// [`crate::prepare::EXTRACTION_GRID`] (`P.eng.frameGridSeconds`, the 250 ms grid restarted at every scene change).
-///
-/// Depends on row height and aspect as well as the grid; a 64 px 16:9 row wants a frame every 0.47 s at the ceiling,
-/// finer than the grid, so this answers `false`. The band's own round asks Prepare for one frame per slot.
-pub fn picture_at_every_zoom(pps: f64, thumb_px: u32, aspect: &str) -> bool {
-    slot_seconds(thumb_px, aspect, pps) <= prepare::EXTRACTION_GRID
-}
-
-/// `"{w}:{h}"`, or the default shape for anything else.
-fn parse_aspect(aspect: &str) -> (f64, u32) {
-    let Some((w, h)) = aspect.split_once(':') else {
-        return (16.0, 9);
-    };
-    match (w.trim().parse::<f64>(), h.trim().parse::<u32>()) {
-        (Ok(w), Ok(h)) if w > 0.0 && h > 0 => (w, h),
-        _ => (16.0, 9),
-    }
-}
-
 // --- The bands' heights (§A's "Tracks" paragraph) ----------------------------------------------
 
 /// The gutter: fold-all badge, sound switches, empty-row ✕ (§A: "first 30 px of timeline space").
@@ -654,19 +620,6 @@ pub const SCROLLBAR_DRAG_PX: f64 = 40.0;
 /// Whether there is a scrollbar at all (§1: "hidden when everything fits").
 pub fn scrollbar_shown(total_px: f64, view_px: f64) -> bool {
     total_px > view_px
-}
-
-/// §7 (`the tracks are a window drawn under a translate`): the seconds the translate puts on screen, as the range the tracks may be filled from.
-/// It never asks for a frame: nothing decodes inside a draw ([`crate::cut_trim::scrubs`] throttles the one place that may).
-///
-/// `offset_px` is how far the translate has moved the band left, clamped into the band so a drag past either end yields the edge.
-/// The gutter is not subtracted: the caller draws it over the band's first 30 px ([`GUTTER_PX`]).
-pub fn visible_window(offset_px: f64, view_px: f64, pps: f64, filmed_px: f64) -> (f64, f64) {
-    if pps <= 0.0 || view_px <= 0.0 {
-        return (0.0, 0.0);
-    }
-    let start = offset_px.clamp(0.0, filmed_px.max(0.0));
-    (start / pps, (start + view_px).min(filmed_px.max(0.0)) / pps)
 }
 
 /// ✚ Effect ▾ — §1 item 17's dropdown; the tooltip says what the six entries are for.

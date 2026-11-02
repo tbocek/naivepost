@@ -142,10 +142,6 @@ fn alive() -> Vec<Option<std::process::ExitStatus>> {
         .collect()
 }
 
-pub fn is_playing() -> bool {
-    self::alive().iter().any(|status| status.is_none())
-}
-
 /// Whether every spawned player ran to the end ("takes played") against ⏹ ("stopped playing the takes"). Empty is `false`.
 pub fn all_finished() -> bool {
     let statuses = self::alive();

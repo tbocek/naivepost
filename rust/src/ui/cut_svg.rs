@@ -9,6 +9,7 @@ use crate::fx_svg;
 use crate::fx_text;
 use crate::fx_zoom;
 use crate::shell::Page;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_refused, log_line,
     preview_picture_px, trim_seconds, zoom_field_row,
@@ -34,15 +35,9 @@ pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-thread_local! {
-    /// How many drawing choosers this thread has raised: a headless test cannot answer one, but it can see that a
-    /// press raised exactly one.
-    static SVG_CHOOSER_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
 /// How many drawing choosers have been raised. A test's look; the program never asks.
 pub fn svg_chooser_asks_for_test() -> usize {
-    SVG_CHOOSER_ASKS.with(std::cell::Cell::get)
+    CUT_PAGE.with(|page| page.svg_chooser_asks.get())
 }
 
 #[expect(
@@ -55,7 +50,12 @@ fn open_svg_chooser(
     dir: &std::path::Path,
     filter_name: &str,
 ) {
-    SVG_CHOOSER_ASKS.with(|asks| asks.set(asks.get() + 1));
+    CUT_PAGE.with(
+        |CutPage {
+             svg_chooser_asks: asks,
+             ..
+         }| asks.set(asks.get() + 1),
+    );
     let chooser = gtk::FileChooserNative::builder()
         .title(title)
         .modal(true)
@@ -111,7 +111,11 @@ pub fn svg_chosen(window: &adw::ApplicationWindow, file: Option<&str>) -> String
 }
 
 pub fn request_svg_raster(path: &str) {
-    let slot = SVG_RASTERS.with(|cell| cell.borrow_mut().request(path));
+    let slot = CUT_PAGE.with(
+        |CutPage {
+             svg_rasters: cell, ..
+         }| cell.borrow_mut().request(path),
+    );
     if slot != fx_svg::Slot::NeedsRaster {
         return;
     }
@@ -153,7 +157,11 @@ pub fn request_svg_raster(path: &str) {
 fn settle_raster(path: &str, made: Result<std::path::PathBuf, String>) {
     match made {
         Ok(file) => {
-            SVG_RASTERS.with(|cell| cell.borrow_mut().done_with(path, &file));
+            CUT_PAGE.with(
+                |CutPage {
+                     svg_rasters: cell, ..
+                 }| cell.borrow_mut().done_with(path, &file),
+            );
             log_line(&format!(
                 "preview raster ready: {} ({} px)",
                 fx_svg::base(path),
@@ -163,7 +171,11 @@ fn settle_raster(path: &str, made: Result<std::path::PathBuf, String>) {
         Err(reason) => {
             // §A.5: said ONCE per file, in the spec's own words, because a broken drawing is asked about on every
             // frame the preview draws. A repeat gets `None` and stays quiet.
-            let line = SVG_RASTERS.with(|cell| cell.borrow_mut().failure_line(path, &reason));
+            let line = CUT_PAGE.with(
+                |CutPage {
+                     svg_rasters: cell, ..
+                 }| cell.borrow_mut().failure_line(path, &reason),
+            );
             if let Some(line) = line {
                 log_line(&line);
             }
@@ -178,11 +190,19 @@ pub fn raster_dir() -> Option<std::path::PathBuf> {
 /// F3.5 S5: where this drawing's preview copy is, `None` when there is none yet (or its making failed). Read-only,
 /// so the form's picture and the preview's painter can ask without taking on a raster job themselves.
 pub fn raster_of(path: &str) -> Option<std::path::PathBuf> {
-    SVG_RASTERS.with(|cell| cell.borrow().raster_of(path))
+    CUT_PAGE.with(
+        |CutPage {
+             svg_rasters: cell, ..
+         }| cell.borrow().raster_of(path),
+    )
 }
 
 pub fn svg_raster_state(path: &str) -> fx_svg::Slot {
-    SVG_RASTERS.with(|cell| cell.borrow_mut().request(path))
+    CUT_PAGE.with(
+        |CutPage {
+             svg_rasters: cell, ..
+         }| cell.borrow_mut().request(path),
+    )
 }
 
 pub fn svg_drag_ended_with_source(
@@ -254,7 +274,12 @@ pub(crate) fn show_svg_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     };
     holder.set_visible(false);
     cut_form_frame::clear_children(&holder);
-    LAST_SVG_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             last_svg_window: cell,
+             ..
+         }| *cell.borrow_mut() = Some(window.clone()),
+    );
 
     let heading = gtk::Label::new(Some(&fx_svg::form_title(fx.t)));
     heading.set_xalign(0.0);
@@ -404,11 +429,19 @@ fn svg_form_of(fx: &cut::Fx) -> fx_svg::Form {
 
 /// F3.5: whether ▨ SVG is armed right now — waiting for a click or a drag on the preview.
 pub fn svg_armed() -> bool {
-    SVG_ARMED.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             svg_armed: cell, ..
+         }| cell.get(),
+    )
 }
 
 fn set_svg_armed(armed: bool) {
-    SVG_ARMED.with(|cell| cell.set(armed));
+    CUT_PAGE.with(
+        |CutPage {
+             svg_armed: cell, ..
+         }| cell.set(armed),
+    );
 }
 
 /// Replace the carried drawing without touching the arm or the open form -- what Choose… ends up doing once the
@@ -428,63 +461,47 @@ pub fn release_svg_arm_only() {
 
 /// The drawing the chooser handed over, which the arm sentence and the record's `src` both use.
 pub fn svg_chosen_file() -> Option<String> {
-    SVG_FILE.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(|CutPage { svg_file: cell, .. }| cell.borrow().clone())
 }
 
 fn set_svg_file(file: Option<String>) {
-    SVG_FILE.with(|cell| *cell.borrow_mut() = file);
+    CUT_PAGE.with(|CutPage { svg_file: cell, .. }| *cell.borrow_mut() = file);
 }
 
 /// F3.5 S4: the drawing form waiting on the page, before Apply. `None` is no form open, which is also what hides
 /// the holder — one slot answers both questions so they cannot disagree.
 pub fn svg_form_open() -> Option<fx_svg::Form> {
-    SVG_FORM.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(|CutPage { svg_form: cell, .. }| cell.borrow().clone())
 }
 
 fn set_svg_form(form: Option<fx_svg::Form>) {
-    SVG_FORM.with(|cell| *cell.borrow_mut() = form);
-}
-
-thread_local! {
-    static SVG_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-
-    /// The chosen drawing. Carried apart from the form because the arm happens before the form exists: the arm
-    /// sentence names the file, and the record's `src` is that same string.
-    static SVG_FILE: std::cell::RefCell<Option<String>> =
-        const { std::cell::RefCell::new(None) };
-
-    /// The form a landed box left waiting on the page.
-    static SVG_FORM: std::cell::RefCell<Option<fx_svg::Form>> =
-        const { std::cell::RefCell::new(None) };
-
-    /// The only strong handle on the window whose form is live, so a closed window's surviving tree cannot
-    /// answer for a live one (see `zoom_form_box`'s comment on the `gtk_box_append` assertion).
-    static LAST_SVG_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
-
-    /// Re-entry guard for re-greying the form's rows: GTK fires `toggled`/`notify` from its own
-    /// `set_*` calls, and a refresh that writes a field would otherwise re-enter itself.
-    static SVG_FORM_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-
-    /// The per-file preview raster cache, process-wide so one logo placed six times asks ffmpeg ONCE (S5). Not
-    /// per-window: the raster belongs to the file, not to whoever opened it.
-    static SVG_RASTERS: std::cell::RefCell<fx_svg::Rasters> = std::cell::RefCell::default();
+    CUT_PAGE.with(|CutPage { svg_form: cell, .. }| *cell.borrow_mut() = form);
 }
 
 /// Does THIS window own the live drawing form? Two windows both holding one would put Apply's write into
 /// whichever tree the reader reached first.
 fn svg_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_SVG_WINDOW.with(|cell| cut_form_buttons::owns_form(&cell.borrow(), window))
+    CUT_PAGE.with(
+        |CutPage {
+             last_svg_window: cell,
+             ..
+         }| cut_form_buttons::owns_form(&cell.borrow(), window),
+    )
 }
 
 /// Read a named Entry out of THIS window's tree, through the window that owns the form.
 fn svg_entry(name: &str) -> Option<gtk::Entry> {
-    LAST_SVG_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_svg_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        },
+    )
 }
 
 /// F3.5 S4: Apply. Reads the fields back into an [`fx_svg::Form`] and hands them to [`fx_svg::apply`], which

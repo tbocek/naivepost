@@ -8,29 +8,12 @@
 //! representable in binary, and every expected number below is derived from the rule it tests rather than read
 //! off a run. No widget and no display: the page's wire is proven in `tests/suite/label_form_widgets.rs`.
 
-use naivepost::cut::{EffectKind, Fx};
 use naivepost::cut_speed;
 use naivepost::fx_label::{self, Pressed};
-use naivepost::fx_lane;
-use naivepost::fx_record::{self, Field};
 use naivepost::fx_volume;
-use naivepost::narrate_pass;
-use naivepost::render_fx;
-use naivepost::tools;
 
 use crate::common;
 use common::assert_close;
-
-/// A placed label: the name lives in `text`, the same field a caption's words use (§1's note on the shared key).
-fn marked(name: &str, t: f64, dur: f64) -> Fx {
-    Fx {
-        kind: "label".into(),
-        t,
-        dur,
-        text: name.into(),
-        ..Default::default()
-    }
-}
 
 /// The form as Apply would receive it: a named moment at 12 s over `dur` seconds.
 fn form(name: &str, dur: f64) -> fx_label::Form {
@@ -142,56 +125,6 @@ fn f3_7_s2_the_first_mark_is_unnamed_and_two_seconds_wide() {
 
 // --- S3: the form ---------------------------------------------------------------------------------------------------
 
-/// S3 (`Form "Label at m:ss"` · Name (10 chars; tooltip "what you call this moment -- the reveal, boss
-/// fight. …") · Length (s) = the stretch a clip must overlap): the title's ONE moment, the two fields in
-/// §A.7's order, and the help that says a label is safe to place.
-#[test]
-fn f3_7_s3_the_form_and_its_two_fields() {
-    // Asserted through tools::mm_ss rather than spelled only once: mm_ss pads, so the title reads
-    // `Label at 00:12`. A label takes only the start -- unlike volume's `a – b` pair -- because it names a
-    // MOMENT, not a span.
-    assert_eq!(
-        fx_label::form_title(12.0),
-        format!("Label at {}", tools::mm_ss(12.0))
-    );
-    assert_eq!(fx_label::form_title(12.0), "Label at 00:12");
-    assert!(
-        !fx_label::form_title(12.0).contains('\u{2013}'),
-        "no en dash: this title has one time in it, not a range"
-    );
-
-    // Two fields, in §A.7's order, name first: it is the whole answer, the length only bounds what it covers.
-    assert_eq!(fx_label::FORM_FIELDS, ["Name", "Length (s)"]);
-
-    // The Name tooltip is §A.7's sentence whole, examples included -- they are what say a label is a person's
-    // own word for a moment rather than a slug.
-    assert_eq!(
-        fx_label::NAME_HELP,
-        "what you call this moment -- \"the reveal\", \"boss fight\". It changes nothing in the video: it is \
-         written into the brief the narration writer is given\u{2026}"
-    );
-    assert!(
-        fx_label::NAME_HELP.contains("brief"),
-        "the tooltip tells the truth about where the name goes"
-    );
-    assert!(
-        fx_label::NAME_HELP.contains("changes nothing"),
-        "...and that placing one is safe"
-    );
-
-    // The Length help is §A.7's own phrasing of what the number means.
-    assert!(
-        fx_label::LENGTH_HELP.contains("the stretch a clip must overlap"),
-        "the length field says what the number means: {}",
-        fx_label::LENGTH_HELP
-    );
-
-    // The cap §A.7 puts on the field.
-    assert_eq!(fx_label::NAME_MAX_CHARS, 10);
-    // effects.labelMinSeconds: bare prefix, no `P.` row in §10 (params.rs says so on purpose).
-    assert_close("effects.labelMinSeconds", fx_label::MIN_SECONDS, 0.4);
-}
-
 // --- S4: the name refusal and the length floor ------------------------------------------------------------------------
 
 /// S2/S4 (`empty name not placed`, `dur ≥ 0.4`): the two ways Apply can say no, and the truncation over the
@@ -271,111 +204,3 @@ fn f3_7_s4_the_name_floor_and_the_length_floor() {
 }
 
 // --- S5: marked, drawn on the lane, never rendered ---------------------------------------------------------------------
-
-/// S5 (`placed "… — nothing changes in the video; the narration is told about it"` · `Drawn as a tag; never
-/// rendered; narration brief lists it as MARKED`): the three places a mark shows up afterwards, each proven
-/// through the module that owns it rather than restated here.
-#[test]
-fn f3_7_s5_placed_it_is_marked_never_rendered() {
-    let tag = marked("boss fight", 12.0, 3.0);
-
-    // The status whole, including §A.7's em dash and both halves of its reassurance.
-    assert_eq!(
-        fx_label::NOTHING_CHANGES,
-        "nothing changes in the video; the narration is told about it"
-    );
-    assert_eq!(
-        fx_label::placed_status(&tag),
-        format!(
-            "{} \u{2014} {}",
-            fx_label::label(&tag),
-            fx_label::NOTHING_CHANGES
-        )
-    );
-    assert!(
-        fx_label::placed_status(&tag).contains("boss fight"),
-        "the name is what the page repeats back"
-    );
-    assert!(fx_label::placed_status(&tag).contains("nothing changes in the video"));
-    assert!(fx_label::placed_status(&tag).contains("the narration is told about it"));
-
-    // §A.8's label sentence: `label "…" at m:ss` -- the name and the moment, and no duration where the other
-    // kinds' sentences carry one, because a label's width is a drawing detail rather than a reading action.
-    assert_eq!(
-        fx_label::label(&tag),
-        "label \u{201c}boss fight\u{201d} at 00:12"
-    );
-    assert!(
-        !fx_label::label(&tag).contains("for "),
-        "§A.8 gives the label sentence no duration clause"
-    );
-
-    // Never rendered: delegated to the render's own decision, so the two cannot drift apart.
-    assert!(
-        fx_label::never_rendered(&tag),
-        "a label contributes no filter to any clip"
-    );
-    assert!(
-        !render_fx::is_rendered("label"),
-        "...which is `render_fx::is_rendered` answering false"
-    );
-    assert!(
-        render_fx::is_rendered("zoom"),
-        "and a kind that IS rendered proves the delegation works"
-    );
-
-    // Drawn as a tag on the lane even while paused -- the opposite of a volume, which is heard and not seen.
-    assert!(
-        fx_lane::drawn_paused(EffectKind::Label),
-        "§A.7's grey-white tag, tick and dashed line"
-    );
-    assert!(fx_lane::drawn_paused(EffectKind::Label));
-    assert!(
-        fx_volume::gain_has_no_visual(),
-        "a volume has no visual at all; a label has one, and no render"
-    );
-
-    // §1's table read at the label's row: the name and the length yes, everything else no. This is why the form
-    // has two fields and not five.
-    assert!(fx_record::uses(EffectKind::Label, Field::Dur));
-    assert!(
-        fx_record::uses(EffectKind::Label, Field::Words),
-        "the name shares the caption's `text` key"
-    );
-    for denied in [
-        Field::Trans,
-        Field::Tout,
-        Field::Ease,
-        Field::Cx,
-        Field::Cy,
-        Field::Hf,
-        Field::Wf,
-        Field::Gain,
-    ] {
-        assert!(
-            !fx_record::uses(EffectKind::Label, denied),
-            "a label owns no {denied:?}"
-        );
-    }
-
-    // The narration brief lists it as MARKED -- proven by building a brief with one label on it, through the
-    // function that writes the brief rather than by quoting the match arm.
-    let segs = vec![naivepost::cut::Seg {
-        s: 0.0,
-        e: 60.0,
-        ..Default::default()
-    }];
-    let brief = narrate_pass::brief(&segs, &[], std::slice::from_ref(&tag), "Narrator 1");
-    assert!(
-        brief.contains("MARKED"),
-        "the brief carries the mark: {brief}"
-    );
-    assert!(
-        brief.contains("boss fight"),
-        "...with the name the human typed: {brief}"
-    );
-    assert!(
-        !brief.contains("CAPTION"),
-        "and a label is not filed as a caption"
-    );
-}

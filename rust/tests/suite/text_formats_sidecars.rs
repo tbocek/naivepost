@@ -422,62 +422,6 @@ fn sec_01_project_and_files_6_text_formats_a_recording_under_the_short_take_boun
 // --- meta.env, .frames, scenes.tsv --------------------------------------------
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_meta_env_is_key_value_lines_whose_existence_says_the_sources_were_read(
-) {
-    let (_root, t) = project("meta");
-    // Nothing read yet.
-    assert!(!requests::sources_read(&t));
-
-    // §1's keys: INTERVAL and SCALE always, the two video ones with footage, the two audio
-    // ones when narrator 1 resolves. Order is kept, because the file is read by scripts.
-    let pairs = [
-        ("INTERVAL", "1.0"),
-        ("SCALE", "720p"),
-        ("VIDEO_FILE", "/media/a.mkv"),
-        ("VIDEO_BASE", "a"),
-        ("AUDIO_FILE", "=weird=path with spaces.wav"),
-        ("AUDIO_BASE", "weird"),
-    ];
-    requests::write_meta(&t, &pairs.map(|(k, v)| (k.to_string(), v.to_string()))).unwrap();
-
-    let text = read(&t.meta_env());
-    assert_eq!(text.lines().next().unwrap(), "INTERVAL=1.0", "{text}");
-    // Its existence is the whole answer to "were the sources read".
-    assert!(requests::sources_read(&t));
-
-    // Values verbatim: no quoting, no escaping, and a `=` in the value splits on the first
-    // one only.
-    let back = requests::read_meta(&t).unwrap();
-    assert_eq!(back.len(), 6);
-    assert_eq!(
-        back[4],
-        (
-            "AUDIO_FILE".to_string(),
-            "=weird=path with spaces.wav".to_string()
-        )
-    );
-    assert_eq!(back, pairs.map(|(k, v)| (k.to_string(), v.to_string())));
-
-    // Blank lines and comments are not entries.
-    plant(
-        &t.meta_env(),
-        "# a note for whoever opens this\n\nINTERVAL=1.0\n",
-    );
-    assert_eq!(requests::read_meta(&t).unwrap().len(), 1);
-    assert!(requests::sources_read(&t));
-
-    // A line that is not KEY=VALUE is an error naming it, not a silently skipped entry.
-    plant(&t.meta_env(), "INTERVAL\n");
-    let err = requests::read_meta(&t).unwrap_err();
-    assert!(err.contains("KEY=VALUE"), "{err}");
-
-    // No file is no entries — and still "not read".
-    let (_root, fresh) = project("meta-fresh");
-    assert!(requests::read_meta(&fresh).unwrap().is_empty());
-    assert!(!requests::sources_read(&fresh));
-}
-
-#[test]
 fn sec_01_project_and_files_6_text_formats_the_frames_marker_holds_the_grid_and_the_scene_threshold(
 ) {
     let (_root, t) = project("frames");

@@ -5,6 +5,7 @@ use crate::produce_screen as screen;
 use crate::project::{Codec, Container, Subtitles};
 use crate::ui::narrate_page::say;
 use crate::ui::produce_page::*;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub(crate) fn store_setting(row: &str, value: &str) -> String {
     mutate(|s| store_setting_on(s, row, value))
@@ -132,8 +133,8 @@ pub(crate) fn encoder_state(produce: &crate::project::Produce) -> ProduceState {
 }
 
 pub(crate) fn encoder_profile() -> Option<String> {
-    let used = crate::ui::window::SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    let used = WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .and_then(|session| session.borrow().profile.clone())?;
     let paths = crate::settings::from_environment()?;
     let template = crate::profile::parse(&crate::profile::load(&paths, &used.name).ok()?).ok()?;
@@ -223,9 +224,12 @@ pub(crate) fn keep_page_publish() {
 
 /// The page onto the project's record, which wins when the project opens. `own` is the page's outright, as the merge only adds it.
 pub(crate) fn keep_record() {
-    let Some(session) =
-        crate::ui::window::PLAY_SESSION.with(|slots| slots.borrow().last().cloned())
-    else {
+    let Some(session) = WINDOW_PAGE.with(
+        |WindowPage {
+             play_session: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    ) else {
         return;
     };
     let page = crate::ui::produce_snapshot::publish_of_state(&read_state());
@@ -239,9 +243,12 @@ pub(crate) fn keep_record() {
 /// The encoder settings kept in both places: the window's session (written whole by autosave and close) and the file.
 /// The file alone let the next autosave put back the settings the window opened with.
 pub(crate) fn keep_produce(produce: &crate::project::Produce) -> Result<(), String> {
-    if let Some(session) =
-        crate::ui::window::PLAY_SESSION.with(|slots| slots.borrow().last().cloned())
-    {
+    if let Some(session) = WINDOW_PAGE.with(
+        |WindowPage {
+             play_session: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    ) {
         session.borrow_mut().produce = produce.clone();
     }
     let dir = crate::startup::open_dir();

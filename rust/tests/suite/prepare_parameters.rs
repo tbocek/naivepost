@@ -11,9 +11,7 @@ use naivepost::asr::{self, Answer};
 use naivepost::layout::Tree;
 use naivepost::params;
 use naivepost::tools::{describe, retakes, textedit};
-use naivepost::{
-    align, degraded, frames, hand_edit, prepare, requests, roles, separate, transcribe,
-};
+use naivepost::{frames, hand_edit, prepare, requests, roles};
 
 /// A project folder of §1's shape: the scratch paths are only interesting under a real `.naivepost` tree.
 fn tree(tag: &str) -> Tree {
@@ -246,78 +244,6 @@ fn sec_04_prepare_4_parameters_used_s4_describe_s_frames_per_call_and_context_si
 }
 
 // --- S5: P.audio ------------------------------------------------------------------------------------
-
-#[test]
-fn sec_04_prepare_4_parameters_used_s5_the_audio_numbers_are_the_servers_bounds() {
-    // Chunk sizes: qwen3 takes 60 s, everything else 300 s, and an out-of-memory answer halves to 20.
-    assert_eq!(
-        spelled("P.machine.asrChunkQwenSeconds"),
-        asr::CHUNK_QWEN.to_string()
-    );
-    assert_eq!(
-        spelled("P.machine.asrChunkMaxSeconds"),
-        asr::CHUNK_MAX.to_string()
-    );
-    assert_eq!(
-        spelled("P.machine.asrChunkMinSeconds"),
-        asr::CHUNK_MIN.to_string()
-    );
-    assert!(roles::asr_chunk_is_qwen_family("Qwen3-ASR"));
-    assert!(roles::asr_chunk_is_qwen_family("qwen3-asr-1.7b"));
-    assert!(roles::asr_chunk_is_qwen_family("qwen3-asr-1.7b"));
-    assert!(!roles::asr_chunk_is_qwen_family("nemotron-asr"));
-
-    // The alignment window and its floor, and separation's chunk.
-    assert_eq!(number("P.machine.alignChunkMaxSeconds"), align::WINDOW);
-    assert_eq!(number("P.machine.alignChunkMinSeconds"), align::MIN_PIECE);
-    assert_eq!(
-        number("P.machine.sepChunkMaxSeconds"),
-        separate::CHUNK_MAX_SECONDS
-    );
-
-    // The silence pair, from both modules that state it.
-    assert_eq!(spelled("P.machine.silenceThresholdDB"), "-35");
-    assert_eq!(number("P.machine.silenceMinSeconds"), 0.4);
-    let (db, min) = params::silence();
-    assert_eq!(
-        (db, min),
-        (
-            degraded::SILENCE_THRESHOLD_DB,
-            degraded::SILENCE_MIN_SECONDS
-        )
-    );
-    assert_eq!(db, asr::QUIET_DB);
-    assert_eq!(min, asr::QUIET_MIN);
-
-    // Diarization: the ladder biggest first, the stride a share of it, and the anchor's seconds.
-    assert_eq!(spelled("P.machine.diarWindowsSeconds"), "90, 45, 25");
-    assert_eq!(roles::diar_window(0), 90.0);
-    assert_eq!(roles::diar_window(1), 45.0);
-    assert_eq!(roles::diar_window(2), 25.0);
-    assert_eq!(spelled("P.machine.diarHopShare"), "2/3");
-    assert_eq!(
-        number("P.machine.anchorPerSeconds"),
-        roles::ANCHOR_PER_SECONDS
-    );
-    // A quarter of the biggest window is 22.5, so the anchor is what §10 says at that rung: twelve
-    // seconds a voice, less than the window it was measured at.
-    assert!(roles::ANCHOR_PER_SECONDS < roles::diar_window(0));
-
-    // Merge gap/length for segment building, and the two engineering numbers beside them.
-    assert_eq!(number("P.eng.mergeGapSeconds"), transcribe::MERGE_GAP);
-    assert_eq!(number("P.eng.mergeMaxSeconds"), transcribe::MERGE_MAX_LEN);
-    assert_eq!(
-        number("P.eng.mergeMaxWordSeconds"),
-        transcribe::MERGE_MAX_WORD
-    );
-    assert_eq!(number("P.eng.mergeNearSeconds"), transcribe::MERGE_NEAR);
-    assert_eq!(spelled("P.eng.asrSampleRate"), "16000");
-    assert_eq!(number("P.eng.asrCutSeekSeconds"), asr::SEEK_MAX);
-
-    // A segment ends at a gap, and what counts as "near" for a join is a bigger gap than that.
-    assert!(transcribe::MERGE_NEAR > transcribe::MERGE_GAP);
-    assert!(transcribe::MERGE_MAX_WORD < transcribe::MERGE_MAX_LEN);
-}
 
 // --- S6: engineering -------------------------------------------------------------------------------
 

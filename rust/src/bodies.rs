@@ -59,29 +59,6 @@ pub fn align_body(model: &str, audio: &ServerPath, text: &str, language: &str) -
     })
 }
 
-/// `POST /v1/audio/speech`: `{"model","input","voice_ref","language","options"}`.
-///
-/// `voice_ref` is the uploaded path of `narrate/voice_ref.wav`, the pitch-shifted reference the model clones from ([`crate::layout::Tree::voice_ref_wav`]), re-uploaded per line
-/// ([`VOICE_REF_REUPLOADED_EVERY_LINE`]). `options` is the emotion vector plus the `seed` that makes a take reproducible.
-///
-/// `language` is P.policy.ttsLanguage, the same one ASR and alignment send; the prototype hard-coded `"en"` (go/narrate_tts.go:325-329), which reads Polish words as English spelling.
-pub fn speech_body(
-    model: &str,
-    text: &str,
-    voice_ref: &ServerPath,
-    language: &str,
-    emotion: &[f64],
-    seed: i64,
-) -> Value {
-    speech_request(
-        model,
-        text,
-        voice_ref,
-        language,
-        json!({ "emotion": emotion, "seed": seed }),
-    )
-}
-
 /// The one envelope `POST /v1/audio/speech` takes: `{"model","input","voice_ref","language","options"}`.
 ///
 /// Split from [`speech_body`] because what belongs in `options` is a flow of its own (F4.4's two emotion branches); the endpoint drops unknown keys, so a top-level extra is lost.

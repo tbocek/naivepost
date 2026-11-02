@@ -22,10 +22,6 @@ pub fn attempts() -> u32 {
     BLOCK_TRIES
 }
 
-pub fn more_tries_left(asked: u32) -> bool {
-    asked < BLOCK_TRIES
-}
-
 /// What a block that ran out of tries says.
 pub fn give_up_log(base: &str, index: usize, total: usize) -> String {
     format!(
@@ -159,21 +155,6 @@ pub fn blocks(lines: &[Line]) -> Vec<Vec<Line>> {
 /// S2: the grounding window around a block — five seconds either side ([`FIX_CONTEXT_SECONDS`]).
 pub fn context_window(start: f64, end: f64) -> (f64, f64) {
     (start - FIX_CONTEXT_SECONDS, end + FIX_CONTEXT_SECONDS)
-}
-
-/// S2: which blocks a source's rows go out in.
-pub fn asks_for(blocks: &[Vec<Line>], from: f64, to: f64) -> Vec<(usize, f64, f64)> {
-    blocks
-        .iter()
-        .enumerate()
-        .filter_map(|(index, block)| {
-            let (first, last) = (block.first()?, block.last()?);
-            // The window reaches five seconds past the block at both ends; it is clipped at the
-            // session's own edges, since nothing outside the timeline can be grounding.
-            let (open, close) = context_window(first.start, last.end);
-            Some((index + 1, open.max(from), close.min(to)))
-        })
-        .collect()
 }
 
 /// S2: the grounding itself.
@@ -489,14 +470,6 @@ fn apply(block: &Block, lines: &[Line]) -> Vec<Line> {
         .collect()
 }
 
-/// S4: what a block that ran out of tries says.
-pub fn block_failed_log(base: &str, index: usize, total: usize) -> String {
-    format!(
-        ">>> [{base}] block {}/{total} failed validation, keeping original lines",
-        index + 1
-    )
-}
-
 /// S3: how many of this source's blocks were read back from `cache/llm/fix` rather than asked again.
 pub fn cached_blocks_log(base: &str, cached: usize) -> String {
     format!(">>> [{base}] {cached} block(s) answered from the cache")
@@ -694,11 +667,6 @@ where
         MarkingPass::None => Ok(Vec::new()),
         _ => mark(),
     }
-}
-
-/// S6/S7: fold the marks into the timeline's text, one line apiece.
-pub fn fold_marks(rows: &[SessionLine], marks: &[Mark]) -> String {
-    labelled(rows, "", marks)
 }
 
 /// [`fold_marks`] with the narrator's row named: what the user opens and what the cut model reads are

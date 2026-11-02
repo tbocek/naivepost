@@ -57,6 +57,7 @@ pub mod produce_page_presses;
 pub mod produce_page_rows;
 pub mod produce_page_run;
 pub mod produce_page_settings;
+pub(crate) mod produce_page_state;
 pub mod produce_page_wire;
 /// §08-produce#1-screen 2 and 7: the PAINT funcs for this page's plates (the thumbnail with its
 /// words and crop box, each image slot).
@@ -599,3 +600,6 @@ pub use window::remove_held_effect;
 pub use window_outputs::{
     folder_now, wire_with as wire_outputs_folder_with, Opener as OutputsOpener,
 };
+pub(crate) mod cut_page_state;
+pub(crate) mod narrate_page_state;
+pub(crate) mod window_page_state;

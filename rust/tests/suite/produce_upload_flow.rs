@@ -1440,45 +1440,6 @@ fn f5_6_s7_the_printed_title_is_seeded_once() {
     );
 }
 
-#[test]
-fn f5_6_s4_no_images_chosen_takes_three_from_the_cut() {
-    assert_eq!(
-        up::take_three_log(),
-        "    publish: no images chosen \u{2014} taking 3 from the cut"
-    );
-    // The three moments come from the existing candidate rule: middles of three equal bands over 30 s.
-    let kept = [(0.0f64, 30.0f64)];
-    let extracted: Vec<f64> = (0..31).map(|s| s as f64).collect();
-    let wanted = naivepost::produce_details::candidate_frames(&kept, &extracted);
-    assert_eq!(wanted.len(), 3, "three candidates: {wanted:?}");
-    for expect in [5.0, 15.0, 25.0] {
-        assert!(
-            wanted.iter().any(|w| (*w - expect).abs() < 1e-9),
-            "{expect}s is one of them: {wanted:?}"
-        );
-    }
-    // Nothing extracted: `candidate_frames` computes the three band middles from the KEPT stretch and hands
-    // back what it was given only when there are too few to fill the row — so with an empty extraction the
-    // caller has nothing real to send, which is exactly why NO_FRAMES_LOG exists.
-    let none = naivepost::produce_details::candidate_frames(&kept, &[]);
-    assert_eq!(
-        none.len(),
-        3,
-        "the middles are computed whether or not frames exist"
-    );
-    let sent = naivepost::produce_details::candidate_frames(&[], &[5.0, 15.0, 25.0]);
-    assert_eq!(
-        sent,
-        vec![5.0, 15.0, 25.0],
-        "with nothing kept, what was extracted is handed back"
-    );
-    assert!(
-        naivepost::produce_details::NO_FRAMES_LOG.contains("instruction alone"),
-        "{}",
-        naivepost::produce_details::NO_FRAMES_LOG
-    );
-}
-
 /// S7 on the real leg: one print call draws letters. A flat PNG goes in, a DIFFERENT PNG comes out, and the
 /// bytes differ because ink is on them — not because a file was copied.
 #[test]

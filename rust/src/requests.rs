@@ -431,33 +431,6 @@ pub fn write_meta(tree: &layout::Tree, pairs: &[(String, String)]) -> Result<(),
     write_raw(&tree.meta_env(), out.as_bytes())
 }
 
-/// Read `meta.env`, in order.
-pub fn read_meta(tree: &layout::Tree) -> Result<Vec<(String, String)>, String> {
-    let path = tree.meta_env();
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return Err(format!("{}: {err}", path.display())),
-    };
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let line = line.trim_end();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let (key, value) = line
-            .split_once('=')
-            .ok_or_else(|| format!("{}: {line:?} is not KEY=VALUE", path.display()))?;
-        out.push((key.to_string(), value.to_string()));
-    }
-    Ok(out)
-}
-
-/// Has the sources step run?
-pub fn sources_read(tree: &layout::Tree) -> bool {
-    tree.meta_env().exists()
-}
-
 /// Write `.frames`: `<grid>|<scene threshold>`.
 pub fn write_frames_marker(
     tree: &layout::Tree,

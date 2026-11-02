@@ -159,17 +159,6 @@ pub fn first_press_pick(edge_px: f64, inside: bool) -> PressPick {
     }
 }
 
-/// F2.4 S2 + `spec/inventory/cut.md` §D: what a frame step does while something is held: the hold steps, never the line (edge, clip, effect).
-/// `None` means nothing was held.
-pub fn step_hold(held: Option<Held>) -> Option<&'static str> {
-    match held {
-        Some(Held::Edge) => Some("edge"),
-        Some(Held::Clip) => Some("clip"),
-        Some(Held::Effect) => Some("effect"),
-        None => None,
-    }
-}
-
 /// F2.4 S2: frames per press: one for `f` and ← / →, five with `Shift` (or ‹‹ / ››).
 pub fn step_frames(shift: bool) -> i64 {
     if shift {

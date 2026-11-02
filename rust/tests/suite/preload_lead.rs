@@ -88,19 +88,6 @@ fn p_eng_preloadleadseconds_s4_the_tolerance_marks_now() {
 
 // --- S5: the same question from the current clip's end ----------------------------------------
 
-#[test]
-fn p_eng_preloadleadseconds_s5_remaining_time_on_this_clip() {
-    common::pin_private_cwd();
-    // The jump is happening now, or soon enough to matter.
-    assert!(preview::opens_ahead(0.0));
-    assert!(preview::opens_ahead(2.0));
-    // Inclusive at the lead: exactly three seconds left preloads rather than risking the reload.
-    assert!(preview::opens_ahead(preview::PRELOAD_LEAD_SECONDS));
-    // Any more and the next clip can wait its turn.
-    assert!(!preview::opens_ahead(preview::PRELOAD_LEAD_SECONDS + 1.0));
-    assert!(!preview::opens_ahead(30.0));
-}
-
 // --- S6: one row, one home --------------------------------------------------------------------
 
 #[test]

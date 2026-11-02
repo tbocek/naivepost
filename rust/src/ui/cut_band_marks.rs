@@ -5,6 +5,7 @@ use adw::prelude::*;
 use crate::cut::Seg;
 use crate::cut_verbs::Badge;
 use crate::timeline::Recording;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::cut_tracks::{self, Rows, Scene};
 use crate::{cut, cut_cam, cut_fold, cut_hear, cut_screen};
 
@@ -137,11 +138,6 @@ pub fn marks_for(
     }
 }
 
-thread_local! {
-    static WHOLE: std::cell::RefCell<Option<(std::path::PathBuf, std::time::SystemTime, Vec<String>)>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// The recordings the open project's join pass took out entire, read off `retakes.tsv` and re-read only when
 /// that file changes (the band asks on every draw).
 pub fn whole_takes() -> Vec<String> {
@@ -152,7 +148,7 @@ pub fn whole_takes() -> Vec<String> {
     let Ok(changed) = std::fs::metadata(&file).and_then(|meta| meta.modified()) else {
         return Vec::new();
     };
-    if let Some(held) = WHOLE.with(|cell| {
+    if let Some(held) = CUT_PAGE.with(|CutPage { whole: cell, .. }| {
         cell.borrow()
             .as_ref()
             .filter(|(path, at, _)| *path == file && *at == changed)
@@ -171,7 +167,9 @@ pub fn whole_takes() -> Vec<String> {
         })
         .filter(|base| !base.is_empty())
         .collect();
-    WHOLE.with(|cell| *cell.borrow_mut() = Some((file, changed, bases.clone())));
+    CUT_PAGE.with(|CutPage { whole: cell, .. }| {
+        *cell.borrow_mut() = Some((file, changed, bases.clone()))
+    });
     bases
 }
 

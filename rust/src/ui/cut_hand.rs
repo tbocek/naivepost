@@ -8,6 +8,7 @@
 use crate::cut::{Fx, Seg};
 use crate::cut_line::Held;
 use crate::cut_rules;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 
 /// What the hand is holding, with the thing itself beside the kind so ⌦ and the frame-step doors need no second lookup.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,15 +32,10 @@ impl Hand {
     }
 }
 
-thread_local! {
-    /// The window's one hold. `None` = nothing picked up, also what a release leaves behind.
-    static HELD: std::cell::RefCell<Option<Hand>> = const { std::cell::RefCell::new(None) };
-}
-
 /// Put `next` in the hand, whatever was in it before; [`cut_rules::pick_up`] decides the replacement, so a
 /// second pickup cannot join the first. Returns what the hand holds afterwards, always `Some(next)`.
 pub fn pick_up(next: Hand) -> Option<Hand> {
-    HELD.with(|cell| {
+    CUT_PAGE.with(|CutPage { held: cell, .. }| {
         // The rule answers WHICH kind the hand ends on; the payload follows that answer.
         let kind = cut_rules::pick_up(next.kind()).unwrap_or_else(|| next.kind());
         *cell.borrow_mut() = Some(match kind {
@@ -53,19 +49,19 @@ pub fn pick_up(next: Hand) -> Option<Hand> {
 
 /// Empty the hand: a release, a ⌦ that took the thing away, or a form that consumed it.
 pub fn clear_all() {
-    HELD.with(|cell| *cell.borrow_mut() = None);
+    CUT_PAGE.with(|CutPage { held: cell, .. }| *cell.borrow_mut() = None);
 }
 
 /// Which kind is in hand, in the order §1 S1 steps the picks; what a frame-step or arrow press asks.
 pub fn held_kind() -> Option<Held> {
-    HELD.with(|cell| cell.borrow().as_ref().map(Hand::kind))
+    CUT_PAGE.with(|CutPage { held: cell, .. }| cell.borrow().as_ref().map(Hand::kind))
 }
 
 /// The clip the hand took as a WHOLE clip. An EDGE hold names the same segment but means "this border only",
 /// and reading it as a whole clip would slide the scene instead of nudging one border. Doors that move
 /// whatever segment is in hand read [`held_clip_or_edge`].
 pub fn held_clip() -> Option<Seg> {
-    HELD.with(|cell| {
+    CUT_PAGE.with(|CutPage { held: cell, .. }| {
         cell.borrow().as_ref().and_then(|held| match held {
             Hand::Clip(seg) => Some(seg.clone()),
             _ => None,
@@ -75,7 +71,7 @@ pub fn held_clip() -> Option<Seg> {
 
 /// The segment in hand, whole clip or only its edge: what a trim, an insert edit or ⌦ is to move.
 pub fn held_clip_or_edge() -> Option<Seg> {
-    HELD.with(|cell| {
+    CUT_PAGE.with(|CutPage { held: cell, .. }| {
         cell.borrow().as_ref().and_then(|held| match held {
             Hand::Edge(seg) | Hand::Clip(seg) => Some(seg.clone()),
             Hand::Effect(_) => None,
@@ -85,7 +81,7 @@ pub fn held_clip_or_edge() -> Option<Seg> {
 
 /// Only an EDGE pick answers here: nudging one border versus dragging a whole clip.
 pub fn held_edge() -> Option<Seg> {
-    HELD.with(|cell| {
+    CUT_PAGE.with(|CutPage { held: cell, .. }| {
         cell.borrow().as_ref().and_then(|held| match held {
             Hand::Edge(seg) => Some(seg.clone()),
             _ => None,
@@ -95,7 +91,7 @@ pub fn held_edge() -> Option<Seg> {
 
 /// The effect in hand, if the hand holds one.
 pub fn held_effect() -> Option<Fx> {
-    HELD.with(|cell| {
+    CUT_PAGE.with(|CutPage { held: cell, .. }| {
         cell.borrow().as_ref().and_then(|held| match held {
             Hand::Effect(fx) => Some(fx.clone()),
             _ => None,

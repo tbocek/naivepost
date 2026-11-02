@@ -1,8 +1,6 @@
 //! Gaps this audit closed — `spec/12-decisions.md` §5.
 
 use crate::narration::{Entry, Silent};
-use crate::roles::Job;
-use crate::tools::{self, Tool};
 
 /// Whether an addition is a whole tool or an argument added to one that already existed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,128 +18,6 @@ pub struct Added {
     pub kind: AdditionKind,
     /// The gap, in the terms §5 gives for it.
     pub why: &'static str,
-}
-
-/// The eight additions, in §5's order.
-pub fn additions() -> [Added; 8] {
-    [
-        Added {
-            name: "get_frames",
-            kind: AdditionKind::Tool,
-            why: "promised in the principles chapter and never defined until this audit asked who shows \
-                 the model a picture",
-        },
-        Added {
-            name: "speech_around",
-            kind: AdditionKind::Tool,
-            why: "the brief extracts two lines per side; a describer asking about a stretch needs every \
-                 line spoken in it, from every recording",
-        },
-        Added {
-            name: "flag_line",
-            kind: AdditionKind::Tool,
-            why: "a wrong speaker or mis-timed row is 'not yours to fix' with nowhere to say so; this \
-                 is the channel where the note is logged and the line stands",
-        },
-        Added {
-            name: "get_words",
-            kind: AdditionKind::Tool,
-            why: "the seam brief shows a fixed reach; without more words the model cannot tell whether \
-                 it is being short-changed at the join",
-        },
-        Added {
-            name: "cut_status",
-            kind: AdditionKind::Tool,
-            why: "the same reading finish_cut gives, available at any time, so a cut is not discovered \
-                 short only at the end",
-        },
-        Added {
-            name: "list_emotions",
-            kind: AdditionKind::Tool,
-            why: "the eight bases, their kin words and the named blends were a table the prototype kept \
-                 to itself, so an unknown tag silently meant something else",
-        },
-        Added {
-            name: "describe_insert",
-            kind: AdditionKind::Tool,
-            why: "the prototype passed only the file name, so a full-screen graphic was known to the \
-                  writer as tier.svg?S=Dust II",
-        },
-        Added {
-            name: "box",
-            kind: AdditionKind::Argument,
-            why: "add_effect without a box could only punch into the middle; the prompt asks for zooms \
-                  onto the score, the face, the mistake",
-        },
-    ]
-}
-
-/// The read set — tools whose answer tells the model something rather than changing anything.
-const READS: [Tool; 9] = [
-    Tool::GetContext,
-    Tool::GetLines,
-    Tool::GetEvents,
-    Tool::GetFrames,
-    Tool::SpeechAround,
-    Tool::GetWords,
-    Tool::ListEmotions,
-    Tool::CutStatus,
-    Tool::DescribeInsert,
-];
-
-/// Is this tool a read?
-pub fn is_read(tool: Tool) -> bool {
-    READS.contains(&tool)
-}
-
-/// The jobs §5's every-job-names-its-reads claim covers.
-pub fn covered_jobs() -> [Job; 7] {
-    [
-        Job::Describe,
-        Job::CleanTranscript,
-        Job::Retakes,
-        Job::Joins,
-        Job::ModelCut,
-        Job::ClipRules,
-        Job::Narrate,
-    ]
-}
-
-/// Plus the two output-text jobs, which also get reads and are part of the same claim.
-pub fn covered_output_jobs() -> [Job; 3] {
-    [Job::UploadText, Job::Thumbnail, Job::Subtitles]
-}
-
-/// Every job the claim covers, in the order the pipeline runs them.
-pub fn all_covered_jobs() -> Vec<Job> {
-    let mut jobs: Vec<Job> = covered_jobs().to_vec();
-    jobs.extend(covered_output_jobs());
-    jobs
-}
-
-/// Does this job get at least one read tool alongside whatever it writes?
-pub fn job_names_reads(job: Job) -> bool {
-    tools::offered(job).iter().any(|t| is_read(*t))
-}
-
-/// How many reads the job was offered — the number a failure message should show, because §5's contrast
-/// ("before, only the policy job had one") is about counts, not presence.
-pub fn read_count(job: Job) -> usize {
-    tools::offered(job).iter().filter(|t| is_read(**t)).count()
-}
-
-/// Whether a tool reply says more than bare success.
-pub fn result_carries_more_than_ok(reply: &str) -> bool {
-    let Ok(body) = serde_json::from_str::<serde_json::Value>(reply) else {
-        return false;
-    };
-    if body.get("error").is_some() {
-        return false;
-    }
-    match body.as_object() {
-        Some(map) => !map.is_empty(),
-        None => false,
-    }
 }
 
 /// A prototype behaviour §5 marks as a defect rather than a design.
@@ -211,14 +87,6 @@ pub fn silent_survives_entry_rewrite(
     _new_entries: &[Entry],
 ) -> Vec<Silent> {
     silent.to_vec()
-}
-
-/// Whether a placement comes from the app rather than from translated text.
-pub fn tag_is_app_owned(pos: &str) -> bool {
-    matches!(
-        pos.trim().to_ascii_lowercase().as_str(),
-        "top" | "center" | "centre" | "middle" | "bottom" | ""
-    )
 }
 
 /// Whether the picture's title gets reprinted.

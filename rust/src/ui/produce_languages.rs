@@ -9,6 +9,7 @@ use std::rc::Rc;
 use crate::produce_screen as screen;
 use crate::project::TitleBox;
 use crate::ui::produce_page::ProduceState;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 /// What a tick hands back to the page: `guarded` reads the repaint guard, `changed` records the tick.
 type Guard = Rc<dyn Fn() -> bool>;
@@ -537,10 +538,6 @@ fn write_picture_stamp(tree: &crate::layout::Tree, hash: &str) -> Result<(), Str
     std::fs::write(&path, format!("{hash}\n")).map_err(|why| format!("{}: {why}", path.display()))
 }
 
-thread_local! {
-    static DRAW: std::cell::RefCell<Option<(DrawSlot, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
-}
-
 /// Load a scripted draw for the next words half on this thread, with no picture: the walk then
 /// reports the job finished with no image, exactly as it does for a live server that answers `done`
 /// without one.
@@ -549,17 +546,17 @@ pub fn set_draw_for_test(draw: DrawSlot) {
 }
 
 pub fn set_draw_picture_for_test(draw: DrawSlot, png: Vec<u8>) {
-    DRAW.with(|cell| cell.replace(Some((draw, png))));
+    PAGE.with(|ProducePage { draw: cell, .. }| cell.replace(Some((draw, png))));
 }
 
 /// Unload a scripted draw: the real submit and poll legs stand again on this thread (a test that
 /// dials a fake sd.cpp over HTTP after another check scripted the draw).
 pub fn clear_draw_for_test() {
-    DRAW.with(|cell| cell.replace(None));
+    PAGE.with(|ProducePage { draw: cell, .. }| cell.replace(None));
 }
 
 fn scripted_png() -> Option<Vec<u8>> {
-    DRAW.with(|cell| cell.borrow().as_ref().map(|(_, png)| png.clone()))
+    PAGE.with(|ProducePage { draw: cell, .. }| cell.borrow().as_ref().map(|(_, png)| png.clone()))
 }
 
 pub type DrawSlot = std::sync::Arc<
@@ -567,7 +564,7 @@ pub type DrawSlot = std::sync::Arc<
 >;
 
 pub(crate) fn carried_draw() -> Option<(DrawSlot, Vec<u8>)> {
-    DRAW.with(|cell| cell.borrow().clone())
+    PAGE.with(|ProducePage { draw: cell, .. }| cell.borrow().clone())
 }
 
 pub(crate) fn load_draw(carried: Option<(DrawSlot, Vec<u8>)>) {
@@ -579,7 +576,7 @@ pub(crate) fn load_draw(carried: Option<(DrawSlot, Vec<u8>)>) {
 /// The scripted draw leg: the script when one is loaded, otherwise the REAL submit at the address
 /// the settings name (§F5.6 S6).
 fn draw_leg() -> Box<crate::produce_upload::AskDraw> {
-    match DRAW.with(|cell| cell.borrow().clone()) {
+    match PAGE.with(|ProducePage { draw: cell, .. }| cell.borrow().clone()) {
         Some((script, _)) => Box::new(move |body| script(body)),
         None => {
             let tree = session_tree();

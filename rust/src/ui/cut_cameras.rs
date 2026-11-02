@@ -14,21 +14,12 @@ use crate::cut_hear;
 use crate::cut_verbs::{self, Badge};
 #[allow(unused_imports)]
 use crate::ui::cut_folds::{press_lane_cross, press_row_cross, CROSS_GLYPH};
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::cut_verb_press::press_badge;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_position, newest_review_cut, record_edit,
     set_watched_row, watched_row,
 };
-
-// F2.10 S3: this window's watch, newest slot last like [`REVIEW_CUTS`] so one window's click cannot
-// answer another's ▶.
-thread_local! {
-    static CAM_WATCHES: std::cell::RefCell<Vec<Rc<RefCell<cut_cam::Watch>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-
-    /// The watched-row frame's CSS, installed on the first refresh that needs it and never again.
-    static WATCHED_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
 
 /// F2.10: a named `gtk::ToggleButton` in this window — the lens badge, a speaker badge or a gutter
 /// switch.
@@ -41,15 +32,19 @@ pub fn toggle_button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk:
 /// F2.10 S3: this window's [`cut_cam::Watch`], created on first ask so a page that was never
 /// clicked still has an empty one to hand to ▶.
 pub fn camera_watch() -> Rc<RefCell<cut_cam::Watch>> {
-    CAM_WATCHES.with(|slots| {
-        let mut slots = slots.borrow_mut();
-        if let Some(latest) = slots.last() {
-            return latest.clone();
-        }
-        let fresh = Rc::new(RefCell::new(cut_cam::Watch::default()));
-        slots.push(fresh.clone());
-        fresh
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             cam_watches: slots, ..
+         }| {
+            let mut slots = slots.borrow_mut();
+            if let Some(latest) = slots.last() {
+                return latest.clone();
+            }
+            let fresh = Rc::new(RefCell::new(cut_cam::Watch::default()));
+            slots.push(fresh.clone());
+            fresh
+        },
+    )
 }
 
 /// The session second the red line stands on — the `t` every F2.10 sentence is about.
@@ -195,7 +190,12 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
     let watched = watched_row();
 
     let drawn = rows_box.observe_children().n_items() as usize;
-    CAMERA_REFRESH.with(|cell| cell.set(true));
+    CUT_PAGE.with(
+        |CutPage {
+             camera_refresh: cell,
+             ..
+         }| cell.set(true),
+    );
     // The dashed outline the spec's **4** asks for has to be painted, not merely named: GTK draws no
     // class of its own, so a `watched-row` class with no CSS behind it is invisible. A frame around the
     // row box is what reads as "this row is the one the preview shows", and it is installed once here
@@ -205,7 +205,12 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         reason = "the 4.10/4.12 replacements have no drop-in for a display-wide provider"
     )]
     {
-        if WATCHED_CSS_LOADED.with(|cell| !cell.get()) {
+        if CUT_PAGE.with(
+            |CutPage {
+                 watched_css_loaded: cell,
+                 ..
+             }| !cell.get(),
+        ) {
             let watched_box = gtk::CssProvider::new();
             watched_box.load_from_data(".watched-row { border: 2px dashed #3a63c8; }");
             gtk::StyleContext::add_provider_for_display(
@@ -213,7 +218,12 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                 &watched_box,
                 gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
-            WATCHED_CSS_LOADED.with(|cell| cell.set(true));
+            CUT_PAGE.with(
+                |CutPage {
+                     watched_css_loaded: cell,
+                     ..
+                 }| cell.set(true),
+            );
         }
     }
     for index in 0..total.max(drawn) {
@@ -546,29 +556,36 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             lens.set_sensitive(cut_cam::next_filming_row(seg.cam, &filming).is_some());
         }
     }
-    CAMERA_REFRESH.with(|cell| cell.set(false));
-}
-
-// F2.10: set while [`refresh_camera_rows`] is pushing state INTO the widgets, so a `set_active`
-// made by the refresh cannot be mistaken for a user press and re-enter the press that asked for the
-// refresh. Without this the chain `press_* -> refresh -> set_active -> connect_toggled -> press_*`
-// never ends.
-thread_local! {
-    static CAMERA_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    CUT_PAGE.with(
+        |CutPage {
+             camera_refresh: cell,
+             ..
+         }| cell.set(false),
+    );
 }
 
 fn refreshing() -> bool {
-    CAMERA_REFRESH.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             camera_refresh: cell,
+             ..
+         }| cell.get(),
+    )
 }
 
 /// Put a switch's face back to what the cut now says, inside the same guard a refresh holds, so the
 /// restate can never be taken for a person's press and fire the switch's handler again.
 fn restate_face(switch: &gtk::ToggleButton, active: bool) {
-    CAMERA_REFRESH.with(|cell| {
-        let was = cell.replace(true);
-        switch.set_active(active);
-        cell.set(was);
-    });
+    CUT_PAGE.with(
+        |CutPage {
+             camera_refresh: cell,
+             ..
+         }| {
+            let was = cell.replace(true);
+            switch.set_active(active);
+            cell.set(was);
+        },
+    );
 }
 
 /// F2.10 S1 (`🔍 lens badge: which row its picture comes from`): the seam a SCENE's 🔍 forwards to.

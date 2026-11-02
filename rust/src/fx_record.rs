@@ -49,38 +49,16 @@ pub fn uses(kind: EffectKind, field: Field) -> bool {
     }
 }
 
-pub fn fractions_read_off_source_frame(kind: EffectKind) -> bool {
-    matches!(kind, EffectKind::Zoom)
-}
-
 /// §06-effects#1-record (`ease stores "" for linear, keeping old files byte-identical`): linear is the empty
 /// string, not a name. It stays the empty string on a save so a file this build has touched still reads as one
 /// it never wrote.
 pub const LINEAR_EASE: &str = "";
-
-/// §06-effects#1-record: does this effect's fade have no named shape, i.e. linear?
-pub fn ease_is_linear(fx: &Fx) -> bool {
-    fx.ease == LINEAR_EASE
-}
-
-/// §06-effects#1-record (`an unknown name survives untouched`): every curve this build knows and every curve a
-/// later one may add is kept as written. Dropping an unrecognised shape would silently re-time a fade someone
-/// chose, on a build that was never asked to edit it.
-pub fn ease_survives(ease: &str) -> bool {
-    !ease.is_empty()
-}
 
 /// §06-effects#1-record (`rate (1 own clock; 0 = stop)`): a stop is not a seventh kind, it is a speed whose
 /// rate is nought — [`crate::cut_hear::rate_under`]'s reading (`if effect.rate == 0.0 { 1.0 }`) of the same
 /// number, which plays the picture at its own clock while the seconds run out.
 pub fn is_stop(fx: &Fx) -> bool {
     fx.effect_kind() == Some(EffectKind::Speed) && fx.rate == 0.0
-}
-
-/// §06-effects#1-record (`1 own clock`): this rate leaves the clip running at its own speed, which for a stop
-/// is what "the picture holds, its sound is dealt with separately" means.
-pub fn own_clock(fx: &Fx) -> bool {
-    fx.effect_kind() == Some(EffectKind::Speed) && fx.rate == 1.0
 }
 
 /// §06-effects#1-record (`sound answer "" / pitch / own / scene / mute`): what a rate does with the clip's
@@ -98,30 +76,6 @@ pub enum Snd {
 /// answer rather than one of them, which is why [`Snd::Default`] exists.
 pub const SND_ANSWERS: [&str; 4] = ["pitch", "own", "scene", "mute"];
 
-/// §06-effects#1-record: the rate's sound answer. A name this build does not know behaves as the empty one —
-/// the clip's own sound, not silence — because guessing that an unknown word means "hush it" would take sound
-/// out of a video on the strength of a spelling.
-pub fn snd_of(fx: &Fx) -> Snd {
-    match fx.snd.as_str() {
-        "pitch" => Snd::Pitch,
-        "own" => Snd::Own,
-        "scene" => Snd::Scene,
-        "mute" => Snd::Mute,
-        _ => Snd::Default,
-    }
-}
-
-/// §06-effects#1-record: is this one of the answers §1 lists (the empty string included)?
-pub fn snd_is_known(snd: &str) -> bool {
-    snd.is_empty() || SND_ANSWERS.contains(&snd)
-}
-
-/// §06-effects#1-record (`linear gain, 0 = silence`): nought is silence rather than "unset", so an effect that
-/// means to be quiet says 0 and means it.
-pub fn gain_is_silence(fx: &Fx) -> bool {
-    fx.gain == 0.0
-}
-
 /// §06-effects#1-record (`gain … linear`): the loudest a volume effect may ask for. `// P.eng.maxGain`, read
 /// from [`crate::cut_hear`] where that row lives — it is playbin's own ceiling, so this cannot raise it.
 pub fn gain_ceiling() -> f64 {
@@ -133,12 +87,6 @@ pub fn gain_ceiling() -> f64 {
 /// row never rides the whole bed either — it rides nothing.
 pub fn rides_whole_bed(fx: &Fx) -> bool {
     fx.effect_kind() == Some(EffectKind::Volume) && fx.lane().is_none()
-}
-
-/// §06-effects#1-record (`cam (new): the camera row it was framed on`): which row a zoom belongs to, and so
-/// which row's preview it bends. `None` for every kind with no `cam` row — a caption is not framed on a camera.
-pub fn camera_row(fx: &Fx) -> Option<usize> {
-    (fx.effect_kind() == Some(EffectKind::Zoom)).then(|| fx.cam.max(0) as usize)
 }
 
 /// §06-effects#1-record (`text / src … the words | the file | – | the name`): the `text` key, which is a
@@ -184,29 +132,6 @@ pub fn label_of(kind: EffectKind) -> &'static str {
     }
 }
 
-/// The JSON key a [`Field`] is written under. Kept beside `json_key`'s caller rather than derived from
-/// the enum's name so a renamed field cannot silently change the file format.
-fn json_key(field: Field) -> &'static str {
-    match field {
-        Field::Dur => "dur",
-        Field::Trans => "trans",
-        Field::Tout => "tout",
-        Field::Ease => "ease",
-        Field::Cx => "cx",
-        Field::Cy => "cy",
-        Field::Hf => "hf",
-        Field::Wf => "wf",
-        Field::Stay => "stay",
-        Field::Rate => "rate",
-        Field::Snd => "snd",
-        Field::Gain => "gain",
-        Field::Words => "text",
-        Field::Source => "src",
-        Field::Cam => "cam",
-        Field::Lane => "lane",
-    }
-}
-
 /// §06-effects#1-record: creating a record — the mirror of [`uses`].
 pub fn blank(kind: EffectKind, at: f64, dur: f64) -> Fx {
     Fx {
@@ -215,44 +140,6 @@ pub fn blank(kind: EffectKind, at: f64, dur: f64) -> Fx {
         dur,
         ..Default::default()
     }
-}
-
-/// §1's column rule stated as a check: for a freshly recorded effect of this kind, a field the table marks
-/// `–` costs no key in the serialised record.
-pub fn recorded_keys_are_the_kinds_own(kind: EffectKind, dur: f64) -> bool {
-    let value = match serde_json::to_value(blank(kind, 0.0, dur)) {
-        Ok(value) => value,
-        Err(_) => return false,
-    };
-    let Some(map) = value.as_object() else {
-        return false;
-    };
-    // `kind` and `t` are always written: an effect that is no kind or happens at no second is not a record.
-    if map.get("kind").and_then(|v| v.as_str()) != Some(spell(kind)) || !map.contains_key("t") {
-        return false;
-    }
-    [
-        Field::Dur,
-        Field::Trans,
-        Field::Tout,
-        Field::Ease,
-        Field::Cx,
-        Field::Cy,
-        Field::Hf,
-        Field::Wf,
-        Field::Stay,
-        Field::Rate,
-        Field::Snd,
-        Field::Gain,
-        Field::Words,
-        Field::Source,
-        Field::Cam,
-        Field::Lane,
-    ]
-    .into_iter()
-    // A field the table grants may be present or absent depending on its value (the storage skips neutral
-    // values), so only the denial is checkable here: a `–` row must never reach the file.
-    .all(|field| uses(kind, field) || !map.contains_key(json_key(field)))
 }
 
 /// Add one record of this kind to the cut and hand it back, so the caller can place or report it

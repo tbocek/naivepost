@@ -18,8 +18,6 @@ use std::time::{Duration, Instant};
 
 use naivepost::audio_task::{self, Ask};
 use naivepost::bodies::{self, ServerPath};
-use naivepost::produce_upload as upload;
-use naivepost::produce_upload_draw as draw;
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::slot_gate;
 use naivepost::ui;
@@ -255,11 +253,6 @@ fn asr_answer(_path: &str) -> (String, Vec<u8>) {
     )
 }
 
-/// A speech answer big enough to be a take (§F4.4 S5's floor is 1000 bytes of wav).
-fn speech_answer(_path: &str) -> (String, Vec<u8>) {
-    ("audio/wav".to_string(), vec![0u8; 1600])
-}
-
 /// Read one request far enough that the client is not left waiting to finish writing, and hand back its path.
 fn drain(stream: &TcpStream) -> String {
     let mut reader = BufReader::new(stream.try_clone().expect("clone the socket"));
@@ -405,65 +398,6 @@ fn dial_async(
         step,
         model,
     )
-}
-
-/// A speech dial on its own thread, so it can take its slot (and wait for one) off the main thread.
-fn speak_thread(
-    scene: &Scene,
-    voice: &'static str,
-    text: &'static str,
-    seed: i64,
-) -> std::thread::JoinHandle<(bool, Vec<String>)> {
-    std::thread::spawn({
-        let scene = Scene {
-            paths: scene.paths.clone(),
-            project: scene.project.clone(),
-            root: scene.root.clone(),
-        };
-        move || {
-            let from = ui::window_logs().len();
-            let tree = scene.tree();
-            let conf = settings::read(&scene.paths).expect("conf");
-            let endpoint = naivepost::services::audio_endpoint(&conf, |_| None);
-            let body = bodies::speech_body(
-                voice,
-                text,
-                &ServerPath::from_upload("/v.wav").expect("absolute"),
-                "en",
-                &[0.0; 8],
-                seed,
-            );
-            let ok = naivepost::speak_leg::speech_call(&tree, &endpoint, &body).is_ok();
-            (ok, take_logs(from))
-        }
-    })
-}
-
-/// A draw submit on its own thread, for the same reason.
-///
-/// It dials `produce_upload_draw::submit`, the program's own door, so the address it uses is the one §1 gives:
-/// the scenario conf's draw box, read through the process environment this scenario pinned. Nothing here hands
-/// an endpoint in — the gate, the row and the socket are reached exactly as a real draw reaches them.
-fn draw_thread(scene: &Scene) -> std::thread::JoinHandle<(bool, String)> {
-    let scene = Scene {
-        paths: scene.paths.clone(),
-        project: scene.project.clone(),
-        root: scene.root.clone(),
-    };
-    std::thread::spawn(move || {
-        let tree = scene.tree();
-        let body = upload::request_body(
-            &upload::draw_prompt("brighten it", upload::Band::Upper),
-            None,
-            1280,
-            720,
-            &[],
-        );
-        match draw::submit(&tree, &body) {
-            Ok(job) => (true, job.id),
-            Err(why) => (false, why),
-        }
-    })
 }
 
 /// §4's waiting line, said ONCE for a queueing spell, and the second request goes through on the release.
@@ -684,78 +618,4 @@ fn f6_3_s2_a_slot_wait_lands_in_the_requests_row() {
     );
     let secs: f64 = wait_field.parse().expect("the wait column is seconds");
     assert!(secs > 0.0, "and it is a positive number: {row}");
-}
-
-/// One request at a time per server, and different servers side by side (02 §1): while the voice holds the
-/// audio server, a draw on the drawing server goes straight through, and an ASR request to the audio server
-/// waits its turn behind the voice like a second line does.
-#[test]
-fn f6_3_s3_each_server_takes_one_request_and_servers_run_side_by_side() {
-    pin_env();
-    let (url, held, _tally) = held_server(|path| match path {
-        p if p.contains("audio/speech") => speech_answer(p),
-        other => asr_answer(other),
-    });
-    let (image_url, image_held, _image_tally) = held_server(|_path| {
-        (
-            "application/json".to_string(),
-            br#"{"id":"job-f63"}"#.to_vec(),
-        )
-    });
-    let _pin = Scene::new_with_sd("two-servers", &url, &image_url).pin();
-    let scene = &_pin;
-
-    // One speech call holds the audio server.
-    let speaking = speak_thread(scene, "f63-tts-voice", "one line", 1);
-    assert!(on_the_wire(&held), "the speech POST reached the server");
-    assert_eq!(
-        slot_gate::holders(&url).len(),
-        1,
-        "the voice holds the audio server"
-    );
-
-    // A second line, and an ASR request to the SAME server, both wait: one request at a time per server.
-    let second_speech = speak_thread(scene, "f63-tts-voice", "another line", 2);
-    still_parked(&second_speech, "a second line waits behind the first");
-    let listening = dial_async(scene, "Prepare", "f63-asr");
-    still_parked(&listening, "an ASR request to the same server waits too");
-
-    // A draw on its OWN server goes straight through while the audio server is still held.
-    let drew = draw_thread(scene);
-    image_held.release();
-    assert!(
-        wait_for(Duration::from_secs(5), || drew.is_finished()),
-        "the draw was not held by the audio server"
-    );
-    let (drew_ok, why) = drew.join().expect("the draw returned");
-    assert!(
-        drew_ok,
-        "a draw on its own server is not held by the voice: {why}"
-    );
-    assert_eq!(
-        slot_gate::holders(&image_url).len(),
-        0,
-        "the draw gave its server back"
-    );
-
-    // The audio server's queue, first come first served: the first line, then the second, then the ASR.
-    held.release();
-    let (spoke_ok, _) = speaking.join().expect("speech ended");
-    assert!(spoke_ok, "the first line was spoken");
-    held.release();
-    wait_until(
-        || second_speech.is_finished(),
-        "the second line went in next",
-    );
-    let (second_ok, second_logs) = second_speech.join().expect("second speech ended");
-    assert!(
-        second_ok,
-        "the queued line was spoken after the wait: {second_logs:?}"
-    );
-    held.release();
-    wait_until(|| listening.is_finished(), "the ASR request went in last");
-    assert!(
-        listening.join().expect("asr ended").ok,
-        "the ASR request was answered"
-    );
 }

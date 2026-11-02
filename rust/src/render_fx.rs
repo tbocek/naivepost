@@ -1,8 +1,7 @@
 //! §06-effects#4-render: the render's half of every effect (`spec/06-effects.md` §4; its six bullets are read as S1..S6 and the frame-box rule as S7). Turns an effect record into filter TEXT and the arithmetic behind it; never runs ffmpeg ([`crate::subprocess`]) or touches a window.
 //! Three §4 values live once below and are catalogued by `params::cut()` / `params::engineering()`: the animated camera grid, the `zoompan` depth cap, and the resolution tier.
 
-use crate::cut::{EffectKind, Fx, Seg};
-use crate::cut_speed;
+use crate::cut::{EffectKind, Fx};
 use crate::fx_lane;
 use crate::fx_record;
 use crate::fx_text;
@@ -47,64 +46,6 @@ pub struct Picture {
     pub to: f64,
     pub rate: f64,
     pub setpts: Option<String>,
-}
-
-/// S1 (`clips split at rate boundaries`): the scene as pictures. [`cut_speed::rate_spans`] does the splitting; this clips spans to the scene and picks each clock filter.
-pub fn split_pictures(fx: &[Fx], seg: &Seg) -> Vec<Picture> {
-    // A spliced card or overwriting insert is never sped: its length IS its timing.
-    if seg.is_insert() || seg.is_overwrite_insert() {
-        return vec![Picture {
-            from: seg.s,
-            to: seg.e,
-            rate: 1.0,
-            setpts: None,
-        }];
-    }
-    let spans = cut_speed::render_stairs(fx, seg);
-    // §4: `clips split at rate boundaries, THE MIDDLE carries the rate`. An unsped scene is one picture; stairs come from [`cut_speed::stairs_in`] via [`cut_speed::steps_of`], so each stretch holds ONE rate (one `setpts` and one `atempo` chain per stair). Only the middle needs a filter.
-    let mut out = Vec::new();
-    let mut from = seg.s;
-    for span in spans
-        .iter()
-        .filter(|s| s.to > seg.s && s.from < seg.e)
-        .filter(|s| !is_stop_span(s))
-    {
-        let start = span.from.max(seg.s);
-        let end = span.to.min(seg.e);
-        if start > from {
-            out.push(Picture {
-                from,
-                to: start,
-                rate: 1.0,
-                setpts: None,
-            });
-        }
-        if end > start {
-            out.push(Picture {
-                from: start,
-                to: end,
-                rate: span.rate,
-                setpts: setpts(span.rate),
-            });
-            from = end;
-        }
-    }
-    if out.is_empty() {
-        out.push(Picture {
-            from: seg.s,
-            to: seg.e,
-            rate: 1.0,
-            setpts: None,
-        });
-    } else if from < seg.e {
-        out.push(Picture {
-            from,
-            to: seg.e,
-            rate: 1.0,
-            setpts: None,
-        });
-    }
-    out
 }
 
 /// S1 (`the middle carries the rate (setpts=PTS/rate)`): a stretch at 1× needs no filter.
@@ -190,19 +131,6 @@ pub fn still_overlay(frozen: (f64, f64), fades: (f64, f64), frame: (i32, i32)) -
         format!("trim=end_frame=1,loop=loop=-1:size=1,setpts=N/{OVERLAY_FPS}/TB"),
     );
     built
-}
-
-/// S2: does the footage under these effects run at its own speed? A stop is carried as `rate 0` ([`cut_speed::steps_of`]); any stretch whose applied rate ([`cut_speed::applied_rate`], stop reads as 1) is not 1× counts against.
-pub fn footage_stays_at_one(fx: &[Fx]) -> bool {
-    cut_speed::rate_spans(fx)
-        .iter()
-        .filter(|span| !is_stop_span(span))
-        .all(|span| cut_speed::applied_rate(span.rate) == 1.0)
-}
-
-/// A rate span carries no kind; `rate 0` means "a frame held", so this is [`fx_record::is_stop`] on a span.
-fn is_stop_span(span: &cut_speed::Span) -> bool {
-    span.rate == 0.0
 }
 
 /// §4 (`at fixed fps (default 30)`): the grid an animated camera is sampled on; the render's default rate, same as the preview.
@@ -396,12 +324,6 @@ pub fn zoom_depths(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> Ve
         .collect()
 }
 
-pub fn max_zoom(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> f64 {
-    zoom_depths(samples, src, frame)
-        .into_iter()
-        .fold(0.0_f64, f64::max)
-}
-
 /// The union of every rectangle's vertical reach, the box `zoompan` works inside (grown by [`camera_chain`]).
 fn union_height(samples: &[Sample], src: (i32, i32), out_a: f64) -> f64 {
     let mut top = f64::MAX;
@@ -447,11 +369,6 @@ pub fn cap_zoom(
 
 pub fn depth_log(clip_no: usize) -> String {
     format!("clip {clip_no}: the zoom goes deeper than ffmpeg's 10× \u{2014} it is rendered at 10×")
-}
-
-/// §4 (`composited after the camera and burned subtitles`): a title goes on the finished frame so it holds still under a moving camera; a subtitle is burned before either.
-pub fn picture_order() -> Vec<&'static str> {
-    vec!["camera", "burned subtitles", "text and svg"]
 }
 
 pub const OVERLAY_FPS: u32 = 30;
@@ -555,14 +472,6 @@ impl Cue {
     }
 }
 
-/// S5 (`one volume=<expr>:eval=frame per cue`): the cut's volume effects mapped onto one clip with the same session-to-clip arithmetic as a title, so a gain under a speed effect stretches with its sound. A cue shorter than a frame is skipped.
-pub fn gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
-    all_gain_cues(fx, sess_s, rate, length)
-        .into_iter()
-        .filter(|cue| !cue.before_the_mix())
-        .collect()
-}
-
 /// Every volume cue, including lane-naming ones; [`gain_cues`] is the bed's half, split via [`Cue::before_the_mix`].
 pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue> {
     if length <= 0.0 || rate <= 0.0 {
@@ -623,11 +532,6 @@ pub fn gain_filters(cues: &[Cue]) -> Vec<String> {
     cues.iter()
         .map(|cue| format!("volume=volume='{}':eval=frame", gain_expr(cue)))
         .collect()
-}
-
-/// S5 (`after the lane mix, before the narration`): where the cues sit in the graph; lanes are already summed, so a duck multiplies with them.
-pub fn audio_order() -> Vec<&'static str> {
-    vec!["lane mix", "volume cues", "narration"]
 }
 
 /// §4 (`Label: nothing`): a label marks a moment for the narration brief and is never drawn; its filter is an empty string.

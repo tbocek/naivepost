@@ -129,25 +129,6 @@ fn f0_13_s4_the_vision_test_shows_a_red_square_and_only_passes_on_red() {
     );
 }
 
-/// S2: "Fetch models" is `GET /v1/models` → dropdown, and "Use" copies the id into Model — so the
-/// only question a list answers is whether the configured id is on the server.
-#[test]
-fn f0_13_s5_fetch_models_lists_the_server_and_use_adopts_the_id() {
-    let served = vec!["llama-3".to_string(), "qwen".to_string()];
-    assert!(checks::llm_model_listed(&served, "qwen").is_ok());
-
-    let reason = checks::llm_model_listed(&served, "gpt").unwrap_err();
-    assert!(
-        reason.contains("llama-3") && reason.contains("qwen"),
-        "S2: the failure names what IS served: {reason}"
-    );
-
-    // No default model id exists to fall back to, so an empty box is its own answer.
-    assert!(checks::llm_model_listed(&served, "")
-        .unwrap_err()
-        .contains("Fetch models"));
-}
-
 /// The ffmpeg listing §5's scan reads: one component per line, name in the second field.
 fn listing(with_rubberband: bool) -> String {
     let mut lines = "Filters:\n".to_string();
@@ -396,24 +377,4 @@ fn f0_13_s9_sd_cpp_names_the_model_a_real_sd_server_reports() {
     // Not capabilities at all: said so, not read as "no weights".
     let garbage = checks::sd_caps("<html>proxy error</html>").unwrap_err();
     assert!(garbage.contains("not sd.cpp capabilities"), "{garbage}");
-}
-
-/// "Test All": every row's own verdict, in the order the rows are on screen — nothing short-circuits,
-/// or one early failure hides the rest and sends the user through the dialog ten times.
-#[test]
-fn f0_13_s10_test_all_runs_every_row_and_reports_each() {
-    let rows = checks::test_all(&[
-        ("LLM", Ok("qwen answered in 1.5 s: \"ok\"".to_string())),
-        ("ffmpeg", Err("not on PATH".to_string())),
-        ("sd.cpp", Ok("flux is loaded and can draw".to_string())),
-    ]);
-
-    assert_eq!(
-        rows.iter()
-            .map(|row| (row.name.as_str(), row.ok))
-            .collect::<Vec<_>>(),
-        vec![("LLM", true), ("ffmpeg", false), ("sd.cpp", true)]
-    );
-    // The failing row's reason survives: the ✓/✗ is the summary, the verdict is the answer.
-    assert_eq!(rows[1].why, "not on PATH");
 }
