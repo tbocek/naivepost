@@ -76,7 +76,20 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
             let ask = settings_probe_rows::chat_ask(&conf);
             if key == "llm" {
                 // §5: ONE completion, `max_tokens` 16, thinking forced off, at [`checks::LLM_TEST_SECONDS`].
-                settings_probe_rows::llm_row(&conf, &ask)
+                let verdict = settings_probe_rows::llm_row(&conf, &ask)?;
+                // The same `/health` count the parallel steps go by, so the row says what they will use.
+                let endpoint = services::llm_endpoint(&conf);
+                let health = get(&tree, Server::Llm, &endpoint, Kind::Health, "health", None);
+                Ok(
+                    match health
+                        .ok()
+                        .as_deref()
+                        .and_then(crate::rows_at_once::slots_in)
+                    {
+                        Some(slots) => format!("{verdict} \u{b7} {slots} slot(s)"),
+                        None => format!("{verdict} \u{b7} no slot count, one request at a time"),
+                    },
+                )
             } else {
                 settings_probe_rows::vision_row(&conf, &ask)
             }

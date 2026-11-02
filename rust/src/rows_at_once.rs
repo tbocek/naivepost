@@ -36,23 +36,44 @@ enum Said {
     },
 }
 
-/// How many of `stage`'s rows may run at once; `None` when they run in turn: rows that are not independent LLM asks, fewer
-/// than two to run, or a server that says it has one slot or says nothing.
-pub fn at_once_for(stage: &Stage) -> Option<usize> {
-    let independent = |task: &Task| {
-        task.program == crate::text_gate::TEXT_GATE_TASK || task.program == VISION_TASK
-    };
-    if !stage.tasks.iter().all(independent)
-        || stage.tasks.iter().filter(|task| !task.already_done).count() < 2
-    {
-        return None;
-    }
-    let slots = llm_slots()?;
-    (slots > 1).then_some(slots as usize)
+fn independent(task: &Task) -> bool {
+    task.program == crate::text_gate::TEXT_GATE_TASK
+        || task.program == VISION_TASK
+        || task.program == crate::run_stages::TEXT_TASK
 }
 
-/// The LLM server's `/health` `slots`, within the gate's range.
-fn llm_slots() -> Option<u32> {
+/// Do two or more independent rows to run start at `index`? Asks no server, so the walk asks the slots at most once a stage.
+pub fn starts_run(stage: &Stage, index: usize) -> bool {
+    run_end(stage, index) > index
+        && stage.tasks[index..run_end(stage, index)]
+            .iter()
+            .filter(|task| !task.already_done)
+            .count()
+            >= 2
+}
+
+fn run_end(stage: &Stage, index: usize) -> usize {
+    stage.tasks[index..]
+        .iter()
+        .position(|task| !independent(task))
+        .map_or(stage.tasks.len(), |rows| index + rows)
+}
+
+/// The rows from `index` that run side by side and how many at once; `None` when the server says it has one slot or says nothing.
+pub fn at_once_for(stage: &Stage, index: usize) -> Option<(usize, std::ops::Range<usize>)> {
+    let slots = llm_slots()?;
+    (slots > 1).then(|| (slots as usize, index..run_end(stage, index)))
+}
+
+/// `/health`'s `slots`, within the gate's range.
+pub fn slots_in(health: &str) -> Option<u32> {
+    let health: serde_json::Value = serde_json::from_str(health).ok()?;
+    let slots = u32::try_from(health.get("slots")?.as_u64()?).ok()?;
+    Some(crate::llm_liveness::clamped_slots(slots))
+}
+
+/// The LLM server's slots, asked of `/health`.
+pub fn llm_slots() -> Option<u32> {
     let paths = crate::settings::from_environment()?;
     let conf = crate::settings::read(&paths).ok()?;
     let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok()?;
@@ -78,10 +99,7 @@ fn llm_slots() -> Option<u32> {
             attempt: 1,
         },
     );
-    let reply = reply.ok()?;
-    let health: serde_json::Value = serde_json::from_str(&reply.body).ok()?;
-    let slots = u32::try_from(health.get("slots")?.as_u64()?).ok()?;
-    Some(crate::llm_liveness::clamped_slots(slots))
+    slots_in(&reply.ok()?.body)
 }
 
 /// One row on this worker's thread, with a page of its own (a page holds one open call).
@@ -90,6 +108,9 @@ fn run_row(row: usize, task: &Task, tell: &mpsc::Sender<Said>) -> Result<(), Str
     let mut log = |line: &str| {
         let _ = tell.send(Said::Line(line.to_string()));
     };
+    if task.program == crate::run_stages::TEXT_TASK {
+        return crate::fix_call::run_task(task, &mut log);
+    }
     if task.program == VISION_TASK {
         let mut reached = |answered: usize, total: usize| {
             let fraction = if total > 0 {
@@ -123,14 +144,16 @@ fn run_row(row: usize, task: &Task, tell: &mpsc::Sender<Said>) -> Result<(), Str
 #[allow(clippy::too_many_arguments)] // the walk's own state, passed through
 pub fn walk(
     stage: &Stage,
+    range: std::ops::Range<usize>,
     at_once: usize,
+    done_before: usize,
     queue: &mut Queue,
     paused: &dyn Fn() -> bool,
     stopped: &dyn Fn() -> bool,
     log: &mut dyn FnMut(&str),
     on_queue: &mut dyn FnMut(&Queue, &str),
 ) -> Walked {
-    let total = stage.tasks.len();
+    let total = range.len();
     let endpoint = crate::settings::from_environment()
         .and_then(|paths| crate::settings::read(&paths).ok())
         .map(|conf| crate::services::llm_endpoint(&conf).url)
@@ -141,11 +164,12 @@ pub fn walk(
         stage.name
     ));
 
-    let rows: Vec<usize> = (0..total)
+    let rows: Vec<usize> = range
+        .clone()
         .filter(|row| !stage.tasks[*row].already_done)
         .collect();
     let skipped = total - rows.len();
-    let mut done = skipped;
+    let mut finished = skipped;
     for _ in 0..skipped {
         queue.take(stage.track);
     }
@@ -155,8 +179,8 @@ pub fn walk(
     let (tell, told) = mpsc::channel();
     let mut ran = 0usize;
     let mut failure: Option<String> = None;
-    let mut within = vec![0.0f64; total];
-    let mut counts = vec![0usize; total];
+    let mut within = vec![0.0f64; stage.tasks.len()];
+    let mut counts = vec![0usize; stage.tasks.len()];
     // The stage's whole count, the row's own being a number nobody can read progress from: each row's plan, summed
     // before the first one runs, and corrected by a row whose plan comes out different.
     let mut planned: Vec<usize> = stage
@@ -170,15 +194,22 @@ pub fn walk(
             }
         })
         .collect();
-    let describes = stage.tasks.iter().any(|task| task.program == VISION_TASK);
+    let describes = stage.tasks[range.clone()]
+        .iter()
+        .any(|task| task.program == VISION_TASK);
+    let judges = stage.tasks[range.clone()]
+        .iter()
+        .any(|task| task.program == crate::text_gate::TEXT_GATE_TASK);
     let label = format!("{at_once} at once");
     let words = |done: usize, counts: &[usize], planned: &[usize]| {
         let count: usize = counts.iter().sum();
         if describes {
             let of: usize = planned.iter().sum();
             format!("{done} of {total} recordings, {count} of {of} requests")
-        } else {
+        } else if judges {
             format!("{done} of {total} recordings, {count} judge(s)")
+        } else {
+            format!("{done} of {total} recordings")
         }
     };
 
@@ -227,14 +258,14 @@ pub fn walk(
                         on_queue,
                         stage,
                         &label,
-                        done,
+                        done_before + finished,
                         share.min(0.99),
-                        &words(done, &counts, &planned),
+                        &words(finished, &counts, &planned),
                     );
                 }
                 Ok(Said::Finished { row, worked }) => {
                     within[row] = 0.0;
-                    done += 1;
+                    finished += 1;
                     match worked {
                         Ok(()) => ran += 1,
                         Err(error) => {
@@ -247,9 +278,9 @@ pub fn walk(
                         on_queue,
                         stage,
                         &label,
-                        done,
+                        done_before + finished,
                         within.iter().sum::<f64>().min(0.99),
-                        &words(done, &counts, &planned),
+                        &words(finished, &counts, &planned),
                     );
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -261,7 +292,7 @@ pub fn walk(
     if let Some(error) = failure.filter(|_| !stopped()) {
         return Walked::Failed(error);
     }
-    if done < total || stopped() {
+    if finished < total || stopped() {
         return Walked::Stopped {
             ran,
             left: total - ran - skipped,

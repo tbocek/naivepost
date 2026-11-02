@@ -880,6 +880,17 @@ where
         }
     }
     // S7: `plan.translated` is already the ticked list minus the session's own language (`track_languages`), so nothing translates into itself.
+    if let Ok(tree) = Tree::new(crate::startup::open_dir()) {
+        crate::produce_translate_ask::warm(
+            &tree,
+            &crate::produce_translate::first_asks(
+                &timed,
+                &plan.cues.session_language,
+                &plan.translated,
+            ),
+            &mut |line| log(line),
+        );
+    }
     let tracked = crate::produce_translate::track(
         &timed,
         &plan.cues.session_language,
