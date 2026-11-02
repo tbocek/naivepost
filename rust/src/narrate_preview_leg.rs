@@ -377,7 +377,7 @@ fn named_program(conf_key: &str, env_key: &str, fallback: &str) -> String {
 }
 
 /// A key the settings writer carried through untouched. `Conf::unknown` is private, so the value is taken from the
-/// rendered file and unquoted (`settings::quote`'s inverse is not public).
+/// rendered file and unquoted.
 fn unknown_value(conf: &Conf, key: &str) -> Option<String> {
     let rendered = settings::render(conf);
     for line in rendered.lines() {
@@ -385,38 +385,10 @@ fn unknown_value(conf: &Conf, key: &str) -> Option<String> {
             continue;
         };
         if name.trim() == key {
-            return Some(unquoted(value.trim()));
+            return Some(settings::unquote(value.trim()));
         }
     }
     None
-}
-
-fn unquoted(value: &str) -> String {
-    let body = value
-        .strip_prefix('"')
-        .and_then(|v| v.strip_suffix('"'))
-        .unwrap_or(value);
-    let mut out = String::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('\\') => out.push('\\'),
-            Some('"') => out.push('"'),
-            Some('$') => out.push('$'),
-            Some('`') => out.push('`'),
-            Some('\n') => out.push('\n'),
-            Some(other) => {
-                out.push('\\');
-                out.push(other);
-            }
-            None => out.push('\\'),
-        }
-    }
-    out
 }
 
 /// What one tick did, for the status line and the clock.

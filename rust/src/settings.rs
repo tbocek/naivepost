@@ -239,7 +239,7 @@ pub fn quote(value: &str) -> String {
     out
 }
 
-fn unquote(value: &str) -> String {
+pub(crate) fn unquote(value: &str) -> String {
     let inner = value
         .strip_prefix('"')
         .and_then(|v| v.strip_suffix('"'))
