@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use crate::add_sources::is_video;
+use crate::hand_edit::source_key as base;
 use crate::layout::{self, Tree};
 use crate::project::Project;
 use crate::requests;
@@ -24,15 +25,6 @@ pub const META_KEYS: [&str; 6] = [
     "AUDIO_FILE",
     "AUDIO_BASE",
 ];
-
-/// S1: what one recording's row is called in the files — its base name, without the extension.
-fn base(stored: &str) -> String {
-    let name = stored.rsplit('/').next().unwrap_or(stored);
-    match name.rfind('.') {
-        Some(dot) if dot > 0 => name[..dot].to_string(),
-        _ => name.to_string(),
-    }
-}
 
 /// A number the way §1's file wants it: `1`, not `1.0` (readers of a `.env` would otherwise trim the tail).
 fn number(value: f64) -> String {

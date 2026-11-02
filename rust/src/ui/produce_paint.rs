@@ -339,7 +339,7 @@ fn decoded(area: &gtk::DrawingArea, path: &std::path::Path) -> Decoded {
                 move || {
                     gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(&file, KEPT_SIDE, KEPT_SIDE, true)
                         .ok()
-                        .and_then(|pixbuf| pixels(&pixbuf))
+                        .and_then(|pixbuf| crate::ui::cut_picture_rows::frame_pixels(&pixbuf))
                 }
             },
             move |answer| {
@@ -415,44 +415,6 @@ fn surface_of(bytes: &[u8], wide: i32, high: i32) -> Option<cairo::ImageSurface>
     }
     surface.status().ok()?;
     Some(surface)
-}
-
-/// This pixbuf's pixels as cairo's ARgb32 bytes (little-endian BGRA), rows copied one at a time because a
-/// padded `rowstride` (a JPEG's usually) must land on cairo's unpadded stride; 3-channel pixbufs get an alpha
-/// byte. Runs on the decode worker; [`surface_of`] makes the surface.
-fn pixels(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<(Vec<u8>, i32, i32)> {
-    let (wide, high) = (pixbuf.width(), pixbuf.height());
-    if wide <= 0 || high <= 0 {
-        return None;
-    }
-    let channels = pixbuf.n_channels();
-    if channels < 3 {
-        return None;
-    }
-    let src_stride = pixbuf.rowstride() as usize;
-    let bytes = pixbuf.read_pixel_bytes();
-    let out_stride = (wide as usize) * 4;
-    let mut pixels = vec![0u8; out_stride * high as usize];
-    for row in 0..high as usize {
-        let from = &bytes[row * src_stride..row * src_stride + wide as usize * channels as usize];
-        let to = &mut pixels[row * out_stride..(row + 1) * out_stride];
-        for column in 0..wide as usize {
-            let source = column * channels as usize;
-            let target = column * 4;
-            to[target] = from[source + 2];
-            to[target + 1] = from[source + 1];
-            to[target + 2] = from[source];
-            // gdk-pixbuf hands back NON-premultiplied alpha and cairo wants it premultiplied.
-            let alpha = if channels == 4 { from[source + 3] } else { 255 };
-            if alpha < 255 {
-                to[target] = (to[target] as u16 * alpha as u16 / 255) as u8;
-                to[target + 1] = (to[target + 1] as u16 * alpha as u16 / 255) as u8;
-                to[target + 2] = (to[target + 2] as u16 * alpha as u16 / 255) as u8;
-            }
-            to[target + 3] = alpha;
-        }
-    }
-    Some((pixels, wide, high))
 }
 
 /// The violet dashed box §A draws for a word mark, with its words printed by the render's own rule

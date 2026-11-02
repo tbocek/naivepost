@@ -12,6 +12,7 @@ use crate::fx_record;
 use crate::fx_text;
 use crate::fx_zoom;
 use crate::shell::Page;
+use crate::ui::cut_label_hand::label_entry_of as text_entry_of;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_refused, log_line,
     preview_picture_px, record_edit, refresh_effects_lane, refresh_selection_readout, trim_seconds,
@@ -206,10 +207,6 @@ thread_local! {
 /// Read one of the caption form's entries back from THIS window's tree.
 fn text_entry(name: &str) -> Option<gtk::Entry> {
     text_entry_of(&current_text_window().unwrap_or_default(), name)
-}
-
-fn text_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// The window that last drew a caption form, if any — the owner `text_form_owner` compares against.

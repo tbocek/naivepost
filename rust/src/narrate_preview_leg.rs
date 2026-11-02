@@ -704,27 +704,6 @@ fn take_key(entry: &Entry) -> String {
     narration::key_for(entry, Some(&voice_of(entry)))
 }
 
-/// F4.5 S1/S2: where a line's take wav is, `None` when blank, unwritten, or refused this session; the same questions
-/// `take_states` asks, in one public door.
-pub fn line_take(
-    tree: &crate::layout::Tree,
-    entries: &[Entry],
-    line: usize,
-) -> Option<std::path::PathBuf> {
-    let entry = entries.get(line)?;
-    if entry.text.trim().is_empty() {
-        return None;
-    }
-    let path = take_file(tree, entries, line)?;
-    let refused = RUNNING.with(|slot| {
-        slot.borrow()
-            .as_ref()
-            .map(|preview| preview.failed.holds(&take_key(entry)))
-            .unwrap_or(false)
-    });
-    (!refused && path.exists()).then_some(path)
-}
-
 pub fn take_file(
     tree: &crate::layout::Tree,
     entries: &[Entry],

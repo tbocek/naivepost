@@ -4,6 +4,7 @@ use std::fs;
 
 use crate::layout::Tree;
 use crate::prepare;
+use crate::prepare::base_name;
 use crate::project::{Project, Source};
 use crate::services;
 use crate::sources;
@@ -308,8 +309,4 @@ fn lane(source: &Source) -> String {
         Some(at) if at > 0 => name[..at].to_string(),
         _ => name.to_string(),
     }
-}
-
-fn base_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
 }

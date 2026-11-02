@@ -1,5 +1,6 @@
 //! §03-shell.md §1: the bottom row must not be the thing that holds the window wide.
 
+use crate::ui::window_divider::find_in;
 use adw::prelude::*;
 use gtk4 as gtk;
 
@@ -126,25 +127,6 @@ fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
     }
     // Badge 13 keeps only its FLOOR here (`PROGRESS_MIN_PX`).
     bar.set_size_request(super::window_run_bar_fit::PROGRESS_MIN_PX, -1);
-}
-
-fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if node.widget_name() == name {
-        return Some(node.clone());
-    }
-    for child in node
-        .observe_children()
-        .iter::<glib::Object>()
-        .filter_map(Result::ok)
-    {
-        if let Some(widget) = child
-            .downcast_ref::<gtk::Widget>()
-            .and_then(|w| find_in(w, name))
-        {
-            return Some(widget);
-        }
-    }
-    None
 }
 
 fn children_of(row: &gtk::Widget) -> Vec<gtk::Widget> {

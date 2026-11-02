@@ -171,32 +171,6 @@ pub fn export_path(asked: Option<&str>) -> String {
     }
 }
 
-/// **6** ⤓ export: the JPEG an uploader takes, under its 2 MB limit. The ladder really encodes every rung
-/// and reports the weight of the file written; no byte count is assumed.
-pub fn export_thumbnail(window: &adw::ApplicationWindow) -> String {
-    let pressed = legs();
-    if !(pressed.has_picture)() {
-        return report(window, runs::EXPORT_NO_PICTURE.to_string());
-    }
-    // The dialog's answer is what the path door holds: nothing typed headless, else the typed name.
-    let out = crate::produce_presses::press_export(&export_path(asked_path().as_deref()), &pressed);
-    if out.refused {
-        return report(window, out.status);
-    }
-    report(window, out.status)
-}
-
-/// **6** ↻ redraw: one sd.cpp call, nothing rewritten.
-pub fn redraw_thumbnail(window: &adw::ApplicationWindow) -> String {
-    let run = produce_page::press_run();
-    let out = crate::produce_presses::press_redraw_thumbnail(
-        &legs(),
-        || with_run(run.as_ref(), crate::ui::produce_languages::redraw_half),
-        crate::ui::window::log_line,
-    );
-    land_written(window, out)
-}
-
 /// **8** ↻ beside Title: the title and the description together; images, instruction and picture stay.
 pub fn reword(window: &adw::ApplicationWindow) -> String {
     let run = produce_page::press_run();
@@ -221,44 +195,6 @@ fn land_written(window: &adw::ApplicationWindow, out: crate::produce_presses::Ou
     crate::ui::produce_languages::report(&out);
     produce_page::take_written_publish(window);
     report(window, out.status)
-}
-
-/// **10** ↻ Transcode: an encode with no model call, refused while a render runs. The file is the page's OWN
-/// output, `produce/final.<container>`, not a hardcoded `.mp4` (`transcode_args` picks codec and mux off the
-/// same row's container).
-pub fn transcode_again(window: &adw::ApplicationWindow) -> String {
-    let settings = produce_page::row_settings();
-    let video = crate::ui::produce_languages::session_tree()
-        .final_video(produce_page::container_word().as_str())
-        .display()
-        .to_string();
-    let out = crate::produce_presses::press_transcode(
-        &video,
-        &video,
-        &settings,
-        &legs(),
-        crate::ui::window::log_line,
-    );
-    crate::ui::produce_languages::report(&out);
-    report(window, out.status)
-}
-
-/// **10** ⤓ Save video: a copy out to the host's save-dialog path, so `produce/final` stays the stamped output.
-pub fn save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> String {
-    let out =
-        crate::produce_presses::press_save_video(to, bytes, &legs(), crate::ui::window::log_line);
-    crate::ui::produce_languages::report(&out);
-    report(window, out.status)
-}
-
-/// **10** ⤓ Save video as the widget fires it: the destination is the save door's answer (§F5.7), else its
-/// offer; the weight is read off the RENDER's file since the copy is not made when the line prints.
-pub fn save_video_from_button(window: &adw::ApplicationWindow) -> String {
-    let to = save_destination();
-    let bytes = std::fs::metadata(produce_page::rendered_video())
-        .map(|m| m.len())
-        .unwrap_or(0);
-    save_video(window, &to, bytes)
 }
 
 /// **10** ⤓ Save video as the button fires it: the copy walks on a worker (§03-shell §1). Destination and

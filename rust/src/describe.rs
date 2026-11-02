@@ -129,7 +129,7 @@ pub fn hearing_log(video: &str, audio: &str, offset_secs: f64) -> String {
     )
 }
 
-fn trim_seconds(secs: f64) -> String {
+pub(crate) fn trim_seconds(secs: f64) -> String {
     if (secs - secs.round()).abs() < 1e-9 {
         return format!("{}", secs.round() as i64);
     }
@@ -391,7 +391,7 @@ pub fn prose_calls(reply: &str, stamps: &[f64]) -> Vec<(String, serde_json::Valu
 /// stamps to a tenth of a second, so a model copying them lands well inside this.
 pub const PROSE_SNAP_SECONDS: f64 = 1.0;
 
-fn flatten_line(text: &str) -> String {
+pub(crate) fn flatten_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 

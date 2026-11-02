@@ -7,6 +7,7 @@ use crate::fx_lane;
 use crate::fx_record;
 use crate::fx_text;
 use crate::fx_zoom;
+use crate::produce_fx_chain::even;
 
 /// §4 (`the resolution tier names the short side`): 1080p is 1080 on the SHORT edge (9:16 is 1080×1920), the one number that survives a change of shape.
 pub const TIER_SHORT_SIDE: i32 = 1080;
@@ -38,10 +39,6 @@ fn ratio(aspect: &str) -> Option<(i32, i32)> {
 
 fn tier_other(short_side: i32, short_leg: i32, long_leg: i32) -> i32 {
     ((short_side as i64 * long_leg as i64) / short_leg.max(1) as i64) as i32
-}
-
-fn even(v: i32) -> i32 {
-    v + v % 2
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -2,7 +2,7 @@
 
 use crate::cut::NO_CUT_YET;
 use crate::narrate_rewrite::{clips_to_write, log_line, why};
-use crate::narrate_screen::CAPTIONS;
+pub use crate::narrate_rules::voice_is_captions as voice_is_captions_only;
 use crate::narration::{Entry, Narration};
 
 /// S1's fourth refusal, word for word (§F4.1 S1; `spec/inventory/narrate.md` names the missing file as
@@ -125,11 +125,6 @@ pub fn lines_off_cut(clips: &[(f64, f64)], narration: &Narration) -> usize {
         .iter()
         .filter(|entry| !clips.iter().any(|(s, e)| *s == entry.s && *e == entry.e))
         .count()
-}
-
-/// Whether `voice` is the picker's captions-only row.
-pub fn voice_is_captions_only(voice: &str) -> bool {
-    voice == CAPTIONS
 }
 
 // --- S6: whether one line is spoken ------------------------------------------------------------

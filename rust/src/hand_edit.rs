@@ -179,7 +179,7 @@ pub fn write_marks(tree: &Tree, marks: &[Retake]) -> Result<(), String> {
 }
 
 /// The per-source folder key: the base name without extension, from any stored form (`project:sources/lecture.mkv`, `sources/lecture.mkv`, `lecture.mkv`); must agree with [`crate::prepare_data`]'s row name.
-fn source_key(stored: &str) -> String {
+pub(crate) fn source_key(stored: &str) -> String {
     let name = stored.rsplit('/').next().unwrap_or(stored);
     match name.rfind('.') {
         Some(dot) if dot > 0 => name[..dot].to_string(),

@@ -229,13 +229,6 @@ pub fn settle_plate(win: &adw::ApplicationWindow, at: f64) -> bool {
     true
 }
 
-/// The plate's label, `None` when hidden. Test-only.
-pub fn plate_shown_for_test(win: &adw::ApplicationWindow) -> Option<String> {
-    plate_widget(win)
-        .filter(|plate| plate.is_visible())
-        .map(|plate| plate.label().to_string())
-}
-
 const OVERLAYS_NAME: &str = "preview-overlays";
 
 /// This window's overlay stack (the plate's holder), resolved through its own content so a closed window's tree cannot answer.

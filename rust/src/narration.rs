@@ -9,6 +9,8 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
+use crate::cut::is_zero_f64;
+use crate::cut::is_zero_i32;
 use crate::layout;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -69,14 +71,6 @@ fn key_body(entry: &Entry, voice: Option<&str>, emotion: &str) -> String {
         body = format!("{}#{body}", entry.roll);
     }
     body
-}
-
-fn is_zero_f64(v: &f64) -> bool {
-    *v == 0.0
-}
-
-fn is_zero_i32(v: &i32) -> bool {
-    *v == 0
 }
 
 impl Narration {

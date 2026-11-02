@@ -7,6 +7,7 @@ use crate::cut;
 use crate::fx_volume;
 use crate::fx_zoom;
 use crate::shell::Page;
+use crate::ui::cut_label_hand::label_entry_of as volume_entry_of;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
     live_form_refused, log_line, record_edit, refresh_effects_lane, save_insert_cut, selection,
@@ -225,11 +226,6 @@ fn volume_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
-/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
-fn volume_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
-}
-
 /// This window's Curve dropdown.
 fn volume_dropdown(name: &str) -> Option<gtk::DropDown> {
     LAST_VOLUME_WINDOW.with(|cell| {
@@ -372,23 +368,7 @@ fn wire_volume_buttons(window: &adw::ApplicationWindow) {
 /// Esc releases an open volume form, wired after `set_content` like every other control. Claims Escape only when
 /// this window owns a form; otherwise the key travels on to whatever else is listening.
 pub(crate) fn wire_volume_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_volume_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    crate::ui::cut_form_buttons::wire_esc(window, press_volume_esc);
 }
 
 pub fn paused_preview_gain(t: f64) -> f64 {

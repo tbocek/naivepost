@@ -6,6 +6,7 @@
 //! Wordings come from [`crate::settings::prompt_text`] with [`crate::prompts::shipped_text`] as fallback, as in [`crate::narrate_call`].
 
 use crate::cancel_leg;
+use crate::clip_pass_ask::wording;
 use crate::exchanges::{Message, Part};
 use crate::joins::{self, Outcome};
 use crate::layout::Tree;
@@ -15,19 +16,9 @@ use crate::project::Project;
 use crate::requests::{Request, Service};
 use crate::seam_retries::{self, Asking};
 use crate::services;
-use crate::settings::{self, Conf, Paths};
+use crate::settings::{self, Conf};
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
 use crate::word_list::Word;
-
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
-/// With no settings folder at all, the shipped wording is what goes out.
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
-}
 
 /// Re-exported [`crate::prompts::fenced_block`] under the name callers learned first.
 pub use crate::prompts::fenced_block;

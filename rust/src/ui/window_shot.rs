@@ -37,7 +37,7 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
 /// moves the divider up so the log gets room of its own".
 pub fn opened_px(divider: &gtk::Paned) -> Option<i32> {
     let bottom = divider.end_child()?;
-    let log = find_in_bottom(&bottom, "log-expander")?
+    let log = super::window_divider::find_in(&bottom, "log-expander")?
         .downcast::<gtk::Expander>()
         .ok()?;
     // THE COLLAPSED CASE IS THE RESTING CASE — leave it to `rest_split`, which is what the shell already
@@ -67,26 +67,6 @@ pub fn opened_px(divider: &gtk::Paned) -> Option<i32> {
         reposition(divider);
     }
     Some(band)
-}
-
-/// The first widget named `name` at or below `node`, within the band.
-fn find_in_bottom(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if node.widget_name() == name {
-        return Some(node.clone());
-    }
-    for child in node
-        .observe_children()
-        .iter::<glib::Object>()
-        .filter_map(Result::ok)
-    {
-        if let Some(widget) = child
-            .downcast_ref::<gtk::Widget>()
-            .and_then(|w| find_in_bottom(w, name))
-        {
-            return Some(widget);
-        }
-    }
-    None
 }
 
 /// Start the divider so the band is exactly [`height_px`] tall: the handle goes to `total − band`, leaving

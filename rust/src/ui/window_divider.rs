@@ -213,7 +213,7 @@ pub fn rest_split(divider: &gtk::Paned) {
 }
 
 /// The first widget named `name` at or below `node`, how [`rest_split`] finds the two widgets §1 counts.
-fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+pub(crate) fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if node.widget_name() == name {
         return Some(node.clone());
     }

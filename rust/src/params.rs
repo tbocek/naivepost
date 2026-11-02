@@ -16,6 +16,7 @@ use crate::cut_review;
 use crate::cut_screen;
 use crate::cut_select;
 use crate::cut_speed;
+pub(crate) use crate::cut_speed::short_number as num;
 use crate::cut_speed_pass;
 use crate::cut_trim;
 use crate::degraded;
@@ -77,18 +78,6 @@ pub enum Family {
     Eng,
     /// Not §10's: an engineering value §10 has no row for yet.
     Other,
-}
-
-/// A number the way §10 writes it: whole numbers lose the `.0`, fractions keep as few digits as they need.
-pub(crate) fn num(value: f64) -> String {
-    if value == value.trunc() {
-        return format!("{}", value as i64);
-    }
-    let mut text = format!("{value}");
-    while text.ends_with('0') && !text.ends_with(".0") {
-        text.pop();
-    }
-    text.trim_end_matches('.').to_string()
 }
 
 pub(crate) fn secs(values: &[f64]) -> String {

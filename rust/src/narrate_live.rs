@@ -1,6 +1,7 @@
 //! F4.2's live half: the narration call over real HTTP.
 
 use crate::cut::Seg;
+use crate::cut_captions::is_ok as answer_is_ok;
 use crate::exchanges::{Message, Mode, Part};
 use crate::layout::Tree;
 use crate::llm_request;
@@ -387,11 +388,6 @@ fn run_narrate_tool(
         }
         other => crate::tools::error(&format!("{other} is not a tool of this call")),
     }
-}
-
-/// Whether a tool answer is a success rather than the `{}` error shape (same read `narrate_call` uses).
-fn answer_is_ok(answer: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(answer).is_ok_and(|body| body.get("error").is_none())
 }
 
 /// The offset the tool actually placed the line at — the clamped one it answered with, not the one the

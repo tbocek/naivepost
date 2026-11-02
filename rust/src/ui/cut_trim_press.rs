@@ -46,10 +46,6 @@ pub fn bands(cut_: &Cut, filmed: &[Recording]) -> StripBands {
     }
 }
 
-/// F2.8 S1: the wave strip's peak-cache rate: `wave::write`'s own, restated because `params.rs` holds no
-/// numbers (F2.11 owns the real waveform rows).
-const WAVE_HZ: f64 = 20.0;
-
 /// F2.8 S2: does the press's second lie inside the band's seconds? A band that sits nowhere near the pointer
 /// takes nothing.
 pub fn press_falls_inside(band: Option<&crate::cut_select::Selection>, at_seconds: f64) -> bool {
@@ -279,96 +275,6 @@ pub fn press_unmoved(window: &adw::ApplicationWindow) {
     }
 }
 
-/// The plate colours: a dim lane plate under the kept greens, and the recordings' blue wave strip. The
-/// geometry is the point; a missing cache draws a flat baseline.
-pub fn paint_bands(cr: &cairo::Context, w: f64, cut_: &Cut, filmed: &[Recording], pps: f64) {
-    let bands = bands(cut_, filmed);
-    let (lane_top, lane_bottom) = bands.recorders;
-    if lane_bottom > lane_top {
-        for lane in &cut_.lanes {
-            let x = lane.at * pps;
-            let wide = (lane.dur * pps).max(2.0);
-            if x > w {
-                continue;
-            }
-            cr.set_source_rgba(0.35, 0.45, 0.6, 0.45);
-            cr.rectangle(
-                x,
-                lane_top + 2.0,
-                wide.min(w - x),
-                lane_bottom - lane_top - 4.0,
-            );
-            let _ = cr.fill();
-            cr.set_source_rgb(0.95, 0.95, 0.95);
-            cr.set_font_size(9.0);
-            cr.move_to(x + 3.0, lane_bottom - 5.0);
-            let _ = cr.show_text(&lane.name);
-        }
-    }
-    let (wave_top, wave_bottom) = bands.wave;
-    for rec in filmed {
-        paint_row_wave(cr, w, rec, pps, wave_top, wave_bottom);
-    }
-}
-
-/// One row's wave strip at the caller's geometry: the placeholder strip and the PAINTED band's picture rows
-/// (`cut_tracks::row_wave_px`) both call it, so both ink the same plate from the same cache.
-pub fn paint_row_wave(
-    cr: &cairo::Context,
-    w: f64,
-    rec: &Recording,
-    pps: f64,
-    top: f64,
-    bottom: f64,
-) {
-    if bottom <= top {
-        return;
-    }
-    let x = rec.start * pps;
-    let wide = ((rec.end - rec.start) * pps).max(2.0).min((w - x).max(0.0));
-    if x > w || wide <= 0.0 {
-        return;
-    }
-    cr.set_source_rgba(0.2, 0.4, 0.8, 0.30);
-    cr.rectangle(x, top, wide, bottom - top);
-    let _ = cr.fill();
-    // Ask the real cache (`cache/waves/<base>.wave`) and draw a peak column every `1/WAVE_HZ` s; none, flat baseline.
-    let peaks = cached_peaks(&rec.base);
-    cr.set_source_rgb(0.15, 0.32, 0.66);
-    let mid = top + (bottom - top) / 2.0;
-    match &peaks {
-        Some(block) => {
-            let step = 1.0 / WAVE_HZ * pps;
-            let first = (rec.start * WAVE_HZ) as usize;
-            let mut column = 0usize;
-            let mut px = x;
-            while px < x + wide {
-                let peak = block
-                    .get(first + column)
-                    .map(|peak| (*peak as f64 / 255.0) * (bottom - top) / 2.0)
-                    .unwrap_or(0.0);
-                cr.rectangle(px, mid - peak, step.max(1.0), peak * 2.0);
-                let _ = cr.fill();
-                column += 1;
-                px += step;
-            }
-        }
-        None => {
-            cr.rectangle(x, mid, wide, 1.0);
-            let _ = cr.fill();
-        }
-    }
-}
-
-/// F2.9 S2: the pieces a sound paste LAID over the kept footage, painted on top of the bar. A segment with a
-/// non-empty `lane` is what [`crate::cut_copy::lay_pieces`] writes; it is neither kept footage nor an insert.
-///
-/// Drawn in the wave-plate blue ("this is audio") as a thin plate at the bar's bottom so the picture stays
-/// visible. The lane name goes on only when the box is wide enough to hold it.
-pub fn paint_laid_pieces(cr: &cairo::Context, w: f64, cut_: &Cut, pps: f64) {
-    paint_laid_pieces_in(cr, w, cut_, pps, cut_trim::RULER_H, 8.0);
-}
-
 /// [`paint_laid_pieces`] with the caller's bar geometry (`top`, and `plate_from_top` as the bar's height), so
 /// the placeholder strip and the PAINTED band show the same pieces.
 pub fn paint_laid_pieces_in(
@@ -399,49 +305,6 @@ pub fn paint_laid_pieces_in(
         cr.move_to(x + 2.0, top + plate_from_top - 9.0);
         let _ = cr.show_text(&seg.lane);
     }
-}
-
-/// This recording's cached mono envelope, if `cache/waves` holds one that applies; best-effort.
-fn cached_peaks(base: &str) -> Option<Vec<u8>> {
-    // Which folder's cache to read: the shot's own project first, then the working copy beside the launch.
-    // A headless snapshot renders a FIXTURE elsewhere and stages its envelope beside THAT fixture; a project
-    // folder's inner `session.naivepost` is tried too (`snapshot_lane::stage_envelope`).
-    let shot = crate::ui::cut_picture::snapshot_frame_tree();
-    let from_launch = crate::layout::Tree::new(crate::startup::open_dir()).ok();
-    let candidates = shot.iter().cloned().chain(from_launch).flat_map(|tree| {
-        let inner = crate::layout::Tree::new(crate::startup::session_dir(tree.dir())).ok();
-        std::iter::once(tree).chain(inner)
-    });
-    for tree in candidates {
-        let path = tree.wave(base);
-        let Ok(meta) = std::fs::metadata(&path) else {
-            continue;
-        };
-        // Held per file version: a stat is all a paint may cost (§03-shell §1); a rewritten cache is read again.
-        let stamp = (meta.len(), meta.modified().ok());
-        if let Some((at, held)) = PEAKS.with(|peaks| peaks.borrow().get(&path).cloned()) {
-            if at == stamp {
-                return held;
-            }
-        }
-        let held = crate::wave::read(&tree, base, meta.len() as i64, 0)
-            .ok()
-            .flatten()
-            .and_then(|wave| wave.chans.into_iter().next());
-        PEAKS.with(|peaks| peaks.borrow_mut().insert(path, (stamp, held.clone())));
-        if held.is_some() {
-            return held;
-        }
-    }
-    None
-}
-
-/// The envelope a wave cache file held, by file and version: see [`cached_peaks`].
-type HeldPeaks = ((u64, Option<std::time::SystemTime>), Option<Vec<u8>>);
-
-thread_local! {
-    static PEAKS: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, HeldPeaks>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 thread_local! {

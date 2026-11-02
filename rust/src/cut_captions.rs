@@ -181,7 +181,7 @@ pub fn skipped(first: u32, last: u32) -> String {
     format!("!!! captions: clips {first}\u{2013}{last} skipped -- the cut stands without them")
 }
 
-fn is_ok(answer: &str) -> bool {
+pub(crate) fn is_ok(answer: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(answer).is_ok_and(|body| body.get("error").is_none())
 }
 

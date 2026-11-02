@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use crate::clock;
+use crate::describe::flatten_line as flatten;
 use crate::layout::Tree;
 use crate::prepare::FIX_BLOCK_LINES;
 use crate::project::MarkingPass;
@@ -790,10 +791,6 @@ fn stamp_seconds(value: f64) -> String {
         text.pop();
     }
     text.trim_end_matches('.').to_string()
-}
-
-fn flatten(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// One line of the grounding text: `mm:ss-mm:ss label: text`, with the text on one line because the

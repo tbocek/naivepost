@@ -1,6 +1,7 @@
 //! §4's bill (`spec/11-flow-index.md` §4), asked and shown: reads the live session, gathers the numbers §4 divides by, hands them to [`crate::model_calls`] and returns one log line saying what a press will cost.
 //! Pure counting helpers at the bottom are testable without a window; helpers no door calls are named `*_for_test`.
 
+use crate::narrate_preview_media::session_tree;
 use crate::{
     cut, cut_captions, joins, layout, model_calls, narration, policy, prepare, project::Project,
     roles, run, word_list,
@@ -41,12 +42,6 @@ pub fn bill_for(
         run::Step::Narrate => narrate_bill(tree),
         run::Step::Produce => produce_bill(project, tree),
     }
-}
-
-/// This session's project folder, resolved like every flow; `None` when none exists yet.
-fn session_tree() -> Option<layout::Tree> {
-    let dir = crate::startup::open_dir();
-    layout::Tree::new(&dir).ok()
 }
 
 /// Prepare: `describe ×(frames/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins)`.

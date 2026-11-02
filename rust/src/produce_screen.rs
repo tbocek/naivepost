@@ -4,6 +4,7 @@
 //! them. `P.policy.gameVolume` (0.22) is the one §10 number shown; which picture is the base stays
 //! [`crate::publish`]'s answer.
 
+use crate::produce_runs::even;
 use crate::project::{Codec, Container, Publish, Subtitles, TextMark};
 use crate::tools::mm_ss;
 
@@ -216,12 +217,6 @@ fn ratio(aspect: &str) -> Option<(u32, u32)> {
     let w: u32 = w.trim().parse().ok()?;
     let h: u32 = h.trim().parse().ok()?;
     (w > 0 && h > 0).then_some((w, h))
-}
-
-/// Rounded down to even: the encoders are 4:2:0, which refuses an odd edge, and rounding up would pass
-/// [`THUMB_LONG_SIDE`].
-fn even(side: u32) -> u32 {
-    side - side % 2
 }
 
 /// §1: `Make base` on every non-base slot: the chosen reference goes to the front and the old base joins the

@@ -192,7 +192,7 @@ fn lane(source: &Source) -> String {
 
 /// The file name for a tooltip: the middle goes when there is no room, but the
 /// extension never does — `.mkv` against `.wav` is what distinguishes two rows.
-fn base_name(path: &str) -> &str {
+pub(crate) fn base_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 

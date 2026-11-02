@@ -12,6 +12,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::clip_pass_ask::wording;
 use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
@@ -26,16 +27,6 @@ use crate::tools::Tool;
 /// The step name this job's cache entries and timed rows carry: `cache/llm/translate/<key>`, keyed on the
 /// exact request (§00-principles).
 pub const STEP: &str = "translate";
-
-/// The wording to ask with, through the settings read path so an edit wins (§04-prepare#6); with no
-/// settings folder, the shipped `spec/prompts/translate.md`.
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
-}
 
 /// The SYSTEM for one translate call: the house rules cut to this job's section plus the shipped translate
 /// prompt. No User Context: §3.10's request is numbered lines and nothing else.

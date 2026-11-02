@@ -16,6 +16,7 @@ pub mod cut_film_cache;
 /// independent slots.
 pub mod cut_hand;
 pub mod cut_tracks;
+pub mod cut_tracks_draw;
 /// §1 badge **4** — the header's project name/path and the three stages it narrows through.
 pub mod header_title;
 /// F0.6 Open at start — the launch's door: which project a start opens, and what it leaves
@@ -51,8 +52,12 @@ pub mod produce_page;
 /// §08-produce#1-screen — where each encoder setting's label+control PAIR lands in the settings
 /// grid ("label + control pairs … left to right and then down, several to a line").
 pub mod produce_page_layout;
+pub mod produce_page_presses;
 /// §08-produce#1-screen — the render legs the Produce page hands to `produce_exec`.
 pub mod produce_page_rows;
+pub mod produce_page_run;
+pub mod produce_page_settings;
+pub mod produce_page_wire;
 /// §08-produce#1-screen 2 and 7: the PAINT funcs for this page's plates (the thumbnail with its
 /// words and crop box, each image slot).
 pub mod produce_paint;
@@ -92,10 +97,12 @@ pub mod run_close;
 /// is open, and where the next Save goes.
 pub mod save_apply;
 pub mod settings;
+pub mod settings_doors;
 /// §03-shell#5 -- each Settings section's ⓘ: what that section's server is expected to speak.
 pub mod settings_info;
 /// §03-shell#5 -- the named server entries under the Writing, Audio and Drawing headings.
 pub mod settings_servers;
+pub mod settings_wire;
 pub mod settle;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that
 /// goes to the status row.

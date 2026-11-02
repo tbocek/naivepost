@@ -2,6 +2,8 @@
 //! §F1.9 S2's brief goes out as the shipped `retake` prompt plus numbered lines, S3's three identical calls get their own cache slots, and answers go through §3.4's tools (`mark_abandoned`, `unmark`, `get_lines`, `finish`) so the TOOL decides what a valid mark is. Answers arrive as tool calls and as the prototype's strict JSON in the content (§S3); both are honoured.
 //! New here is only the wire, pooling three runs into one set of marks, and reading the words S4 checks against.
 
+use crate::describe_call::user_context;
+use crate::describe_call::wording;
 use crate::edges::AlignedWord;
 use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
@@ -661,18 +663,6 @@ pub fn system_message(paths: &Paths, context: &str) -> String {
         false,
         false,
     )
-}
-
-fn wording(paths: &Paths, key: &str) -> String {
-    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
-    settings::prompt_text(paths, key, &fallback).unwrap_or(fallback)
-}
-
-/// The User Context from the session's note in `naivepost.json`; absent means none, not an invented one.
-fn user_context(tree: &Tree) -> String {
-    crate::project::load(tree.dir())
-        .map(|project| project.context.clone())
-        .unwrap_or_default()
 }
 
 /// The deciding parts for one pooled run; `run_index` gives three identical questions three slots.

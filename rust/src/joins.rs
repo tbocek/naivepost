@@ -2,6 +2,7 @@
 //! started, and the stumble either side of it that the video has to run over as one piece of speech.
 
 use crate::edges::{self, AlignedWord};
+use crate::fix_session::lane_of;
 use crate::hand_edit;
 use crate::layout::Tree;
 use crate::project::{MarkingPass, Project};
@@ -611,16 +612,6 @@ fn session_words(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>)
         }
     }
     (words, times)
-}
-
-/// The lane a source's files live under: its file name minus the extension. Same reduction the
-/// retake pass uses, so both read the same `words.json`.
-fn lane_of(source: &crate::project::Source) -> String {
-    let name = source.path.rsplit('/').next().unwrap_or(&source.path);
-    match name.split_once('.') {
-        Some((stem, _)) => stem.to_string(),
-        None => name.to_string(),
-    }
 }
 
 /// The numbers this module's rules count with, exposed so a test can assert the parameter ids rather

@@ -1,5 +1,6 @@
 //! F5.6 S2: the real `youtube` call — §3.9's six tools answered by the rules that already exist.
 
+use crate::clip_pass_ask::wording;
 use crate::exchanges::{Message, Mode, Part, ToolCall};
 use crate::layout::Tree;
 use crate::llm_request;
@@ -90,15 +91,6 @@ fn read_turn(
         *spoken.borrow_mut() = turn.content.clone();
     }
     Ok(turn)
-}
-
-/// The wording to ask with, through the settings read path so an edit here wins (§04-prepare#6).
-fn wording(paths: Option<&Paths>, key: &str) -> String {
-    let fallback = crate::prompts::shipped_text(key).unwrap_or_default();
-    match paths {
-        Some(paths) => settings::prompt_text(paths, key, &fallback).unwrap_or(fallback),
-        None => fallback,
-    }
 }
 
 pub fn system(paths: Option<&Paths>) -> String {

@@ -166,11 +166,11 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
-fn is_zero_f64(v: &f64) -> bool {
+pub(crate) fn is_zero_f64(v: &f64) -> bool {
     *v == 0.0
 }
 
-fn is_zero_i32(v: &i32) -> bool {
+pub(crate) fn is_zero_i32(v: &i32) -> bool {
     *v == 0
 }
 

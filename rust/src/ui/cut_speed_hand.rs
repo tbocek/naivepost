@@ -9,6 +9,7 @@ use crate::cut;
 use crate::cut_speed;
 use crate::fx_zoom;
 use crate::shell::Page;
+use crate::ui::cut_label_hand::label_entry_of as speed_entry_of;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo, log_line,
     press_band_esc, record_edit, refresh_effects_lane, save_insert_cut, selection, trim_seconds,
@@ -228,11 +229,6 @@ fn speed_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
-/// The same lookup with the window passed in: a debounced commit only has the window it was handed.
-fn speed_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
-}
-
 /// Read one of the speed form's dropdowns back from THIS window's tree.
 fn speed_dropdown(name: &str) -> Option<gtk::DropDown> {
     LAST_SPEED_WINDOW.with(|cell| {
@@ -418,23 +414,7 @@ pub(crate) fn wire_speed_buttons(window: &adw::ApplicationWindow) {
 
 /// Esc releases an open speed form; claims Escape only when this window owns a form.
 pub(crate) fn wire_speed_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_speed_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    crate::ui::cut_form_buttons::wire_esc(window, press_speed_esc);
 }
 
 /// F3.8 S3 (`Esc drops the hold and disarms`): the band's own Esc controller, shaped like `wire_speed_esc`: it prints what [`press_band_esc`] answered and lets the key

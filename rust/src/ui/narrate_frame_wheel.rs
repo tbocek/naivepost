@@ -52,7 +52,7 @@ pub fn step_paused(window: &adw::ApplicationWindow, dy: f64) -> Option<f64> {
 
 /// The page's preview plate. Same lookup the painter's `install_draw` uses, so the wheel and the ink are
 /// certainly on one widget.
-fn picture_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
+pub(crate) fn picture_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
     let content = window.content()?;
     crate::ui::window::find_widget_by_name(&content, "narrate-picture")?
         .downcast()

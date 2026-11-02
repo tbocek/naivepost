@@ -600,23 +600,7 @@ pub fn press_zoom_esc(window: &adw::ApplicationWindow) -> Option<String> {
 }
 
 pub(crate) fn wire_zoom_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_zoom_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = ui::find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    crate::ui::cut_form_buttons::wire_esc(window, press_zoom_esc);
 }
 
 pub(crate) fn refresh_history_buttons(window: &adw::ApplicationWindow) {

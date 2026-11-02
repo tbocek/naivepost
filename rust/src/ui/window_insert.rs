@@ -4,11 +4,11 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::cut::Cut;
 use crate::cut_cards;
 use crate::cut_insert;
 use crate::cut_select;
 use crate::startup;
+pub use crate::ui::cut_folds::save_folds as save_insert_cut;
 use crate::ui::cut_form_frame;
 use crate::ui::window as ui;
 
@@ -346,12 +346,6 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
     }
 }
 
-pub fn save_insert_cut(cut_: &Cut) {
-    // §7's one writer: the session resolution and the call to `cut::save` are `cut_save`'s, not
-    // this door's.
-    crate::ui::window_logs::save_cut_or_say(cut_);
-}
-
 /// F2.12 S1 + S2: ⧉ Insert.
 pub fn press_insert(window: &adw::ApplicationWindow) -> String {
     if let Some(held) = crate::ui::cut_hand::held_clip_or_edge() {
@@ -499,11 +493,6 @@ pub(crate) fn open_insert_chooser(
         );
     });
     crate::ui::chooser_hold::show(&chooser);
-}
-
-/// F2.12 S3 + S4: the file came back from the chooser — build the plan and draw the form.
-pub fn insert_chosen(window: &adw::ApplicationWindow, file: &std::path::Path, at: f64) -> String {
-    insert_chosen_with_length(window, file, at, None)
 }
 
 pub fn insert_chosen_with_length(

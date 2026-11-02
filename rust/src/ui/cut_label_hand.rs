@@ -175,7 +175,7 @@ fn label_entry(name: &str) -> Option<gtk::Entry> {
     })
 }
 
-fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
+pub(crate) fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
     find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
@@ -292,21 +292,5 @@ fn wire_label_buttons(window: &adw::ApplicationWindow) {
 /// Esc releases an open label form, wired after `set_content` like every other control. Claims
 /// Escape only when this window owns a form.
 pub(crate) fn wire_label_esc(window: &adw::ApplicationWindow) {
-    let controller = gtk::EventControllerKey::new();
-    let win = window.clone();
-    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key != gtk::gdk::Key::Escape {
-            return glib::Propagation::Proceed;
-        }
-        match press_label_esc(&win) {
-            Some(said) => {
-                if let Some(status_line) = find_status(win.upcast_ref()) {
-                    status_line.set_text(&said);
-                }
-                glib::Propagation::Stop
-            }
-            None => glib::Propagation::Proceed,
-        }
-    });
-    window.add_controller(controller);
+    crate::ui::cut_form_buttons::wire_esc(window, press_label_esc);
 }

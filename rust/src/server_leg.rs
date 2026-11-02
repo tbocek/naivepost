@@ -289,25 +289,9 @@ pub fn call(
     body: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> (Request, Result<Sent, String>) {
-    // `Dial` carries the upload's file name, which this form never has.
     #![allow(clippy::too_many_arguments)]
-    call_dialed(
-        tree,
-        base,
-        &Dial {
-            server,
-            endpoint,
-            kind,
-            job,
-            body: body.map(str::as_bytes),
-            filename: None,
-            cancelled,
-            liveness: None,
-            waited_ms: 0,
-            delta: None,
-            budget: None,
-            attempt: 1,
-        },
+    call_budget(
+        tree, base, server, endpoint, kind, job, body, None, cancelled,
     )
 }
 
