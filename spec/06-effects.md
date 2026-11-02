@@ -39,7 +39,7 @@ Legacy: `view` → zoom; `mute` → `snd: "mute"`. `ease` stores "" for linear, 
 
 <sub>Screenshot of the prototype on the ETH lecture project.</sub>
 
-Colours: zoom (0.25,0.72,0.82), staying zoom (0.95,0.62,0.15), speed/stop (0.92,0.42,0.6), text (0.6,0.55,0.95), svg (0.4,0.8,0.5), volume (0.95,0.85,0.2), label grey-white. Rows (stacked top to bottom inside the lane, which sits between the selection band above and the picture rows below): first-fit by seconds (span floor 0.4 s), an effect going on the topmost row where it fits; lane one row deep even when empty.
+Colours: zoom (0.25,0.72,0.82), staying zoom (0.95,0.62,0.15), speed/stop (0.92,0.42,0.6), text (0.6,0.55,0.95), svg (0.4,0.8,0.5), volume (0.95,0.85,0.2), label grey-white. Rows (stacked top to bottom inside the lane, which sits between the selection band above and the picture rows below): first-fit by seconds, an effect going on the topmost row where it fits; a bar under 0.4 s is drawn on row 0 and claims no seconds there; lane one row deep even when empty.
 
 Preview (paused): outside the camera rect dimmed black 0.45; rect stroked white with a plate (measured on the picture as the panel shows it: contained and centred, so on a panel wider or taller than the footage the rect and every mark are drawn on the centred picture, not from the panel's corner); visible overlays at real alpha, the held one full with a dashed violet outline; a box being drawn dashed. Playing: only the black mask over what the finished frame hides, plus titles; camera layer on the smoothed live clock. A stop's still: rendered from the scene's own camera, fitted on the footage's transform.
 
@@ -47,7 +47,7 @@ Preview vs render, deliberately different: preview runs speed at one flat rate (
 
 ## 3. Flows
 
-**Prototype, for [F3.9](#f39-captions-proposed-by-the-model-after-the-cut)–[F3.11](#f311-decorations-proposed-by-the-model):** none of the tools named there exists. All three passes get one JSON reply the app parses, as the cut pass does ([`05-cut.md`](05-cut.md) [F2.14](05-cut.md#f214-suggest-a-cut)); the prototype's only tools are the web tools, only on the cut call. The tool shapes below are the rewrite.
+**Tools, for [F3.9](#f39-captions-proposed-by-the-model-after-the-cut)–[F3.11](#f311-decorations-proposed-by-the-model):** each pass offers its tools and reads the calls. A server refusing the `tools` field gets the same body without it and the reply is parsed as JSON; a reply carrying a document instead of calls while tools are on the wire is asked again once. The passes run after the cut in the order captions, speeds, decorations, each only where the policy lets it run (a pass ruled out says e.g. "decorations are off — the context ruled them out").
 
 ### F3.1 Zoom by hand
 
@@ -55,23 +55,23 @@ Preview vs render, deliberately different: preview runs speed at one flat rate (
 
 ![Zoom: the box drawn on the preview and its form](img/06-zoom.png)
 
-<sub>Screenshot of the prototype on the ETH lecture project.</sub> A free rectangle, not the cut's shape the prototype's words promised (S2).
+<sub>Screenshot of the prototype on the ETH lecture project.</sub> A free rectangle, not the cut's shape the arm's words promise (S2).
 
 ```mermaid
 flowchart TD
   A(["Effect ▾ → Zoom"]) --> L{"a line?"}
   L -- no --> R["“click a track first — the effect needs a moment to happen at”"]:::refuse
   L -- yes --> ARM["armed · the camera layer goes down so the whole source shows"]
-  ARM --> D["drag a box on the preview · under 12 px ignored"]
-  D --> DEF["defaults: glide 1 s in and out · 3 s, or the marked stretch<br/>stay when an aspect is set and no staying zoom exists"]
+  ARM --> D["drag a box on the preview · under 12 px on either axis: disarmed, “too small to zoom — …”"]
+  D --> DEF["defaults: glide 1 s in and out · 3 s<br/>stay when an aspect is set and no staying zoom exists"]
   DEF --> F["form “Zoom at m:ss”: Length · Pull back / Stay on it · Fade in · Fade out · Curve"]:::done
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 ✚ Effect ▾ → ⊕ Zoom arms a drag (no line → "click a track first — the effect needs a moment to happen at"; same entry again disarms). Status/panel text: "Drag a box on the video: the picture zooms there and comes back out on its own, or stays on it — the form that opens is where that is said. The box keeps the cut's shape; let go near the full width or height to snap to it. It starts at the red line and runs 3 s…" (or "It covers the marked stretch — a – b, X s"). Camera layer goes down; whole source visible. S2 Drag a box on the preview (< 12 px ignored; smallest output-shaped window containing it is taken). The gesture is a free rectangle, and the words say so: "Drag a box on the video" promises no shape and no snap (prototype: the armed-drag text promised the box keeps the cut's shape and snaps near full width/height, and every drawing drag — zoom, text, svg — took the free-rectangle path where neither happens). S3 Defaults: glide 1 s in and out, length 3 s (or the marked stretch); `stay` when an aspect is set and no staying zoom exists yet (then no glides). S4 Form "Zoom at m:ss": Length (s); At the end: Pull back / Stay on it; Fade in (s); Fade out (s) (greyed when staying: "A camera that stays has no way back, so no fade out."); Curve (Linear). Live; length ≥ 0.4. S5 Status "<label> — ↶ Undo takes it back" (or "… — the video shows this region from here on…").
-Nothing armed or held: a click on the preview picture (press and release without passing GTK's drag threshold) only plays and pauses, whatever is placed under it ([05 F2.1](05-cut.md#f21-play-the-recording-) S2). Framing needs travel. On a paused preview a drag that starts inside a zoom's box takes that zoom (moves or sizes it, [F3.8](#f38-hold-move-resize-edit-remove) S3; under 12 px it only takes it in hand: "<label> re-framed — ↶ Undo takes it back"); a drag clear of every box draws a new rectangle and opens its form "Zoom at m:ss", whatever zoom stands there: "<label> — ↶ Undo takes it back". First rewrite: one click ran both, the toggle and the framing press, so a click over a placed zoom started play and took the zoom, a click where no zoom stood opened a zoom form instead of playing, and a drag clear of every box under a placed zoom was refused.
+S1 ✚ Effect ▾ → ⊕ Zoom arms a drag (no line → "click a track first — the effect needs a moment to happen at"; same entry again disarms). Status/panel text: "Drag a box on the video: the picture zooms there and comes back out on its own, or stays on it — the form that opens is where that is said. The box keeps the cut's shape; let go near the full width or height to snap to it. It starts at the red line and runs 3 s; the form that opens says how long." The armed path always names and uses 3 s, whatever is marked. Camera layer goes down; whole source visible. S2 Drag a box on the preview (under 12 px on either axis: the arm goes, "too small to zoom — a box has to be at least 12 px"). The gesture is a free rectangle, though the words above still promise the cut's shape and a snap: neither happens, for zoom, text or svg. Only the box's centre and height are stored; the window's width follows the aspect. S3 Defaults: glide 1 s in and out, length 3 s; `stay` when an aspect is set and no staying zoom exists yet (then no glides). S4 Form "Zoom at m:ss": Length (s); At the end: Pull back / Stay on it; Fade in (s); Fade out (s) (greyed when staying: "A camera that stays has no way back, so no fade out."); Curve (Linear). Live; length ≥ 0.4. S5 The drag ends with "zoom at m:ss — the form says how it ends"; Apply places the record and says "zoom at m:ss — ↶ Undo takes it back" (or "… — the video shows this region from here on; ↶ Undo takes it back"). A band crossing to another camera row is trimmed at Apply ([§9](#9-where-recordings-overlap)).
+Nothing armed or held: a click on the preview picture (press and release without passing GTK's drag threshold) only plays and pauses, whatever is placed under it ([05 F2.1](05-cut.md#f21-play-the-recording-) S2). Framing needs travel. On a paused preview a drag that starts inside a zoom's box takes that zoom (moves or sizes it, [F3.8](#f38-hold-move-resize-edit-remove) S3; under 12 px it only takes it in hand: "zoom at m:ss re-framed — ↶ Undo takes it back", nothing written); a drag clear of every box draws a new rectangle and opens its form "Zoom at m:ss", whatever zoom stands there, saying "zoom at m:ss — ↶ Undo takes it back" before anything is placed; a marked stretch covering the line sets the length, while the start stays the line. Under 12 px on either axis, past the click threshold: "no zoom armed — pick ⊕ Zoom first". First rewrite: one click ran both, the toggle and the framing press, so a click over a placed zoom started play and took the zoom, a click where no zoom stood opened a zoom form instead of playing, and a drag clear of every box under a placed zoom was refused.
 Camera path: from the centred full-fill slice; each zoom glides from the camera's position at its start to its rect, holds, and (unless staying) glides back; a staying zoom becomes the new settled frame; nothing reaches backwards; fade-in wins overlaps. Rect clamp hf ∈ [0.02, 12], centre ∈ [−2, 3].
 
 ### F3.2 Aspect ratio
@@ -105,7 +105,7 @@ flowchart TD
   A(["Effect ▾ → Speed"]) --> S{"a selection ≥ 0.2 s?"}
   S -- yes --> SL["t and dur from it · rate 0.5"]
   S -- no --> L{"a line?"}
-  L -- yes --> ST["a stop at the line · 2 s · 0.5 s fades"]
+  L -- yes --> ST["a stop · 2 s · 0.5 s fades · form opens at 0:00"]
   L -- no --> R["“click a track or mark a stretch first — …”"]:::refuse
   SL --> F["form “Speed a – b”: Speed × · Sound · Length · Fade in · Fade out · Curve"]
   ST --> F
@@ -117,7 +117,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 ⏩ Speed: selection ≥ 0.2 s (every effect's floor for a band to count as marked) → t/dur from it, rate 0.5; only a line → a stop at the line, 2 s, 0.5 s fades; neither → "click a track or mark a stretch first — speed needs seconds to work on". S2 Form "Speed a – b": Speed × (×0 — stop, ×0.25, ×0.5, ×0.75, ×1 — as filmed, ×1.5, ×2, ×4, ×8, ×20, ×100, Custom…); Sound (With the picture / With the picture, pitched / 1× to the effect's end / 1× to the scene's end / Silent); Length (s); Fade in (s) ("…A ramp needs about 0.6s of footage for every × of the rate…"); Fade out (s); Curve; a cost note ("N s on screen: the sound ends N s behind the picture, and going back in sync skips those seconds."). S3 Rate 0 → stop, length ≥ 0.5, no clamp; else clampSpeed: rate ∈ [P.eng.minRate 0.05, P.eng.maxRate 100], on-screen length ≥ P.eng.minClipSeconds (0.5); the rate gives way. S4 Status "… — the footage plays at that rate there and the cut gets longer or shorter to match; ↶ Undo takes it back" / "… — the picture stands still there while the clock runs…".
+S1 ⏩ Speed: selection ≥ 0.2 s (every effect's floor for a band to count as marked) → t/dur from it, rate 0.5; only a line → a stop, 2 s, 0.5 s fades, its form opening at 0:00 rather than at the line; neither → "click a track or mark a stretch first — speed needs seconds to work on". S2 Form "Speed a – b": Speed × (×0 — stop, ×0.25, ×0.5, ×0.75, ×1 — as filmed, ×1.5, ×2, ×4, ×8, ×20, ×100, Custom…); Sound (With the picture / With the picture, pitched / 1× to the effect's end / 1× to the scene's end / Silent); Length (s); Fade in (s) ("…A ramp needs about 0.6s of footage for every × of the rate…"); Fade out (s); Curve; a cost note ("N s on screen: the sound ends N s behind the picture, and going back in sync skips those seconds."). S3 Rate 0 → stop, length ≥ 0.5, no clamp; else clampSpeed: rate ∈ [P.eng.minRate 0.05, P.eng.maxRate 100], on-screen length ≥ P.eng.minClipSeconds (0.5); the rate gives way. S4 The press says "Speed a – b — say the rate and ▸ Apply places it"; Apply refuses a stop on a second the cut does not keep ([§9](#9-where-recordings-overlap)). Status "… — the footage plays at that rate there and the cut gets longer or shorter to match; ↶ Undo takes it back" / "… — the picture stands still there while the clock runs…".
 Arithmetic: overlapping rates average per span; spans rendering under 0.5 s heal into the longer neighbour; ramps are geometric staircases, each stair ≥ P.eng.rampStepSeconds (0.6) on screen, built whole or not at all; footage under a still runs at 1×.
 
 ### F3.4 Text (caption) by hand
@@ -144,7 +144,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 ❝ Text arms: "Drag the box the words go in — anywhere on the picture, any shape. A click puts one across the lower third." Camera layer stays up (box is on the output frame). S2 Drag or click (default box: lower third {0.5, 0.78, 0.8, 0.16}); t/dur from the line (3 s) or selection; fades 0.3. S3 Form "Text at m:ss": the words (3-line box, the column's full width, above the other fields; Enter = new line), Length, Fade in, Fade out, Curve; length ≥ 0.3. Empty words not placed ("type the words and they go on the picture — the form applies as you type it"). S4 Fitting: largest size where ≤ 12 lines of 0.58 em per character fit the box (min 7 pt); bold sans-serif, white, dark dilated edge; same function for preview and render. S5 On the preview a box moves — snapping within 10 px to the finished frame's left edge, centre, right edge (and top, middle, bottom); a moved box offers all three of its own lines, a dragged edge only itself — and resizes (independent axes, 16 px floor); a press without travel toggles play/pause wherever it lands.
+S1 ❝ Text arms: "Drag the box the words go in — anywhere on the picture, any shape. A click puts one across the lower third." Camera layer stays up (box is on the output frame). S2 Drag or click (default box: lower third {0.5, 0.78, 0.8, 0.16}); under 12 px on either axis counts as the click; t/dur from the line (3 s) or selection; fades 0.3. S3 Form "Text at m:ss": the words (3-line box, the column's full width, above the other fields; Enter = new line), Length, Fade in, Fade out, Curve; length ≥ 0.3. Empty words not placed ("type the words and they go on the picture — the form applies as you type it"). Apply says "Text recorded — ↶ Undo takes it back". S4 Fitting: largest size where ≤ 12 lines of 0.58 em per character fit the box (min 7 pt); bold sans-serif, white, dark dilated edge; same function for preview and render. S5 On the preview a placed caption's box (travel ≥ 12 px on one axis; within 8 px of an edge it resizes, inside it moves) moves — snapping within 10 px to the finished frame's left edge, centre, right edge (and top, middle, bottom); a moved box offers all three of its own lines, a dragged edge only itself — and resizes (independent axes, 16 px floor); a press without travel toggles play/pause wherever it lands.
 
 ### F3.5 SVG drawing by hand
 
@@ -164,7 +164,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-▨ SVG asks for the file first ("Choose a drawing to lay over the video", from `assets/`), then arms ("Drag the box <file> goes in — … the drawing keeps its own shape inside it. A click puts one across the middle."). Default box: middle {0.5, 0.5, 0.6, 0.6}. Form "SVG at m:ss": file + Choose…, Length, fades, Curve. Preview raster via ffmpeg, 512 px, transparent, cached per file; made on a worker (new, [03 §1](03-shell.md#1-the-window)): the form says "being made" and gets its picture when the raster lands. No file → not placed.
+▨ SVG asks for the file first ("Choose a drawing to lay over the video", from `assets/`), then arms ("Drag the box <file> goes in — … the drawing keeps its own shape inside it. A click puts one across the middle."). Default box: middle {0.5, 0.5, 0.6, 0.6}. Form "SVG at m:ss": file + Choose…, Length, fades, Curve; the box is fixed by the drag, since a placed drawing's box has no drag on the picture. Preview raster via ffmpeg, 512 px, transparent, cached per file; made on a worker (new, [03 §1](03-shell.md#1-the-window)): the form says "being made" and gets its picture when the raster lands. No file → not placed.
 
 ### F3.6 Volume by hand
 
@@ -208,7 +208,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-🏷 Label: selection or line..+2 s ("click a track or mark a stretch first — a label names a moment, so it needs one"); Form "Label at m:ss" (Length floor 0.4 s): Name ("what you call this moment -- "the reveal", "boss fight". It changes nothing in the video: it is written into the brief the narration writer is given…"), Length (the stretch a clip must overlap). Empty name not placed ("type a name and it is marked — nothing is placed until then"). Drawn as a tag; never rendered; narration brief lists it as MARKED.
+🏷 Label: selection or line..+2 s ("click a track or mark a stretch first — a label names a moment, so it needs one"); Form "Label at m:ss" (Length floor 0.4 s): Name (at most 10 characters; "what you call this moment -- "the reveal", "boss fight". It changes nothing in the video: it is written into the brief the narration writer is given…"), Length (the stretch a clip must overlap). Empty name not placed ("type a name and it is marked — nothing is placed until then"). Apply says "label “…” at m:ss — nothing changes in the video; the narration is told about it". Drawn as a tag; never rendered; narration brief lists it as MARKED.
 
 ### F3.8 Hold, move, resize, edit, remove
 
@@ -231,7 +231,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-S1 A press on a band picks it up (line moves to its start; status "<label> picked up"; Insert becomes ✎ Edit); ends are grips when the band is ≥ 30 px; under 4 px of travel is a click → opens the form. S2 Drag moves the whole band (clamped inside the timeline; both ends offered to snap marks: segment ends, other effects' ends, 8 px) or an end (length ≥ 0.1 s). Frame steps and ←/→ nudge a held effect unsnapped. Hold drops when the line walks > 1/24 s off the band. S3 The ✕ in the band's middle (≥ 32 px) or ⌦ removes it ("removed <label> — ↶ Undo takes it back"). A box or camera rect dragged on the picture ends with "<label> moved — ↶ Undo takes it back" or "<label> resized — …"; undo pushed on the first 2 px of travel. Esc drops the hold and disarms. S4 Edit re-finds the effect by kind and start (|Δt| < 1 ms; "that effect is no longer in the cut — nothing was changed"); box always from the live effect, never the form's snapshot. S5 Forms (in the Cut page's form column, right of the preview, in place of the idle readings; label + box pairs in the order listed, several to a line, Fade in, Fade out and Curve sharing one line where the form has them) are live: first answer pushes Undo; every keystroke lands after a debounce; each form ends with "Apply" and "Cancel", left to right, and under them the note "Kept as you type — ↶ Undo takes the whole edit back."
+S1 A drag on a band picks it up (line moves to its start; status "<label> picked up", where <label> in this flow is the kind's word: Zoom, Speed, Text, SVG, Volume, Label; Insert becomes ✎ Edit); ends are grips (6 px reach) when the band is ≥ 30 px; 4 px of travel or less is a click → opens the form. S2 Drag moves the whole band (clamped inside the timeline; both ends offered to snap marks: segment ends, other effects' ends, 8 px) or an end (length ≥ 0.1 s). Frame steps and ←/→ nudge a held effect unsnapped. Hold drops when the line walks > 1/24 s off the band. S3 The ✕ in the band's middle (≥ 32 px) or ⌦ removes it ("removed <label> — ↶ Undo takes it back"). A text box or camera rect dragged on the picture ends with "<label> moved — ↶ Undo takes it back" or "<label> resized — …", written once at release when travel is ≥ 12 px on one axis; a camera rect's top or bottom edge (8 px) sizes its height, its left or right edge and its interior slide it, unsnapped. A band drag on the lane spends its one Undo on the first 2 px of travel. Esc drops the hold and disarms. S4 Edit re-finds the effect by kind and start (|Δt| < 1 ms; "that effect is no longer in the cut — nothing was changed"); box always from the live effect, never the form's snapshot. S5 Forms (in the Cut page's form column, right of the preview, in place of the idle readings; label + box pairs in the order listed, several to a line, Fade in, Fade out and Curve sharing one line where the form has them) show the typed number after a 300 ms debounce ("N — kept as you type") without touching the cut: the record is written by Apply, which appends a new record, also when the form was opened on an existing effect; a refusal leaves the form open; each form ends with "Apply" and "Cancel", left to right, and under them the note "Kept as you type — ↶ Undo takes the whole edit back."
 
 ### F3.9 Captions proposed by the model (after the cut)
 
@@ -281,7 +281,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-One call; briefs note captions ("…, N caption(s) -- runs at 1") and the footage total. **Tools**: `set_clip_speed(clip, rate)` (rate > 1 on a captioned clip refused; rate ≈ 1 ignored), `finish`. Up to two rounds (fault appended, call put again), then "!!! speed: no usable answer — every clip plays at 1". Prompt rules: longer dull stretch → higher rate; a clip with speech plays at 1 unless the context asks for more; slow motion only on a short clip the video is about; one rate per clip. Same-rate stretches nearer than P.policy.speedGapSeconds (4) merge. Log ">>> speed: N clip(s) run fast — a of video from b of footage". No length gate.
+One call; briefs note captions ("…, N caption(s) -- runs at 1") and the footage total. **Tools**: `set_clip_speed(clip, rate)` (rate > 1 on a captioned clip refused; rate ≈ 1 ignored), `finish`. Up to two rounds (fault appended, call put again), then "!!! speed: no usable answer — every clip plays at 1". Prompt rules: longer dull stretch → higher rate; a clip with speech plays at 1 unless the context asks for more; slow motion only on a short clip the video is about; one rate per clip. A rate ≤ 0 is ignored like one ≈ 1; a refusal is said in the status and the log and costs no round. Same-rate stretches nearer than P.policy.speedGapSeconds (4) merge. Log ">>> speed: N clip(s) run fast — a of video from b of footage". No length gate.
 
 ### F3.11 Decorations proposed by the model
 
@@ -293,15 +293,15 @@ flowchart TD
   T --> V{"a clip in the list?"}
   V -- no --> RJ["the whole reply rejected"]:::refuse
   V -- yes --> K{"a known kind, a real span?"}
-  K -- no --> SK["skipped"]
-  K -- yes --> D["the app's defaults: zoom centred at 60 % · stop 2 s · volume ramps min 1, d/4<br/>gain 1 ignored, 0 kept"]:::done
+  K -- no --> SK["refused, the sentence said"]
+  K -- yes --> D["the app's defaults: zoom centred at 60 % · volume ramps min 1, d/4<br/>gain 1 ignored, 0 kept"]:::done
   T -. two rounds fail .-> F["“!!! effects: no usable answer -- the cut stands without them”"]:::refuse
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-One call over every clip, told captions and speeds. **Tools**: `add_effect(clip, kind zoom|stop|volume, start, end, gain?)`, `finish`. A clip outside the list rejects the whole reply ("clip N is not one of the clips given (1 to M)"); unknown kind or end ≤ start → skipped. Up to two rounds, then "!!! effects: no usable answer -- the cut stands without them". Prompt: few and deliberate (about three or four per five minutes unless the context says otherwise); zoom 2–4 s; one stop per video; volume for level, ducking or muting; never zoom past captions. App-applied defaults: zoom centre, 60 % height, glides min(1, d/3); stop 2 s, fades min(0.3, d/4); volume ramps min(1, d/4); gain of 1 or none ignored, 0 kept.
+One call over every clip, told captions and speeds. **Tools**: `add_effect(clip, kind zoom|stop|volume, start, end, gain?)`, `finish`. A clip outside the list rejects the whole reply ("clip N is not one of the clips given (1 to M)"); an unknown kind or a span empty after clamping into the clip → the tool's sentence, appended to the pass's status and logged, costing no round; a volume with gain 1 or none is dropped in silence. A reply proposing over P.machine.maxProposedEffects (1000) is unusable. Up to two rounds, then "!!! effects: no usable answer -- the cut stands without them". Otherwise ">>> effects: N decoration(s)" or "nothing proposed — the cut stands as it is", with " — past the guide: three or four across five minutes of finished video (a-b for m:ss)" when the count passes the scaled density. Prompt: few and deliberate (about three or four per five minutes unless the context says otherwise); zoom 2–4 s; one stop per video; volume for level, ducking or muting; never zoom past captions. App-applied defaults: zoom centre, 60 % height, glides min(1, d/3); stop fades min(0.3, d/4); volume ramps min(1, d/4); gain of 1 or none ignored, 0 kept.
 
 ### F3.12 Clamp to the cut as applied
 
@@ -325,7 +325,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-After snapping, dead-air and mark removal, coalescing: a point effect needs a footage clip under it; a zoom/text/svg/volume band crosses scene and Split borders freely and is trimmed only to the first and last footage second it still covers, dropped when under P.eng.effectMinSurvivingSeconds (1.0) of it is left in the cut; a speed is re-clamped unless a stop; a label is trimmed like the rest (prototype: dropped outright, never trimmed — yet it marks a moment for the narration brief, and the moment may still be in the cut); fades shrink proportionally; ">>> N effect(s) pointed at footage the final cut does not keep — dropped". Suggested effects replace the list, same Undo step as the segments.
+After snapping, dead-air and mark removal, coalescing: a point effect needs a footage clip under it; a zoom/text/svg/volume band crosses scene and Split borders freely and is trimmed only to the first and last footage second it still covers, dropped when under P.eng.effectMinSurvivingSeconds (1.0) of it is left in the cut (a band the cut keeps whole stays, however short); a speed is re-clamped unless a stop; a label is trimmed like the rest (prototype: dropped outright, never trimmed — yet it marks a moment for the narration brief, and the moment may still be in the cut); fades shrink proportionally; ">>> N effect(s) pointed at footage the final cut does not keep — dropped", then a line naming up to six of them, and a dropped stop's own "there is no frame at m:ss — that second is not in the cut, so nothing can be held on it". Suggested effects replace the list, same Undo step as the segments; the three passes then add to it.
 
 ## 4. Render (how each effect becomes ffmpeg)
 
@@ -333,7 +333,7 @@ After snapping, dead-air and mark removal, coalescing: a point effect needs a fo
 - **Stop**: a still of the frame at t (scene's own camera) overlaid with alpha fades for the frozen spans; footage runs on at 1×.
 - **Zoom**: sampled at clip ends and every zoom's breakpoints, straight lines between; static → crop + scale; moving → pad black as needed, crop to the union box, `zoompan` with piecewise-linear expressions at fixed fps (default 30); > 10× capped and logged.
 - **Text/SVG**: composited after the camera and burned subtitles, each from a looped input (title: generated transparent frame-sized SVG, black round-joined stroke then white fill; svg effect: the user's file scaled into its box), with alpha fades and an enable window.
-- **Volume**: one `volume=<expr>:eval=frame` per cue, in turn, after the lane mix, before the narration.
+- **Volume**: one `volume=<expr>:eval=frame` per cue, in turn: a whole-bed cue after the lane mix and before the narration, on every clip including a card; a lane-named cue before the mix, only where that lane is heard.
 - **Label**: nothing.
 Frame box for every clip: no aspect → the footage's own; with an aspect the resolution tier names the short side (1080p on 9:16 = 1080×1920), even sides.
 
@@ -343,11 +343,11 @@ An insert path may carry `?key=value&…` (order matters; escapes `% & = ?` only
 
 ## 6. Parameters used
 
-Parameters ([10](10-parameters.md)): minRate, maxRate, minClipSeconds, rampStepSeconds, maxGain (10), speedGapSeconds, captionBatch, captionMinSeconds, effectMinSurvivingSeconds, default lengths (zoom/text/svg 3 s; label/speed/volume 2 s), default fades (text/svg 0.3; volume 0.25; stop 0.5; zoom 1), default gain 2, default rate 0.5, suggested zoom hf 0.6, forms' typed floors (zoom 0.4, text/svg 0.3, speed 0.5 for a stop else clampSpeed, volume 0.1, label 0.4), the 0.2 s floor under which a band is not a marked stretch, decorations density (prompt). Engineering: lane height 26, grip/kill widths, snap 8/10 px, text metrics (0.58, 1.25, 0.95, 7 pt, 12 lines), edge dilation, svg preview 512 px, card constants, bake fps.
+Parameters ([10](10-parameters.md)): minRate, maxRate, minClipSeconds, rampStepSeconds, maxGain (10), speedGapSeconds, captionBatch, captionMinSeconds, effectMinSurvivingSeconds, default lengths (zoom/text/svg 3 s; label/speed/volume 2 s), default fades (text/svg 0.3; volume 0.25; stop 0.5; zoom 1), default gain 2, default rate 0.5, suggested zoom hf 0.6, maxProposedEffects (1000), forms' typed floors (zoom 0.4, text/svg 0.3, speed 0.5 for a stop else clampSpeed, volume 0.1, label 0.4), the 0.2 s floor under which a band is not a marked stretch, decorations density (prompt). Engineering: lane height 26, grip/kill widths, snap 8/10 px, form debounce 300 ms, text metrics (0.58, 1.25, 0.95, 7 pt, 12 lines), edge dilation, svg preview 512 px, card constants, bake fps.
 
 ## 7. Rules
 
-One list, one owner; nothing reaches backwards; dur is the bar for every kind; one fade rule (both fades ≥ 0, together ≤ dur, trimmed proportionally); rates average, gains multiply, sound answers do not merge; a stop is not a rate; staircases are built whole or not at all; slivers are healed, not dropped; only speed touches the clip list; camera windows have no width, overlay boxes do; the box belongs to the picture not the form; forms find effects by value; one Undo per visit, drag or hold; empty effects are never placed; a click is not a drag; framing is done paused; hit order on the picture: held box → held camera → texts top-down → the framing zoom; snapping is pixel-constant and nudging unsnapped; effects cannot leave the timeline; the lane draws what the render does; static card files are finished pictures; a path with `?` is not a file; suggested effects are clamped against the cut as applied.
+One list, one owner; nothing reaches backwards; dur is the bar for every kind; one fade rule (both fades ≥ 0, together ≤ dur, trimmed proportionally); rates average, gains multiply, sound answers do not merge; a stop is not a rate; staircases are built whole or not at all; slivers are healed, not dropped; only speed touches the clip list; camera windows have no width, overlay boxes do; the box belongs to the picture not the form; forms find effects by value; one Undo per visit, drag or hold; empty effects are never placed; a click is not a drag; framing is done paused; with an effect held or anything armed a picture drag edits no placed box; otherwise a text box (first in list order, grown by 8 px) goes before the framing zoom; snapping is pixel-constant and nudging unsnapped; effects cannot leave the timeline; the lane draws what the render does; static card files are finished pictures; a path with `?` is not a file; suggested effects are clamped against the cut as applied.
 
 ## 8. Details confirmed against the code (verification pass)
 
@@ -358,25 +358,25 @@ One list, one owner; nothing reaches backwards; dur is the bar for every kind; o
 
 ## 9. Where recordings overlap
 
-Two cameras can film the same seconds ([05 F2.10](05-cut.md#f210-cameras-and-hearing)), and several sounds can run at once ([05 F2.5](05-cut.md#f25-hush-and-mix-what-the-preview-hears)). In the prototype an effect has no camera and no lane: the clip it lands on decides. Each kept scene shows one camera (its lens) and hears the lanes its badges allow. The other cameras' own sound is never in the mix.
+Two cameras can film the same seconds ([05 F2.10](05-cut.md#f210-cameras-and-hearing)), and several sounds can run at once ([05 F2.5](05-cut.md#f25-hush-and-mix-what-the-preview-hears)). A zoom carries the camera row it was framed on and a volume its lane; every other effect has neither, and the clip it lands on decides. Each kept scene shows one camera (its lens) and hears the lanes its badges allow. The other cameras' own sound is never in the mix.
 
-| effect | prototype (render) | rewrite |
+| effect | where it started (first rewrite: the prototype's render) | now |
 |---|---|---|
-| Zoom | the box is fractions of the scene's lens camera, per clip. After a lens switch the same fractions land on the other camera's frame ("effects stay"). Across a cut to another camera the box goes on in the new frame and jumps. Over inserts: none. | A zoom SHOULD carry `cam`, the row it was framed on, and act only on clips shown from that camera. A lens switch under a zoom says so: "the zoom at m:ss was framed on camera N — it no longer applies here". A zoom does not cross into a clip from another camera. |
-| Stop (rate 0) | the frame at `t` from the lens of the scene holding `t`, resolved at render time, so it follows a lens switch. A stop reaching into a clip from another camera is scaled to that clip. At a second the cut drops: no frame (skipped in the render, a failure in the preview). | Keep. A stop at a dropped second SHOULD be refused when placed. |
-| Speed, sound "" or pitch | the lens camera's sound and every heard lane are sped together (tempo held, or pitch shifted). | Keep. The preview MUST play "pitch" as the render does, or say it cannot. |
-| Speed, sound own or scene | the lens camera's sound and every heard lane read at 1×, with a 0.15 s dip where they rejoin the picture. | Keep. The preview plays sound at picture speed here; it SHOULD say "sound at 1× in the render only". |
+| Zoom | the box is fractions of the scene's lens camera, per clip. After a lens switch the same fractions land on the other camera's frame ("effects stay"). Across a cut to another camera the box goes on in the new frame and jumps. Over inserts: none. | A zoom carries `cam`, the row it was framed on, and the render draws it only on clips shown from that camera, never over an insert. At the form's Apply a band reaching another camera's clip is trimmed there and says "the zoom at m:ss was framed on camera N — it no longer applies here", unless under 1 s would be left, when it is not trimmed. |
+| Stop (rate 0) | the frame at `t` from the lens of the scene holding `t`, resolved at render time, so it follows a lens switch. A stop reaching into a clip from another camera is scaled to that clip. At a second the cut drops: no frame (skipped in the render, a failure in the preview). | Kept. A stop at a second the cut does not keep is refused at Apply, form left open: "there is no frame at m:ss — that second is not in the cut, so nothing can be held on it". |
+| Speed, sound "" or pitch | the lens camera's sound and every heard lane are sped together (tempo held, or pitch shifted). | Kept. Apply logs "the preview plays this sound the way the render does" for "" and pitch. |
+| Speed, sound own or scene | the lens camera's sound and every heard lane read at 1×, with a 0.15 s dip where they rejoin the picture. | Kept. The preview plays sound at picture speed here and says "sound at 1× in the render only". |
 | Speed, sound mute; Stop | the render silences only the lens camera's sound: the hush runs before the lanes are mixed in, so separate recordings and extra tracks stay audible. The preview mutes everything. | MUST: silence the whole bed, as the preview does. |
-| Volume | one gain on the bed (the lens camera's sound plus every heard lane), after the mix, before the narration. No way to reach one lane. Over a card or a freeze the preview applies it, the render does not. | A volume SHOULD carry `lane`: "" the whole bed (today), or one lane's name, gained before the mix. The render MUST apply a volume over a card's own sound, as the preview does. |
+| Volume | one gain on the bed (the lens camera's sound plus every heard lane), after the mix, before the narration. No way to reach one lane. Over a card or a freeze the preview applies it, the render does not. | A volume carries `lane`: "" the whole bed, or one lane's name, gained before the mix; the form fills in the lane when the volume's seconds lie inside exactly one. The render applies a whole-bed volume over a card's own sound, as the preview does. |
 | Text, SVG | the output frame, after the camera: no camera, no lane. Over an insert or freeze: all or nothing, by the clip's start second. | Keep. |
 | Label | read only by the model briefs ("MARKED"); nothing rendered. | Keep. |
 
-Preview and render MUST agree on two things they do not agree on today:
+Preview and render agree on two more things:
 
-- **Which camera a zoom is framed on.** The preview frames on the watched row when one is watched; the render uses the scene's lens. While an effect form is open, the preview MUST show the lens camera.
-- **The output frame under aspect "source".** The render uses the first footage clip's frame for the whole video; the preview uses whichever camera is playing. With cameras of different shapes, both MUST use the first footage clip's frame.
+- **Which camera a zoom is framed on.** The preview frames on the watched row when one is watched; the render uses the scene's lens. While a zoom, speed, volume or text form is open, the preview shows the lens camera.
+- **The output frame under aspect "source".** With cameras of different shapes, both use the first footage clip's frame (the preview falls back to the playing camera's shape when there is none).
 
-The model passes know nothing of cameras and lanes: suggested scenes all take row 0, suggested zooms are always centred at height 0.6, and the caption, speed and decoration briefs name no camera or lane, so a proposed volume hits the whole bed. With more than one camera row or lane the cut brief names the rows and lanes, and a suggested scene says which camera it is shown from.
+Suggested zooms are always centred at height 0.6, and a proposed effect names no camera or lane, so a proposed volume hits the whole bed. With more than one camera row or lane the cut, speed and decoration briefs carry a line "SHOWN FROM: camera …, HEARD LANES: …" (the caption brief does not), and a suggested scene keeps a row it names that the session has, else row 0.
 
 <!-- nav -->
 ---

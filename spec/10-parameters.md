@@ -4,15 +4,15 @@
 [← 09 The LLM client, tools, gate, cache, log](09-llm-and-tools.md) · [↑ Contents](README.md) · [11 Flow index and UI flow map →](11-flow-index.md)
 <!-- /nav -->
 
-Every prototype constant, with meaning and proposed home ([`00-principles.md` §3](00-principles.md#3-rewrite-directive-a--no-implicit-behaviour)). Values are the prototype's; a "measured" note marks where its comments cite a measurement. Three homes, decided 2026-09-19: **P.policy** (§2) is about the video — set per project by the User Context ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)) or by hand, and its defaults MAY be overridden per machine by `POLICY_<NAME>="value"` in `llm.conf`; **P.machine** (§1) is about this machine and its servers — the dialog, and the tuning values of §1.1 in `llm.conf` only; **P.eng** (§5) is fixed in code and cannot be overridden. The test for a row: would two videos on one machine want different values (policy), would two machines (machine), or nobody (eng).
+Every prototype constant, with meaning and proposed home ([`00-principles.md` §3](00-principles.md#3-rewrite-directive-a--no-implicit-behaviour)). Values are the prototype's; a "measured" note marks where its comments cite a measurement. Three homes, decided 2026-09-19: **P.policy** (§2) is about the video; the fields §2 names as derived are set per project by the User Context ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)), the rest are defaults fixed in code; **P.machine** (§1) is about this machine and its servers — the dialog's values in `llm.conf`, the values of §1.1 fixed in code; **P.eng** (§5) is fixed in code and cannot be overridden. The test for a row: would two videos on one machine want different values (policy), would two machines (machine), or nobody (eng).
 
 ## 1. Machine settings (Settings dialog / llm.conf)
 
-LLM server (empty = `http://127.0.0.1:8731`), LLM model, LLM key, decision model (new, `DECISION_MODEL`: a fast vision model on the same server for F1.6 S6's text gate; empty = the main model judges, the gate always runs); audio.cpp server (8765), key, voices folder (/mnt/models/audiocpp/voices; Flatpak: data home), ASR model (nemotron-asr), diarization model (sortformer-diar), TTS model (index-tts2), separation model (bs-roformer), aligner (none → prefer qwen3-aligner); ffmpeg path (empty = PATH; ffprobe beside it); firefox path or "off"; sd.cpp server (1234), key; remembered last project per root. Proposed additions: subtitle languages list (en/eng/English, de/deu/German, fr/fra/French), P.machine.describeFrameWidth (new; 896 — the width every frame is scaled to before it goes to the vision model, height by aspect: a 16:9 frame is 896×504. A setting of the model, not of the edit: Qwen-VL reads images in 28-px patches and 896 = 32 × 28, so a 16:9 frame is 576 patches with nothing padded; Gemma 3 rescales to 896×896 anyway; Claude, GPT and LLaVA resize or tile to their own sizes, and 896 wide sits inside what they take. Prototype: fixed in code, `scale=896:-2`), and two bounds (new): P.machine.promptMaxChars (120 000, most one request may carry, [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-new)) and P.machine.briefMaxChars (120 000, the upload brief).
+LLM server (empty = `http://127.0.0.1:8731`), LLM model, LLM key, decision model (new, `DECISION_MODEL`: a fast vision model on the same server for F1.6 S6's text gate; empty = the main model judges, the gate always runs); audio.cpp server (8765), key, voices folder (/mnt/models/audiocpp/voices; Flatpak: data home), ASR model (qwen3-asr), diarization model (sortformer-diar), TTS model (index-tts2), separation model (bs-roformer), aligner (none → prefer qwen3-aligner); ffmpeg path (empty = PATH; ffprobe beside it); firefox path or "off"; sd.cpp server (1234), key; remembered last project per root. Also in `llm.conf`, no dialog box: `SUBTITLE_LANGUAGES`, the subtitle languages list (empty = en/eng/English, de/deu/German, fr/fra/French). Fixed in code, no box and no `llm.conf` key: P.machine.describeFrameWidth (new; 896 — the width every frame is scaled to before it goes to the vision model, height by aspect: a 16:9 frame is 896×504. A setting of the model, not of the edit: Qwen-VL reads images in 28-px patches and 896 = 32 × 28, so a 16:9 frame is 576 patches with nothing padded; Gemma 3 rescales to 896×896 anyway; Claude, GPT and LLaVA resize or tile to their own sizes, and 896 wide sits inside what they take. Prototype: fixed in code, `scale=896:-2`), and two bounds (new): P.machine.promptMaxChars (120 000, most one request may carry, [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-new)) and P.machine.briefMaxChars (120 000, the upload brief).
 
 ### 1.1 Tuning values (llm.conf only, no dialog box)
 
-How the servers are driven and how the passes are sized: request sizes, windows, ceilings that guard against a bad answer, measured thresholds. Set per machine, never per video; an entry `TUNE_<NAME>="value"` in `llm.conf` overrides the default, and the Settings dialog shows none of them. Moved out of the editing policy on 2026-09-19.
+How the servers are driven and how the passes are sized: request sizes, windows, ceilings that guard against a bad answer, measured thresholds. About the machine, never the video; every value is a constant in code: nothing reads a `TUNE_<NAME>` entry in `llm.conf`, and the Settings dialog shows none of them. Moved out of the editing policy on 2026-09-19.
 
 | parameter | default | meaning | prototype constant |
 |---|---|---|---|
@@ -65,7 +65,7 @@ How the servers are driven and how the passes are sized: request sizes, windows,
 
 ## 2. Editing policy (project; derived from the User Context by F0.7; else defaults)
 
-What the finished video is like: lengths, silences, budgets, what runs. One row per parameter; chapters cite the first column. Prototype constant named for cross-checking ([`inventory/`](inventory)).
+What the finished video is like: lengths, silences, budgets, what runs. One row per parameter; chapters cite the first column. F0.7 derives seven fields, stored per project in `naivepost.json` with their `source`: markingPass, cutMode, captionsPass, speedPass, decorationsPass, targetLengthSeconds, language. narrationRewrite and keepSwearing are stored in the same block, but no derivation sets them, so they change only by editing the file. gameVolume is stored in the `produce` block and set on the Narrate page; ttsLanguage is language. Every other row is a constant in code, not per project and with no `POLICY_<NAME>` override. Prototype constant named for cross-checking ([`inventory/`](inventory)).
 
 | parameter | default | meaning | prototype constant |
 |---|---|---|---|
@@ -98,8 +98,9 @@ What the finished video is like: lengths, silences, budgets, what runs. One row 
 | P.policy.subtitleHoldSeconds | 1.2 | cue building: hold | subHold |
 | P.policy.subtitleMinSeconds | 0.8 | cue building: shortest cue | subMin |
 | P.policy.publishFrames | 3 | first-run frames | defPubFrames |
-| P.policy.keepSwearing | true | caption cleaning rule (from the prompt) | captionSystem |
-| P.policy.decorationDensity | "three or four per five minutes" | from the effects prompt | fxRules |
+| P.policy.publishWordsSnapPx | 30 | the grid a dragged box on the thumbnail stops on, pixels of the drawn picture | |
+| P.policy.keepSwearing | true | caption cleaning rule; the rule itself is in the prompt, and nothing in code reads this field | captionSystem |
+| P.policy.decorationDensity | "three or four across five minutes of finished video" | from the effects prompt | fxRules |
 | P.policy.markingPass | retakes | which Prepare marking pass runs: joins ([F1.10](04-prepare.md#f110-repair-the-joins)), retakes ([F1.9](04-prepare.md#f19-mark-retakes)) or none — from the User Context | styleRead/styleMoments |
 | P.policy.cutMode | model | how Suggest builds the cut: words (derived from the marked text, no model) or model | styleRead/styleMoments |
 | P.policy.captionsPass | on | whether [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut) is called at all | new |
@@ -131,7 +132,7 @@ Those the chapters cite by name:
 | P.eng.audiocppUnloadSeconds | 20 | the only deadline on an audio.cpp call (`unload_all_models`) |
 
 The rest, by area:
-Window minimum 1240×900 (opens at it, never smaller; everything fits at it); log heights 220/110; autosave 2 s; settings debounce 600 ms; typing debounce 400 ms; hang watchdog 200 ms / 3 s; tabGap 6, headSlack 90, name 28 chars; progress pulse 150 ms; checkpoint poll 200 ms; error tail 400 chars; log dir listing cap 12; frame extraction workers clamp(CPU/4, 2, 8), frame count round(length/interval), a lone last frame folded into the chunk before it, quality -q:v 4; ffprobe cache by path+size+mtime, fps window 1..240; timeline: ruler 18, selection band 22, effects row 26, lane gap 3, wave lane 30, gutter 30, thumb height 40..160 (64 at open, steps ×4/3 and ÷3/4), zoom 4 → 240 px/s (4 at open), zoom step 1.25, fold gutter 30 px with fold/kill/hear/selection minimum widths derived from the grab reaches, selection band ground 0.16 and floor 0.04 s, tick steps, pan viewW/8, grab reaches 6/8/9/10/12 px, drag slop 4, scrub throttle 90 ms, tick 100 ms, preload lead 3 s, preload tolerance 0.01 s, rate seek gap 250 ms, thumb batch 6, card preview 8 fps / 960 px / 48 textures, svg preview 512 px, waveform 200 buckets/s at 8 kHz, dual-mono ratio 100, line save 1 s, scrollbar gear 40 px, undo depth 50, colours; effect bars: label sizing 10 word / 5 number chars, text height 62, ends become handles from 30 px, row packing gives width from 0.4 s, hold slack 1/24 s; Narrate take band: ruler 12, lane 56, max 200 px/s, click slop 3 px; publish page: icon 22 px, box min 28, mono line 20; tier card: 6 slots, top 180, row 140, box 124, chips 338/244/230/108, pad 14; dual-mono: envelope average ≤ 1.0 and max ≤ 8 bytes also read as one lane; progress shares: Prepare inputs 0.3 (separation 0.1 of it), Suggest choose 0.7, Narrate write 0.5; text metrics 0.58 / 1.25 / 0.95 / 7 pt / 12 lines, edge dilation 0.08 / 0.85 / 16; card canvas 1920×1080 and timings, bake 25 fps; sd.cpp timeouts 15/60/30/1/10 s; web search 8 hits / 6000 chars / 15 s render / 45 s call / 15 s boot; LLM tokens 65536/8192, tool rounds 8, backoff 5 s–4 min, stall 5 min, whole 10 min, heartbeat 1 min, tail 90 chars, preview 110 chars; cache and log formats; TTS cache key format (frozen: changing it re-speaks every project).
+Window minimum 1240×900 (opens at it, never smaller; everything fits at it); log heights 220/110; autosave 2 s; settings debounce 600 ms; typing debounce 400 ms; hang watchdog 200 ms / 3 s; tabGap 6, headSlack 90, name 28 chars; progress pulse 150 ms; checkpoint poll 200 ms; error tail 400 chars; log dir listing cap 12; frame extraction workers clamp(CPU/4, 2, 8), frame count round(length/interval), a lone last frame folded into the chunk before it, quality -q:v 2; ffprobe cache by path+size+mtime, fps window 1..240; timeline: ruler 18, selection band 22, effects row 26, lane gap 3, wave lane 30, gutter 30, thumb height 40..160 (64 at open, steps ×4/3 and ÷3/4), zoom 4 → 240 px/s (4 at open), zoom step 1.25, fold gutter 30 px with fold/kill/hear/selection minimum widths derived from the grab reaches, selection band ground 0.16 and floor 0.04 s, tick steps, pan viewW/8, grab reaches 6/8/9/10/12 px, drag slop 4, scrub throttle 90 ms, tick 100 ms, preload lead 3 s, preload tolerance 0.01 s, rate seek gap 250 ms, thumb batch 6, card preview 8 fps / 960 px / 48 textures, svg preview 512 px, waveform 200 buckets/s at 8 kHz, dual-mono ratio 100, line save 1 s, scrollbar gear 40 px, undo depth 50, colours; effect bars: label sizing 10 word / 5 number chars, text height 62, ends become handles from 30 px, row packing gives width from 0.4 s, hold slack 1/24 s; Narrate take band: ruler 12, lane 56, max 200 px/s, click slop 3 px; publish page: icon 22 px, box min 28, mono line 20; tier card: 6 slots, top 180, row 140, box 124, chips 338/244/230/108, pad 14; dual-mono: envelope average ≤ 1.0 and max ≤ 8 bytes also read as one lane; progress shares: Prepare inputs 0.3 (separation 0.1 of it), Suggest choose 0.7, Narrate write 0.5; text metrics 0.58 / 1.25 / 0.95 / 7 pt / 12 lines, edge dilation 0.08 / 0.85 / 16; card canvas 1920×1080 and timings, bake 25 fps; sd.cpp timeouts 15/60/30/1/10 s; web search 8 hits / 6000 chars / 15 s render / 45 s call / 15 s boot; LLM tokens 65536/8192, tool rounds 8, backoff 5 s–4 min, stall 5 min, whole 10 min, heartbeat 1 min, tail 90 chars, preview 110 chars; cache and log formats; TTS cache key format (frozen: changing it re-speaks every project).
 
 ### 5.1 Fixed in code, formerly listed as policy
 
@@ -184,6 +185,8 @@ Consequences of a format, a server, a standard or a measurement: nothing a user 
 | P.eng.alignBareWarnSeconds | 10 | voiced audio under no word before a warning | alignBareWarn |
 | P.eng.alignBareShare | 0.08 | share of voiced audio under no word before a warning | alignBareShare |
 | P.eng.frameWorkersMinFrames | 4 | frames per worker below which extraction is one ffmpeg | pipeline.go workers*4 |
+| P.eng.frameWorkersMin | 2 | fewest frame extraction workers | |
+| P.eng.frameWorkersMax | 8 | most frame extraction workers | |
 | P.eng.sepCutSeekSeconds | 20 | how far a separation cut slides to a silence | sepCutSeek |
 | P.eng.sepLopsidedDB | 10 | a stem this much quieter is dropped | sepLopsidedDB |
 | P.eng.narrationLeadSeconds | 0.3 | line packing: lead | narrLead |
@@ -199,7 +202,7 @@ Consequences of a format, a server, a standard or a measurement: nothing a user 
 | P.eng.refMinWordsPerSecond | 1.5 | automatic voice reference: a slower take is not speech | refMinRate |
 | P.eng.refSampleRate | 48000 | voice reference write rate (above it ffmpeg writes WAVE_FORMAT_EXTENSIBLE, which the server refuses) | narrate_voice.go 48000 |
 | P.eng.takeMinSeconds | 0.4 | shortest hand-picked take | takeMin |
-| P.eng.pitchRangeSemitones | 6 |  | pitchRange |
+| P.eng.pitchRangeSemitones | −6..+6, step 0.5 |  | pitchRange |
 | P.eng.refLoudness | I −16, TP −1.5, LRA 7 | reference levelling | refLoud |
 | P.eng.loudness | I −14, TP −1.5, LRA 11 | final mix | loudFlt |
 | P.eng.clipLimiter | −1 dBFS (0.891) | per-clip ceiling | clipCeil |
@@ -207,7 +210,7 @@ Consequences of a format, a server, a standard or a measurement: nothing a user 
 | P.eng.publishMaxFrames | 8 | row cap | maxPubFrames |
 | P.eng.titleBand | {0.5, 0.25, 1, 0.4} |  | pubTitleBox |
 | P.eng.thumbnailJPEGMax | 2 MiB |  | pubJPEGMax |
-| P.eng.blurSigma | 0.02·height, min 4 | frame-edge blur | blurSigma |
+| P.eng.blurSigma | 0.02·height, min 4, rounded up to a whole pixel | frame-edge blur | blurSigma |
 
 <!-- nav -->
 ---

@@ -56,7 +56,7 @@ flowchart LR
 | [F1.3](04-prepare.md#f13-per-source-audio--text--word-times--speakers--segments) | Per source: audio, ASR, alignment, diarization, segments | [04](04-prepare.md) |
 | [F1.4](04-prepare.md#f14-asr-in-chunks) | ASR in chunks | [04](04-prepare.md) |
 | [F1.5](04-prepare.md#f15-forced-alignment) | Forced alignment | [04](04-prepare.md) |
-| [F1.6](04-prepare.md#f16-frames-per-video) | Frames | [04](04-prepare.md) |
+| [F1.6](04-prepare.md#f16-frames-per-video) | Frames and the text gate | [04](04-prepare.md) |
 | [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) | Describe | [04](04-prepare.md) |
 | [F1.8](04-prepare.md#f18-fix-the-transcripts-blocks-of-pmachinefixblocklines--25-lines) | Fix the transcripts | [04](04-prepare.md) |
 | [F1.9](04-prepare.md#f19-mark-retakes) | Mark retakes | [04](04-prepare.md) |
@@ -112,16 +112,16 @@ flowchart LR
 
 | step | model calls | note |
 |---|---|---|
-| Prepare | describe ×(frames/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins) | cached |
-| Cut | cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1 | cutMode model only; each pass only when the policy switches it on |
+| Prepare | textgate ×(frame pairs judged) · describe ×(frames sent/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins) | cached; the text gate, Describe and Fix run their recordings side by side up to the `slots` in the LLM server's `/health`; joins one at a time |
+| Cut | cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1 | the cut call with cutMode model only; each pass only when the policy switches it on |
 | Narrate | narrate ×1 (+web) · TTS ×(lines) | |
-| Produce | youtube ×1 (+web) · sd.cpp ×1 when drawn · translate ×(languages × batches) | |
+| Produce | youtube ×1 (+web) · sd.cpp ×1 when drawn · translate ×(languages × batches) | translation batches run side by side up to the same `slots` |
 | Setup | policy ×1 | new; when the context changes |
 
 ## 5. Where each kind of decision lives (directive A)
 
-- **What the video becomes** (lengths, thresholds, budgets): editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)), derived from the User Context, editable.
-- **How a job is worded**: the prompts ([`prompts/`](prompts)).
+- **What the video becomes** (lengths, thresholds, budgets): editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)), derived from the User Context, changed by changing it; the numbers without a policy field are constants catalogued in `rust/src/params.rs`.
+- **How a job is worded**: the prompts ([`prompts/`](prompts)), replaced per step by a profile's sections.
 - **Which servers and binaries**: machine settings.
 - **How the app looks, waits and caches**: engineering constants.
 

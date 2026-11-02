@@ -10,7 +10,7 @@ renders the video, and writes the title, description, subtitles and thumbnail
 you upload with. Every one of those is a proposal you can overrule; none of
 them is a black box you have to accept whole.
 
-It is a GTK4 application in Go (`go/`, ~100k lines), talking to four local
+It is a GTK4 and libadwaita application in Rust (`rust/`), talking to four local
 HTTP servers over the network — nothing is compiled in, nothing calls out to a
 cloud service unless you point it at one.
 
@@ -19,9 +19,9 @@ cloud service unless you point it at one.
 ## What it actually does
 
 Four tabs, left to right, in the order the work happens. Each has one **▶** that
-runs that step; **▶▶** beside it runs several in a row. The thumbnail and the
+runs that step. The thumbnail and the
 upload text live on Produce, beside the render they belong to. Per tab, ▶ means
-([§2](spec/11-flow-index.md)): Prepare runs Prepare; Cut runs Suggest until its
+([§2](11-flow-index.md)): Prepare runs Prepare; Cut runs Suggest until its
 preview is started, then drives that preview until ⏹; Narrate writes and speaks,
 always live (there is no narration switch); Produce renders — and Narrate and
 Produce refuse without a cut rather than being locked away.
@@ -55,13 +55,15 @@ Pressing ▶ then does, in order:
 
 1. **Optional voice separation** — a source flagged for it (✂) is decoded to 44.1 kHz
    stereo, sent to the separation model in pieces of at most 300 s cut at silences, and
-   split into voice and everything else; the two halves replace it for everything below.
+   split into voice and everything else; the two halves replace it in the session. The
+   run's stages are planned once at its start, with separation after frames and speech.
 2. **Audio extraction and frames** — 16 kHz mono wav per source, and a JPEG out
    of the footage on a fixed quarter-second grid that restarts at every scene
    change, so a new slide's first picture is always among them. The scene pass
    looks at four frames a second over the whole video; frames are kept at the
    video's own size, and the text check decides which of them the model sees.
-3. **Speech to text** — every source transcribed, with word-level times. A long
+3. **Speech to text** — every source transcribed by `qwen3-asr` unless Settings names
+   another model, with word-level times. A long
    recording is asked about in even pieces (60 s for the qwen3 family, 300 s
    otherwise), each cut moved to a silence where one is nearby, and an
    out-of-memory answer halves the piece size down to 20 s; hearing nothing at all
@@ -83,13 +85,17 @@ Pressing ▶ then does, in order:
    asks for shrinks until the server can hold it (90 s, then 45, then 25): the
    model permits 90 s, but the buffer grows with the window and a machine with
    an LLM's weights pinned beside it may have no 2.9 GB hole to put one in.
-6. **Describe** — the frames go to a vision model in small batches, each batch
+6. **Text gate and Describe** — first the text gate: pairs of frames at most 20 s apart go
+   to the decision model (the main model when none is set), which says whether the text on
+   screen changed; a changed pair is halved down to a second, so the gate's changes become
+   the scenes. Then the frames go to a vision model in small batches, each batch
    carrying the words heard in those seconds and a rolling summary of what has
    happened so far, so the answer is *what is happening* rather than *what is in
    this picture*. What the model actually sees is not every picture on disk: each
    scene's first frame, then one every 20 seconds until the next change, so a new
    slide's opening picture is always in the batch even when it falls between two of
-   them. Those copies are scaled to 896 px wide for sending while the frames the
+   them. The gate and Describe run their recordings side by side, up to the `slots` the
+   LLM server's `/health` reports; chunks inside one recording stay in order. Those copies are scaled to 896 px wide for sending while the frames the
    project keeps stay at the video's own size. A run that stopped mid-Describe
    resumes at the first unanswered chunk rather than re-describing what is already
    logged, and the pass ends with `event log complete (N chunks)`, naming how many
@@ -100,8 +106,9 @@ Pressing ▶ then does, in order:
    into the line before it when the log is read, so a change is dated to the
    second it happened and a brief still reads one line per thing that happened.
 7. **Fix** — the raw transcripts are cleaned into publishable text, grounded in
-   the event log and in what other microphones heard at the same moment. Times
-   and speaker labels pass through byte-identical, enforced.
+   the event log and in what other microphones heard at the same moment, recordings
+   side by side up to the same slots. Times and speaker labels pass through
+   byte-identical, enforced.
 8. **Merge** — everything above becomes one session timeline: every spoken line
    and every EVENT line on one clock.
 9. **One word list for the session** — before anything is marked, the aligned (or,
@@ -132,13 +139,12 @@ Pressing ▶ then does, in order:
 Every stage is skipped if its output is already on disk, so a re-run resumes
 rather than starting over. ⏸ parks the run between requests; ⏹ ends it.
 
-The right-hand pane is **every prompt the app will send**, one menu row at a
-time. The first row is not a prompt: it is what you want the editor to know
-about this session — who is in it, how names are spelled, what has to end up in
-the video, how long it should be — and every request this project makes carries
-it. Behind it, in pipeline order, are all twelve system prompts. A ✎ beside a
-name means yours differs from the shipped one; Reset restores it. Nothing is
-saved by a button: every keystroke goes to disk as you type it.
+The right-hand pane is what you want the editor to know about this session — who is
+in it, how names are spelled, what has to end up in the video, how long it should
+be — and every request this project makes carries it. Its heading offers a **Profile**:
+choose one and the box becomes that profile's form. The prompts are not listed here: a
+profile's sections replace a step's wording for a project using it. Nothing is saved by
+a button: every keystroke goes to disk as you type it.
 
 Along the bottom of the window, `Inputs:` counts what Prepare has read — frames
 to the describe model and transcript lines to the fixer — with the same
@@ -148,17 +154,19 @@ covers. Both refresh when you switch tabs.
 
 ### Video style
 
-A dropdown on Prepare that chooses **which pipeline runs**, not which wording is
-used:
+There is no dropdown: the policy fields `markingPass` and `cutMode`, set from the User
+Context, choose **which pipeline runs**, not which wording is used. With no context they
+are retakes and a model-chosen cut. The two ends of that choice:
 
-**Lecture** — a read to camera, where the speech *is* the video. Everything you
+**Joins, cut from the words** — a read to camera, where the speech *is* the video. Everything you
 said goes in; only the mistakes in the saying come out. You stop the recording
 when you stumble and say it again, so the mistakes are at the **joins**, and
 that is what the model is asked about: one join at a time, the last words of
 the take that was interrupted and the first words of the take that follows, as
-they are written. It answers with two numbers — how many words come off each
-side so the two run on as one sentence — and *nothing* else. Nought and nought
-is a whole answer: a recording stopped to change a slide is not a stumble. The
+they are written. It offers no tools and answers with the words that come off each
+side, quoted (`{"drop_before","drop_after"}`), so the two run on as one sentence, and
+*nothing* else. Joins are asked one at a time. Two empty quotes
+are a whole answer: a recording stopped to change a slide is not a stumble. The
 side **before** the join is cut first and as far back as the repetition goes,
 because what was said last is what you meant to keep.
 
@@ -176,11 +184,11 @@ once more; if that fails too, nothing is removed there. And when a join takes
 out every word of a recording, that recording is not silently dropped — it is
 flagged yellow on the Cut page as gone whole, worth a look.
 
-**Gaming** — a session where the interesting moments have to be *chosen*. The
+**Retakes, cut by the model** — a session where the interesting moments have to be *chosen*. The
 cut model reads the whole session timeline and answers with the segments worth
 keeping, to a target length if the context names one.
 
-Both styles describe the frames, because the thumbnail is picked by what is on
+Both describe the frames, because the thumbnail is picked by what is on
 one.
 
 ### Cut
@@ -383,10 +391,8 @@ selection at all — it puts down the effect you were holding. Once started, a d
 the pointer wanders across another band, so the readout never changes its mind about what you drew. The band's
 ends resize, its middle moves, and **✕ Clear selection** takes the selection away and nothing else; the cut
 keeps every clip. Ends snap to clip borders, recording ends, effect ends and the red line when released
-near one. selection of *sound* rather than pictures greys ＋ Add, | Split and － Remove and points ⧉ Copy
-at the sound instead, which comes back as a laid-over lane rather than a cut. Until the tracks themselves
-are drawn this drag runs on a placeholder
-strip above where they will sit, so it selects across the whole session rather than one row.
+near one. A selection of *sound* rather than pictures greys ＋ Add, | Split and － Remove and points ⧉ Copy
+at the sound instead, which comes back as a laid-over lane rather than a cut.
 
 Under the readout sit those three verbs. **＋ Add** keeps the selected stretch as scenes — one per filmed
 run, both ends snapped to a word edge, a silence or a visual cut within five seconds — and takes that span
@@ -425,8 +431,9 @@ From then on the cut is yours: drag to select, ＋ Add,
 ✕ to drop, ⌦ for whatever is in hand, Revert to go back to the suggestion.
 **Trim a clip edge by dragging it** — with either button, on the pictures or on
 the green bar above them — or ‹f and f› a frame at a time once it is a clip in hand.
-The strip you drag on shows the session's ruler along the top, marked every whole
-second with its time, and under it the kept stretches of the cut as one green bar
+The strip you drag on shows the ruler along the top, its ticks counting seconds of
+footage on a spacing that follows the zoom, so a night between two recordings is no
+jump in the numbers; under it the kept stretches of the cut as one green bar
 with a visible border where each clip starts and ends. A press takes a border when
 it lands within 6 px of it; that is how near you have to aim.
 The right button is for *moving* things instead, a scene along its
@@ -497,7 +504,7 @@ so plainly instead of editing a ghost.
 An editable line per clip: what is said over it, in which voice, with what
 emotion. ▶ writes the lines the cut does not have and speaks the ones not
 already in the cache; rewriting every existing line too is a choice you turn on
-(`P.policy.narrationRewrite`), never the default — off, only a clip with no line
+(`P.policy.narrationRewrite`, in the project file; the model does not set it), never the default — off, only a clip with no line
 gets one. The list of clips you marked as playing their own audio is yours, not the
 model's: it survives a rewrite of the lines. Before anything is overwritten the
 previous record is kept as `narrate/narration.prev.json`. A clip grows, or the speech
@@ -556,9 +563,8 @@ never makes a different picture the base. Over the thumbnail you **drag a box**
 to put words on it; they print to fill the box, like a Text effect in Cut, and
 pressing the box's **✎** opens "Words on the thumbnail" to reword it or remove
 it — emptying the box and saving removes it too, since a box with no words has
-nothing to print. The **title** is printed across the thumbnail the first time
-it is drawn; after that the two are separate, so retitling does not repaint the
-picture.
+nothing to print. The **title** is printed across the thumbnail, and reprinted when its
+text changes, until you edit the picture by hand.
 
 ▶ over an unchanged project costs nothing: the render keeps `produce/final.stamp`
 beside the video, a hash of what it reads — the encoder settings (not where the
@@ -582,7 +588,9 @@ clip with no narration line under it captions its own speech; an inserted sound,
 a freeze or a clip with no video gets no cues. A caption ends where the speaker
 breathed, when two rows of 42 characters are full, or after six seconds on
 screen; a gap shorter than 1.2 s holds the caption already up instead of going
-blank, and words too brief to read are folded into the caption that follows. An `.srt` **and** a `.vtt` are written beside the video on every
+blank, and words too brief to read are folded into the caption that follows. The
+cue times are moved onto the encoded clips' measured lengths after the join, since a
+clip's picture ends on a whole frame and over a hundred clips that drift is seconds. An `.srt` **and** a `.vtt` are written beside the video on every
 render, one pair per language, whatever else you asked for — the video itself
 can carry them burned into the picture, as a track inside the file, or not at
 all. The `.vtt` is there because a browser reads no other subtitle format and
@@ -595,7 +603,7 @@ of the tracks muxed into the file. Open it over http rather than by
 double-clicking: a `file://` page is refused every `<track>`. An mkv or an h265
 says so in the log, since no browser plays them. **Translate**
 takes the same cues into other languages — the track goes over in requests of
-150 numbered lines, answered one line at a time, and a number that never comes
+150 numbered lines, the batches side by side up to the LLM server's slots, answered one line at a time, and a number that never comes
 back is asked for once more by its original number before the line ships in the
 source language with a warning naming it. A track is never dropped for one bad
 line, and your own language is never translated into itself.
@@ -609,8 +617,8 @@ instruction come from one model call that reads your context.
 That call is the run's **words half**: it reads a brief of the finished video —
 "THE FINISHED VIDEO: N clips, m:ss long", then what each clip is and what was
 seen and said in it, then the narration at its time in the video (or the plain
-statement that none has been written). Unlike the narration brief it carries no
-marked or caption lines and no effects; a long session's brief is bounded at
+statement that none has been written). It carries no caption
+lines, and a clip's decorations as `MARKED:` lines; a long session's brief is bounded at
 120 kB, folding each clip to its first lines and events and leaving the model to
 read more with `get_lines`. Each tool answers what it actually did rather than
 just "ok": a picked frame tells you the frame taken **and how far it sits from
@@ -656,7 +664,7 @@ lines ride the subtitle track alone), plans one clip per segment and fits each
 narration line to its clip, writes `produce/clips/final.srt` on the produced
 clock, encodes each clip with the seek before the input, the effect chain, the
 narration mixed over the bed at the Game-audio level and then a limiter, joins
-the clips by stream copy, translates the cues only after the encodes so the
+the clips by stream copy, moves the cues onto the clips' measured lengths, translates them only after the encodes so the
 encoder never idles behind the model, then loudness-normalises and muxes with the
 subtitle tracks and the mp4 faststart flag, and writes the `.srt` and `.vtt`
 pair beside the video for each language. It asks at five points between its
@@ -670,8 +678,8 @@ half a render.
 ## What it needs
 
 Four HTTP servers, all local by default — an empty Server box in Settings
-means the loopback address below. Compose files for all of them are in
-`../cpp/`; the writing model's default port is
+means the loopback address below. The app starts none of them; the writing model's
+default port is
 [halogen-flash-server](https://github.com/peonist-ai/halogen-flash-server)'s own.
 
 | what | default | serves |
@@ -683,10 +691,11 @@ means the loopback address below. Compose files for all of them are in
 
 Settings are one bash-sourceable file, `~/.config/naivepost/llm.conf`: server
 URLs, API keys, and which model id to ask each server for. Model *weights* are
-never named here — that is the servers' business (`cpp/config-llamacpp.ini`,
-`cpp/config-audiocpp.json`). The same file holds how many requests each server
-may take at once (`LLM_SLOTS`, the five audio.cpp `…_SLOTS` and `SD_SLOTS`, all
-absent meaning 1), which subtitle languages to offer as a `code:tag:name` list in
+never named here — that is the servers' business. An older file's request counts
+(`LLM_SLOTS`, the five audio.cpp `…_SLOTS` and `SD_SLOTS`) are read and dropped: each
+server takes one request at a time, except the LLM's parallel stages, which go by the
+`slots` its `/health` reports. The same file holds an optional `DECISION_MODEL` for the
+text gate, which subtitle languages to offer as a `code:tag:name` list in
 `SUBTITLE_LANGUAGES`, and the projects it remembers. What a value resolves to runs
 dialog box → this file → an old `llm.conf` left beside the videos (picked up once
 into the config folder, its old copy left where it is and never read again) → the
@@ -699,24 +708,23 @@ The vision model has to be able to read images, or Describe is the one job that
 cannot run.
 
 Which step calls which server, what waits for what, and what could overlap:
-[SERVICES.md](SERVICES.md).
+[SERVICES.md](../SERVICES.md).
 
 ## Build and run
 
 ```sh
-cd go && go build && ./naivepost
+cd rust && just build && ./target/release/naivepost
 ```
 
-Go 1.26, GTK4 via gotk4. No libadwaita.
+Rust, GTK4 with libadwaita, GStreamer for the preview. The prototype in `go/` is not
+what ships.
 
-The rewrite lives in `rust/` (Rust, GTK4 with libadwaita), built against the
-spec in `spec/`. It builds and runs tests, one spec item at a time; so far that
-is the project's file layout and the `cut/cut.json`, `narrate/narration.json`
+Among what the app holds, each to its chapter of this spec: the project's file layout and the `cut/cut.json`, `narrate/narration.json`
 and `produce/publish/publish.json`, the machine files of §7, the session clock
 of §8, the text formats of §6 — the transcripts, `session.tsv`, `events.tsv`,
 `retakes.tsv`, `final.txt`, the ASR sidecars, `.frames` and `scenes.tsv`, the
 `AWV4` waveform cache and `requests.tsv` — the Settings dialog of
-[03-shell.md §5](spec/03-shell.md), opened from the header bar's gear: rows for
+[03-shell.md §5](03-shell.md), opened from the header bar's gear: rows for
 the LLM server, key and model with its vision check and Fetch models, ffmpeg and
 firefox, the audio.cpp endpoint with its four model rows and the forced aligner,
 and the sd.cpp server. Each Test button reads what its box holds at that moment,
@@ -728,15 +736,15 @@ timed line in `requests.tsv` like any other request; the rows naming no port
 (ffmpeg, firefox, and the five model boxes) answer from whatever provider this
 build was given, so an unwired one says `nothing wired to probe <row>` rather than
 showing a check nobody probed for — and the four servers of
-[02-services.md §1](spec/02-services.md): their loopback defaults, what each
+[02-services.md §1](02-services.md): their loopback defaults, what each
 settings box falls back to, which path and timeout every kind of call has, and
 which aligner a server's own model list offers — and the model roles of
-[02-services.md §2](spec/02-services.md): which of the fourteen jobs asks which
+[02-services.md §2](02-services.md): which of the fourteen jobs asks which
 server, thinking on or off, and the numbers that follow (a 60 s ASR chunk for
 the qwen3 family and 300 s elsewhere, halved to 20 s on an out-of-memory answer;
 90 → 45 → 25 s diarization windows; four frames a vision call; three cut
 attempts, the web withdrawn after the first). Its `cut/cut.json` reader and
-writer follow [06-effects.md §1](spec/06-effects.md): one effect record for all
+writer follow [06-effects.md §1](06-effects.md): one effect record for all
 six kinds, and old files read forward on load — a `view` becomes a zoom, a
 per-effect `mute` becomes `snd: "mute"`, and a whole-cut `sound` is spread scene
 by scene into `quiet` — none of those legacy keys ever written again. Its
@@ -757,14 +765,14 @@ session clock places every source by the timestamp its own file name carries —
 the earliest is second zero, an unstamped file sits at the start rather than at
 its mtime and warns, and a frame is named by its exact second
 (`2026-08-08_19-55-15.250`), never by its position in a sorted list. And the
-two tool passes of [02-services.md §3](spec/02-services.md): the model-chosen
+two tool passes of [02-services.md §3](02-services.md): the model-chosen
 cut (§3.6 — `add_segment`, `remove_segment`, `set_speed`, `cut_status`,
 `finish_cut`) answers with what a segment became rather than with a yes, and
 the clips pass (§3.7 — `add_caption`, `set_clip_speed`, `add_effect`,
 `get_frames`) clamps into the clip's own seconds and reports the fade, the box
 and the rate it actually used; a refusal names the model's own number in mm:ss.
 And what happens when a server is missing ([02-services.md
-§4](spec/02-services.md)): narration still gets its cuts from the waveform when
+§4](02-services.md)): narration still gets its cuts from the waveform when
 the aligner is down, a video whose render or publish was forgotten by the server
 says so instead of hanging, and a forgotten job can be retried while any other
 failure has to start over. And the details §5 confirms against the code: every
@@ -773,7 +781,7 @@ the project language rather than a hard-coded `"en"`, sd.cpp's four waits are
 15/60/30 s at 1 s/10 s, and each Settings row — ten buttons and "Test All" —
 keeps its own verdict while the file is written 600 ms after the last keystroke
 instead of on a Save button. What those buttons do when pressed
-([F0.13](spec/03-shell.md)): each reads what its box holds at that moment rather
+([F0.13](03-shell.md)): each reads what its box holds at that moment rather
 than the file still catching up, spins, then marks ✓ or ✗ with the verdict as its
 tooltip and mirrors the line into the main log as "settings: …"; "Test All" runs
 every row and reports each, so one failure never hides the rest. The pass rules
@@ -792,7 +800,7 @@ own order, where Use copies the picked id into the model box entered last (Model
 person has clicked into it) only if that exact string was listed:
 ids share prefixes between vision and text variants of one base name, so a partial match
 would write an id whose completions fail for a reason nobody can see. And what every model call leaves behind
-([§7](spec/03-shell.md)): one HTML page per run under `llm/`, named
+([§7](03-shell.md)): one HTML page per run under `llm/`, named
 `MMDD-HHMMSS-<first step>.html` after whatever started the run, each call a
 numbered section carrying the model, whether it was thinking or executing, how
 long it took, the messages with their images inline, the reply, its reasoning
@@ -809,7 +817,7 @@ the line naming `llm/<page>`. That one line is the log's only clickable thing:
 activating it opens the page in a browser — GTK's file launcher, `xdg-open` as
 the fallback — and no other path the log names is clickable. Keeping that page
 can never fail the call it records: a problem turns into a log line instead. And no request is ever too big
-([§5](spec/09-llm-and-tools.md)): one prompt may carry at most 120 000 characters
+([§5](09-llm-and-tools.md)): one prompt may carry at most 120 000 characters
 (`P.machine.promptMaxChars`), counted as characters rather than bytes so a Cyrillic
 transcript isn't charged twice for its encoding; a job with more to say is split up —
 captions five clips per request, subtitle translations 150 lines
@@ -817,7 +825,7 @@ captions five clips per request, subtitle translations 150 lines
 `get_lines` / `get_events` instead of being uploaded whole. A request over the cap is
 refused before it goes on the wire, and the refusal names both ways out. The size that
 went out is reported in the log only, never on the exchange page. And the details §8 confirms the
-same way ([§8](spec/03-shell.md)): every subprocess is logged quoted, as a shell would
+same way ([§8](03-shell.md)): every subprocess is logged quoted, as a shell would
 take it, before it runs, and a failure repeats the command with the last 400 characters of
 its output; opening a `naivepost.json` opens its folder, and a project that used to write
 somewhere else says which folder it writes into now and that the old one is untouched, with
@@ -828,7 +836,7 @@ dialog's own log stays collapsed until a test fails, which opens it; a missing a
 answered with the catalogue that server does serve, plus the exact install command when the id
 is a shipped default; and a file whose header carries no duration — a recorder killed
 mid-write — is measured by decoding once and remembered. And switching tabs
-([F0.1](spec/03-shell.md)): a locked tab is greyed rather than disabled, so a
+([F0.1](03-shell.md)): a locked tab is greyed rather than disabled, so a
 click reaches it and bounces off with the reason on the status line — "Add
 footage on the Prepare step first" — while a page whose prerequisites vanish
 while open goes back to Prepare in silence; arriving flushes the narration's
@@ -839,10 +847,9 @@ it — sit under the bottom bar on every tab, not only on Prepare, and they are
 redrawn each time you switch. On Produce the `Inputs:` row carries the answer to
 "what exactly is behind that count" in its tooltip: the cut's own line, the first
 line to be spoken, the voice in use, and whether text leaves the machine — and a
-thing the flows have not published yet contributes no row there rather than a guess. The ⓘ that opens the editing-policy form is now one
-button in the title bar, to the left of ⚙ ⟳, and its tooltip names the tab you are
-looking at. And what one
-means ([F0.2](spec/03-shell.md)): a run under way first, so the same button shows
+thing the flows have not published yet contributes no row there rather than a guess. The ⓘ is one button in the title bar, and all it does is
+carry a tooltip naming the tab you are looking at and what is on it. And what one
+means ([F0.2](03-shell.md)): a run under way first, so the same button shows
 ⏸ and says "pausing after the current stage…" rather than starting anything; then
 the page's own preview, but only once it has been started — Prepare and Produce
 have none, so their ▶ runs the step while something plays; otherwise the sources
@@ -850,36 +857,31 @@ are snapshotted as they stand and that one step runs, with no "all done" line fo
 a single step. The window draws that ▶ at the left of its bottom row, with ⏹
 beside it: one press stops the page's preview and the run together, ending on
 "stopping…", and a subprocess killed by that stop is reported as stopped rather
-than as a failure. Right of ⏹ sits **I'm feeling lucky** ([F0.4](spec/03-shell.md)):
-one press runs every step in page order — Prepare → Cut → Narrate → Produce — each
-switching to its own page and logging `>>> run: ‹Name›`. Narrate skips itself when the
-video has no narration, and Cut skips itself when the cut has hand edits, which are
-kept; the press refuses if a run is already going. It closes with what it cost —
-`all done in 2m 15s`, or `stopped after …` with how many steps were left undone.
+than as a failure.
 Every run, whichever button started it, keeps its own bookkeeping
-([F0.5](spec/03-shell.md)): the bar fills while it works and reads
+([F0.5](03-shell.md)): the bar fills while it works and reads
 `‹job› ‹phase›: ‹task› n/m`, the status line carries the same words, the log
 opens by itself when the run starts and stays open after it ends so the last line
 is still there to read, and the audio models are unloaded quietly at the end of
 every run — even one that used no audio.
 And which project a launch
-opens ([F0.6](spec/03-shell.md)): the file the desktop handed over — the first
+opens ([F0.6](03-shell.md)): the file the desktop handed over — the first
 only, and even when it cannot be read, since a double-click asks for *that*
 project; else what `llm.conf` remembers for this folder while it is still on
 disk, an unmounted drive falling through without being forgotten; else
 `session.naivepost` beside the folder; else a blank session at that path, which
 writes nothing until the session is first saved. And ＋ New in the header bar
-([F0.8](spec/03-shell.md)): refused while a run works, asking first when the
+([F0.8](03-shell.md)): refused while a run works, asking first when the
 session has anything in it — naming what goes back to empty and saying the open
 project stays on disk as it is — then defaulting the name to today's date with
 `-2`, `-3` while taken and `.naivepost` on the end, refusing a name that is a
 project already, and writing only `naivepost.json`: every output of the project
-you left is untouched. And Save ([F0.10](spec/03-shell.md)), refused while a run
+you left is untouched. And Save ([F0.10](03-shell.md)), refused while a run
 is on: the same name rewrites `naivepost.json`, a new name renames the whole
 folder — never a copy, so the transcripts, frames and renders keep the name —
 and that rename is itself the check, failing onto a folder that already has work
 in it with the files left where they are and the log saying where. And ＋ Add source
-files… on Prepare ([F0.12](spec/03-shell.md)): refused while a run works, since a copy is
+files… on Prepare ([F0.12](03-shell.md)): refused while a run works, since a copy is
 a run of its own; offering audio and video only, and either copying each pick into the
 project's `sources/` — through a `.part` renamed at the end, so an interrupted copy never
 looks like a finished file, and skipping one that is already there at the same size — or
@@ -888,7 +890,7 @@ referencing it where it lies. A video arrives as footage, every new row arrives 
 nothing added". The copy counts on the run bar as it goes — the bar means how much of the import is
 on disk, so it moves with the bytes rather than with the rows — and each accepted file appears in the
 sources list straight away, beside the rows that were already there. And ⟳ Rescan, at the right end of the header bar
-([F0.11](spec/03-shell.md)): every source whose
+([F0.11](03-shell.md)): every source whose
 file has gone is dropped from the session and named in the log by the path the row
 shows; the rows left keep their voices, since a voice is shared and nobody's moves
 when another file goes. The cut and narration are then re-read from disk, so
@@ -908,20 +910,15 @@ frame cadence to choose, since the text check decides which frames the model see
 Language and Style are not in this rewrite, the policy sets them from the User Context;
 and frames are kept at the video's own size.
 
-**The editing policy** ([F0.7](spec/03-shell.md)) is what replaces that missing Style
-dropdown, and you see it by pressing ⚙ on the bottom bar or ⓘ in the title bar.
-The form lists all five fields, each with its value, who set it, and why.
-Who set it is one of three words: `default`, `model`, or `user`.
-With no User Context written, every field sits at its default — retakes marking, a model-chosen cut, and captions, speeds and decorations all on.
-Write some context and the app asks the model (thinking off) to set only the fields your words actually speak to, storing each with the reason it gave, which is the sentence printed under that row.
-A field you set yourself is never overwritten by a later derivation: it keeps your value and reads `set by you`, whatever the model proposes next.
+**The editing policy** ([F0.7](03-shell.md)) is what replaces that missing Style
+dropdown. It has no form and no button: you change it by saying so in the User Context, and the log says what was set and why.
+The model may set seven fields, each stored with who set it and its reason.
+With no User Context written, every field sits at its default — retakes marking, a model-chosen cut, captions, speeds and decorations all on, no target length, English.
+Write some context and the app asks the model (thinking off) to set only the fields your words actually speak to; a valid proposal always stores.
 An empty context stops the derivation entirely rather than inventing a style out of nothing.
-These five switches decide which flows run at all: the marking pass picks retakes, join repair or no marking in Prepare; the cut mode picks the words-derived cut or the model-chosen one; and the three pass switches turn captions, speeds and decorations off so those jobs are never asked.
+These fields decide which flows run at all: the marking pass picks retakes, join repair or no marking in Prepare; the cut mode picks the words-derived cut or the model-chosen one (left at its default, it follows the marking pass: joins cut from the words); the three pass switches turn captions, speeds and decorations off so those jobs are never asked; the target length is what the cut aims at; the language is what the recogniser is told and the voice speaks.
 Change the marking pass and the marks already made go stale — `retakes.tsv` and `final.txt` hold what the previous pass decided — so Prepare runs the new pass instead of trusting them.
-Re-opening the form re-reads the live policy, so what you see is what the project holds now, not when you last looked.
-The reason sits in its own fourth column beside the value and the source, under a note that the page is the whole §2 catalogue.
-Three buttons sit at the bottom: **Re-derive** asks the model again right now, **Reset to defaults** puts every field back at the shipped default — still open to a later derivation, not frozen as yours — and **Close** dismisses the form.
-A new context is derived from on its own: about half a second after you stop typing in the User Context, before ▶ reads the policy, or whenever you press Re-derive; if the model is unreachable nothing changes and the status line says which one was missing.
+A new context is derived from on its own: half a second after you stop typing in the User Context, or before ▶ reads the policy; if the model is unreachable nothing changes and the status line says which one was missing.
 
 ✂ on a row is a wish, spent by ▶. The recording is decoded to 44.1 kHz stereo and sent to
 the separation model in pieces of at most 300 s, each cut moved to a silence rather than
@@ -968,7 +965,7 @@ Those words are then cleaned in blocks of 25 lines, each block asked with five s
 either side from every other recording plus this source's own on-screen events as grounding.
 A bad line is refused by name and the model is told so on the second try; out of tries that
 block keeps what the ASR heard and the rest goes on, so one unreadable stretch never costs
-the source. A row nobody can make out is flagged for you rather than guessed at. Each source
+the source. Each source
 leaves `transcript.fixed.tsv` (a recorder's words go to `commentary.fixed.tsv`) with
 `subtitles.srt` over its video, and everything merges onto one clock into `session.tsv` and
 `session.txt` — the marked stretches of an abandoned take folded into one line each, so what
@@ -1007,16 +1004,14 @@ describe checkpoint, and the scaled frames sent to the model; then the merged `s
 by the one rule everything else uses — inside the project as `project:`, under the root relative to it,
 absolute nowhere else — so a renamed project still finds its sources.
 
-Beside the list is the prompt bench: one heading row — the row's title, a ✎ mark reading
-"edited — kept in your settings", a row picker, Reset — over one text box. Thirteen rows
-in pipeline order, User Context first and the twelve system prompts behind it. The User
-Context is stored on the project and its box carries the project's note; every prompt is
-stored per machine under the settings folder's `prompts/<key>.txt` at 0600. Every keystroke
-is stored, so there is no Save button. ✎ and Reset appear only while this machine holds that
-row's wording, and Reset deletes the file and restores the shipped wording; a machine with no
-settings folder shows no mark and cannot store a prompt, but still edits the User Context.
-A thirteenth prompt, `policy`, drives F0.7's derivation of the editing policy from the User
-Context — asked with thinking off, and edited through the policy form rather than this bench.
+Beside the list is the User Context: one heading row — its title, then **Profile** with a
+dropdown and **View** — over one text box. It is stored on the project and every keystroke is
+stored, so there is no Save button. There are fourteen prompts and no row for them on this page: a
+section in a profile replaces a step's wording for a project using that profile, and with none the
+step reads `prompts/<key>.txt` from the settings folder if this machine holds one, else the shipped
+wording. Two of the fourteen have no step of a tab of their own: `policy`, which drives F0.7's
+derivation of the editing policy from the User Context, and `textgate`, the question F1.6 asks about
+a pair of frames; both are asked with thinking off.
 
 What a model actually reads is not the whole of these files: each request sends the system prompt cut
 to the sections its job can use (`rust/src/prompt_assembly.rs`), then that job's own wording, then
@@ -1038,12 +1033,10 @@ any desktop has: an icon theme, GL, the X11/Wayland and text libraries. Inside
 Flatpak the app writes no desktop entry of its own and offers the model no web
 search.
 
-One package. The pipeline files -- transcribe, align, describe, fix, translate,
-the LLM and image clients -- touch no widget, and `go/seam.go` says exactly
-what they may take from the application: an interface `*App` satisfies, plus
-the handful of fields read directly. A test reads those files and fails on
-anything past it, so a pipeline function that reaches for a page is a red test
-rather than a race that happens to work.
+One crate. The pipeline modules in `rust/src` -- transcribe, align, describe, fix, translate,
+the LLM and image clients -- build no widget; the pages are in `rust/src/ui`. They reach it mostly
+for the log (`ui::window::log_line`), and a few modules have a test that fails when their source
+names `gtk4` or a subprocess. No test covers the whole pipeline this way.
 
 ## A project on disk
 
@@ -1072,7 +1065,7 @@ produced. It can be moved, copied or zipped whole.
       <source>/transcript.fixed.tsv + subtitles.srt
       session.tsv / session.txt   everything on one clock — what the cut reads
       retakes.tsv                 the stretches that were said twice
-      final.txt                   Lecture only: the words of the finished video
+      final.txt                   the words of the finished video
   cache/
     llm/<step>/                   model answers, keyed by the exact request
     waves/, edges/                waveform envelopes
@@ -1085,10 +1078,11 @@ produced. It can be moved, copied or zipped whole.
     final.stamp                   what the video is up to date with
     final.jpg                     the poster: the thumbnail as a jpeg
     final.html                    the <video> tag, tracks and all
-  publish/
-    thumbnail.png                 the picture with the words on it
-    thumbnail-plain.png           the picture as drawn
-    description.txt               the description
+    publish/
+      publish.json                the upload text and thumbnail state
+      thumbnail.png               the picture with the words on it
+      thumbnail-plain.png         the picture as drawn
+      description.txt             the description
   llm/                            a readable transcript of every model call
 ```
 
@@ -1100,9 +1094,9 @@ which is what you want. The key also holds the model id and whether thinking was
 asked for, so switching models in Settings asks again rather than replaying the
 previous model's answers. Only an answer worth keeping is stored: an empty reply,
 a partial translation or a repaired-after-refusal fix never is, and a cache that
-will not write makes the step slower, never fail. Five steps use it — describe,
-the transcript fixer, joins, retakes and subtitle translation; the cut, the
-narration and the upload text do not. A cached answer is served before the
+will not write makes the step slower, never fail. These steps use it — the text gate,
+describe, the transcript fixer, joins, retakes, the captions, speed and decoration
+passes, and subtitle translation; the cut, the narration and the upload text do not. A cached answer is served before the
 model's slot is taken and before the exchange page opens, so a resumed run's
 `llm/` page shows only the calls actually made (each hit still gets its own
 `requests.tsv` line, marked `cache`).
@@ -1116,8 +1110,8 @@ and the line goes down before the reply is used, so a step that fails on the con
 leaves its requests behind. Local work is not in there: ffmpeg and the other subprocesses are logged
 as the commands they ran. At the end of a run the log says it per service — `>>> requests: llm 57 in
 2h 13m on the wire, 4m waiting for a slot; audio 38 in 6m 10s; web 3 in 12s` — and that split of
-waiting against working is what slot counts get chosen by, rather than a guess about how loaded a box
-is.
+waiting against working shows whether a server's slots are what a run is waiting on, rather than a guess
+about how loaded a box is.
 
 ## Design rules the code holds to
 
@@ -1136,7 +1130,7 @@ These are the decisions everything else follows from.
 - **Nothing is deleted, only marked.** A retake, a false start, a stretch the
   cut drops — the transcript keeps every word, and the marks are a file you can
   read and edit.
-- **A number lives in one constant.** Every tuning value Prepare reads — the retake and seam family, describe's context sizes, the chunk and silence and diarization bounds, the frame grid and worker counts — is declared once, in the module whose rule uses it, with its `P.*` id from the parameters table in its doc comment. `rust/src/params.rs` lists them all for reading; it holds no numbers itself, so a catalogue row cannot go stale against the code. The project's own tab settings are catalogued the same way by `params::project_settings()`: Freq and the rest of that page's controls read their defaults from the structs that store them, not from a copy. Directive A sorts those homes into four kinds — editing policy for what the video becomes, the prompts for how a job is worded, machine settings for which servers and binaries run, and engineering constants for how the app looks, waits and caches — and `rust/src/decision_homes.rs` keeps that split enforced. Around every model call there are five further places a decision can sit — the tool argument, the tool's answer, the `finish` answer, the walk-back after it, and the policy or prompt — separated by what the model is told rather than where the code runs; `rust/src/decision_audit.rs` holds that table, and its rule of thumb is that if the app changes what the model said, the model hears about it: per item in the tool's answer, for the whole cut at `finish`.
+- **A number lives in one constant.** Every tuning value Prepare reads — the retake and seam family, describe's context sizes, the chunk and silence and diarization bounds, the frame grid and worker counts — is declared once, in the module whose rule uses it, with its `P.*` id from the parameters table in its doc comment. `rust/src/params.rs` lists them all for reading; it holds no numbers itself, so a catalogue row cannot go stale against the code. The project's own tab settings are catalogued the same way by `params::project_settings()`: that page's controls read their defaults from the structs that store them, not from a copy. Directive A sorts those homes into four kinds — editing policy for what the video becomes, the prompts for how a job is worded, machine settings for which servers and binaries run, and engineering constants for how the app looks, waits and caches — and `rust/src/decision_homes.rs` keeps that split enforced. Around every model call there are five further places a decision can sit — the tool argument, the tool's answer, the `finish` answer, the walk-back after it, and the policy or prompt — separated by what the model is told rather than where the code runs; `rust/src/decision_audit.rs` holds that table, and its rule of thumb is that if the app changes what the model said, the model hears about it: per item in the tool's answer, for the whole cut at `finish`.
 - **A step's output is its resume marker.** Every stage checks whether its own
   file exists before doing the work, so a run that was stopped, failed or ran
   out of memory resumes from where it stopped.
@@ -1150,20 +1144,12 @@ These are the decisions everything else follows from.
 
 ## Tests
 
-```sh
-cd go && go test ./...
-```
-
-About 24 seconds, no network, no GPU, no servers. Much of the suite pins
-*reasons* rather than outputs — the wording a prompt has to contain, the order
-two things happen in, the fact that a particular mistake stayed fixed — because
-every one of those was a bug once, and the comment beside the assertion says
-which.
-
-From `rust/`, tests need a display, so they run under a virtual one:
+Much of the suite pins *reasons* rather than outputs — the wording a prompt has to
+contain, the order two things happen in, the fact that a particular mistake stayed
+fixed — and needs no network, GPU or servers. Tests need a display, so they run on virtual ones:
 
 ```sh
-cd rust && just test    # xvfb-run, GSK_RENDERER=cairo
+cd rust && just test    # virtual displays, GSK_RENDERER=cairo
 ```
 
 `just snapshot <screen>` renders one screen to `rust/shots/<screen>.png` the
@@ -1192,9 +1178,9 @@ each other, in their own colours, under the `>>> effects: N decoration(s)` sente
 `rust/target/release/naivepost`, and prints the triple it is building for first.
 There is nothing to choose per machine: the libc follows the toolchain, so the same
 recipe links musl on Alpine and glibc on a Debian/Ubuntu host — only the system
-packages differ by name (`gtk4.0-dev libadwaita-dev` on Alpine,
-`libgtk-4-dev libadwaita-1-dev` on Debian/Ubuntu). The binary is not static: it
-links that libc plus GTK 4, libadwaita and cairo, so run it on a matching system
+packages differ by name (`gtk4.0-dev libadwaita-dev gstreamer-dev` on Alpine,
+`libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev` on Debian/Ubuntu). The binary is not static: it
+links that libc plus GTK 4, libadwaita, GStreamer and cairo, so run it on a matching system
 rather than copying it across. Against a real display it opens the project in the
 current folder; inside the container there is nothing to draw to, so use
 `just snapshot` to see it.

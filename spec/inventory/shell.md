@@ -4,18 +4,18 @@
 [← Inventory: Produce tab, publishing (thumbnail + upload text), subtitles, LLM client](produce.md) · [↑ Contents](../README.md) · <span>end →</span>
 <!-- /nav -->
 
-Raw material for the spec, read off the prototype's Go source (go/main.go, runbar.go, runchain.go, runqueue.go, pipeline.go, project.go, project_import.go, setup.go, widgets.go, icon.go, llmlog.go, headfit.go, ffprobe.go, seam.go, sources.go).
+Raw material for the spec, read off the prototype's Go source (go/main.go, runbar.go, runchain.go, runqueue.go, pipeline.go, project.go, project_import.go, setup.go, widgets.go, icon.go, llmlog.go, headfit.go, ffprobe.go, seam.go, sources.go). It records the prototype unless a line says otherwise; where the app differs, [03](../03-shell.md), [02](../02-services.md) and [01](../01-project-and-files.md) say what it does.
 
 ## A. Window and layout
 
 ### Application object
 
-- GTK4, no libadwaita. App id `ch.bocek.naivepost`. Single instance: a second launch forwards its file to the running one; only the first file is opened.
-- Root discovery: if `cwd/input_video` does not exist, root = the executable's grandparent directory. `vidDir = root/input_video`, `audDir = root/input_audio`, default project = `root/session.naivepost`.
+- GTK4, no libadwaita (rewrite: GTK4 with libadwaita). App id `ch.bocek.naivepost`. Single instance: a second launch forwards its file to the running one; only the first file is opened.
+- Root discovery: if `cwd/input_video` does not exist, root = the executable's grandparent directory. `vidDir = root/input_video`, `audDir = root/input_audio`, default project = `root/session.naivepost`. (Rewrite: the root is the folder the app was launched from.)
 
 ### Window
 
-- Title "Naivepost", default size 1240×740.
+- Title "Naivepost", default size 1240×740 (rewrite: 1240×900, also its minimum).
 - CSS: `.stamp-warn` amber #e5a50a; `.test-ok` #26a269; `.test-bad` #c01c28; `.videoframe` background #101010; scale value/mark labels use theme fg; `.frame` rounded 6px; entries monospace.
 - Layout top to bottom: header bar; vertical paned (page stack resizable / bottom box not); bottom box = separator, run bar row, log expander.
 - Page stack: crossfade, non-homogeneous both ways; children prep, cut, narrate, produce.
@@ -23,7 +23,7 @@ Raw material for the spec, read off the prototype's Go source (go/main.go, runba
 ### Header bar
 
 Left: New (`document-new-symbolic`, "New project — name it, put it where you want it, and start over"); Open ("Load a project — sources, prompts and settings"); Save ("Save this project to a file"); project label (ellipsized, dim).
-Right: Rescan ("Rescan inputs and outputs"); Settings ("Settings — the LLM and audio.cpp endpoints"); ⓘ image whose tooltip is the current step's label + help text.
+Right: Rescan ("Rescan inputs and outputs"); Settings ("Settings — the LLM and audio.cpp endpoints"); (rewrite: Profiles, F0.14); ⓘ image whose tooltip is the current step's label + help text.
 Title widget = the tab row.
 
 ### Tabs
@@ -74,7 +74,7 @@ Every 2000 ms: flushProject + flushPrompts. flushProject marshals the project an
 ### Startup order
 
 window → CSS → size → header → run controls → page stack + four builders → tab row + header fit watcher → log + status + expander → bottom → showStep("prep") → paned → set child → icons → migrate conf → load global prompts → project pick → updateGates → updateCutInfo → updateProduceInfo → startAutosave → show.
-Project pick order: a file handed by the desktop; the last project remembered for this root (if it exists); root/session.naivepost if it exists; root/project.json (legacy, adopted).
+Project pick order: a file handed by the desktop; the last project remembered for this root (if it exists); root/session.naivepost if it exists; root/project.json (legacy, adopted). Rewrite: no adoption; a blank session at root/session.naivepost.
 
 ### Rescan
 
@@ -99,6 +99,7 @@ Buttons:
 - ▶/⏸ (suggested-action): initial tooltip "Run the ticked steps — or resume what is paused"; busy → pause icon "Pause"; else "Run this step — or resume what is paused".
 - Chain menu button: label none / "N steps" / all; tooltip "Which steps ▶ runs, in this order. Narrate skips itself when the video has no narration, and Cut skips itself when the cut has hand edits."; popover with four check buttons Prepare, Cut, Narrate, Produce.
 - ⏹: "Stop the run or the playback — ⏸ is what parks one to carry on later"; sensitive when running, busy, or a page transport is cued.
+- ↺ (rewrite only, `edit-clear-all-symbolic`): "Reset this step: delete what it generated, so it can be done again"; greyed during a run (03 F0.15).
 busy = running and not paused, or the page transport is playing. setPlayIcon rule: one button in two states, never a dead ⏸.
 
 ▶ priority: (1) a run is under way → toggle pause ("pausing after the current stage…" / "resumed"); (2) the page transport is playing or has been started → toggle it (Cut editor when playing or started; Narrate when playing or started; Prepare and Produce have none); (3) otherwise snapshot sources and run the ticked chain.
@@ -108,7 +109,7 @@ Pause takes effect between subprocesses (checkpoint polls every 200 ms); stop ab
 
 ### Run chain
 
-Steps in page order. chainRun: refuse if busy; nothing ticked → "nothing ticked beside ▶ — tick the steps to run"; log ">>> run: Prepare → Cut → Produce"; chainNext.
+Prototype only; the rewrite runs the visible step alone (03 §2). Steps in page order. chainRun: refuse if busy; nothing ticked → "nothing ticked beside ▶ — tick the steps to run"; log ">>> run: Prepare → Cut → Produce"; chainNext.
 chainNext: skip Narrate when narration is off (">>> run: Narrate skipped — this video has no narration"); skip Cut when it has hand edits (">>> run: Cut skipped — the cut has hand edits, which are kept"); else showStep(page) synchronously, log ">>> run: <Name>", run the page; a step that declined (not running afterwards) is skipped rather than waited for. End: chainEnd("done").
 chainDone (from endRun): record "<Name> <time>"; stopped → chainEnd("stopped"); else next.
 chainEnd lines: ">>> run: stopped after T — steps — N step(s) left undone"; ">>> run: T — steps — N step(s) left undone"; ">>> run: all done in T — steps". Time "%.0fs" under a minute else "%dm %02ds". No line for a single-step chain.
@@ -140,7 +141,7 @@ Project JSON (naivepost.json):
 | Interval | interval | seconds between frames; 0 = every frame; always written |
 | FrameScale | frame_scale | preset name |
 | Style | style | "read" = lecture; "" = ordinary session |
-| RunSteps | run_steps | ticked chain pages |
+| RunSteps | run_steps | ticked chain pages (rewrite: ignored, never written) |
 | Language | language | ASR language; absent → "en" |
 | NoNarration | no_narration | |
 | RefSources | reference_sources | inverted on purpose: absent = copy sources into the project |
@@ -199,18 +200,18 @@ Sections and fields (placeholders/tooltips verbatim in setup.go:864+):
 
 - Writing: Server (placeholder "empty = `http://127.0.0.1:8731",` Test "Ask this server and model for one short completion"); API key (password); Model (placeholder "model id exactly as the server lists it", Test = vision: "Show this model a small sample image and check it names what it sees"); Decision (new; placeholder "empty = the Model above; a fast vision model, e.g. Clef", Test tooltip "Prepare asks this model whether a slide's text changed between two frames (the text gate); empty asks the Model above. Test sends the gate's own question with one picture shown twice, and checks the model answers through judge_text that nothing changed"; stored as `DECISION_MODEL`, the same server and key as Model; F1.6 S6); Fetch models + dropdown + Use.
 - Cutting: ffmpeg path (empty = PATH; ffprobe taken from the same folder; Test checks filters rubberband, subtitles, loudnorm, atempo, amix, adelay, alimiter and encoders libx264, libx265, aac, libopus); firefox path or "off" (web search; Test drives a headless search).
-- Audio (optional): Server (empty = `http://127.0.0.1:8765`), API key, TTS model (index-tts2), ASR model (nemotron-asr), Diarization model (sortformer-diar), Voice split model (bs-roformer), Forced aligner (empty = qwen3-aligner where served, else any task "align"); each with a Test that checks the id is served for its task.
+- Audio (optional): Server (empty = `http://127.0.0.1:8765`), API key, TTS model (index-tts2), ASR model (rewrite: qwen3-asr; prototype: nemotron-asr), Diarization model (sortformer-diar), Voice split model (bs-roformer), Forced aligner (placeholder "empty = whatever the server serves for \"align\"": qwen3-aligner where served, else any task "align"); each with a Test that checks the id is served for its task.
 - Drawing (optional): sd.cpp Server (empty = `http://127.0.0.1:1234`), API key; Test reports the loaded weights.
 - Server entries (new): Writing, Audio and Drawing each have, under the heading, a dropdown of named entries (`servers-<section>`), ＋ New (`servers-<section>-new`, a popover with a name box and Create; refuses an empty or duplicate name in words) and 🗑 (`servers-<section>-delete`, `user-trash-symbolic`, asks with Cancel as the default, greyed at one entry). A pick fills the section's boxes and llm.conf; typing writes through to the entry in use. Kept in `~/.config/naivepost/servers.json` (0600, atomic), migrated from llm.conf on first open, an unreadable file kept as `servers.json.bad` (03 §6).
-- Test All; a log pane last.
+- Test All (twelve rows in the rewrite: LLM, vision, Decision, ffmpeg, firefox, audio.cpp, TTS, ASR, diarization, separation, aligner, sd.cpp); a log pane last.
 Badge: idle / spinner / ✓ / ✗ with the verdict as tooltip. Tests read what is typed; the dialog log mirrors into the main log as "settings: …".
-Test details: LLM one completion "Reply with the single word: ok" (temperature 0.6, max_tokens 16, thinking off, 60 s); vision sends a generated 48×48 red square (120 s) and expects "red"; audio health + catalog; per-model catalog/task checks with install hints; aligner lists what aligns (none is a success: "cut points come off the waveform"); ffmpeg version + capability scan; firefox version + a real headless search; sd.cpp capabilities.
+Test details (rewrite: 03 F0.13, its vision question "What colour is this image? Answer with the colour alone."): LLM one completion "Reply with the single word: ok" (temperature 0.6, max_tokens 16, thinking off, 60 s); vision sends a generated 48×48 red square (120 s) and expects "red"; audio health + catalog; per-model catalog/task checks with install hints; aligner lists what aligns (none is a success: "cut points come off the waveform"); ffmpeg version + capability scan; firefox version + a real headless search; sd.cpp capabilities.
 Fetch models: GET /v1/models, 15 s; fills the dropdown; Use copies the id into the model box entered last (Model or Decision; Model by default).
-Settings file: `~/.config/naivepost/llm.conf` (0600, dir 0700), bash-sourceable KEY="value", written whole. Keys: LLM_SERVER, LLM_MODEL, LLM_API_KEY, AUDIOCPP_SERVER, AUDIOCPP_API_KEY, AUDIOCPP_VOICES, AUDIOCPP_ASR_MODEL, AUDIOCPP_DIAR_MODEL, AUDIOCPP_TTS_MODEL, AUDIOCPP_SEP_MODEL, AUDIOCPP_ALIGN_MODEL, FFMPEG, FIREFOX, SD_SERVER, SD_API_KEY, DECISION_MODEL (new), PROJECT_n_ROOT/FILE (remembered last project per root). Legacy read-only keys: AUDIOCPP_MODELS, PROMPT_*, AUDIOCPP_LANGUAGE, SD_MODEL; legacy `<root>/llm.conf` migrated once. Defaults: voices /mnt/models/audiocpp/voices (Flatpak: data home), model ids as above; the aligner deliberately undefaulted; servers/keys/ffmpeg/firefox empty = real answers. Env vars: only XDG/HOME; audio URL also honours NAIVEPOST_TTS_URL and AUDIOCPP_SERVER, sd SD_SERVER, below the dialog. readConf re-reads per step. Ports 8731 / 8765 / 1234.
+Settings file: `~/.config/naivepost/llm.conf` (0600, dir 0700), bash-sourceable KEY="value", written whole. Keys: LLM_SERVER, LLM_MODEL, LLM_API_KEY, AUDIOCPP_SERVER, AUDIOCPP_API_KEY, AUDIOCPP_VOICES, AUDIOCPP_ASR_MODEL, AUDIOCPP_DIAR_MODEL, AUDIOCPP_TTS_MODEL, AUDIOCPP_SEP_MODEL, AUDIOCPP_ALIGN_MODEL, FFMPEG, FIREFOX, SD_SERVER, SD_API_KEY, DECISION_MODEL (new), SUBTITLE_LANGUAGES (new), PROJECT_n_ROOT/FILE (remembered last project per root). Legacy read-only keys: AUDIOCPP_MODELS, PROMPT_*, AUDIOCPP_LANGUAGE, SD_MODEL, the retired *_SLOTS counts; legacy `<root>/llm.conf` migrated once. Defaults: voices /mnt/models/audiocpp/voices (Flatpak: data home), model ids as above; the aligner deliberately undefaulted; servers/keys/ffmpeg/firefox empty = real answers. Env vars: only XDG/HOME; audio URL also honours NAIVEPOST_TTS_URL and AUDIOCPP_SERVER, sd SD_SERVER, below the dialog. readConf re-reads per step. Ports 8731 / 8765 / 1234.
 
 ## E. Sources model
 
-narratorSlots 4. Extensions: audio .flac .wav .mp3 .m4a .aac .ogg .opus .wma; video .mp4 .mkv .mov .webm .avi .ts. Item: path, footage, narrator, sepVoice (wish), tracks. add (dedupe, media only, footage = isVideo, autoTag), addDir, autoTag (slot 1 to the first untagged row, recordings before footage, never moving a held slot), remove (autoTag after), setFootage (video only), setSepVoice, cycleNarrator (next free slot, past 4 → none), clash (two sources sharing a base name refuse the run), prune, load (strip out-of-range/duplicate slots, force footage=video, autoTag only if something was stripped). Every change renders the list wholesale then notifies.
+narratorSlots 4 (rewrite: no autoTag and no free-slot rule: voices are shared, a new row starts on voice 1, the button cycles 1..N and back to 1; 03 §4). Extensions: audio .flac .wav .mp3 .m4a .aac .ogg .opus .wma; video .mp4 .mkv .mov .webm .avi .ts. Item: path, footage, narrator, sepVoice (wish), tracks. add (dedupe, media only, footage = isVideo, autoTag), addDir, autoTag (slot 1 to the first untagged row, recordings before footage, never moving a held slot), remove (autoTag after), setFootage (video only), setSepVoice, cycleNarrator (next free slot, past 4 → none), clash (two sources sharing a base name refuse the run), prune, load (strip out-of-range/duplicate slots, force footage=video, autoTag only if something was stripped). Every change renders the list wholesale then notifies.
 Row: 🎥 footage toggle (video only); 🎤 voice button with a one-char number label, drawn alike for every number (every recording starts on voice 1, so no highlight; first rewrite: voice 1 bold in the accent colour; prototype: suggested-action, white on white); file name (ellipsize middle, tooltip = path); track menu button when ≥2 audio streams ("Track N — title (stereo|mono)", last one cannot be unticked); ⚠ when no timestamp in the name; ✂ split toggle (greyed on a split product); 🗑 remove. Every control tooltip ends with the four-line legend of the row symbols.
 Snapshot for runners: selItems/selVid/selAud/selNarr/selTracks under a mutex; readers snappedSources, snappedItems, snappedTracks, sepWanted, narratorPath, voiceSource.
 ffprobe: one process per file answering duration, size, fps, audio tracks (channels capped at 2, titles), cached by path+size+mtime; fps accepted 1..240; duration 0 falls back to a full decode (recorders that never finalise headers). ffTool: configured ffmpeg path, ffprobe from the same folder.
@@ -221,14 +222,14 @@ Folder `<project>/llm/`, one HTML page per run named `MMDD-HHMMSS-<step>.html` (
 
 ## G. Implicit constants (shell)
 
-frameStops {0,0.1,0.2,0.5,1,2,3,4,5} labels each/0.1/0.2/0.5/1s..5s, default 1 s; scalePresets original / 896w (LLM)=scale=896:-2 / 480p / 720p / 1080p; defLanguage en; window 1240×740; log 220/110; hangBeat 200 ms, hangStall 3 s; autosaveTick 2000 ms; projNameChars 28; logListMax 12; confirm width 420; editWait 400 ms; tabGap 6; headSlack 90; confSaveWait 600 ms; LLM test 60 s, vision 120 s, fetch/health 15 s; pipeline: sampleRate 16000, diarWins {90,45,25}, anchorPer 12, shortTake 2.0, anchorCut 0.3, anchorMin 4, minAnchorOv 0.5, diarTurnGap 0.5, diarHopShare 2/3, asrChunkMax 300, asrChunkQwen 60, asrChunkMin 20, asrCutSeek 20, asrQuietDB -35, asrQuietMin 0.4, mergeGap 0.7, mergeMaxLen 12, mergeMaxWord 2, mergeNear 1, checkpoint 200 ms, frame workers clamp(NumCPU/4, 2, 8), frame quality -q:v 4, frame count round(dur/interval); noRoom words: failed to allocate / out of memory / alloc_tensor_range / cudamalloc.
+frameStops {0,0.1,0.2,0.5,1,2,3,4,5} labels each/0.1/0.2/0.5/1s..5s, default 1 s; scalePresets original / 896w (LLM)=scale=896:-2 / 480p / 720p / 1080p; defLanguage en; window 1240×740 (rewrite: 1240×900); log 220/110; hangBeat 200 ms, hangStall 3 s; autosaveTick 2000 ms; projNameChars 28; logListMax 12; confirm width 420; editWait 400 ms; tabGap 6; headSlack 90; confSaveWait 600 ms; LLM test 60 s, vision 120 s, fetch/health 15 s; pipeline: sampleRate 16000, diarWins {90,45,25}, anchorPer 12, shortTake 2.0, anchorCut 0.3, anchorMin 4, minAnchorOv 0.5, diarTurnGap 0.5, diarHopShare 2/3, asrChunkMax 300, asrChunkQwen 60, asrChunkMin 20, asrCutSeek 20, asrQuietDB -35, asrQuietMin 0.4, mergeGap 0.7, mergeMaxLen 12, mergeMaxWord 2, mergeNear 1, checkpoint 200 ms, frame workers clamp(NumCPU/4, 2, 8), frame quality -q:v 4, frame count round(dur/interval); noRoom words: failed to allocate / out of memory / alloc_tensor_range / cudamalloc.
 
 ## H. Invariants
 
 1. Widgets are the GUI thread's; runners use logfIdle/prog/IdleAdd and snapshots under mutexes. Page controllers are nil until built; every reader checks.
 2. Seam fence: pipeline files may take from the App only the runner interface (logf, logfIdle, prog, qPush, qTake, qDone, checkpoint, readConf, dirs, snapSources, snappedSources, sessionRows, sessionCtx, asrLanguage, videoStyleName, narratorMic, voiceID, produceCut, ttsWav, prompt, ctxBlockFor, runCmd, quietSpots, recordChatStart, takeLLM, giveLLM) and nine named fields; a test enforces it.
 3. Pause/stop only between subprocesses; a killed subprocess under stop is errStopped, not a failure; two stopped tracks report one stop.
-4. One LLM request on the wire at a time.
+4. One LLM request on the wire at a time (rewrite: one per server, except the parallel stages up to the LLM server's slots, 02 §1).
 5. A chain stops at the first failure or stop; a declining step does not stall the chain; the chain moves pages via showStep synchronously.
 6. busy() is the single refusal point; qReset also closes the LLM run page; qTake once per task whatever happens; the bar is the weighted sum, never the queue length.
 7. There is always an open project; outDir derives from it. Save As renames, never copies. Sources gone are loud. New goes through applyProject(blank). adoptLegacy leaves no half state. New/Save refused during a run.

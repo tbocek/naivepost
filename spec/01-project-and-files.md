@@ -18,9 +18,9 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
     inputs/meta.env                  INTERVAL (the 0.25 s extraction grid), SCALE always; VIDEO_FILE, VIDEO_BASE when there is footage; AUDIO_FILE, AUDIO_BASE when narrator 1 resolves
     inputs/<source>/                 voice16k.wav, transcript.txt, transcript.tsv, transcript.srt,
                                      words.json, asrchunks.json, words.aligned.json, turns.json
-                                     (scratch while running: asr/c00.wav… chunks, kept on failure, removed on success; diar/ s.wav, a00.wav…, anchor.list, anchor.wav, seg.wav, cc.list, win.wav)
+                                     (scratch while running: asr/c00.wav… chunks, kept on failure, removed on success; align/ w<ms>.wav per window and its .plan; diar/ s.wav, a00.wav…, anchor.list, anchor.wav, seg.wav, cc.list, win.wav)
     inputs/frames/<source>/          <YYYY-MM-DD_HH-MM-SS.mmm>.jpg on the 250 ms grid restarted at each scene change, named by the real instant (the recording's file-name stamp plus the second into it; first rewrite: session seconds printed as 1970-01-01_…, renamed in place on the next run);
-                                     scenes.tsv (time, score); .frames marker   (prototype: <YYYY-MM-DD_HH-MM-SS[-n]>.jpg per interval, .interval; whole-second names still read)
+                                     scenes.tsv (time, score); textscenes.tsv (the text gate's answer, F1.6 S6); .frames marker   (prototype: <YYYY-MM-DD_HH-MM-SS[-n]>.jpg per interval, .interval; whole-second names still read)
     describe/<source>/events.tsv     one row per frame; state.txt; .llmframes/ (the frames sent, scaled to P.machine.describeFrameWidth)
     transcript/<source>/             transcript.fixed.tsv | commentary.fixed.tsv; subtitles.srt for video sources only
     transcript/session.tsv           the merged timeline (machine copy)
@@ -28,17 +28,20 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
     transcript/offsets.tsv           video, audio, offset seconds
     transcript/retakes.tsv           the marks
     transcript/final.txt             the words of the finished video (markingPass joins)
+    word_list.json                   F1.13's one session word list, read by retakes, joins, final.txt and subtitles
   cache/llm/<step>/<sha256>          cached model replies
   cache/waves/<lane>.wave            waveform envelopes
   cache/edges/                       mono envelopes for edge placement
+  cache/svg/                         512 px preview copies of drawings, one png per source file
   cut/cut.json                       the cut (§3)
   cut/line.json                      {"t": <session second>} — the red line
+  cut/zoom.txt                       the Cut page's last zoom, pixels a second
   narrate/narration.json             the lines (§4); narration.prev.json (one generation back)
-  narrate/voice.txt, pitch.txt, takes.json, voice_ref_base.wav, voice_ref.wav
+  narrate/voice.txt, pitch.txt, takes.json, voice_ref_base.wav, voice_ref.wav; reference/ (ref_part_<n>.wav, ref_parts.txt: the levelled pieces and their concat list)
   narrate/tts/<16 hex>.wav           spoken lines; samples/<voice>_<12 hex>.wav
   produce/clips/                     per-clip encodes c<NNN>_<YYYY-MM-DD_HH-MM-SS> (footage) / c<NNN>_<stem> (inserts), c<NNN>_<stem>.srt burn cues, c<NNN>_<stem>.svg filled cards, c<NNN>_<stem>.frames/ baked animations, final.srt, final.<code>.srt, concat.txt
-  produce/final.<container>          the video; final.stamp; final[.<code>].srt/.vtt; final.jpg; final.html
-  produce/publish/publish.json       the upload text and thumbnail state (§5); a project written before the move keeps them in <name>.naivepost/publish/, read there for ever, never migrated
+  produce/final.<container>          the video; final.stamp; final[.<code>].srt/.vtt; final.jpg; final.html; <name>-thumbnail.jpg (the export's default name)
+  produce/publish/publish.json       the upload text and thumbnail state (§5), used when produce/publish/ exists; else <name>.naivepost/publish/, read and written there, never migrated. Nothing in the app creates produce/publish/, so a project gets the second place unless the folder is made by hand
   produce/publish/thumbnail.png, thumbnail-plain.png, thumbnail.stamp, description.txt
   llm/<MMDD-HHMMSS>-<step>.html      one readable page per run
   requests.tsv                       every request sent outside, timed (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new))
@@ -64,7 +67,7 @@ Paths written into any project file follow one rule: inside the project → `pro
 
 | key | meaning | default |
 |---|---|---|
-| sources | in order; `footage` only on video; `narrator` 0..N, the voice that speaks in the recording, shared by every recording of that voice (an audio recording with one is a narrator microphone, [03 §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)); new rows start at 1; `sepvoice` is a wish cleared when granted; `tracks` = audio stream indices in the session (empty = first) | [] |
+| sources | in order; `footage` only on video; `narrator` 1..4 (P.policy.narratorSlots; on load 0 becomes 1, and past the last one becomes 1 and is logged), the voice that speaks in the recording, shared by every recording of that voice (an audio recording with one is a narrator microphone, [03 §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)); new rows start at 1; `sepvoice` is a wish cleared when granted; `tracks` = audio stream indices in the session (empty = first) | [] |
 | interval | gone with Freq: ignored on load, never written (first rewrite: Freq, seconds between the frames sent to the describe model, 0.25 to 5; prototype: the extraction interval, 0 = every frame) | |
 | frame_scale | prototype only: the Frame size preset; ignored on load, never written (frames are stored at the video's own size, [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) S1) | — |
 | run_steps | prototype only: the chain's ticked pages; ignored on load, never written (the run bar has no step picker, [03 §2](03-shell.md#2-the-run-bar)) | — |
@@ -78,7 +81,7 @@ Paths written into any project file follow one rule: inside the project → `pro
 | produce | encoder settings ([`08-produce.md` §2](08-produce.md#2-flows)), each option spelled as §A lists it (`"resolution": "original"`; the first rewrite wrote `Original`, which its own reader did not know, so the choice was lost on the next open; that spelling is still read); `out_file` is never stored | defaults |
 | publish | upload text and thumbnail state ([§5](#5-producepublishpublishjson)) | absent |
 
-Legacy keys read and migrated once, never written: `videos`, `audios` (first recording → narrator 1), `in_dir`, `out_dir`, `*_hints` (folded into the prompts with their historical lead-ins), `prompts` (adopted where the machine has none); `style` ("read" → P.policy.markingPass joins and cutMode words, "" → retakes and model, as a `source: default` the context can still override); `language` (→ P.policy.language, as a `source: user` the context can still override); inside `publish`: `base` (an index, turned into the frames list) and `title_off` (the old spelling of "not printed"). An old `pitch` key is ignored (the field is gone).
+Legacy keys read and migrated once, never written: `videos`, `audios` (first recording → narrator 1), `in_dir`, `out_dir`, `*_hints` and `prompts` (the load logs them as folded or adopted, and their text goes nowhere: prompts come only from a profile or the shipped wording); `style` ("read" → P.policy.markingPass joins and cutMode words, "" → retakes and model, as a `source: default` the context can still override); `language` (→ P.policy.language, as a `source: user` the context can still override); inside `publish`: `base` (an index, turned into the frames list) and `title_off` (the old spelling of "not printed"). An old `pitch` key is ignored (the field is gone).
 
 Autosave: the project is marshalled every 2 s, written only when the bytes differ from the last write, and flushed on window close. No "unsaved changes" prompt.
 
@@ -145,7 +148,9 @@ The first frame is the base the image model edits; the rest are references. `own
 - `~/.config/naivepost/llm.conf` (0600): bash-sourceable `KEY="value"`; keys in [`03-shell.md` §6](03-shell.md#6-the-settings-file). Also holds state: `PROJECT_<n>_ROOT` / `PROJECT_<n>_FILE` pairs (last project per root), sorted so an unchanged save is byte-identical.
 - `~/.config/naivepost/settings.json`: legacy, read once (never written) on the launch after the merge into llm.conf, to recover remembered projects when the conf has no `PROJECT_*` keys.
 - The voices folder (`AUDIOCPP_VOICES`): the one folder read outside a project; no GUI box; default `/mnt/models/audiocpp/voices` (the dev box), inside Flatpak `$XDG_DATA_HOME/naivepost/voices`.
-- `~/.config/naivepost/prompts/<key>.txt`: a prompt edited on this machine (only if it differs from the shipped text).
+- `~/.config/naivepost/servers.json` (0600): the Settings dialog's named server entries and the active one for Writing, Audio and Drawing; picking one writes its values to `llm.conf`, the one file flows read.
+- `~/.config/naivepost/profiles/<name>.txt`: the profiles ([03 §5b](03-shell.md#5b-profiles-new)).
+- `~/.config/naivepost/prompts/<key>.txt`: a prompt edited on this machine by an earlier build; no request reads it ([10 §4](10-parameters.md#4-prompts)).
 - `~/.config/naivepost/hang-*.txt`: watchdog dumps.
 - `$XDG_DATA_HOME/applications/ch.bocek.naivepost.desktop` and `$XDG_DATA_HOME/mime/packages/ch.bocek.naivepost.xml` (type `application/x-naivepost-project`, glob `*.naivepost`), followed by `update-mime-database` and `update-desktop-database` — installed unless the app runs from a build cache or a Flatpak (Flatpak exports both from the manifest; a file written from inside would point into the sandbox).
 

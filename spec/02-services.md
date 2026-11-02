@@ -8,7 +8,7 @@
 
 ## 1. The four servers
 
-Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each server is given one of this app's requests at a time, and requests to different servers run side by side: a narration speaking on audio.cpp while the LLM writes a title, and two LLM jobs take turns, except the text gate's, Describe's and Fix's recordings and translation's batches, which run side by side up to the slots the LLM server reports ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
+Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each server is given one of this app's requests at a time, and requests to different servers run side by side: a narration speaking on audio.cpp while the LLM writes a title, and two LLM jobs take turns, except the text gate's, Describe's and Fix's recordings and translation's batches, which run side by side up to the slots the LLM server reports in its `/health` (`slots`, held to 1–16; no count or one slot is one at a time; [09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
 
 | what | default | serves | API |
 |---|---|---|---|
@@ -19,9 +19,9 @@ Every request to any of them — and every web search and page read — is timed
 
 An empty server box means the loopback default. A host with no scheme is read as `https://host`. Keys are sent as `Authorization: Bearer …` only when non-empty. Every JSON body is sent with `Content-Type: application/json` (the upload's raw body is the one body that is not JSON): the llama.cpp router reads an unlabelled body anyway, but a proxy in front of a model (FastAPI) answers 400 "Input should be a valid dictionary" to the same bytes. An upload's body is the file's own bytes, byte for byte (first rewrite: the file went through a lossy UTF-8 copy, every non-UTF-8 byte became three, and audio.cpp answered 500 "invalid WAV RIFF header" to an ASR chunk 1.9 times its size). The settings file is re-read per request (each URL, key and model id), so a settings change lands on the next request; the LLM server has no env override.
 
-Audio model ids (settings, with defaults): ASR `qwen3-asr`, diarization `sortformer-diar`, TTS `index-tts2`, separation `bs-roformer`, aligner: none by default (any model declared task `align`, preferring `qwen3-aligner`). A missing model is reported with a compiled-in install hint ("the weights install with: docker compose exec audio python3 tools/model_manager_v2.py install <package> --models-root models", package per shipped default: nemotron_asr_q8_0, sortformer_diar_4spk_v1_q8_0, bs_roformer_q8_0) — offered only when the configured id is the shipped default; for a hand-picked id the weights would be a guess. Compiled-in defaults: the four model ids, the aligner preference and the dev-box voices path; no call leaves the machine unless a box points elsewhere. An aligner is chosen by task, not id: the Settings verdict names which of several the run tries first.
+Audio model ids (settings, with defaults): ASR `qwen3-asr`, diarization `sortformer-diar`, TTS `index-tts2`, separation `bs-roformer`, aligner: none by default (any model declared task `align`, preferring `qwen3-aligner`). A missing model is reported with a compiled-in install hint ("the weights install with: docker compose exec audio python3 tools/model_manager_v2.py install <package> --models-root models", package per shipped default: sortformer_diar_4spk_v1_q8_0, bs_roformer_q8_0) — offered only when the configured id is the shipped diarization or separation default; for a hand-picked id the weights would be a guess, and `qwen3-asr` has no package to name. Compiled-in defaults: the four model ids, the aligner preference and the dev-box voices path; no call leaves the machine unless a box points elsewhere. An aligner is chosen by task, not id: the Settings verdict names which of several the run tries first.
 
-Uploads, task runs and the sd.cpp submit/poll ride the run's cancel context, so ⏹ aborts them. Prototype: `/health`, `/v1/models`, `/v1/audio/speech` (a synthesis in flight cannot be stopped), `unload_all_models` and the sd.cpp cancel do not — the rewrite SHOULD put every request on the run context. Audio task calls have no client timeout (an hour of audio is an hour of work), except `unload_all_models` at 20 s (housekeeping), called quietly and best-effort at the end of every run, even one that used no audio. LLM calls have a silence rule (streamed) or a whole-call ceiling ([`09-llm-and-tools.md` §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
+Requests ride the run's cancel context, so ⏹ aborts them, with one exception: the sd.cpp submit and poll are sent with no cancel check, so ⏹ is read between two polls, which then sends the job's cancel; a submit or poll already on the wire is not aborted. Prototype: `/health`, `/v1/models`, `/v1/audio/speech` (a synthesis in flight cannot be stopped), `unload_all_models` and the sd.cpp cancel do not ride it. Requests to the audio and drawing servers have no client timeout (an hour of audio is an hour of work), except `unload_all_models` at 20 s (housekeeping), called quietly and best-effort at the end of every run, even one that used no audio. LLM calls have a silence rule (streamed) or a whole-call ceiling ([`09-llm-and-tools.md` §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
 
 ## 2. Model roles (which job asks which server)
 
@@ -40,7 +40,8 @@ Uploads, task runs and the sd.cpp submit/poll ride the run's cancel context, so 
 | narration | LLM (+ web tools) → TTS | on | a line per clip with an emotion; spoken in the cloned voice |
 | upload text | LLM (+ web tools) | on | title, thumbnail (frame or instruction), description |
 | thumbnail | sd.cpp | – | an image edited from real frames; only when an instruction exists and no frame was named |
-| subtitles in other languages | LLM | off | numbered lines translated, one call per language |
+| text gate | decision model (LLM with vision) | off | `judge_text`: did the text change between two frames ([§3.12](#312-text-gate-per-pair-of-frames-f16-s6)) |
+| subtitles in other languages | LLM | off | numbered lines translated, in batches of P.machine.translateBatch per language |
 
 ## 3. Tool catalogue (rewrite directive B)
 
@@ -66,7 +67,7 @@ Reads: `get_frames`, `get_events`, `get_context`, `speech_around`.
 
 | tool | args | result |
 |---|---|---|
-| `record_event` | `frame` (1..n as stamped), `text`, `calm` (bool) | ok, naming the frame the event landed on and its session second; a frame recorded twice replaces; error when `frame` is not in this batch |
+| `record_event` | `frame` (1..n as stamped), `text`, `calm?` (bool) | ok, naming the frame the event landed on and its session second; a frame recorded twice replaces; error when `frame` is not in this batch |
 | `set_state` | `text` | ok; empty text clears the state rather than leaving the old one |
 | `speech_around` | `from`, `to` (session seconds) | every line spoken in that stretch, from every recording — not the brief's two-per-side extract |
 
@@ -108,8 +109,8 @@ First rewrite: `drop_words(side, count)`, `keep_join`, `get_words` offered as to
 |---|---|---|
 | `add_caption` | `clip`, `start`, `end` (offsets), `text` | ok with the caption as placed — clamped into the clip, with its fades — or error (clip not in this batch; under P.policy.captionMinSeconds; no words) |
 | `set_clip_speed` | `clip`, `rate` | ok with the rate as applied and the on-screen length; error when the clip has a caption and the rate is over 1 — the prompt's own rule, enforced again: it MUST be said, not silently dropped |
-| `add_effect` | `clip`, `kind` (zoom/stop/volume), `start`, `end`, `gain?`, `box?` | ok with the effect as placed (clamped into the clip, the app's fades, for a zoom the box used); error when the kind is not one of the three, the span is empty, or a volume gain of 1 would do nothing |
-| `get_frames` | `clip`, `at?` | the clip's frames, so a zoom can be aimed — the prototype shows this pass no pictures, which is why every zoom it proposes is a centred punch-in |
+| `add_effect` | `clip`, `kind` (zoom/stop/volume), `start`, `end`, `gain?` | ok with the effect as placed (clamped into the clip, the app's fades, for a zoom the box used: the model has no box to name, so it is always the frame's middle); error when the kind is not one of the three, the span is empty, or a volume gain of 1 would do nothing |
+| `get_frames` | `clip`, `at?` | the clip's frames — the prototype shows this pass no pictures, and a zoom it proposes is a centred punch-in, as here |
 
 ### 3.8 Narration
 
@@ -147,9 +148,10 @@ First rewrite: `drop_words(side, count)`, `keep_join`, `get_words` offered as to
 
 | tool | args | result |
 |---|---|---|
+| `get_context` | – | the User Context and the fields it may set |
 | `set_policy` | `field`, `value`, `because` | ok or error (unknown field, out of range) |
 
-The model reads the User Context, without its script, and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The pipeline fields are among them: markingPass ("I read from a script, stumbled and started again" → joins; "a gaming session, cut out the dead stretches" → retakes), cutMode, captionsPass, speedPass, decorationsPass. They decide which flows and jobs run at all. The form shows the `because`.
+The model reads the User Context, without its script, and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The pipeline fields are among them: markingPass ("I read from a script, stumbled and started again" → joins; "a gaming session, cut out the dead stretches" → retakes), cutMode, captionsPass, speedPass, decorationsPass. They decide which flows and jobs run at all. The log says each stored value with its `because`; there is no policy form.
 
 ### 3.12 Text gate (per pair of frames, F1.6 S6)
 
@@ -163,7 +165,7 @@ Asked of the decision model (Settings → Decision; empty, the main model) with 
 
 - No aligner: cut points come off the waveform ("clean wherever there is a silence to cut in, and unable to cut between two words of one breath").
 - No firefox, or inside Flatpak: no web tools; the model writes only what the material says.
-- sd.cpp down: the render completes; the thumbnail half fails and is logged. A job the server forgot (404/410) is reported as "sd.cpp forgot job <id> (<status>) -- it was probably restarted mid-draw"; a server reporting no `supported_modes` is assumed able to draw; the Settings test falls back to `/v1/models` to name an OpenAI-shaped tenant of the port.
+- sd.cpp down: the render completes; the thumbnail half fails and is logged. A job the server forgot is an ordinary failed poll, "the drawing server at <url> answered <status>" (prototype: "sd.cpp forgot job <id> (<status>) -- it was probably restarted mid-draw" on 404/410); a server reporting no `supported_modes` is assumed able to draw; the Settings test falls back to `/v1/models` to name an OpenAI-shaped tenant of the port.
 - An LLM server refusing `tools` (an error on the first round that is not a stop; a `tools` error on a later round fails the call): the job runs as one JSON answer with the prototype's parsers and retry turns.
 - Flatpak: no web tools; no desktop entry, icon or MIME package written (the manifest exports them); voices folder in the sandbox's data dir.
 - A reply cut off at the token limit: with tools, everything already called stands; without, the prototype's "answer again with far fewer items" retry.
@@ -172,8 +174,8 @@ Asked of the decision model (Settings → Decision; empty, the main model) with 
 
 - **Request bodies.** `/v1/tasks/run`: ASR `{"audio","language"}`, diarization `{"audio"}`, alignment `{"audio","text","language"}` — `audio` is always the server-side path an upload returned, never local. `/v1/audio/speech`: `{"model","input","voice_ref","language","options"}` with `voice_ref` the uploaded path of `narrate/voice_ref.wav` (re-uploaded before every line: a remembered path dies with a server restart), `options` the emotion vector plus `seed`, `language` = P.policy.ttsLanguage (P.policy.language, as ASR and alignment send; prototype: hard-coded "en"). `img_gen`: `prompt`, `negative_prompt?`, `width?`, `height?`, `seed` (always), `ref_images` (data URLs — an edit model is conditioned on references, not `init_image`), `auto_resize_ref_image` (always), `output_format?`; everything else deliberately left to the server's start-up flags.
 - **Diarization reply.** The turns list is read under `speaker_turns` (audio.cpp's nemotron diarizer), `turns`, `speakers` or `diarization`, each turn `start_sample`/`end_sample` (seconds and milliseconds also read) and `speaker_id`: a number, or a name ending in one (`speaker_0` is voice 0, transcribed SPEAKER_00), any other name hashed to a number (first rewrite: `speaker_turns` unknown, so a good answer failed the run with "no speaker turns in it"). A reply with no list but audio.cpp's `timing` is nobody speaking, an empty list: that is how the nemotron diarizer answers silence (probed 2026-10-28: `{"timing":{"wall_ms":15.65}}` on 2.5 s of silence; first rewrite: failed Prepare with "no speaker turns in it"). A reply with neither is the model's failure.
-- **sd.cpp waits.** Capabilities 15 s; submit 60 s; each poll 30 s at a 1 s interval; cancel 10 s.
-- **Settings tests** (ten buttons and "Test All", each with its own verdict): LLM — one completion, `max_tokens` 16, thinking forced off, 60 s; LLM vision — a generated 48 px red square as a data URL, 120 s, passes only if the reply contains "red"; TTS endpoint — `/health` (15 s) then the catalogue, looking for family `index_tts2` or task `clon`; TTS model, ASR, diarization, separation — one id each against `/v1/models`, checking the declared task; aligner — by task, never by id (a box could only disagree with the server); ffmpeg — `LookPath`, `ffprobe` beside it, then `-filters`/`-encoders` against `rubberband, subtitles, loudnorm, atempo, amix, adelay, alimiter` and `libx264, libx265, aac, libopus`; firefox — `--version`, then a real headless search. `GET /v1/models` on the LLM backs only "Fetch models" (the id has no default and must be one the server lists) and the sd.cpp fallback probe.
+- **sd.cpp waits.** A poll a second, measured from the ask; no client timeout on capabilities, submit, poll or cancel (prototype: 15 s, 60 s, 30 s, 10 s).
+- **Settings tests** (twelve buttons and "Test All", each with its own verdict; [03 F0.13](03-shell.md#f013-tests)): LLM — one completion, `max_tokens` 16, thinking forced off, 60 s; LLM vision — a generated 48 px red square as a data URL, 120 s, passes only if the reply contains "red"; Decision — the text gate's own request; TTS endpoint — `/health` then the catalogue, looking for family `index_tts2` or task `clon`; TTS model, ASR, diarization, separation — one id each against `/v1/models`, checking the declared task; aligner — by task, never by id (a box could only disagree with the server); ffmpeg — the binary found on PATH or as typed, `ffprobe` beside it, then `-filters`/`-encoders` against `rubberband, subtitles, loudnorm, atempo, amix, adelay, alimiter` and `libx264, libx265, aac, libopus`; firefox — `--version`, then a real headless search. `GET /v1/models` on the LLM backs only "Fetch models" (the id has no default and must be one the server lists) and the sd.cpp fallback probe.
 - **No Save in Settings.** The file is written 600 ms after the last keystroke and again on close if a write is owed; a save resets the cached TTS model id and the "already listening on" note.
 
 <!-- nav -->
