@@ -7,16 +7,16 @@ use gtk4 as gtk;
 use crate::layout::Tree;
 use crate::reset;
 use crate::ui::window;
-
-thread_local! {
-    /// The question open now, so a test can answer it as a person would.
-    static OPEN_QUESTION: std::cell::RefCell<Option<adw::MessageDialog>> =
-        const { std::cell::RefCell::new(None) };
-}
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The question open now, if any.
 pub fn open_question() -> Option<adw::MessageDialog> {
-    OPEN_QUESTION.with(|held| held.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             open_question: held,
+             ..
+         }| held.borrow().clone(),
+    )
 }
 
 /// ↺, its tooltip and its press.
@@ -66,12 +66,22 @@ fn ask(window: &adw::ApplicationWindow) {
     dialog.set_close_response("cancel");
     let main = window.clone();
     dialog.connect_response(None, move |_, answer| {
-        OPEN_QUESTION.with(|held| *held.borrow_mut() = None);
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 open_question: held,
+                 ..
+             }| *held.borrow_mut() = None,
+        );
         if answer == "reset" {
             remove(&main, tree.clone(), paths.clone(), page);
         }
     });
-    OPEN_QUESTION.with(|held| *held.borrow_mut() = Some(dialog.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             open_question: held,
+             ..
+         }| *held.borrow_mut() = Some(dialog.clone()),
+    );
     dialog.present();
 }
 

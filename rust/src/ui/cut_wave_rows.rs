@@ -3,12 +3,11 @@
 //! (`go/cut_audio.go` `drawWaveCell`): a dim ground where the recording runs, the meter's zero as a baseline,
 //! one column per pixel standing up from it on the IEC 60268-18 meter curve, and a darker cap on the skyline.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::SystemTime;
 
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::cut_tracks::{self, Rows, Scene};
 use crate::{audio_task, layout, wave};
 
@@ -17,11 +16,6 @@ const GROUND: (f64, f64, f64) = (0.16, 0.17, 0.2);
 const BASELINE: (f64, f64, f64) = (0.35, 0.6, 1.0);
 const COLUMN: (f64, f64, f64) = (0.29, 0.62, 1.0);
 const CAP: (f64, f64, f64) = (0.09, 0.27, 0.52);
-
-thread_local! {
-    static WAVES: RefCell<HashMap<PathBuf, (SystemTime, Option<Rc<wave::Wave>>)>> = RefCell::new(HashMap::new());
-    static SOURCES: RefCell<HashMap<PathBuf, (SystemTime, HashMap<String, PathBuf>)>> = RefCell::new(HashMap::new());
-}
 
 /// The strips of every recording on the band, each under its own row's pictures.
 pub fn draw_row_waves(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
@@ -144,7 +138,7 @@ fn wave_of(tree: &layout::Tree, base: &str) -> Option<Rc<wave::Wave>> {
     let changed = std::fs::metadata(&file)
         .and_then(|meta| meta.modified())
         .ok()?;
-    if let Some(held) = WAVES.with(|waves| {
+    if let Some(held) = CUT_PAGE.with(|CutPage { waves, .. }| {
         waves
             .borrow()
             .get(&file)
@@ -158,7 +152,7 @@ fn wave_of(tree: &layout::Tree, base: &str) -> Option<Rc<wave::Wave>> {
         .and_then(|source| crate::wave_build::stamp(&source).ok())
         .and_then(|(size, mtime)| wave::read(tree, base, size, mtime).ok().flatten())
         .map(Rc::new);
-    WAVES.with(|waves| waves.borrow_mut().insert(file, (changed, read.clone())));
+    CUT_PAGE.with(|CutPage { waves, .. }| waves.borrow_mut().insert(file, (changed, read.clone())));
     read
 }
 
@@ -167,7 +161,7 @@ fn source_of(dir: &Path, base: &str) -> Option<PathBuf> {
     let changed = std::fs::metadata(&project_file)
         .and_then(|meta| meta.modified())
         .ok()?;
-    let held = SOURCES.with(|sources| {
+    let held = CUT_PAGE.with(|CutPage { sources, .. }| {
         sources
             .borrow()
             .get(dir)
@@ -193,7 +187,7 @@ fn source_of(dir: &Path, base: &str) -> Option<PathBuf> {
         })
         .unwrap_or_default();
     let found = by_base.get(base).cloned();
-    SOURCES.with(|sources| {
+    CUT_PAGE.with(|CutPage { sources, .. }| {
         sources
             .borrow_mut()
             .insert(dir.to_path_buf(), (changed, by_base))

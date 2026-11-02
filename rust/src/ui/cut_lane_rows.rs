@@ -10,20 +10,18 @@ use crate::cut_screen;
 use crate::fx_aspect;
 use crate::fx_band;
 use crate::fx_lane;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window as ui;
-
-thread_local! {
-    /// Set while [`refresh_effects_lane`] pushes state into the widgets, so its own property writes cannot re-enter it.
-    static LANE_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-
-    /// Whether the lane's CSS classes have been loaded once (loading per refresh would stack providers).
-    static LANE_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
 
 /// The lane's CSS, built from `fx_lane::bar_colour`: one class per kind plus the staying zoom's own and the
 /// two outline classes the held overlay and a box under the hand wear.
 fn install_lane_css_once() {
-    if LANE_CSS_LOADED.with(|cell| cell.get()) {
+    if CUT_PAGE.with(
+        |CutPage {
+             lane_css_loaded: cell,
+             ..
+         }| cell.get(),
+    ) {
         return;
     }
     let mut css = String::new();
@@ -67,7 +65,12 @@ fn install_lane_css_once() {
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
-    LANE_CSS_LOADED.with(|cell| cell.set(true));
+    CUT_PAGE.with(
+        |CutPage {
+             lane_css_loaded: cell,
+             ..
+         }| cell.set(true),
+    );
 }
 
 /// This window's effects-lane holder, resolved through its own content: GTK does not destroy a window on
@@ -98,10 +101,18 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         window,
         &crate::ui::cut_view::band_scene_for(),
     );
-    if LANE_REFRESH.with(|cell| cell.get()) {
+    if CUT_PAGE.with(
+        |CutPage {
+             lane_refresh: cell, ..
+         }| cell.get(),
+    ) {
         return;
     }
-    LANE_REFRESH.with(|cell| cell.set(true));
+    CUT_PAGE.with(
+        |CutPage {
+             lane_refresh: cell, ..
+         }| cell.set(true),
+    );
     install_lane_css_once();
 
     let cut_ = crate::ui::window_preview::newest_review_cut();
@@ -283,7 +294,11 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         }
     }
 
-    LANE_REFRESH.with(|cell| cell.set(false));
+    CUT_PAGE.with(
+        |CutPage {
+             lane_refresh: cell, ..
+         }| cell.set(false),
+    );
 }
 
 fn spell_kind(kind: cut::EffectKind) -> &'static str {

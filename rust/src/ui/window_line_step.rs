@@ -12,6 +12,7 @@ use crate::fx_band;
 use crate::ui::cut_picture;
 use crate::ui::window as ui;
 use crate::ui::window_insert::place_known;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use crate::ui::window_selection::{clear_selection, nudge_held_effect};
 use crate::ui::window_trim_strip::note_place;
 
@@ -28,35 +29,37 @@ pub(crate) const LINE_STEP_BUTTONS: [(&str, &str, i64); 4] = [
 /// The reason ▶ had nothing to play (the spec is silent for a session with no filmed stretch; §0 asks for a named reason).
 pub const NO_RECORDING_STATUS: &str = "nothing was filmed \u{2014} there is no recording to play";
 
-type WindowFolders = std::cell::RefCell<Vec<std::path::PathBuf>>;
-type WindowTrees = std::cell::RefCell<Vec<Option<crate::layout::Tree>>>;
-
-// The project root this window's line file sits under, newest slot winning like [`REVIEW_CUTS`]. Held beside
-// [`ui::LINE_STATES`] because `restore` needs it on open and `flush_line_on_close` on close. `SESSION_DIRS`
-// is the folder §2 S6's close flush writes into; `project_autosave::session_dir()` asks the process cwd,
-// which differs once a flow has moved the session or a test has pinned it.
-thread_local! {
-    pub(crate) static LINE_ROOTS: WindowFolders = const { std::cell::RefCell::new(Vec::new()) };
-    pub(crate) static SESSION_DIRS: WindowFolders = const { std::cell::RefCell::new(Vec::new()) };
-    // The session folder each window took on, as a `Tree`, newest slot winning like [`SESSION_DIRS`], so a
-    // fresh window stops answering with whatever folder an earlier window in this process pointed at.
-    pub(crate) static SESSION_TREES: WindowTrees = const { std::cell::RefCell::new(Vec::new()) };
-}
+pub(crate) type WindowFolders = std::cell::RefCell<Vec<std::path::PathBuf>>;
+pub(crate) type WindowTrees = std::cell::RefCell<Vec<Option<crate::layout::Tree>>>;
 
 /// Publish the session folder THIS window took on, for the Cut page's ▶ (one push per build and per Open).
 pub fn push_session_tree(tree: Option<crate::layout::Tree>) {
-    SESSION_TREES.with(|held| held.borrow_mut().push(tree));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             session_trees: held,
+             ..
+         }| held.borrow_mut().push(tree),
+    );
 }
 
 /// The newest published session folder, or `None` when no window has taken one on (a flow with no shell falls back).
 pub(crate) fn last_session_tree() -> Option<Option<crate::layout::Tree>> {
-    SESSION_TREES.with(|held| held.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             session_trees: held,
+             ..
+         }| held.borrow().last().cloned(),
+    )
 }
 
 /// §2 S6 as the close hook wants it, resolved through THIS window: write the live session into its folder.
 /// Returns whether a file was written.
 pub(crate) fn flush_session_on_close() -> bool {
-    let Some(dir) = SESSION_DIRS.with(|held| held.borrow().last().cloned()) else {
+    let Some(dir) = WINDOW_PAGE.with(
+        |WindowPage {
+             session_dirs: held, ..
+         }| held.borrow().last().cloned(),
+    ) else {
         return false;
     };
     crate::project_autosave::flush_on_close(&ui::live_project(), &dir)
@@ -75,12 +78,20 @@ pub enum Step {
 
 /// The project root this window's line file lives under, or `None` when the page was built outside a project.
 pub fn line_root() -> Option<std::path::PathBuf> {
-    LINE_ROOTS.with(|slots| slots.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_roots: slots, ..
+         }| slots.borrow().last().cloned(),
+    )
 }
 
 pub fn line_position() -> cut_line::LinePos {
-    ui::LINE_STATES
-        .with(|slots| slots.borrow().last().map(|slot| slot.borrow().0))
+    WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 line_states: slots, ..
+             }| slots.borrow().last().map(|slot| slot.borrow().0),
+        )
         .unwrap_or(cut_line::LinePos { t: 0.0 })
 }
 
@@ -92,21 +103,30 @@ pub(crate) fn rehome_window(dir: &std::path::Path) {
             *last = dir.to_path_buf();
         }
     };
-    LINE_ROOTS.with(moved);
-    SESSION_DIRS.with(moved);
-    SESSION_TREES.with(|slots| {
-        if let Some(last) = slots.borrow_mut().last_mut() {
-            *last = crate::layout::Tree::new(dir).ok();
-        }
-    });
+    WINDOW_PAGE.with(|page| moved(&page.line_roots));
+    WINDOW_PAGE.with(|page| moved(&page.session_dirs));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             session_trees: slots,
+             ..
+         }| {
+            if let Some(last) = slots.borrow_mut().last_mut() {
+                *last = crate::layout::Tree::new(dir).ok();
+            }
+        },
+    );
 }
 
 pub(crate) fn hold_line_at(t: f64) {
-    ui::LINE_STATES.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            slot.borrow_mut().0 = cut_line::LinePos { t };
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_states: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                slot.borrow_mut().0 = cut_line::LinePos { t };
+            }
+        },
+    );
 }
 
 /// Set this window's line WITHOUT saving, the test/setup entry point: a setup call that consumed the throttle
@@ -154,22 +174,26 @@ pub fn move_line_and_save(
 ) -> bool {
     // A root reaches the page (`line_root`), so a move writes through the writer's one-second rule.
     let root = line_root();
-    let wrote = ui::LINE_STATES.with(|slots| {
-        let Some(slot) = slots.borrow().last().cloned() else {
-            return false;
-        };
-        slot.borrow_mut().0 = pos;
-        let Some(root) = root else {
-            // No project open: keep the one-second rule on the stamp alone.
-            let owed = cut_line::may_write_line(slot.borrow().1.last_write_ms(), now_ms, false);
-            if owed {
-                slot.borrow_mut().1.note_throttled(now_ms);
-            }
-            return owed;
-        };
-        slot.borrow_mut().1.note_move(pos, &root, now_ms);
-        true
-    });
+    let wrote = WINDOW_PAGE.with(
+        |WindowPage {
+             line_states: slots, ..
+         }| {
+            let Some(slot) = slots.borrow().last().cloned() else {
+                return false;
+            };
+            slot.borrow_mut().0 = pos;
+            let Some(root) = root else {
+                // No project open: keep the one-second rule on the stamp alone.
+                let owed = cut_line::may_write_line(slot.borrow().1.last_write_ms(), now_ms, false);
+                if owed {
+                    slot.borrow_mut().1.note_throttled(now_ms);
+                }
+                return owed;
+            };
+            slot.borrow_mut().1.note_move(pos, &root, now_ms);
+            true
+        },
+    );
     // The OTHER store path (§S4's tape click and frame steps), so a scrubbed line releases a hold as a placed one does.
     release_held_effect_off_band(window, pos.t);
     wrote
@@ -182,15 +206,19 @@ pub fn flush_line_on_close() -> bool {
     let Some(root) = line_root() else {
         return false;
     };
-    ui::LINE_STATES.with(|slots| {
-        let Some(slot) = slots.borrow().last().cloned() else {
-            return false;
-        };
-        let pos = line_position();
-        // Bound to a `let` so the RefMut drops before `slot` does (as a tail expression its temporary outlives the binding).
-        let wrote = slot.borrow_mut().1.flush(pos, &root, now_ms());
-        wrote
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_states: slots, ..
+         }| {
+            let Some(slot) = slots.borrow().last().cloned() else {
+                return false;
+            };
+            let pos = line_position();
+            // Bound to a `let` so the RefMut drops before `slot` does (as a tail expression its temporary outlives the binding).
+            let wrote = slot.borrow_mut().1.flush(pos, &root, now_ms());
+            wrote
+        },
+    )
 }
 
 /// F2.4 S1 through the seam, with the row the pointer landed on: a press places the line, clears the
@@ -368,12 +396,11 @@ pub fn line_step_button(window: &adw::ApplicationWindow, name: &str) -> Option<g
 /// This window's key controller for the line (F2.4 S2/S3): ‹‹f ‹f f› ›› step one or five frames,
 /// ← / → move only while something is held, Space toggles play.
 pub fn line_key_controller() -> Option<gtk::EventControllerKey> {
-    LINE_KEYS.with(|cell| cell.borrow().clone())
-}
-
-thread_local! {
-    static LINE_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_keys: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 /// Wire one step button to its signed frame count. A press holds nothing, so this is always S2's seek-and-pause.
@@ -464,5 +491,9 @@ pub(crate) fn wire_line_keys(window: &adw::ApplicationWindow) {
         }
     });
     window.add_controller(controller.clone());
-    LINE_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_keys: cell, ..
+         }| *cell.borrow_mut() = Some(controller),
+    );
 }

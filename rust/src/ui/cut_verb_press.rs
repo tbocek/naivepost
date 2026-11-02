@@ -7,22 +7,26 @@ use crate::cut::Seg;
 use crate::cut_select::{Scope, Selection};
 use crate::cut_verbs::{self, Badge};
 use crate::ui::cut_folds;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::wave_snap;
 use crate::ui::window as ui;
 
-thread_local! {
-    static VERB_HAND: std::cell::RefCell<Option<Selection>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// What a Split left in the hand, newest answer.
 pub fn verb_hand() -> Option<Selection> {
-    VERB_HAND.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             verb_hand: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 /// Put `band` in the hand.
 pub fn take_into_hand(band: Option<Selection>) {
-    VERB_HAND.with(|cell| *cell.borrow_mut() = band);
+    CUT_PAGE.with(
+        |CutPage {
+             verb_hand: cell, ..
+         }| *cell.borrow_mut() = band,
+    );
 }
 
 /// F2.7 ＋ Add's snap candidates, gathered from live state — the spec's `word edges, silences, line edges,

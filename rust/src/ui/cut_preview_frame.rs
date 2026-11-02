@@ -10,6 +10,7 @@ use crate::fx_svg;
 use crate::fx_text;
 use crate::fx_zoom::{self, Camera};
 use crate::preview;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 
 /// The painted surface's widget name; tests find it to know the panel is drawn, and assert rules against `fx_lane`'s view-model.
 pub const FRAME_NAME: &str = "preview-frame";
@@ -63,42 +64,47 @@ pub fn install_draw(window: &adw::ApplicationWindow) {
     }
 }
 
-thread_local! {
-    /// The box under the hand, in panel px, written by [`note_box`] and read at paint time.
-    static DRAWN_BOX: std::cell::Cell<Option<(f64, f64, f64, f64)>> =
-        const { std::cell::Cell::new(None) };
-}
-
 pub fn drawn_box() -> Option<(f64, f64, f64, f64)> {
-    DRAWN_BOX.with(|slot| slot.get())
-}
-
-thread_local! {
-    /// Whether the §F3.4 S5 snap lines are shown: set while a placed caption's box is dragged so the frame draws the six `fx_text::snap_lines_px` lines ([`paint_paused`]).
-    static EDIT_SNAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    CUT_PAGE.with(
+        |CutPage {
+             drawn_box: slot, ..
+         }| slot.get(),
+    )
 }
 
 /// A caption box is being dragged: the frame draws the snap targets. No repaint here (the caller repaints once).
 pub fn note_edit(active: bool) {
-    EDIT_SNAP.with(|slot| slot.set(active));
+    CUT_PAGE.with(
+        |CutPage {
+             edit_snap: slot, ..
+         }| slot.set(active),
+    );
 }
 
 pub fn edit_snap_on() -> bool {
-    EDIT_SNAP.with(|slot| slot.get())
+    CUT_PAGE.with(
+        |CutPage {
+             edit_snap: slot, ..
+         }| slot.get(),
+    )
 }
 
 /// The door the drag calls with a box in panel px (the surface is a fixed 240 x 135, [`crate::ui::window::PREVIEW_PANEL_W`] x [`crate::ui::window::PREVIEW_PANEL_H`]). Corners are normalised since a negative width paints an invisible outline.
 pub fn note_box(box_: Option<(f64, f64, f64, f64)>, window: &adw::ApplicationWindow) {
-    DRAWN_BOX.with(|slot| {
-        slot.set(box_.map(|(x, y, w, h)| {
-            (
-                x.min(x + w),
-                y.min(y + h),
-                w.abs().max(1.0),
-                h.abs().max(1.0),
-            )
-        }))
-    });
+    CUT_PAGE.with(
+        |CutPage {
+             drawn_box: slot, ..
+         }| {
+            slot.set(box_.map(|(x, y, w, h)| {
+                (
+                    x.min(x + w),
+                    y.min(y + h),
+                    w.abs().max(1.0),
+                    h.abs().max(1.0),
+                )
+            }))
+        },
+    );
     repaint(window);
 }
 
@@ -419,14 +425,6 @@ fn svg_box_px(effect: &cut::Fx, fit: (f64, f64)) -> (f64, f64, f64, f64) {
     .to_px(fit.0, fit.1)
 }
 
-thread_local! {
-    /// The stop's still: the frame file, its change time and its surface; a paint never decodes (§03-shell §1).
-    static STILL: std::cell::RefCell<Option<(std::path::PathBuf, Option<std::time::SystemTime>, Option<cairo::ImageSurface>)>> =
-        const { std::cell::RefCell::new(None) };
-    static STILL_ASKED: std::cell::RefCell<Option<(std::path::PathBuf, Option<std::time::SystemTime>)>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// The still's surface if decoded for this file version; otherwise a worker is asked and the window repaints when it lands. A snapshot decodes on the spot.
 fn still_surface(path: &std::path::Path) -> Option<cairo::ImageSurface> {
     if crate::ui::cut_picture_rows::frame_decoding_allowed() {
@@ -436,7 +434,7 @@ fn still_surface(path: &std::path::Path) -> Option<cairo::ImageSurface> {
     let stamp = std::fs::metadata(path)
         .ok()
         .and_then(|meta| meta.modified().ok());
-    let held = STILL.with(|still| {
+    let held = CUT_PAGE.with(|CutPage { still, .. }| {
         still
             .borrow()
             .as_ref()
@@ -447,10 +445,18 @@ fn still_surface(path: &std::path::Path) -> Option<cairo::ImageSurface> {
         return surface;
     }
     let key = (path.to_path_buf(), stamp);
-    if STILL_ASKED.with(|asked| asked.borrow().as_ref() == Some(&key)) {
+    if CUT_PAGE.with(
+        |CutPage {
+             still_asked: asked, ..
+         }| asked.borrow().as_ref() == Some(&key),
+    ) {
         return None;
     }
-    STILL_ASKED.with(|asked| *asked.borrow_mut() = Some(key.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             still_asked: asked, ..
+         }| *asked.borrow_mut() = Some(key.clone()),
+    );
     let file = path.to_path_buf();
     crate::ui::background::run(
         "still",
@@ -464,13 +470,19 @@ fn still_surface(path: &std::path::Path) -> Option<cairo::ImageSurface> {
                 cairo::ImageSurface::create_for_data(bytes, cairo::Format::ARgb32, w, h, stride)
                     .ok()
             });
-            STILL.with(|still| *still.borrow_mut() = Some((key.0.clone(), key.1, surface)));
-            STILL_ASKED.with(|asked| {
-                let mut asked = asked.borrow_mut();
-                if asked.as_ref() == Some(&key) {
-                    *asked = None;
-                }
+            CUT_PAGE.with(|CutPage { still, .. }| {
+                *still.borrow_mut() = Some((key.0.clone(), key.1, surface))
             });
+            CUT_PAGE.with(
+                |CutPage {
+                     still_asked: asked, ..
+                 }| {
+                    let mut asked = asked.borrow_mut();
+                    if asked.as_ref() == Some(&key) {
+                        *asked = None;
+                    }
+                },
+            );
             if let Some(window) = crate::ui::window::built_window() {
                 gtk::prelude::WidgetExt::queue_draw(&window);
             }

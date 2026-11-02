@@ -6,20 +6,16 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::ui::produce_page;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 use crate::ui::produce_press_wiring;
-
-thread_local! {
-    static ASKS: std::cell::RefCell<std::collections::HashMap<&'static str, usize>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-}
 
 /// How many times the named dialog was raised on this thread: "image", "export" or "save-video".
 pub fn asks_for_test(which: &str) -> usize {
-    ASKS.with(|asks| asks.borrow().get(which).copied().unwrap_or(0))
+    PAGE.with(|ProducePage { asks, .. }| asks.borrow().get(which).copied().unwrap_or(0))
 }
 
 fn count(which: &'static str) {
-    ASKS.with(|asks| *asks.borrow_mut().entry(which).or_insert(0) += 1);
+    PAGE.with(|ProducePage { asks, .. }| *asks.borrow_mut().entry(which).or_insert(0) += 1);
 }
 
 /// Where the image chooser opens: the first footage recording's frames folder, else the page's publish folder,

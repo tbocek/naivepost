@@ -8,12 +8,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::narrate_screen::{self, VoiceOption};
-
-thread_local! {
-    static PICKER_SEEDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static LAST_SPOKEN_VOICE: std::cell::RefCell<Option<(String, bool)>> =
-        const { std::cell::RefCell::new(None) };
-}
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 
 fn options(narrators: usize, files: &[String]) -> Vec<VoiceOption> {
     narrate_screen::voice_options(
@@ -23,14 +18,29 @@ fn options(narrators: usize, files: &[String]) -> Vec<VoiceOption> {
 }
 
 pub(crate) fn seed(picker: &gtk::DropDown, row: u32) {
-    PICKER_SEEDING.with(|seeding| seeding.set(true));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             picker_seeding: seeding,
+             ..
+         }| seeding.set(true),
+    );
     picker.set_selected(row);
-    PICKER_SEEDING.with(|seeding| seeding.set(false));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             picker_seeding: seeding,
+             ..
+         }| seeding.set(false),
+    );
 }
 
 /// Is a `selected-notify` emission the page's own seed rather than a hand?
 fn seeding() -> bool {
-    PICKER_SEEDING.with(|seeding| seeding.get())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             picker_seeding: seeding,
+             ..
+         }| seeding.get(),
+    )
 }
 
 fn row_factory(ellipsize: gtk::pango::EllipsizeMode) -> gtk::SignalListItemFactory {
@@ -126,12 +136,22 @@ pub(crate) fn follow(
         // Swapping the model moves the dropdown's row by itself, and that emission lands after this
         // call returns — too late for a flag set around it. So the flag stays up while the model is
         // replaced and is lowered only once the shown row has been re-seeded to the published voice.
-        PICKER_SEEDING.with(|seeding| seeding.set(true));
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 picker_seeding: seeding,
+                 ..
+             }| seeding.set(true),
+        );
         picker.set_model(Some(&strings));
         if let Some(row) = chosen {
             picker.set_selected(row as u32);
         }
-        PICKER_SEEDING.with(|seeding| seeding.set(false));
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 picker_seeding: seeding,
+                 ..
+             }| seeding.set(false),
+        );
     } else if let Some(row) = chosen {
         seed(&picker, row as u32);
     }
@@ -143,14 +163,29 @@ fn say_why_missing(window: &adw::ApplicationWindow, voice: &str, chosen: Option<
         return;
     }
     if chosen.is_some() {
-        LAST_SPOKEN_VOICE.with(|told| *told.borrow_mut() = None);
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 last_spoken_voice: told,
+                 ..
+             }| *told.borrow_mut() = None,
+        );
         return;
     }
-    let told = LAST_SPOKEN_VOICE.with(|told| told.borrow().clone());
+    let told = NARRATE_PAGE.with(
+        |NarratePage {
+             last_spoken_voice: told,
+             ..
+         }| told.borrow().clone(),
+    );
     if told.is_some_and(|(told, _)| told == voice) {
         return;
     }
-    LAST_SPOKEN_VOICE.with(|told| *told.borrow_mut() = Some((voice.to_string(), true)));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             last_spoken_voice: told,
+             ..
+         }| *told.borrow_mut() = Some((voice.to_string(), true)),
+    );
     crate::ui::narrate_page::say(
         window,
         &crate::narrate_rules::missing_voice(voice, &crate::ui::narrate_page::voices_dir_label()),

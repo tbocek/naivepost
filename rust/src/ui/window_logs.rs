@@ -2,12 +2,7 @@
 //! every flow writes its `→→` notes and `‡‡‡` refusals into, and the readers a test asserts against.
 //! Its doors are re-exported through `window`.
 
-use std::cell::RefCell;
-
-thread_local! {
-    /// The window's log lines, standing in for F0.5's log expander: `>>> moved the output folder to …` and the `!!!` refusals must be visible to a test.
-    static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-}
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The launch's own log lines (§7's desktop registration), held until a window exists to read them.
 static PENDING_LOGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -33,17 +28,17 @@ pub(crate) fn log_line(line: &str) {
         crate::ui::background::hold_line(line);
         return;
     }
-    LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
+    WINDOW_PAGE.with(|WindowPage { logs, .. }| logs.borrow_mut().push(line.to_string()));
 }
 
 /// Empty the log sinks. Only a test binary asks: nothing clears the shell's log while a session runs.
 pub fn clear_logs_for_test() {
-    LOGS.with(|logs| logs.borrow_mut().clear());
+    WINDOW_PAGE.with(|WindowPage { logs, .. }| logs.borrow_mut().clear());
 }
 
 /// What the log holds right now, for a test that must say WHY a write did not land (a failed `narrate/pitch.txt` write is invisible on disk but named in the log).
 pub fn logs_for_test() -> Vec<String> {
-    LOGS.with(|logs| logs.borrow().clone())
+    WINDOW_PAGE.with(|WindowPage { logs, .. }| logs.borrow().clone())
 }
 
 /// The one line a finished run leaves about its audio housekeeping, from the unload thread via the same log sink; `log_line` stays `pub(crate)` so only this crate's flows write to the user's log.
@@ -57,7 +52,7 @@ pub fn note_unload(said: &str) {
 /// The thread-local is THE record: every reader counts lines in it. §S4's unload answers on its own thread and does NOT join it: its news lives in `crate::ui::run_close::SHARED_LOG`,
 /// since a sentence written after the close returned would land after the run's last word (§2).
 pub fn window_logs() -> Vec<String> {
-    LOGS.with(|logs| logs.borrow().clone())
+    WINDOW_PAGE.with(|WindowPage { logs, .. }| logs.borrow().clone())
 }
 
 /// A write a person's action asked for failed (§03-shell §7: never silent). Said in the log at once and put on the status line once the handler has returned (an idle), so its own sentence cannot paint over it. On a worker only the log line is said.

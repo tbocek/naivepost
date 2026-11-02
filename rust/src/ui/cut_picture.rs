@@ -6,6 +6,7 @@ use gtk4 as gtk;
 
 use crate::layout;
 use crate::timeline;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::{self, cut_tracks};
 
 /// §A's own number: the picture never shrinks below this, however narrow the column gets.
@@ -76,33 +77,44 @@ pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path
         },
         None => None,
     };
-    PICTURE_OWED.with(|owed| owed.borrow_mut().take());
+    CUT_PAGE.with(
+        |CutPage {
+             picture_owed: owed, ..
+         }| owed.borrow_mut().take(),
+    );
     match shown {
         Some(texture) => {
             picture.set_paintable(Some(&texture));
-            FRAME_SHOWN.with(|slot| *slot.borrow_mut() = path.map(|p| p.to_path_buf()));
+            CUT_PAGE.with(
+                |CutPage {
+                     frame_shown: slot, ..
+                 }| *slot.borrow_mut() = path.map(|p| p.to_path_buf()),
+            );
             true
         }
         None => {
             picture.set_paintable(None::<&gtk::gdk::Paintable>);
-            FRAME_SHOWN.with(|slot| *slot.borrow_mut() = None);
+            CUT_PAGE.with(
+                |CutPage {
+                     frame_shown: slot, ..
+                 }| *slot.borrow_mut() = None,
+            );
             false
         }
     }
 }
 
-thread_local! {
-    static PICTURE_OWED: std::cell::RefCell<Option<crate::ui::settle::Owed>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 fn owe_picture(picture: &gtk::Picture) {
-    PICTURE_OWED.with(|owed| {
-        let mut owed = owed.borrow_mut();
-        if owed.is_none() {
-            *owed = Some(crate::ui::settle::owe("the Cut preview's picture", picture));
-        }
-    });
+    CUT_PAGE.with(
+        |CutPage {
+             picture_owed: owed, ..
+         }| {
+            let mut owed = owed.borrow_mut();
+            if owed.is_none() {
+                *owed = Some(crate::ui::settle::owe("the Cut preview's picture", picture));
+            }
+        },
+    );
 }
 
 pub fn repaint_landed() {
@@ -115,35 +127,47 @@ pub fn repaint_landed() {
     refresh(&window);
 }
 
-thread_local! {
-    static FRAME_SHOWN: std::cell::RefCell<Option<std::path::PathBuf>> =
-        const { std::cell::RefCell::new(None) };
-    static PREVIEW_ASKED: std::cell::RefCell<Option<(String, f64)>> = const { std::cell::RefCell::new(None) };
-    static PREVIEW_BASE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
-    static SNAPSHOT_DIR: std::cell::RefCell<Option<std::path::PathBuf>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 pub fn frame_shown() -> Option<std::path::PathBuf> {
-    FRAME_SHOWN.with(|slot| slot.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             frame_shown: slot, ..
+         }| slot.borrow().clone(),
+    )
 }
 
 /// The frame the panel is showing, as the file it came from. Named for the same convention as
 /// [`preview_asked_for_test`]: the program never reads it back.
 pub fn frame_shown_for_test() -> Option<std::path::PathBuf> {
-    FRAME_SHOWN.with(|slot| slot.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             frame_shown: slot, ..
+         }| slot.borrow().clone(),
+    )
 }
 
 pub fn preview_recording_base() -> Option<String> {
-    PREVIEW_BASE.with(|slot| slot.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             preview_base: slot, ..
+         }| slot.borrow().clone(),
+    )
 }
 
 pub fn set_preview_camera_base(base: &str) {
-    PREVIEW_BASE.with(|slot| *slot.borrow_mut() = Some(base.to_string()));
+    CUT_PAGE.with(
+        |CutPage {
+             preview_base: slot, ..
+         }| *slot.borrow_mut() = Some(base.to_string()),
+    );
 }
 
 pub fn preview_asked_for_test() -> Option<(String, f64)> {
-    PREVIEW_ASKED.with(|slot| slot.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             preview_asked: slot,
+             ..
+         }| slot.borrow().clone(),
+    )
 }
 
 pub fn refresh(window: &adw::ApplicationWindow) -> bool {
@@ -216,7 +240,12 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         0.0,
         timeline::shift_of(&ui::window::newest_review_cut(), &base),
     );
-    PREVIEW_ASKED.with(|slot| *slot.borrow_mut() = Some((base.clone(), at)));
+    CUT_PAGE.with(
+        |CutPage {
+             preview_asked: slot,
+             ..
+         }| *slot.borrow_mut() = Some((base.clone(), at)),
+    );
     let Some(paths) = crate::ui::cut_picture_cache::frames_or_coming(&tree, &base) else {
         if let Some(picture) = picture(window) {
             owe_picture(&picture);
@@ -246,11 +275,6 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     show_frame(window, found.as_deref())
 }
 
-thread_local! {
-    /// The preview's picture shows the built-in player's paintable (F2.1), not an extracted frame.
-    static VIDEO_SHOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 pub fn show_video(window: &adw::ApplicationWindow) {
     let (Some(picture), Some(paintable)) = (picture(window), crate::play_built_in::paintable())
     else {
@@ -258,16 +282,28 @@ pub fn show_video(window: &adw::ApplicationWindow) {
     };
     if let Ok(paintable) = paintable.downcast::<gtk::gdk::Paintable>() {
         picture.set_paintable(Some(&paintable));
-        VIDEO_SHOWN.with(|cell| cell.set(true));
+        CUT_PAGE.with(
+            |CutPage {
+                 video_shown: cell, ..
+             }| cell.set(true),
+        );
     }
 }
 
 pub fn video_shown() -> bool {
-    VIDEO_SHOWN.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             video_shown: cell, ..
+         }| cell.get(),
+    )
 }
 
 fn release_video() {
-    if VIDEO_SHOWN.with(|cell| cell.replace(false)) {
+    if CUT_PAGE.with(
+        |CutPage {
+             video_shown: cell, ..
+         }| cell.replace(false),
+    ) {
         crate::play_built_in::stop();
     }
 }
@@ -334,11 +370,19 @@ fn session_tree() -> Option<layout::Tree> {
 }
 
 fn snapshot_tree() -> Option<std::path::PathBuf> {
-    SNAPSHOT_DIR.with(|slot| slot.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             snapshot_dir: slot, ..
+         }| slot.borrow().clone(),
+    )
 }
 
 pub fn set_snapshot_dir(dir: &std::path::Path) {
-    SNAPSHOT_DIR.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
+    CUT_PAGE.with(
+        |CutPage {
+             snapshot_dir: slot, ..
+         }| *slot.borrow_mut() = Some(dir.to_path_buf()),
+    );
 }
 
 pub fn snapshot_frame_tree() -> Option<layout::Tree> {
@@ -359,19 +403,15 @@ fn shown_shape(path: Option<&std::path::Path>) -> Option<(i32, i32)> {
     if let Some(shape) = crate::ui::cut_picture_cache::held_shape(path) {
         return Some(shape);
     }
-    if let Some(shape) = SHAPES.with(|shapes| shapes.borrow().get(path).copied()) {
+    if let Some(shape) = CUT_PAGE.with(|CutPage { shapes, .. }| shapes.borrow().get(path).copied())
+    {
         return shape;
     }
     let shape = gtk::gdk_pixbuf::Pixbuf::file_info(path)
         .map(|(_, w, h)| (w, h))
         .filter(|(w, h)| *w > 0 && *h > 0);
-    SHAPES.with(|shapes| shapes.borrow_mut().insert(path.to_path_buf(), shape));
+    CUT_PAGE.with(|CutPage { shapes, .. }| shapes.borrow_mut().insert(path.to_path_buf(), shape));
     shape
-}
-
-thread_local! {
-    static SHAPES: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Option<(i32, i32)>>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 fn first_footage_shape() -> Option<(i32, i32)> {
@@ -387,8 +427,12 @@ fn first_footage_shape() -> Option<(i32, i32)> {
 
 /// What the plate and every overlay on it are fitted to, as §9 says both sides must be.
 pub fn plate_shape() -> (i32, i32) {
-    PLATE_SHAPE
-        .with(|slot| *slot.borrow())
+    CUT_PAGE
+        .with(
+            |CutPage {
+                 plate_shape: slot, ..
+             }| *slot.borrow(),
+        )
         .unwrap_or(FALLBACK_SHAPE)
 }
 
@@ -397,16 +441,16 @@ const FALLBACK_SHAPE: (i32, i32) = (
     crate::ui::window::PREVIEW_PANEL_H as i32,
 );
 
-thread_local! {
-    static PLATE_SHAPE: std::cell::RefCell<Option<(i32, i32)>> = const { std::cell::RefCell::new(None) };
-}
-
 /// The same note for a caller that knows the plate's shape from a file rather than from the page's
 /// own search: a snapshot staging its own frame (`snapshot_preview`) has the JPEG on disk and can
 /// say what it measures, instead of leaving the plate on `FALLBACK_SHAPE` and letting one set of
 /// fractions mean two different boxes in px.
 pub fn note_plate_shape(shape: (i32, i32)) {
-    PLATE_SHAPE.with(|slot| *slot.borrow_mut() = Some(shape));
+    CUT_PAGE.with(
+        |CutPage {
+             plate_shape: slot, ..
+         }| *slot.borrow_mut() = Some(shape),
+    );
 }
 
 pub fn wire_click(window: &adw::ApplicationWindow) {

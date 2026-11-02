@@ -4,18 +4,24 @@ use adw::prelude::*;
 
 use crate::produce_flow;
 use crate::ui::narrate_voices::set_status as say;
-
-thread_local! {
-    static OPEN_DIALOG: std::cell::RefCell<Option<adw::MessageDialog>> =
-        const { std::cell::RefCell::new(None) };
-}
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 pub fn open_dialog() -> Option<adw::MessageDialog> {
-    OPEN_DIALOG.with(|held| held.borrow().clone())
+    PAGE.with(
+        |ProducePage {
+             confirm_dialog: held,
+             ..
+         }| held.borrow().clone(),
+    )
 }
 
 fn remember(dialog: Option<&adw::MessageDialog>) {
-    OPEN_DIALOG.with(|held| *held.borrow_mut() = dialog.cloned());
+    PAGE.with(
+        |ProducePage {
+             confirm_dialog: held,
+             ..
+         }| *held.borrow_mut() = dialog.cloned(),
+    );
 }
 
 /// §S2's confirmation end to end: ask about `video`, and run `on_yes` only if the answer is

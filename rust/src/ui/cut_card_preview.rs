@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::cut::{Cut, Seg};
 use crate::cut_insert::{self, Kind};
 use crate::subprocess;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 
 /// The tool this pass asks for by name. The same name `rust/src/ui/settings.rs`'s ffmpeg row tests, and
 /// resolved off `PATH` like every other tool the app runs, so a machine with ffmpeg elsewhere still works.
@@ -167,25 +168,28 @@ pub fn card_under(cut_: &Cut, t: f64) -> Option<&Seg> {
     })
 }
 
-thread_local! {
-    /// Frame folders the snapshot bench names, because its folder is a fixture and not an open project. Same
-    /// reason `cut_picture` carries a snapshot dir: a headless render has no window with a root, and a card's
-    /// frames still have to go somewhere beside the session they were made for.
-    static SNAPSHOT_CARDS_DIR: std::cell::RefCell<Option<std::path::PathBuf>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// Name the folder a snapshot renders card frames into. Only the snapshot bench calls it.
 pub fn set_card_snapshot_dir(dir: &std::path::Path) {
-    SNAPSHOT_CARDS_DIR.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
+    CUT_PAGE.with(
+        |CutPage {
+             snapshot_cards_dir: slot,
+             ..
+         }| *slot.borrow_mut() = Some(dir.to_path_buf()),
+    );
 }
 
 /// Put a card's frames where the preview can use them: the project's own preview folder beside the session,
 /// which is where a card's frames belong (the project's work product, not the camera's). A window with no
 /// folder open writes beside the temp root instead, because a headless run has no project and must not fail.
 pub fn frame_dir_for(card_path: &str) -> PathBuf {
-    let root =
-        crate::ui::line_root().or_else(|| SNAPSHOT_CARDS_DIR.with(|slot| slot.borrow().clone()));
+    let root = crate::ui::line_root().or_else(|| {
+        CUT_PAGE.with(
+            |CutPage {
+                 snapshot_cards_dir: slot,
+                 ..
+             }| slot.borrow().clone(),
+        )
+    });
     match root {
         Some(root) => frame_dir(&root, card_path),
         None => std::env::temp_dir().join("naivepost-preview"),

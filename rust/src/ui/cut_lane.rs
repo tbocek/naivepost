@@ -2,6 +2,7 @@
 
 use crate::cut_copy;
 use crate::ui::window;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// ⇲ Lane with nothing copied: the row starts at the red line, windows the session's footage file, and runs
 /// for what ffprobe says that file is.
@@ -73,7 +74,12 @@ fn file_lane(
 
 /// Is a line placed at all?
 fn line_is_placed() -> bool {
-    window::INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| *cell.borrow(),
+    ) == Some(true)
 }
 
 /// The red line's second when there is one — the row's start — or `None` when the page has no line yet.

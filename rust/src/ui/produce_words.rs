@@ -4,22 +4,26 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::ui::produce_page;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 pub const DIALOG_TITLE: &str = "Words on the thumbnail";
 
-thread_local! {
-    static OPEN_DIALOG: std::cell::RefCell<Option<adw::MessageDialog>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 /// The dialog currently open, if any.
 pub fn open_dialog() -> Option<adw::MessageDialog> {
-    OPEN_DIALOG.with(|held| held.borrow().clone())
+    PAGE.with(
+        |ProducePage {
+             words_dialog: held, ..
+         }| held.borrow().clone(),
+    )
 }
 
 /// Record (or clear) the open dialog. Called by the two openers.
 fn remember(dialog: Option<&adw::MessageDialog>) {
-    OPEN_DIALOG.with(|held| *held.borrow_mut() = dialog.cloned());
+    PAGE.with(
+        |ProducePage {
+             words_dialog: held, ..
+         }| *held.borrow_mut() = dialog.cloned(),
+    );
 }
 
 /// A small dialog over the Produce page: the words box, the buttons this box needs, nothing else.

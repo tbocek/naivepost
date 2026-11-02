@@ -9,6 +9,7 @@ use adw::prelude::*;
 
 use crate::produce_runs as runs;
 use crate::ui::produce_page;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 /// The frame images the row can point at: every extracted JPEG this session has, as `(seconds in the
 /// recording, path)` pairs across every footage source's prepare folder.
@@ -134,18 +135,21 @@ pub fn thumb_size() -> (u32, u32) {
 /// the convention is a STAND-IN at the seam so the press still runs the real copy. A real `FileChooserNative`
 /// response would forward here as `cut_svg::open_svg_chooser` forwards its pick to `svg_chosen`.
 pub fn asked_path() -> Option<String> {
-    ASKED_PATH.with(|held| held.borrow().clone())
+    PAGE.with(
+        |ProducePage {
+             asked_path: held, ..
+         }| held.borrow().clone(),
+    )
 }
 
 /// Record the path a save dialog settled on (`None` clears it so the next press offers its default again).
 /// Called from `ui::produce_page::set_setting` when the Container row changes, and by tests.
 pub fn answer_path(answer: Option<&str>) {
-    ASKED_PATH.with(|held| *held.borrow_mut() = answer.map(str::to_string));
-}
-
-thread_local! {
-    /// The path the save door last answered with; `None` means nobody typed anything.
-    static ASKED_PATH: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    PAGE.with(
+        |ProducePage {
+             asked_path: held, ..
+         }| *held.borrow_mut() = answer.map(str::to_string),
+    );
 }
 
 /// What the save dialog would be OFFERED for ⤓ Save video: `<project>.<container>`.

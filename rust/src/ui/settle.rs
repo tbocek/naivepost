@@ -28,13 +28,17 @@ pub struct Owed(u64);
 
 impl Drop for Owed {
     fn drop(&mut self) {
-        let what = OWED.with(|owed| {
-            let mut owed = owed.borrow_mut();
-            let at = owed.iter().position(|step| step.id == self.0)?;
-            Some(owed.remove(at).what)
-        });
+        // `try_with`: a step still held when its thread ends drops after this list has gone, and nobody is left to tell.
+        let what = OWED
+            .try_with(|owed| {
+                let mut owed = owed.borrow_mut();
+                let at = owed.iter().position(|step| step.id == self.0)?;
+                Some(owed.remove(at).what)
+            })
+            .ok()
+            .flatten();
         if let Some(what) = what {
-            DONE.with(|done| done.borrow_mut().push(what));
+            let _ = DONE.try_with(|done| done.borrow_mut().push(what));
         }
     }
 }

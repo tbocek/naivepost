@@ -11,6 +11,7 @@ use adw::prelude::*;
 
 use crate::ui::window as ui;
 use crate::ui::window::refresh_effects_lane;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// F3.9 S4's second door: what the model answered for one batch.
 pub struct CaptionBatch {
@@ -234,19 +235,25 @@ pub fn run_captions_pass_with_reply(
 }
 /// F3.9: set this session's captions gate directly, the same way `set_marking_pass` sets its switch.
 pub fn set_captions_pass_for_test(on: bool) {
-    if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
+    if let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    {
         session.borrow_mut().policy.captions_pass.value = on;
     }
 }
 /// F3.10: move this session's speeds gate directly, the way [`set_captions_pass_for_test`] moves its own.
 pub fn set_speeds_pass_for_test(on: bool) {
-    if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
+    if let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    {
         session.borrow_mut().policy.speed_pass.value = on;
     }
 }
 /// F3.11: move this session's decorations gate directly, the way [`set_captions_pass_for_test`] moves its own.
 pub fn set_decorations_pass_for_test(on: bool) {
-    if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
+    if let Some(session) =
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
+    {
         session.borrow_mut().policy.decorations_pass.value = on;
     }
 }

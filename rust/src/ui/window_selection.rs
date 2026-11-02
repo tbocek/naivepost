@@ -1,6 +1,5 @@
 //! §05-cut#1-screen: the selection band, the held effect and its live form, and the preview's volume. Re-exported through `window`. Rules are `cut_select`'s, `fx_band`'s and `cut_hear`'s; this holds per-window state, the repainted widgets and the sentences.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -31,35 +30,17 @@ use crate::ui::cut_text_hand::{
 use crate::ui::cut_volume_hand::{close_volume_form, show_volume_form, volume_form_open};
 use crate::ui::window as ui;
 use crate::ui::window::refresh_effects_lane;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The narration this window holds, newest slot; crate-visible so only flows that re-read the folder replace the lines.
 pub(crate) fn held_narration() -> Option<Rc<std::cell::RefCell<Narration>>> {
-    HELD_NARRATION.with(|held| held.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             held_narration: held,
+             ..
+         }| held.borrow().last().cloned(),
+    )
 }
-thread_local! {
-    /// The narration this window holds, newest last (as [`WINDOW_SHELLS`]); S5's refit and S3's flush share one set of lines.
-    pub(crate) static HELD_NARRATION: std::cell::RefCell<Vec<Rc<RefCell<Narration>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-// The app's ONE preview volume (F2.5 S6), per window with the newest-slot rule. A `PreviewVolume` keeps the slider's 0..100 and the property's 0..1 from drifting.
-thread_local! {
-    pub(crate) static PREVIEW_VOLUMES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut_hear::PreviewVolume>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-// This window's selection band (F2.6), newest slot; `None` is no band, and every verb needing a selection is off.
-thread_local! {
-    pub(crate) static SELECTED: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Option<cut_select::Selection>>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-// The surface the band was drawn on (S1 scopes a band by it), so a later lane drag cannot turn a footage selection into a sound one mid-adjust.
-thread_local! {
-    pub(crate) static SELECT_SURFACES: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Option<cut_select::Surface>>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
 /// F2.6 S1: a left-drag from `from` to `to` on `surface` selected what it was drawn on, by [`cut_select::draw`] alone (the effects lane answers `None`, leaving no band). Returns what it stored.
 pub fn draw_selection(
     window: &adw::ApplicationWindow,
@@ -69,39 +50,61 @@ pub fn draw_selection(
     to: f64,
 ) -> Option<cut_select::Selection> {
     let band = cut_select::draw(surface, recording, from, to);
-    SELECTED.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = band.clone();
-        }
-    });
-    SELECT_SURFACES.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = Some(surface);
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             selected: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = band.clone();
+            }
+        },
+    );
+    WINDOW_PAGE.with(
+        |WindowPage {
+             select_surfaces: slots,
+             ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = Some(surface);
+            }
+        },
+    );
     refresh_selection_readout(window);
     band
 }
 
 /// This window's band, or `None`; the one value all selection readers use.
 pub fn selection() -> Option<cut_select::Selection> {
-    SELECTED.with(|slots| slots.borrow().last().and_then(|s| s.borrow().clone()))
+    WINDOW_PAGE.with(
+        |WindowPage {
+             selected: slots, ..
+         }| slots.borrow().last().and_then(|s| s.borrow().clone()),
+    )
 }
 
 pub fn selection_surface() -> cut_select::Surface {
-    SELECT_SURFACES
-        .with(|slots| slots.borrow().last().and_then(|s| *s.borrow()))
+    WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 select_surfaces: slots,
+                 ..
+             }| slots.borrow().last().and_then(|s| *s.borrow()),
+        )
         .unwrap_or(cut_select::Surface::Ruler)
 }
 
 /// F2.6 S2: the cross; routes through [`cut_select::clear`] and returns whether anything was cleared (which also greys the button).
 pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
     let had = selection().is_some();
-    SELECTED.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = cut_select::clear(selection());
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             selected: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = cut_select::clear(selection());
+            }
+        },
+    );
     refresh_selection_readout(window);
     had
 }
@@ -119,11 +122,15 @@ pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, 
         cut_select::Part::Middle => cut_select::move_band(&band, to, &marks, pps),
         cut_select::Part::Outside => return,
     };
-    SELECTED.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = Some(moved);
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             selected: slots, ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = Some(moved);
+            }
+        },
+    );
     refresh_selection_readout(window);
 }
 
@@ -137,13 +144,17 @@ pub fn selection_verbs(window: &adw::ApplicationWindow) -> cut_select::Verbs {
 
 /// What this window can offer the snap-mark builder: the review-cut slot until the cut model round supplies a real `Cut`.
 fn selection_snap_inputs(_window: &adw::ApplicationWindow) -> (cut::Cut, Vec<cut::Lane>) {
-    let cut_ = ui::REVIEW_CUTS.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|slot| slot.borrow().clone())
-            .unwrap_or_default()
-    });
+    let cut_ = WINDOW_PAGE.with(
+        |WindowPage {
+             review_cuts: slots, ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|slot| slot.borrow().clone())
+                .unwrap_or_default()
+        },
+    );
     let lanes = cut_.lanes.clone();
     (cut_, lanes)
 }
@@ -225,23 +236,33 @@ pub fn preview_playhead() -> f64 {
 }
 
 pub fn selection_gesture() -> Option<gtk::GestureDrag> {
-    SELECT_GESTURES.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             select_gestures: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
-thread_local! {
-    pub(crate) static SELECT_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 pub fn pressed_surface() -> Option<cut_select::Surface> {
-    SELECT_SURFACES.with(|slots| slots.borrow().last().and_then(|s| *s.borrow()))
+    WINDOW_PAGE.with(
+        |WindowPage {
+             select_surfaces: slots,
+             ..
+         }| slots.borrow().last().and_then(|s| *s.borrow()),
+    )
 }
 
 pub(crate) fn set_pressed_surface(surface: cut_select::Surface) {
-    SELECT_SURFACES.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            *slot.borrow_mut() = Some(surface);
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             select_surfaces: slots,
+             ..
+         }| {
+            if let Some(slot) = slots.borrow().last() {
+                *slot.borrow_mut() = Some(surface);
+            }
+        },
+    );
 }
 
 /// F3.8 S5 (`Forms are live`): close whichever per-kind form is open so ✎ Edit cannot leave two showing. Each kind's Cancel keeps its own wording.
@@ -553,20 +574,22 @@ pub fn press_band_esc(window: &adw::ApplicationWindow) -> Option<String> {
     Some(fx_band::CANCELLED.to_string())
 }
 
-// F3.8 S5 (`Forms are live`): visit-level Undo bookkeeping shared by live forms, one entry per visit.
-thread_local! {
-    pub(crate) static LIVE_FORM: std::cell::RefCell<fx_band::LiveForm> =
-        std::cell::RefCell::new(fx_band::LiveForm::default());
-}
-
 /// F3.8 S5: does THIS accepted answer take the visit's single Undo? True the first time only.
 pub fn live_form_answer_is_undo(_window: &adw::ApplicationWindow) -> bool {
-    LIVE_FORM.with(|cell| cell.borrow_mut().first_answer())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             live_form: cell, ..
+         }| cell.borrow_mut().first_answer(),
+    )
 }
 
 /// F3.8 S5: a refused answer wrote nothing, so it gives the Undo entry back.
 pub fn live_form_refused() {
-    LIVE_FORM.with(|cell| cell.borrow_mut().refusal_resets());
+    WINDOW_PAGE.with(
+        |WindowPage {
+             live_form: cell, ..
+         }| cell.borrow_mut().refusal_resets(),
+    );
 }
 
 /// F2.6 S1: a press on the effects lane, the only ground that refuses a selection. With an effect in hand it PUTS IT DOWN; otherwise nothing. No band is drawn, so the selection stays.
@@ -612,13 +635,17 @@ pub fn select_surface(window: &adw::ApplicationWindow) -> Option<gtk::DrawingAre
 
 /// F2.5 S6: set this window's one preview volume from a slider percent (0..100) and push it to the live player. Returns the gain written (`0..=1`); the clamp is [`cut_hear::clamp_volume`].
 pub fn set_preview_volume(percent: f64) -> f64 {
-    let volume = PREVIEW_VOLUMES.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .cloned()
-            .unwrap_or_else(|| Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::new())))
-    });
+    let volume =
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 preview_volumes: slots,
+                 ..
+             }| {
+                slots.borrow().last().cloned().unwrap_or_else(|| {
+                    Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::new()))
+                })
+            },
+        );
     volume.borrow_mut().set_percent(percent);
     let gain = volume.borrow().value();
     if let Some(player) = ui::live_player() {
@@ -629,13 +656,18 @@ pub fn set_preview_volume(percent: f64) -> f64 {
 
 /// F2.5 S6: the one number as a gain, which [`cut_hear::mix_at`] is handed; default full if no slider was shown.
 pub fn preview_volume() -> f64 {
-    PREVIEW_VOLUMES.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|v| v.borrow().value())
-            .unwrap_or(cut_hear::VOLUME_DEFAULT)
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             preview_volumes: slots,
+             ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|v| v.borrow().value())
+                .unwrap_or(cut_hear::VOLUME_DEFAULT)
+        },
+    )
 }
 
 /// F2.5: ask the hearing rules what this tick means and store it on this window's player. `cut_hear::mix_at` decides lanes, footage mute, loudness and speed; this lands `footage_muted` for the pipeline.

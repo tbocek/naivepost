@@ -3,25 +3,11 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::find_widget_by_name;
 use crate::{cut_screen, timeline, ui::cut_folds};
 
 pub const DRAG_PER_SCREENFUL_PX: f64 = 40.0;
-
-thread_local! {
-    /// No zoom was saved for this project and none has been chosen: the session stays fitted to the band.
-    static FITS_THE_BAND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The project the zoom was read from, and where a new one is kept.
-    static ZOOM_PROJECT: std::cell::RefCell<Option<crate::layout::Tree>> = const { std::cell::RefCell::new(None) };
-}
-
-thread_local! {
-    /// The band's pixels-per-second, seeded at the open zoom: the one zoom the band paints with, and the one the
-    /// toolbar's −/+ and the wheel both step.
-    static PPS: std::cell::Cell<f64> = const { std::cell::Cell::new(cut_screen::ZOOM_AT_OPEN) };
-    /// The left edge of the view, in timeline pixels from the start of the gutter.
-    static ORIGIN: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
-}
 
 /// The session's filmed seconds: the takes' own spans merged, so dropped stretches still count (§B:
 /// a fold is a view, not an edit). Read through `cut_folds`, which already holds this window's takes.
@@ -78,7 +64,11 @@ pub fn refresh_scrollbar(bar: &gtk::Scrollbar, surface_width: f64) {
     } else {
         view_px(surface_width).max(0.0)
     };
-    BAR_WIDTH.with(|cell| cell.set(gear_from));
+    CUT_PAGE.with(
+        |CutPage {
+             bar_width: cell, ..
+         }| cell.set(gear_from),
+    );
     let (total, view) = extents(surface_width);
     paint_scrollbar(bar, total, view);
 }
@@ -90,12 +80,17 @@ pub fn gutter_px() -> f64 {
 }
 
 pub fn pps() -> f64 {
-    PPS.with(|cell| cell.get())
+    CUT_PAGE.with(|CutPage { pps: cell, .. }| cell.get())
 }
 
 pub fn set_pps(pps: f64) {
-    FITS_THE_BAND.with(|cell| cell.set(false));
-    PPS.with(|cell| cell.set(pps.max(0.0)));
+    CUT_PAGE.with(
+        |CutPage {
+             fits_the_band: cell,
+             ..
+         }| cell.set(false),
+    );
+    CUT_PAGE.with(|CutPage { pps: cell, .. }| cell.set(pps.max(0.0)));
 }
 
 /// This window's zoom floor: the whole filmed session across the view minus the gutter (§A), which is
@@ -114,7 +109,7 @@ pub fn live_pps(view: f64) -> f64 {
 
 /// How far the view starts, in pixels: 0 shows the session from its first filmed second.
 pub fn origin() -> f64 {
-    ORIGIN.with(|cell| cell.get())
+    CUT_PAGE.with(|CutPage { origin: cell, .. }| cell.get())
 }
 
 /// The strip's pixels-per-second right now: the stored zoom over this strip's own view (§2). One door, so
@@ -155,7 +150,7 @@ fn clamp_origin(px: f64, total: f64, view: f64) -> f64 {
 /// Set the scroll position, clamped to the timeline's own ends.
 pub fn set_origin(px: f64, total: f64, view: f64) -> f64 {
     let clamped = clamp_origin(px, total, view);
-    ORIGIN.with(|cell| cell.set(clamped));
+    CUT_PAGE.with(|CutPage { origin: cell, .. }| cell.set(clamped));
     clamped
 }
 
@@ -290,8 +285,9 @@ pub fn keep_line_through_layout(window: &adw::ApplicationWindow, layout: impl Fn
 pub fn settle_view(window: &adw::ApplicationWindow) {
     open_zoom();
     let view = view_px(surface_width(window));
-    if FITS_THE_BAND.with(std::cell::Cell::get) {
-        PPS.with(|cell| cell.set(floor_pps(view).min(cut_screen::ZOOM_MAX)));
+    if CUT_PAGE.with(|page| page.fits_the_band.get()) {
+        CUT_PAGE
+            .with(|CutPage { pps: cell, .. }| cell.set(floor_pps(view).min(cut_screen::ZOOM_MAX)));
     }
     set_origin(origin(), total_px(filmed_seconds(), pps()), view);
     repaint_page(window);
@@ -314,8 +310,11 @@ fn open_zoom() {
     else {
         return;
     };
-    if ZOOM_PROJECT.with(|slot| slot.borrow().as_ref().map(|open| open.dir().to_path_buf()))
-        == Some(tree.dir().to_path_buf())
+    if CUT_PAGE.with(
+        |CutPage {
+             zoom_project: slot, ..
+         }| slot.borrow().as_ref().map(|open| open.dir().to_path_buf()),
+    ) == Some(tree.dir().to_path_buf())
     {
         return;
     }
@@ -325,22 +324,35 @@ fn open_zoom() {
         .filter(|zoom| *zoom > 0.0);
     match saved {
         Some(zoom) => set_pps(zoom.min(cut_screen::ZOOM_MAX)),
-        None => FITS_THE_BAND.with(|cell| cell.set(true)),
+        None => CUT_PAGE.with(
+            |CutPage {
+                 fits_the_band: cell,
+                 ..
+             }| cell.set(true),
+        ),
     }
-    ZOOM_PROJECT.with(|slot| *slot.borrow_mut() = Some(tree));
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_project: slot, ..
+         }| *slot.borrow_mut() = Some(tree),
+    );
 }
 
 /// A person's zoom is kept for the next time this project opens.
 fn keep_zoom() {
-    ZOOM_PROJECT.with(|slot| {
-        if let Some(tree) = slot.borrow().as_ref() {
-            let rel = tree.zoom_txt();
-            let rel = rel.strip_prefix(tree.dir()).unwrap_or(&rel).to_path_buf();
-            if let Err(why) = tree.write_file(&rel, format!("{:.4}", pps()).as_bytes()) {
-                crate::ui::window::log_line(&format!("!!! could not save the zoom -- {why}"));
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_project: slot, ..
+         }| {
+            if let Some(tree) = slot.borrow().as_ref() {
+                let rel = tree.zoom_txt();
+                let rel = rel.strip_prefix(tree.dir()).unwrap_or(&rel).to_path_buf();
+                if let Err(why) = tree.write_file(&rel, format!("{:.4}", pps()).as_bytes()) {
+                    crate::ui::window::log_line(&format!("!!! could not save the zoom -- {why}"));
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 pub fn line_px(runs: &[(f64, f64)], folds: &[[f64; 2]], pps: f64, at: f64) -> f64 {
@@ -392,11 +404,6 @@ pub fn apply_wheel_at<S: Fn(i64)>(
     }
 }
 
-thread_local! {
-    /// Where a Shift pan is gliding to, and where it last put the view, while one is under way.
-    static GLIDE: std::cell::Cell<Option<(f64, f64)>> = const { std::cell::Cell::new(None) };
-}
-
 /// Move the view `px` over a few frames instead of in one jump. A notch during a glide adds to the target; anything
 /// else that moves the view (a zoom, the scrollbar, the line) ends it, since the view is then no longer where the glide left it.
 fn glide_pan(window: &adw::ApplicationWindow, px: f64) {
@@ -404,9 +411,9 @@ fn glide_pan(window: &adw::ApplicationWindow, px: f64) {
     let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
     let view = wheel_gestures_view(window);
     let total = total_px(filmed, pps());
-    let running = GLIDE.with(|glide| glide.get());
+    let running = CUT_PAGE.with(|CutPage { glide, .. }| glide.get());
     let from = running.map_or_else(origin, |(target, _)| target);
-    GLIDE.with(|glide| {
+    CUT_PAGE.with(|CutPage { glide, .. }| {
         glide.set(Some((
             clamp_origin(from + px, total, view),
             running.map_or_else(origin, |(_, left)| left),
@@ -417,11 +424,11 @@ fn glide_pan(window: &adw::ApplicationWindow, px: f64) {
     }
     let held = window.clone();
     window.add_tick_callback(move |_, _| {
-        let Some((target, left)) = GLIDE.with(|glide| glide.get()) else {
+        let Some((target, left)) = CUT_PAGE.with(|CutPage { glide, .. }| glide.get()) else {
             return glib::ControlFlow::Break;
         };
         if (origin() - left).abs() > 0.01 {
-            GLIDE.with(|glide| glide.set(None));
+            CUT_PAGE.with(|CutPage { glide, .. }| glide.set(None));
             return glib::ControlFlow::Break;
         }
         let total = total_px(
@@ -438,10 +445,10 @@ fn glide_pan(window: &adw::ApplicationWindow, px: f64) {
         );
         repaint_page(&held);
         if (moved - target).abs() < 0.01 {
-            GLIDE.with(|glide| glide.set(None));
+            CUT_PAGE.with(|CutPage { glide, .. }| glide.set(None));
             return glib::ControlFlow::Break;
         }
-        GLIDE.with(|glide| glide.set(Some((target, moved))));
+        CUT_PAGE.with(|CutPage { glide, .. }| glide.set(Some((target, moved))));
         glib::ControlFlow::Continue
     });
 }
@@ -537,7 +544,7 @@ pub fn attach_wheel<S>(
 fn glide_or_follow(window: &adw::ApplicationWindow, pixels: bool, delta: f64, notch_px: f64) {
     if pixels {
         // The fingers are the animation: following them directly, a glide would only lag behind.
-        GLIDE.with(|glide| glide.set(None));
+        CUT_PAGE.with(|CutPage { glide, .. }| glide.set(None));
         apply_wheel_result(window, cut_screen::Wheel::Pan { px: delta });
     } else {
         glide_pan(window, notch_px * delta.abs().max(1.0));
@@ -625,10 +632,6 @@ pub fn repaint_page(window: &adw::ApplicationWindow) {
     }
 }
 
-thread_local! {
-    static BAR_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
-}
-
 pub fn paint_scrollbar(bar: &gtk::Scrollbar, total: f64, view: f64) {
     bar.adjustment().configure(
         origin(),
@@ -648,7 +651,11 @@ fn bar_width(bar: &gtk::Scrollbar) -> f64 {
     if measured > 0.0 {
         measured
     } else {
-        BAR_WIDTH.with(|cell| cell.get())
+        CUT_PAGE.with(
+            |CutPage {
+                 bar_width: cell, ..
+             }| cell.get(),
+        )
     }
 }
 
@@ -656,7 +663,11 @@ fn bar_width(bar: &gtk::Scrollbar) -> f64 {
 /// so a check can compare its own numbers against the same length the painter did (a headless bar reports
 /// 0 for its allocation, and another window's refresh may have been the last one to write it).
 pub fn gear_px_for_test() -> f64 {
-    BAR_WIDTH.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             bar_width: cell, ..
+         }| cell.get(),
+    )
 }
 
 /// The scrollbar's `value-changed` wire (§A: the bar scrolls the band). A `Scrollbar` is not a `Range` in

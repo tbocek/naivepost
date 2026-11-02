@@ -4,13 +4,10 @@ use glib::object::Cast;
 
 use crate::cut::{self, Cut, Seg};
 use crate::suggest::Applied;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
-type Recorder = fn(&adw::ApplicationWindow, &Cut);
-
-thread_local! {
-    static RECORDER: std::cell::Cell<Option<Recorder>> = const { std::cell::Cell::new(None) };
-    static READ: std::cell::Cell<Option<fn() -> Cut>> = const { std::cell::Cell::new(None) };
-}
+pub(crate) type Recorder = fn(&adw::ApplicationWindow, &Cut);
 
 /// §F2.14 S2a/S2b: which half of Suggest this press runs — see [`suggest_press`], which does both
 /// the refusal and the mode.
@@ -81,11 +78,19 @@ fn press_model(window: &adw::ApplicationWindow) -> String {
 }
 
 fn open_run() {
-    let Some(bar) = crate::ui::window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()) else {
+    let Some(bar) = WINDOW_PAGE.with(
+        |WindowPage {
+             window_bar: bars, ..
+         }| bars.borrow().last().cloned(),
+    ) else {
         return;
     };
-    let Some(queue) = crate::ui::window::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned())
-    else {
+    let Some(queue) = WINDOW_PAGE.with(
+        |WindowPage {
+             window_queue: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    ) else {
         return;
     };
     let project = crate::ui::window::session_handle().borrow().clone();
@@ -151,7 +156,7 @@ pub fn land_effects(window: &adw::ApplicationWindow, answer: &Applied) {
     }
     let mut with_effects = screen_cut();
     with_effects.fx = answer.effects.clone();
-    if let Some(recorder) = RECORDER.with(|slot| slot.get()) {
+    if let Some(recorder) = CUT_PAGE.with(|CutPage { recorder: slot, .. }| slot.get()) {
         recorder(window, &with_effects);
     }
     if let Some(Some(tree)) = session_tree() {
@@ -161,19 +166,15 @@ pub fn land_effects(window: &adw::ApplicationWindow, answer: &Applied) {
     }
 }
 
-type Session = Option<crate::layout::Tree>;
-
-thread_local! {
-    static SESSION: std::cell::RefCell<Option<Session>> = const { std::cell::RefCell::new(None) };
-}
+pub(crate) type Session = Option<crate::layout::Tree>;
 
 pub fn point_session_at(tree: Option<crate::layout::Tree>) {
-    SESSION.with(|slot| *slot.borrow_mut() = Some(tree));
+    CUT_PAGE.with(|CutPage { session: slot, .. }| *slot.borrow_mut() = Some(tree));
 }
 
 pub(crate) fn session_tree() -> Option<Option<crate::layout::Tree>> {
-    SESSION
-        .with(|slot| slot.borrow().clone())
+    CUT_PAGE
+        .with(|CutPage { session: slot, .. }| slot.borrow().clone())
         .or_else(crate::ui::window_line_step::last_session_tree)
         .or_else(|| {
             let dir = crate::startup::open_dir();
@@ -239,12 +240,13 @@ fn mtime(path: &std::path::Path) -> Option<std::time::SystemTime> {
 }
 
 pub fn install(read: fn() -> Cut, recorder: Recorder) {
-    READ.with(|slot| slot.set(Some(read)));
-    RECORDER.with(|slot| slot.set(Some(recorder)));
+    CUT_PAGE.with(|CutPage { read: slot, .. }| slot.set(Some(read)));
+    CUT_PAGE.with(|CutPage { recorder: slot, .. }| slot.set(Some(recorder)));
 }
 
 fn screen_cut() -> Cut {
-    READ.with(|slot| slot.get())
+    CUT_PAGE
+        .with(|CutPage { read: slot, .. }| slot.get())
         .map(|read| read())
         .unwrap_or_default()
 }
@@ -288,7 +290,7 @@ pub fn land_spans(window: &adw::ApplicationWindow, spans: &[(f64, f64)]) -> Cut 
     let landed = suggested_cut(&screen_cut(), &answer);
     // The same order `land` keeps for the model path, for the same reason: one undo step for the
     // cut, then the base moves so Revert keeps the words cut and drops only hand edits after it.
-    if let Some(recorder) = RECORDER.with(|slot| slot.get()) {
+    if let Some(recorder) = CUT_PAGE.with(|CutPage { recorder: slot, .. }| slot.get()) {
         recorder(window, &landed);
     }
     if let Some(Some(tree)) = session_tree() {
@@ -306,7 +308,7 @@ pub fn land(window: &adw::ApplicationWindow, answer: &Applied) -> Cut {
     let landed = suggested_cut(&screen_cut(), answer);
     // The recorder first: one undo step for the suggestion, so ↶ can take the suggestion back the
     // way it takes any other edit.
-    if let Some(recorder) = RECORDER.with(|slot| slot.get()) {
+    if let Some(recorder) = CUT_PAGE.with(|CutPage { recorder: slot, .. }| slot.get()) {
         recorder(window, &landed);
     }
     if let Some(Some(tree)) = session_tree() {

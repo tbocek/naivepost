@@ -11,6 +11,7 @@ use crate::narrate_sample;
 use crate::narrate_screen::{self};
 use crate::ui::narrate_page::NarrateState;
 use crate::ui::narrate_page::{mutate, read_state, refresh, say, widget_in};
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 
 /// **8** ＋ makes the selection a take, refused under P.eng.takeMinSeconds.
 pub fn press_take_add(window: &adw::ApplicationWindow, selection: (f64, f64)) -> String {
@@ -91,7 +92,7 @@ struct Played {
 
 /// The take walk a ▶ started: the stretches it plays in order, each from the recording it is cut from, which one
 /// sounds and when that one began.
-struct Walk {
+pub(crate) struct Walk {
     spans: Vec<Played>,
     at: usize,
     began: std::time::Instant,
@@ -101,13 +102,9 @@ struct Walk {
     slack: f64,
 }
 
-thread_local! {
-    static WALK: std::cell::RefCell<Option<Walk>> = const { std::cell::RefCell::new(None) };
-}
-
 /// Is a take walk playing?
 pub fn walking() -> bool {
-    WALK.with(|walk| walk.borrow().is_some())
+    NARRATE_PAGE.with(|NarratePage { walk, .. }| walk.borrow().is_some())
 }
 
 fn paint_take_play(window: &adw::ApplicationWindow) {
@@ -122,7 +119,7 @@ fn paint_take_play(window: &adw::ApplicationWindow) {
 
 pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
     if walking() {
-        WALK.with(|walk| walk.borrow_mut().take());
+        NARRATE_PAGE.with(|NarratePage { walk, .. }| walk.borrow_mut().take());
         narrate_sample::stop();
         crate::ui::narrate_band::set_walk_head(None);
         paint_take_play(window);
@@ -168,7 +165,7 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
         return say(window, &why);
     }
     let total: f64 = queued.iter().map(|(a, b)| b - a).sum();
-    WALK.with(|walk| {
+    NARRATE_PAGE.with(|NarratePage { walk, .. }| {
         *walk.borrow_mut() = Some(Walk {
             spans,
             at: 0,
@@ -215,7 +212,7 @@ fn walk_on(window: &adw::ApplicationWindow) {
             Next(std::path::PathBuf, f64, f64, f64),
             Done,
         }
-        let beat = WALK.with(|walk| {
+        let beat = NARRATE_PAGE.with(|NarratePage { walk, .. }| {
             let mut walk = walk.borrow_mut();
             let Some(held) = walk.as_mut() else {
                 return Beat::Gone;
@@ -243,7 +240,7 @@ fn walk_on(window: &adw::ApplicationWindow) {
                 narrate_sample::stop();
                 crate::ui::narrate_band::set_walk_head(Some(band));
                 if let Err(why) = narrate_sample::play_span(&file, start, end) {
-                    WALK.with(|walk| walk.borrow_mut().take());
+                    NARRATE_PAGE.with(|NarratePage { walk, .. }| walk.borrow_mut().take());
                     crate::ui::narrate_band::set_walk_head(None);
                     paint_take_play(&window);
                     say(&window, &why);

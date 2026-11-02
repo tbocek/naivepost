@@ -1,7 +1,5 @@
 //! §05-cut#F2.10 — the session's recordings, from what the PROJECT holds, not from the kept clips.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::clock;
@@ -10,10 +8,7 @@ use crate::layout;
 use crate::project::Project;
 use crate::settings;
 use crate::timeline::Recording;
-
-thread_local! {
-    static LENGTHS: RefCell<HashMap<String, f64>> = RefCell::new(HashMap::new());
-}
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 
 /// The session's recordings, in the order the project lists its footage sources, then the cut's lanes.
 pub fn session_recordings(
@@ -114,38 +109,46 @@ pub fn refresh_page_spans(cut_: &Cut) -> Option<Vec<Recording>> {
 /// What ffprobe says this file runs for, remembered per path.
 fn length_of(configured: &str, path: &Path) -> Option<f64> {
     let key = path.display().to_string();
-    if let Some(known) = LENGTHS.with(|cell| cell.borrow().get(&key).copied()) {
+    if let Some(known) =
+        CUT_PAGE.with(|CutPage { lengths: cell, .. }| cell.borrow().get(&key).copied())
+    {
         return Some(known);
     }
-    if UNREADABLE.with(|cell| cell.borrow().contains(&key)) {
+    if CUT_PAGE.with(
+        |CutPage {
+             unreadable: cell, ..
+         }| cell.borrow().contains(&key),
+    ) {
         return None;
     }
     ask_length(configured.to_string(), key);
     None
 }
 
-thread_local! {
-    static UNREADABLE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    static MEASURING: RefCell<(Vec<String>, Option<crate::ui::settle::Owed>)> =
-        const { RefCell::new((Vec::new(), None)) };
-}
-
 fn ask_length(configured: String, key: String) {
-    let first = MEASURING.with(|cell| {
-        let mut held = cell.borrow_mut();
-        if held.0.contains(&key) {
-            return None;
-        }
-        held.0.push(key.clone());
-        Some(held.0.len() == 1)
-    });
+    let first = CUT_PAGE.with(
+        |CutPage {
+             measuring: cell, ..
+         }| {
+            let mut held = cell.borrow_mut();
+            if held.0.contains(&key) {
+                return None;
+            }
+            held.0.push(key.clone());
+            Some(held.0.len() == 1)
+        },
+    );
     let Some(first) = first else {
         return;
     };
     if first {
         if let Some(window) = crate::ui::window::built_window() {
             let owed = crate::ui::settle::owe("footage lengths", &window);
-            MEASURING.with(|cell| cell.borrow_mut().1 = Some(owed));
+            CUT_PAGE.with(
+                |CutPage {
+                     measuring: cell, ..
+                 }| cell.borrow_mut().1 = Some(owed),
+            );
         }
     }
     let probed = key.clone();
@@ -160,7 +163,7 @@ fn ask_length(configured: String, key: String) {
         },
         move |answered: Option<f64>| {
             match answered {
-                Some(seconds) => LENGTHS.with(|cell| {
+                Some(seconds) => CUT_PAGE.with(|CutPage { lengths: cell, .. }| {
                     cell.borrow_mut().insert(key.clone(), seconds);
                 }),
                 None => {
@@ -172,19 +175,31 @@ fn ask_length(configured: String, key: String) {
                     crate::ui::window::log_line(&format!(
                         "{name}: no row \u{2014} ffprobe gave no length"
                     ));
-                    UNREADABLE.with(|cell| cell.borrow_mut().push(key.clone()))
+                    CUT_PAGE.with(
+                        |CutPage {
+                             unreadable: cell, ..
+                         }| cell.borrow_mut().push(key.clone()),
+                    )
                 }
             }
-            let done = MEASURING.with(|cell| {
-                let mut held = cell.borrow_mut();
-                held.0.retain(|known| *known != key);
-                if held.0.is_empty() {
-                    held.1.take()
-                } else {
-                    None
-                }
-            });
-            if MEASURING.with(|cell| cell.borrow().0.is_empty()) {
+            let done = CUT_PAGE.with(
+                |CutPage {
+                     measuring: cell, ..
+                 }| {
+                    let mut held = cell.borrow_mut();
+                    held.0.retain(|known| *known != key);
+                    if held.0.is_empty() {
+                        held.1.take()
+                    } else {
+                        None
+                    }
+                },
+            );
+            if CUT_PAGE.with(
+                |CutPage {
+                     measuring: cell, ..
+                 }| cell.borrow().0.is_empty(),
+            ) {
                 repaint_measured();
                 drop(done);
             }

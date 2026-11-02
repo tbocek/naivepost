@@ -3,6 +3,7 @@
 use crate::produce_screen as screen;
 use crate::ui::narrate_page::say;
 use crate::ui::produce_page::*;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 use adw::prelude::*;
 use gtk4 as gtk;
 
@@ -16,7 +17,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
     // A profile edited while this project was closed still sets its encoder rows, which are greyed here as the profile's.
     crate::ui::profile_form::follow_profile_produce();
     // Hold the WINDOW: the slot row looks up its per-slot buttons by name from the window root.
-    ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
+    PAGE.with(|ProducePage { root: held, .. }| *held.borrow_mut() = Some(window.clone().upcast()));
     let win = window.clone();
     for name in [
         "add-image-button",
@@ -57,7 +58,14 @@ pub fn wire(window: &adw::ApplicationWindow) {
     let text_win = win.clone();
     crate::ui::produce_text::wire_text(
         &win,
-        std::rc::Rc::new(|| SETTINGS_GUARD.with(|guard| guard.get())),
+        std::rc::Rc::new(|| {
+            PAGE.with(
+                |ProducePage {
+                     settings_guard: guard,
+                     ..
+                 }| guard.get(),
+            )
+        }),
         std::rc::Rc::new(move |field, text| {
             set_text_field(field, text);
             refresh(&text_win);
@@ -89,7 +97,12 @@ pub(crate) fn wire_settings(window: &adw::ApplicationWindow) {
         let w = window.clone();
         let row = row.to_string();
         picker.connect_selected_notify(move |picker| {
-            if SETTINGS_GUARD.with(|guard| guard.get()) {
+            if PAGE.with(
+                |ProducePage {
+                     settings_guard: guard,
+                     ..
+                 }| guard.get(),
+            ) {
                 return;
             }
             let at = picker.selected() as usize;
@@ -108,7 +121,12 @@ pub(crate) fn wire_settings(window: &adw::ApplicationWindow) {
         let w = window.clone();
         let row = row.to_string();
         scale.connect_value_changed(move |scale| {
-            if SETTINGS_GUARD.with(|guard| guard.get()) {
+            if PAGE.with(
+                |ProducePage {
+                     settings_guard: guard,
+                     ..
+                 }| guard.get(),
+            ) {
                 return;
             }
             set_scale(&w, &row, &scale.value().to_string());
@@ -127,7 +145,12 @@ pub(crate) fn wire_settings(window: &adw::ApplicationWindow) {
         let w = window.clone();
         let row = row.to_string();
         tick.connect_toggled(move |tick| {
-            if SETTINGS_GUARD.with(|guard| guard.get()) {
+            if PAGE.with(
+                |ProducePage {
+                     settings_guard: guard,
+                     ..
+                 }| guard.get(),
+            ) {
                 return;
             }
             set_toggle(&w, &row, tick.is_active());
@@ -136,7 +159,14 @@ pub(crate) fn wire_settings(window: &adw::ApplicationWindow) {
     let w = window.clone();
     crate::ui::produce_languages::wire_ticks(
         window,
-        std::rc::Rc::new(|| SETTINGS_GUARD.with(|guard| guard.get())),
+        std::rc::Rc::new(|| {
+            PAGE.with(
+                |ProducePage {
+                     settings_guard: guard,
+                     ..
+                 }| guard.get(),
+            )
+        }),
         std::rc::Rc::new(move |language, on| {
             mutate(|s| crate::ui::produce_languages::apply(s, language, on));
             keep_settings();

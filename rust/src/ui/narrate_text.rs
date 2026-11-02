@@ -3,26 +3,35 @@
 use crate::narrate_edit;
 use crate::narrate_screen;
 use crate::ui::narrate_page;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use adw::prelude::*;
 use gtk4 as gtk;
 
 /// Whether this window owes a narration write, read off the newest shell (the same slot
 /// `window::mark_narration_owed` raises). The autosave, the close and Produce's read all answer to it.
 fn write_owed() -> bool {
-    crate::ui::window::WINDOW_SHELLS.with(|shells| {
-        shells
-            .borrow()
-            .last()
-            .map(|shell| shell.borrow().narration_pending.owe())
-            .unwrap_or(false)
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| {
+            shells
+                .borrow()
+                .last()
+                .map(|shell| shell.borrow().narration_pending.owe())
+                .unwrap_or(false)
+        },
+    )
 }
 
 /// Settle the flag once the bytes are out, so a later door does not write them twice.
 fn clear_owed() {
-    if let Some(shell) =
-        crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
-    {
+    if let Some(shell) = WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| shells.borrow().last().cloned(),
+    ) {
         shell.borrow_mut().narration_pending.flush();
     }
 }
@@ -138,11 +147,16 @@ pub fn flush_owed(window: &adw::ApplicationWindow) -> Option<String> {
 
 fn carry_into_held_record() {
     let entries = narrate_page::read_state().entries;
-    crate::ui::window::HELD_NARRATION.with(|slot| {
-        if let Some(held) = slot.borrow().last().cloned() {
-            held.borrow_mut().entries = entries;
-        }
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             held_narration: slot,
+             ..
+         }| {
+            if let Some(held) = slot.borrow().last().cloned() {
+                held.borrow_mut().entries = entries;
+            }
+        },
+    );
 }
 
 /// The parse applied without printing anything: a flush writes N boxes and owes the status line none of them.

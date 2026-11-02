@@ -5,6 +5,7 @@ use gtk4 as gtk;
 
 use crate::ui::cut_preview_frame::{self as picture, Frame};
 use crate::ui::narrate_frame_wheel::picture_of;
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 
 /// Install the painter on `narrate-picture`. Called from the page's `wire`, once.
 pub fn install_draw(window: &adw::ApplicationWindow) {
@@ -25,18 +26,11 @@ pub fn repaint(window: &adw::ApplicationWindow) {
     }
 }
 
-thread_local! {
-    /// What `narrate-video` shows now, or `None` before anything was put there.
-    static SHOWN: std::cell::RefCell<Option<Shown>> = const { std::cell::RefCell::new(None) };
-    /// A recheck is already set for a listing or a decode a worker has not answered yet.
-    static RECHECK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// What `narrate-video` holds. Two kinds, not one `Option` doing both: the first rewrite spelled "the built-in
 /// player's frames" and "no still found" the same way, so a page whose first look found no still never put the
 /// player's frames up when ▶ started it, and the preview stayed black while the cut played.
 #[derive(Clone, PartialEq)]
-enum Shown {
+pub(crate) enum Shown {
     /// The built-in player's own frames.
     Player,
     /// The still Prepare extracted for this second.
@@ -54,14 +48,15 @@ fn show_frame(window: &adw::ApplicationWindow) {
         return;
     };
     if crate::narrate_preview_leg::picture_built_in() {
-        if SHOWN.with(|shown| *shown.borrow() == Some(Shown::Player)) {
+        if NARRATE_PAGE.with(|NarratePage { shown, .. }| *shown.borrow() == Some(Shown::Player)) {
             return;
         }
         if let Some(paintable) = crate::play_built_in::paintable()
             .and_then(|object| object.downcast::<gtk::gdk::Paintable>().ok())
         {
             video.set_paintable(Some(&paintable));
-            SHOWN.with(|shown| *shown.borrow_mut() = Some(Shown::Player));
+            NARRATE_PAGE
+                .with(|NarratePage { shown, .. }| *shown.borrow_mut() = Some(Shown::Player));
         }
         return;
     }
@@ -76,11 +71,11 @@ fn show_frame(window: &adw::ApplicationWindow) {
     // seek) tries again rather than taking "none yet" for an answer.
     let Some(path) = still else {
         video.set_paintable(None::<&gtk::gdk::Paintable>);
-        SHOWN.with(|shown| *shown.borrow_mut() = None);
+        NARRATE_PAGE.with(|NarratePage { shown, .. }| *shown.borrow_mut() = None);
         return;
     };
     let wanted = Shown::Still(path.clone());
-    if SHOWN.with(|shown| shown.borrow().as_ref() == Some(&wanted)) {
+    if NARRATE_PAGE.with(|NarratePage { shown, .. }| shown.borrow().as_ref() == Some(&wanted)) {
         return;
     }
     let texture = match crate::ui::cut_picture_cache::picture(&path) {
@@ -92,7 +87,7 @@ fn show_frame(window: &adw::ApplicationWindow) {
         }
     };
     video.set_paintable(texture.as_ref());
-    SHOWN.with(|shown| *shown.borrow_mut() = Some(wanted));
+    NARRATE_PAGE.with(|NarratePage { shown, .. }| *shown.borrow_mut() = Some(wanted));
 }
 
 /// The preview again, for a worker's answer that landed (a frame folder listed, a still decoded): the page's
@@ -105,12 +100,12 @@ pub fn repaint_landed() {
 
 /// Look again in a moment, once: what a worker was asked for will have landed or still be coming.
 fn recheck(window: &adw::ApplicationWindow) {
-    if RECHECK.with(|set| set.replace(true)) {
+    if NARRATE_PAGE.with(|NarratePage { recheck: set, .. }| set.replace(true)) {
         return;
     }
     let window = window.clone();
     glib::timeout_add_local_once(std::time::Duration::from_millis(RECHECK_MS), move || {
-        RECHECK.with(|set| set.set(false));
+        NARRATE_PAGE.with(|NarratePage { recheck: set, .. }| set.set(false));
         show_frame(&window);
     });
 }

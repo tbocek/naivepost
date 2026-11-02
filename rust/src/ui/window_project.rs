@@ -21,9 +21,9 @@ use crate::startup;
 use crate::ui::rescan_apply;
 use crate::ui::source_rows;
 use crate::ui::window::{
-    copy_into_project, find_status, find_widget_by_name, log_line, progress_bar, SESSION,
-    WINDOW_BAR, WINDOW_QUEUE,
+    copy_into_project, find_status, find_widget_by_name, log_line, progress_bar,
 };
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub(crate) const NEW_TIP: &str =
     "New project \u{2014} name it, put it where you want it, and start over";
@@ -127,7 +127,11 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<R
         .or_else(|| open.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| root.to_path_buf());
     let dialog = new_project_dialog(&dir, &day);
-    LAST_ASK.with(|asked| *asked.borrow_mut() = Some(dialog.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             last_ask: asked, ..
+         }| *asked.borrow_mut() = Some(dialog.clone()),
+    );
 
     let status = status.clone();
     let root = root.to_path_buf();
@@ -146,22 +150,21 @@ fn ask_new_project(status: &gtk::Label, root: &Path, open: &Path, session: &Rc<R
 /// What the last ＋ New press asked for: a headless run cannot type into the sheet, so a check reads the
 /// title and default name here.
 pub fn last_ask() -> Option<gtk::FileDialog> {
-    LAST_ASK.with(|asked| asked.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             last_ask: asked, ..
+         }| asked.borrow().clone(),
+    )
 }
 
 /// What the last Open press asked for, including the folder it should start in (compare `new_apply::chooser_dir()`).
 /// Test-only by name.
 pub fn last_open_ask_for_test() -> Option<gtk::FileDialog> {
-    LAST_OPEN.with(|asked| asked.borrow().clone())
-}
-
-thread_local! {
-    /// The naming sheet the last press opened, for [`last_ask`].
-    static LAST_ASK: std::cell::RefCell<Option<gtk::FileDialog>> =
-        const { std::cell::RefCell::new(None) };
-
-    static LAST_OPEN: std::cell::RefCell<Option<gtk::FileDialog>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             last_open: asked, ..
+         }| asked.borrow().clone(),
+    )
 }
 
 /// Prepare's two widgets (F0.12): the button that adds files, and the tick that decides whether they come
@@ -290,24 +293,33 @@ fn ask_add_sources(
         add_files(&window, &files);
     });
     // Built is not shown: without this the chooser existed unseen and its response never came.
-    CHOOSERS_SHOWN.with(|shown| shown.set(shown.get() + 1));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             choosers_shown: shown,
+             ..
+         }| shown.set(shown.get() + 1),
+    );
     crate::ui::chooser_hold::show(&chooser);
-}
-
-thread_local! {
-    /// How many times this thread has raised the Add sources chooser: a headless test can never answer one, so
-    /// the press getting that far is only observable as a count.
-    static CHOOSERS_SHOWN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// How many Add sources choosers have been raised so far.
 pub fn add_chooser_shown_count() -> usize {
-    CHOOSERS_SHOWN.with(|shown| shown.get())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             choosers_shown: shown,
+             ..
+         }| shown.get(),
+    )
 }
 
 /// Zero the count, so a test asserts a delta of one.
 pub fn reset_add_chooser_shown() {
-    CHOOSERS_SHOWN.with(|shown| shown.set(0));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             choosers_shown: shown,
+             ..
+         }| shown.set(0),
+    );
 }
 
 pub(crate) const SAVE_TIP: &str = "Save this project to a file";
@@ -316,9 +328,13 @@ pub(crate) const SAVE_TIP: &str = "Save this project to a file";
 /// finds the widgets this window built and forwards to [`open_folder`].
 pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
     let (Some(bar), Some(status), Some(session)) = (
-        WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_bar: slots, ..
+             }| slots.borrow().last().cloned(),
+        ),
         find_status(window.upcast_ref()),
-        SESSION.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned()),
     ) else {
         panic!("the window has no run bar, status line or session");
     };
@@ -336,10 +352,19 @@ pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
 /// Returns whether the copy started. Refused while another run is on (S0), leaving the session untouched.
 pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) -> bool {
     let (Some(bar), Some(status), Some(session), Some(queue), Some(progress)) = (
-        WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_bar: slots, ..
+             }| slots.borrow().last().cloned(),
+        ),
         find_status(window.upcast_ref()),
-        SESSION.with(|slots| slots.borrow().last().cloned()),
-        WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_queue: slots,
+                 ..
+             }| slots.borrow().last().cloned(),
+        ),
         progress_bar(window),
     ) else {
         panic!("the window has no run bar, status line, session, queue or progress bar");
@@ -571,7 +596,11 @@ fn ask_open_project(
     if let Some(dir) = crate::ui::new_apply::chooser_dir() {
         dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
     }
-    LAST_OPEN.with(|asked| *asked.borrow_mut() = Some(dialog.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             last_open: asked, ..
+         }| *asked.borrow_mut() = Some(dialog.clone()),
+    );
 
     let bar = bar.clone();
     let status = status.clone();
@@ -654,22 +683,19 @@ pub(crate) fn reopen_window_on(project: &Project, dir: &Path) -> adw::Applicatio
     window
 }
 
-thread_local! {
-    /// What this launch has opened, per root: the pairs settings writes as `PROJECT_<n>_ROOT` / `PROJECT_<n>_FILE`.
-    /// Persisting belongs to `settings`' writer.
-    static REMEMBERED: std::cell::RefCell<std::collections::BTreeMap<String, String>> =
-        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
-}
-
 /// Put an opened project into the window's remembered list AND into `llm.conf`, the one conf door.
 pub(crate) fn remember_opened(
     root: &Path,
     file: &Path,
 ) -> Result<open_project::Remembered, String> {
     let paths = crate::settings::from_environment().ok_or("no settings folder to write into")?;
-    REMEMBERED.with(|list| {
-        let mut projects = list.borrow_mut();
-        crate::machine_store::persist_project(&paths, &mut projects, root, file)
-            .map(|_| open_project::remember(&mut projects, root, file))
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             remembered: list, ..
+         }| {
+            let mut projects = list.borrow_mut();
+            crate::machine_store::persist_project(&paths, &mut projects, root, file)
+                .map(|_| open_project::remember(&mut projects, root, file))
+        },
+    )
 }

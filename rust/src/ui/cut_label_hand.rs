@@ -6,11 +6,13 @@ use gtk4 as gtk;
 use crate::cut;
 use crate::fx_label;
 use crate::shell::Page;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
     live_form_refused, log_line, record_edit, refresh_effects_lane, save_insert_cut, selection,
-    trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
+    trim_seconds, zoom_field_row,
 };
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 // --- F3.7 Label by hand: the press, the form, the Apply --------------------------------------------------
 //
@@ -39,7 +41,12 @@ pub fn press_label_item(window: &adw::ApplicationWindow) -> String {
     let band = selection()
         .filter(|band| band.length() > 0.0)
         .map(|band| (band.start, band.end));
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    let known = WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| *cell.borrow(),
+    ) == Some(true);
     let line = known.then(|| crate::ui::cut_lane::paste_line());
     match fx_label::press(band, line) {
         fx_label::Pressed::Refused => {
@@ -85,7 +92,12 @@ pub(crate) fn show_label_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     for old in stale {
         holder.remove(&old);
     }
-    LAST_LABEL_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             last_label_window: cell,
+             ..
+         }| *cell.borrow_mut() = Some(window.clone()),
+    );
 
     let heading = gtk::Label::new(Some(&fx_label::form_title(fx.t)));
     heading.set_xalign(0.0);
@@ -140,39 +152,47 @@ fn label_form_of(fx: &cut::Fx) -> fx_label::Form {
 
 /// F3.7 S2/S3: the form waiting on the page, before Apply.
 pub fn label_form_open() -> Option<fx_label::Form> {
-    LABEL_FORM.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             label_form: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 fn set_label_form(form: Option<fx_label::Form>) {
-    LABEL_FORM.with(|cell| *cell.borrow_mut() = form);
-}
-
-thread_local! {
-    static LABEL_FORM: std::cell::RefCell<Option<fx_label::Form>> =
-        const { std::cell::RefCell::new(None) };
-
-    /// The window whose label form was last shown, so the field readers have THIS window's tree to
-    /// look in and a stale window cannot answer for a live one.
-    static LAST_LABEL_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
+    CUT_PAGE.with(
+        |CutPage {
+             label_form: cell, ..
+         }| *cell.borrow_mut() = form,
+    );
 }
 
 fn label_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_LABEL_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
-            .unwrap_or(false)
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_label_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
+                .unwrap_or(false)
+        },
+    )
 }
 
 fn label_entry(name: &str) -> Option<gtk::Entry> {
-    LAST_LABEL_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_label_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        },
+    )
 }
 
 pub(crate) fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {

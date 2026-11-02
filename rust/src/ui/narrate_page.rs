@@ -46,43 +46,31 @@ pub struct NarrateState {
     pub covered_spans: Vec<(f64, f64)>,
 }
 
-thread_local! {
-    static NARRATE_STATE: std::cell::RefCell<NarrateState> =
-        const { std::cell::RefCell::new(NarrateState {
-            entries: Vec::new(),
-            segs: Vec::new(),
-            takes: Vec::new(),
-            voice: String::new(),
-            pitch: 0.0,
-            session: 0.0,
-            cut_at: 0.0,
-            length: 0.0,
-            clips: 0,
-            unwritten: 0,
-            off_cut: 0,
-            has_cut: false,
-            has_timeline: false,
-            narrators: 0,
-            voice_files: Vec::new(),
-            recording_covers_clip: true,
-            playing: false,
-            started: false,
-            busy: false,
-            covered_spans: Vec::new(),
-            language: String::new(),
-        }) };
-}
-
 pub fn set_state(next: NarrateState) {
-    NARRATE_STATE.with(|held| *held.borrow_mut() = next);
+    NARRATE_PAGE.with(
+        |NarratePage {
+             narrate_state: held,
+             ..
+         }| *held.borrow_mut() = next,
+    );
 }
 
 pub fn read_state() -> NarrateState {
-    NARRATE_STATE.with(|held| held.borrow().clone())
+    NARRATE_PAGE.with(
+        |NarratePage {
+             narrate_state: held,
+             ..
+         }| held.borrow().clone(),
+    )
 }
 
 pub(crate) fn mutate<T>(f: impl FnOnce(&mut NarrateState) -> T) -> T {
-    NARRATE_STATE.with(|held| f(&mut held.borrow_mut()))
+    NARRATE_PAGE.with(
+        |NarratePage {
+             narrate_state: held,
+             ..
+         }| f(&mut held.borrow_mut()),
+    )
 }
 
 /// Re-publish the line rows from a re-read narration (F0.11 S2), keeping the other fields; the page draws its rows from this state.
@@ -90,13 +78,14 @@ pub fn publish_lines(entries: Vec<Entry>) {
     mutate(|s| s.entries = entries);
 }
 
-thread_local! {
-    static PAGE_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// The page's ground colour, installed once per process: the preview frame and take band are `DrawingArea`s that would render as window grey.
 fn install_page_css_once() {
-    if PAGE_CSS_LOADED.with(|cell| cell.get()) {
+    if NARRATE_PAGE.with(
+        |NarratePage {
+             page_css_loaded: cell,
+             ..
+         }| cell.get(),
+    ) {
         return;
     }
     // A line's text box is framed (§1 badge 20, `spec/img/07-narrate.png`): unframed, a white box on the white lines column cannot be seen.
@@ -110,7 +99,12 @@ fn install_page_css_once() {
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
-    PAGE_CSS_LOADED.with(|cell| cell.set(true));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             page_css_loaded: cell,
+             ..
+         }| cell.set(true),
+    );
 }
 
 /// The preview plate: 560 px at 16:9, so 560 * 9 / 16 = 315; also where §A.1's second divider opens (`narrate-left-split`).
@@ -362,27 +356,32 @@ fn upcast_widget(w: gtk::Paned) -> gtk::Widget {
     w.upcast()
 }
 
-thread_local! {
-    /// True while the PAGE moves the scrub thumb: a programmatic `set_value` fires `value-changed` like a drag, which would seek.
-    static SYNCING_SCRUB: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 fn sync_scrub(window: &adw::ApplicationWindow, s: &NarrateState) {
     let Some(slider) =
         widget_in(window, "narrate-slider").and_then(|w| w.downcast::<gtk::Scale>().ok())
     else {
         return;
     };
-    SYNCING_SCRUB.with(|held| held.set(true));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             syncing_scrub: held,
+             ..
+         }| held.set(true),
+    );
     slider.set_range(0.0, s.length.max(1.0));
     if (slider.value() - s.session).abs() > 0.01 {
         slider.set_value(s.session);
     }
-    SYNCING_SCRUB.with(|held| held.set(false));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             syncing_scrub: held,
+             ..
+         }| held.set(false),
+    );
 }
 
 fn scrub_is_being_painted() -> bool {
-    SYNCING_SCRUB.with(std::cell::Cell::get)
+    NARRATE_PAGE.with(|page| page.syncing_scrub.get())
 }
 
 pub(crate) fn paint_play_face(window: &adw::ApplicationWindow, playing: bool) {
@@ -459,11 +458,6 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     wire_row_buttons(window);
 }
 
-thread_local! {
-    /// Set while [`draw_rows`] rebuilds the list: GTK self-selects a row when the selected one is removed, and F4.5 S5's jump belongs to a person's selection only.
-    static REBUILDING_ROWS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
     let list = widget_in(window, "narrate-lines").and_then(|w| w.downcast::<gtk::ListBox>().ok());
     let chosen = list
@@ -473,7 +467,12 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
     let focused = list
         .as_ref()
         .is_some_and(|list| list.focus_child().is_some() || list.has_focus());
-    REBUILDING_ROWS.with(|cell| cell.set(true));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             rebuilding_rows: cell,
+             ..
+         }| cell.set(true),
+    );
     draw_rows_now(window, s);
     if let (Some(list), Some(name)) = (list.as_ref(), chosen) {
         let mut index = 0;
@@ -489,7 +488,14 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
         }
     }
     // GTK settles the focus of a removed row later in the same loop turn; the guard stays up until then.
-    glib::idle_add_local_once(|| REBUILDING_ROWS.with(|cell| cell.set(false)));
+    glib::idle_add_local_once(|| {
+        NARRATE_PAGE.with(
+            |NarratePage {
+                 rebuilding_rows: cell,
+                 ..
+             }| cell.set(false),
+        )
+    });
 }
 
 fn draw_rows_now(window: &adw::ApplicationWindow, s: &NarrateState) {
@@ -670,10 +676,12 @@ pub use crate::ui::narrate_page_transport::{
     narrate_preview_playing, press_preview_picture, press_preview_stop,
 };
 
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 pub use crate::ui::narrate_page_take::{
     press_sample_play, press_sample_reroll, press_sample_stop, press_take_add, press_take_play,
     press_take_remove,
 };
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
     // §F4.7: "preview paused first, picture and voice" — ⏹'s own door stops both players.
@@ -1010,7 +1018,12 @@ pub fn wire(window: &adw::ApplicationWindow) {
         let w = win.clone();
         list.connect_row_selected(move |list, row| {
             let Some(row) = row else { return };
-            if REBUILDING_ROWS.with(|cell| cell.get()) {
+            if NARRATE_PAGE.with(
+                |NarratePage {
+                     rebuilding_rows: cell,
+                     ..
+                 }| cell.get(),
+            ) {
                 return;
             }
             if row.widget_name() == "narrate-lines-empty" {
@@ -1105,11 +1118,19 @@ pub(crate) fn paint_game_audio(window: &adw::ApplicationWindow) {
     let level = crate::ui::window::narrate_session_tree()
         .map(|tree| crate::narrate_preview_leg::game_volume_for(&tree))
         .unwrap_or_else(|| crate::project::Produce::default().game_volume);
-    GAME_GUARD.with(|guard| guard.set(true));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             game_guard: guard, ..
+         }| guard.set(true),
+    );
     if (scale.value() - level).abs() > 1e-9 {
         scale.set_value(level);
     }
-    GAME_GUARD.with(|guard| guard.set(false));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             game_guard: guard, ..
+         }| guard.set(false),
+    );
     let set_by = crate::ui::profile_form::sets_row("Game audio");
     row.set_sensitive(set_by.is_none());
     row.set_tooltip_text(
@@ -1126,19 +1147,19 @@ fn wire_game_audio(window: &adw::ApplicationWindow) {
         return;
     };
     scale.connect_value_changed(|scale| {
-        if GAME_GUARD.with(|guard| guard.get()) {
+        if NARRATE_PAGE.with(
+            |NarratePage {
+                 game_guard: guard, ..
+             }| guard.get(),
+        ) {
             return;
         }
         let value = scale.value();
         crate::ui::produce_page::set_game_volume(value);
         if let Some(session) =
-            crate::ui::window::SESSION.with(|slots| slots.borrow().last().cloned())
+            WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         {
             session.borrow_mut().produce.game_volume = value;
         }
     });
-}
-
-thread_local! {
-    static GAME_GUARD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

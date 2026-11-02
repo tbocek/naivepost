@@ -6,13 +6,19 @@ use gtk4 as gtk;
 
 use crate::layout::Tree;
 use crate::shell::{Page, Shell};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The opening leg, injected so a test can see which folder a press asks for.
 pub type Opener = std::rc::Rc<dyn Fn(std::path::PathBuf)>;
 
 /// The page the row is naming, read off the newest window's shell; `None` when no window is up.
 fn shell_now() -> Option<std::rc::Rc<std::cell::RefCell<Shell>>> {
-    crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| shells.borrow().last().cloned(),
+    )
 }
 
 /// The folder the button should open now; `None` when no session folder is held.

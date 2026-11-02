@@ -10,6 +10,7 @@ use crate::cut::Cut;
 use crate::cut_fold;
 use crate::cut_screen;
 use crate::ui::cut_cameras::refresh_camera_rows;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     self as window, find_status, find_widget_by_name, newest_review_cut, record_edit,
     seed_review_cut,
@@ -18,35 +19,60 @@ use crate::ui::window::{
 // --- F2.11: what the SESSION filmed ---------------------------------------------------------------------
 
 pub fn page_recordings() -> Vec<crate::timeline::Recording> {
-    SESSION_RECORDINGS.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|slot| slot.borrow().clone())
-            .unwrap_or_default()
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             session_recordings: slots,
+             ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|slot| slot.borrow().clone())
+                .unwrap_or_default()
+        },
+    )
 }
 
 pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
-    let held = SESSION_RECORDINGS.with(|slots| slots.borrow().last().cloned());
+    let held = CUT_PAGE.with(
+        |CutPage {
+             session_recordings: slots,
+             ..
+         }| slots.borrow().last().cloned(),
+    );
     match held {
         Some(slot) => *slot.borrow_mut() = recordings.to_vec(),
-        None => SESSION_RECORDINGS.with(|slots| {
-            slots
-                .borrow_mut()
-                .push(Rc::new(RefCell::new(recordings.to_vec())))
-        }),
+        None => CUT_PAGE.with(
+            |CutPage {
+                 session_recordings: slots,
+                 ..
+             }| {
+                slots
+                    .borrow_mut()
+                    .push(Rc::new(RefCell::new(recordings.to_vec())))
+            },
+        ),
     }
     // The borrow of the list ends before the push: matched on directly, `flags.borrow()` lived
     // through the arms and the `None` arm's `borrow_mut` panicked "already borrowed" whenever no
     // window had declared a slot yet.
-    let declared = SESSION_DECLARED.with(|flags| {
-        flags.borrow().last().map(|flag| {
-            flag.set(true);
-        })
-    });
+    let declared = CUT_PAGE.with(
+        |CutPage {
+             session_declared: flags,
+             ..
+         }| {
+            flags.borrow().last().map(|flag| {
+                flag.set(true);
+            })
+        },
+    );
     if declared.is_none() {
-        SESSION_DECLARED.with(|flags| flags.borrow_mut().push(std::cell::Cell::new(true)));
+        CUT_PAGE.with(
+            |CutPage {
+                 session_declared: flags,
+                 ..
+             }| flags.borrow_mut().push(std::cell::Cell::new(true)),
+        );
     }
     // The Narrate page reads these recordings too: its preview's still (the one painted before they
     // arrived was looked up in the stand-ins the cut implied, which have no frames, and stayed
@@ -56,24 +82,31 @@ pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
 }
 
 pub(crate) fn push_session_recordings(recordings: Vec<crate::timeline::Recording>) {
-    SESSION_RECORDINGS.with(|slots| {
-        slots.borrow_mut().push(Rc::new(RefCell::new(recordings)));
-    });
-    SESSION_DECLARED.with(|flags| flags.borrow_mut().push(std::cell::Cell::new(false)));
+    CUT_PAGE.with(
+        |CutPage {
+             session_recordings: slots,
+             ..
+         }| {
+            slots.borrow_mut().push(Rc::new(RefCell::new(recordings)));
+        },
+    );
+    CUT_PAGE.with(
+        |CutPage {
+             session_declared: flags,
+             ..
+         }| flags.borrow_mut().push(std::cell::Cell::new(false)),
+    );
 }
 
 pub(crate) fn session_declared() -> bool {
-    SESSION_DECLARED
-        .with(|flags| flags.borrow().last().map(|flag| flag.get()))
+    CUT_PAGE
+        .with(
+            |CutPage {
+                 session_declared: flags,
+                 ..
+             }| flags.borrow().last().map(|flag| flag.get()),
+        )
         .unwrap_or(false)
-}
-
-thread_local! {
-    /// F2.11: one recording list per window, newest last like [`REVIEW_CUTS`].
-    static SESSION_RECORDINGS: std::cell::RefCell<Vec<Rc<RefCell<Vec<crate::timeline::Recording>>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-    static SESSION_DECLARED: std::cell::RefCell<Vec<std::cell::Cell<bool>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 // --- F2.11: folds, drawn as buttons -------------------------------------------------------------------
@@ -92,23 +125,31 @@ pub fn fold_badges_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
 }
 
 pub fn folded_gap_at(index: usize) -> Option<(f64, f64)> {
-    FOLD_TABLES.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .and_then(|table| table.borrow().get(index).copied())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             fold_tables: slots, ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .and_then(|table| table.borrow().get(index).copied())
+        },
+    )
 }
 
 /// The gaps this window currently wears a badge over, in tape order.
 pub fn fold_gaps() -> Vec<(f64, f64)> {
-    FOLD_TABLES.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|t| t.borrow().clone())
-            .unwrap_or_default()
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             fold_tables: slots, ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|t| t.borrow().clone())
+                .unwrap_or_default()
+        },
+    )
 }
 
 /// The band's own badge holder, scoped to THIS window exactly as [`fold_badges_box`] is (a closed
@@ -212,23 +253,19 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
     }
 }
 
-thread_local! {
-    /// F2.11 S1: the gaps this window's numbered badges stand for, newest window last like
-    /// [`REVIEW_CUTS`].
-    #[expect(clippy::type_complexity, reason = "one badge table per window, newest last")]
-    static FOLD_TABLES: std::cell::RefCell<Vec<Rc<RefCell<Vec<(f64, f64)>>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
 fn remember_fold_gaps(gaps: Vec<(f64, f64)>) {
-    FOLD_TABLES.with(|slots| {
-        // The slot is looked up and cloned out of the borrow BEFORE writing into it.
-        let held = slots.borrow().last().cloned();
-        match held {
-            Some(table) => *table.borrow_mut() = gaps,
-            None => slots.borrow_mut().push(Rc::new(RefCell::new(gaps))),
-        }
-    });
+    CUT_PAGE.with(
+        |CutPage {
+             fold_tables: slots, ..
+         }| {
+            // The slot is looked up and cloned out of the borrow BEFORE writing into it.
+            let held = slots.borrow().last().cloned();
+            match held {
+                Some(table) => *table.borrow_mut() = gaps,
+                None => slots.borrow_mut().push(Rc::new(RefCell::new(gaps))),
+            }
+        },
+    );
 }
 
 /// F2.11 S1 (`\u{2212} in such a gap folds it to a seam \u00b7 + on the seam unfolds`): the seam a

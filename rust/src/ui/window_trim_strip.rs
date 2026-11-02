@@ -13,7 +13,7 @@ use crate::cut_trim;
 use crate::ui::window as ui;
 pub(crate) use crate::ui::window_line_step::now_ms as now_millis;
 
-struct TrimDrag {
+pub(crate) struct TrimDrag {
     index: usize,
     border: cut_trim::Border,
     scrubbed_ms: Option<u64>,
@@ -22,58 +22,70 @@ struct TrimDrag {
 }
 
 pub fn delete_key_controller() -> Option<gtk::EventControllerKey> {
-    DELETE_KEYS.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             delete_keys: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 /// Pixels-per-second for the strip: the same zoom `select-surface` runs at.
 pub const TRACK_STRIP_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
 
 pub use crate::ui::cut_view::strip_pps;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 pub fn track_strip(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
     ui::find_widget_by_name(window.upcast_ref(), "track-strip")?
         .downcast()
         .ok()
 }
 pub fn trim_gesture() -> Option<gtk::GestureDrag> {
-    TRIM_GESTURES.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             trim_gestures: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
 pub fn move_gesture() -> Option<gtk::GestureDrag> {
-    MOVE_GESTURES.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             move_gestures: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
-type MovePressed = std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>>;
+pub(crate) type MovePressed = std::cell::RefCell<Vec<Rc<std::cell::RefCell<(f64, f64)>>>>;
 
-thread_local! {
-    /// The trim drag in flight; `None` means the press fell where no border was in reach.
-    static TRIM_DRAGS: std::cell::RefCell<Option<TrimDrag>> =
-        const { std::cell::RefCell::new(None) };
-    static TRIM_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
-        const { std::cell::RefCell::new(None) };
-    static MOVE_GESTURES: std::cell::RefCell<Option<gtk::GestureDrag>> =
-        const { std::cell::RefCell::new(None) };
-    /// F2.8 S2: where the move drag was PRESSED, (x, y) in strip px, newest window first. Fixed at the press
-    /// so a pointer wandering off the band mid-drag cannot change what was picked up.
-    static MOVE_PRESSED: MovePressed =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
 /// What the right button was pressed on: a recording on the recorders' band, or the scene under the pointer.
 /// Seams standing in until the real track rounds (F2.10/F2.11) set them from a press position.
 pub fn set_press_band(recording: Option<String>) {
-    PRESS_BAND.with(|cell| *cell.borrow_mut() = recording);
+    WINDOW_PAGE.with(
+        |WindowPage {
+             press_band: cell, ..
+         }| *cell.borrow_mut() = recording,
+    );
 }
 pub fn press_band() -> Option<String> {
-    PRESS_BAND.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             press_band: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 pub fn set_press_scene(scene: Option<usize>) {
-    PRESS_SCENE.with(|cell| *cell.borrow_mut() = scene);
+    WINDOW_PAGE.with(
+        |WindowPage {
+             press_scene: cell, ..
+         }| *cell.borrow_mut() = scene,
+    );
 }
 pub fn press_scene() -> Option<usize> {
-    PRESS_SCENE.with(|cell| *cell.borrow())
-}
-thread_local! {
-    static PRESS_BAND: std::cell::RefCell<Option<String>> =
-        const { std::cell::RefCell::new(None) };
-    static PRESS_SCENE: std::cell::RefCell<Option<usize>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             press_scene: cell, ..
+         }| *cell.borrow(),
+    )
 }
 /// F2.8 S1: drag one clip's border to `to` (session seconds); [`cut_trim::clamp_edge`] decides where it may
 /// go, the write is `cut_trim_press::press_border_move`.
@@ -134,22 +146,34 @@ fn right_press_takes_border(press_x: f64, travel_px: f64) -> Option<(usize, cut_
 /// also prime it directly (as `set_press_scene`), which is how a test places a press mid-scene.
 pub fn set_press_x(x: f64) {
     // Drop the read's borrow before writing: a second `borrow_mut` on the same RefCell panics.
-    let old = MOVE_PRESSED.with(|cell| cell.borrow().last().map(|s| *s.borrow()));
+    let old = WINDOW_PAGE.with(
+        |WindowPage {
+             move_pressed: cell, ..
+         }| cell.borrow().last().map(|s| *s.borrow()),
+    );
     if let Some((_, y)) = old {
-        MOVE_PRESSED.with(|cell| {
-            if let Some(slot) = cell.borrow().last() {
-                *slot.borrow_mut() = (x, y);
-            }
-        });
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 move_pressed: cell, ..
+             }| {
+                if let Some(slot) = cell.borrow().last() {
+                    *slot.borrow_mut() = (x, y);
+                }
+            },
+        );
     }
 }
 pub fn press_position() -> (f64, f64) {
-    MOVE_PRESSED.with(|cell| {
-        cell.borrow()
-            .last()
-            .map(|s| *s.borrow())
-            .unwrap_or((0.0, 0.0))
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             move_pressed: cell, ..
+         }| {
+            cell.borrow()
+                .last()
+                .map(|s| *s.borrow())
+                .unwrap_or((0.0, 0.0))
+        },
+    )
 }
 /// F2.8 S2/S3: the older door, seam-only, for callers that supply no press position: answers with whatever
 /// `set_press_band` primed, so it can never move the line without travel. The widget path uses [`press_move_at`].
@@ -238,19 +262,21 @@ pub fn press_row(_window: &adw::ApplicationWindow) -> usize {
 pub fn open_folds(_window: &adw::ApplicationWindow) -> Vec<usize> {
     crate::ui::cut_trim_press::open_folds()
 }
-thread_local! {
-    /// The copy in hand (F2.9 S1): one app-wide, so ⧉ Paste has one answer.
-    static COPY_HAND: std::cell::RefCell<Option<cut_copy::Hand>> =
-        const { std::cell::RefCell::new(None) };
-    static COPY_ESC_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
-        const { std::cell::RefCell::new(None) };
-}
 /// What is in hand right now, the read side of [`press_copy`].
 pub fn copy_hand() -> Option<cut_copy::Hand> {
-    COPY_HAND.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             copy_hand: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 pub fn copy_esc_controller() -> Option<gtk::EventControllerKey> {
-    COPY_ESC_KEYS.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             copy_esc_keys: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
 /// F2.9 S1: ⧉ Copy. [`cut_copy::copy`] decides everything; this keeps the answer if it took one and returns
 /// the sentence. A refusal leaves no hand, so ⧉ Paste stays greyed.
@@ -260,7 +286,11 @@ pub fn press_copy(_window: &adw::ApplicationWindow) -> String {
         if let Some(half) = crate::ui::cut_verb_press::verb_hand() {
             let taken = cut_copy::copy(Some(&half));
             if let cut_copy::Take::Taken(hand) = &taken {
-                COPY_HAND.with(|cell| *cell.borrow_mut() = Some(hand.clone()));
+                WINDOW_PAGE.with(
+                    |WindowPage {
+                         copy_hand: cell, ..
+                     }| *cell.borrow_mut() = Some(hand.clone()),
+                );
                 // The hand is spent: taking it twice would be two pastes of one split.
                 crate::ui::cut_verb_press::take_into_hand(None);
                 return cut_copy::copied_status(hand);
@@ -270,7 +300,11 @@ pub fn press_copy(_window: &adw::ApplicationWindow) -> String {
     let taken = cut_copy::copy(ui::selection().as_ref());
     match &taken {
         cut_copy::Take::Taken(hand) => {
-            COPY_HAND.with(|cell| *cell.borrow_mut() = Some(hand.clone()));
+            WINDOW_PAGE.with(
+                |WindowPage {
+                     copy_hand: cell, ..
+                 }| *cell.borrow_mut() = Some(hand.clone()),
+            );
             cut_copy::copied_status(hand)
         }
         cut_copy::Take::TooShort(say) => say.clone(),
@@ -342,7 +376,11 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
         ui::save_insert_cut(&cut_);
     }
     ui::record_edit(window, &cut_);
-    COPY_HAND.with(|cell| *cell.borrow_mut() = hand);
+    WINDOW_PAGE.with(
+        |WindowPage {
+             copy_hand: cell, ..
+         }| *cell.borrow_mut() = hand,
+    );
     match outcome {
         Ok(status) => status,
         Err(refusal) => refusal,
@@ -395,13 +433,22 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
 /// Record whether a second has been placed. `false` clears the flag AND drops the line to zero, so the page
 /// never says it has no target while showing one. `true` only claims the target.
 pub fn note_place(placed: bool) {
-    ui::INSERT_PLACE_KNOWN.with(|cell| *cell.borrow_mut() = Some(placed));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| *cell.borrow_mut() = Some(placed),
+    );
     if !placed {
-        ui::LINE_STATES.with(|slots| {
-            if let Some(slot) = slots.borrow().last() {
-                slot.borrow_mut().0 = cut_line::LinePos { t: 0.0 };
-            }
-        });
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 line_states: slots, ..
+             }| {
+                if let Some(slot) = slots.borrow().last() {
+                    slot.borrow_mut().0 = cut_line::LinePos { t: 0.0 };
+                }
+            },
+        );
     }
 }
 /// S2: Esc drops the copy. Claims ONLY Escape, so typing in an entry field is untouched.
@@ -409,8 +456,18 @@ pub(crate) fn wire_copy_esc(window: &adw::ApplicationWindow) {
     let controller = gtk::EventControllerKey::new();
     let win = window.clone();
     controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
-        if key == gtk::gdk::Key::Escape && COPY_HAND.with(|cell| cell.borrow().is_some()) {
-            COPY_HAND.with(|cell| *cell.borrow_mut() = None);
+        if key == gtk::gdk::Key::Escape
+            && WINDOW_PAGE.with(
+                |WindowPage {
+                     copy_hand: cell, ..
+                 }| cell.borrow().is_some(),
+            )
+        {
+            WINDOW_PAGE.with(
+                |WindowPage {
+                     copy_hand: cell, ..
+                 }| *cell.borrow_mut() = None,
+            );
             if let Some(status_line) = ui::find_status(win.upcast_ref()) {
                 status_line.set_text(cut_copy::DROPPED);
             }
@@ -421,7 +478,12 @@ pub(crate) fn wire_copy_esc(window: &adw::ApplicationWindow) {
         }
     });
     window.add_controller(controller.clone());
-    COPY_ESC_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             copy_esc_keys: cell,
+             ..
+         }| *cell.borrow_mut() = Some(controller),
+    );
 }
 /// Whether another Esc owner has something to drop: a copy, a held effect, an arm or an open form.
 /// The hand's layer stands back for them, whichever order GTK asks the controllers in.
@@ -503,51 +565,63 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
         let boxes = cut_trim::clip_boxes(&ui::newest_review_cut().segs, strip_pps());
         // The strip has no scroll of its own yet (`cut_strip_view::scroll_px` is zero), so §7's translate is not added.
         let taken = cut_trim::border_at(&boxes, px);
-        TRIM_DRAGS.with(|cell| {
-            *cell.borrow_mut() = taken.map(|(index, border)| TrimDrag {
-                index,
-                border,
-                scrubbed_ms: None,
-                pushed: false,
-            })
-        });
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 trim_drags: cell, ..
+             }| {
+                *cell.borrow_mut() = taken.map(|(index, border)| TrimDrag {
+                    index,
+                    border,
+                    scrubbed_ms: None,
+                    pushed: false,
+                })
+            },
+        );
     });
     let win_upd = window.clone();
     let strip_upd = strip.clone();
     let strip_end = strip.clone();
     trimmer.connect_drag_update(move |_g, x, _y| {
-        TRIM_DRAGS.with(|cell| {
-            let Some(mut drag) = cell.borrow_mut().take() else {
-                return;
-            };
-            // §7's `one Undo per drag`, decided HERE before the scrub gate: the step is the hold's first WRITE, not
-            // its first event, so a tick the 90 ms gate swallowed must not spend it.
-            let first = !drag.pushed;
-            // S1: the picture scrubs live, at most every `SCRUB_MS` (an accurate seek per event never stops flushing).
-            let now = now_millis();
-            if !cut_trim::scrubs(drag.scrubbed_ms, now) {
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 trim_drags: cell, ..
+             }| {
+                let Some(mut drag) = cell.borrow_mut().take() else {
+                    return;
+                };
+                // §7's `one Undo per drag`, decided HERE before the scrub gate: the step is the hold's first WRITE, not
+                // its first event, so a tick the 90 ms gate swallowed must not spend it.
+                let first = !drag.pushed;
+                // S1: the picture scrubs live, at most every `SCRUB_MS` (an accurate seek per event never stops flushing).
+                let now = now_millis();
+                if !cut_trim::scrubs(drag.scrubbed_ms, now) {
+                    *cell.borrow_mut() = Some(drag);
+                    return;
+                }
+                drag.scrubbed_ms = Some(now);
+                drag.pushed = true;
+                crate::ui::cut_trim_press::press_border_move(
+                    &win_upd,
+                    drag.index,
+                    drag.border,
+                    x / strip_pps(),
+                    first,
+                );
+                let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
+                crate::ui::cut_trim_press::scrub_picture(landed);
                 *cell.borrow_mut() = Some(drag);
-                return;
-            }
-            drag.scrubbed_ms = Some(now);
-            drag.pushed = true;
-            crate::ui::cut_trim_press::press_border_move(
-                &win_upd,
-                drag.index,
-                drag.border,
-                x / strip_pps(),
-                first,
-            );
-            let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
-            crate::ui::cut_trim_press::scrub_picture(landed);
-            *cell.borrow_mut() = Some(drag);
-        });
+            },
+        );
         strip_upd.queue_draw();
     });
     let win_end = window.clone();
     trimmer.connect_drag_end(move |_g, x, _y| {
         // Release lands the final edge and prints the sentence it earned.
-        let done = TRIM_DRAGS.with(|cell| cell.borrow_mut().take());
+        let done = WINDOW_PAGE.with(
+            |WindowPage {
+                 trim_drags: cell, ..
+             }| cell.borrow_mut().take(),
+        );
         if let Some(drag) = done {
             press_trim_border(&win_end, drag.index, drag.border, x / strip_pps());
             // The LAST edge always reaches the picture, even when the throttle swallowed the updates before it.
@@ -557,11 +631,20 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
             // A release with no drag in hand is S3's unmoved right press: the picture goes to the released pixel.
             crate::ui::cut_trim_press::scrub_picture(x / strip_pps());
         }
-        TRIM_DRAGS.with(|cell| *cell.borrow_mut() = None);
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 trim_drags: cell, ..
+             }| *cell.borrow_mut() = None,
+        );
         strip_end.queue_draw();
     });
     strip.add_controller(trimmer.clone());
-    TRIM_GESTURES.with(|cell| *cell.borrow_mut() = Some(trimmer));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             trim_gestures: cell,
+             ..
+         }| *cell.borrow_mut() = Some(trimmer),
+    );
 
     // Button 3 is GTK's secondary button: the right hand, whose drags move and never trim.
     let mover = gtk::GestureDrag::new();
@@ -569,7 +652,11 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
     // F2.8 S2: the press fixes what the drag takes, so x AND y are remembered: `wave_strip` and `on_border`
     // must come from where the pointer landed, not from a seam primed beforehand. Newest-slot like `SELECT_SURFACES`.
     let pressed_begin = Rc::new(std::cell::RefCell::new((0.0f64, 0.0f64)));
-    MOVE_PRESSED.with(|cell| cell.borrow_mut().push(pressed_begin.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             move_pressed: cell, ..
+         }| cell.borrow_mut().push(pressed_begin.clone()),
+    );
     let pressed_upd = pressed_begin.clone();
     // `drag-begin` carries the ABSOLUTE press position, `drag-update`/`drag-end` the OFFSET from it, so
     // the begin stores the pair. A caller that primed x directly (`set_press_x`) stored 0.0 and the seam stands.
@@ -606,11 +693,12 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
         crate::ui::cut_trim_press::end_release();
     });
     strip.add_controller(mover.clone());
-    MOVE_GESTURES.with(|cell| *cell.borrow_mut() = Some(mover));
-}
-thread_local! {
-    static DELETE_KEYS: std::cell::RefCell<Option<gtk::EventControllerKey>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             move_gestures: cell,
+             ..
+         }| *cell.borrow_mut() = Some(mover),
+    );
 }
 /// Add the ⌦ / Delete / BackSpace controller. It claims ONLY those two keys, so typing in an entry is safe.
 pub(crate) fn wire_delete_keys(window: &adw::ApplicationWindow) {
@@ -634,5 +722,9 @@ pub(crate) fn wire_delete_keys(window: &adw::ApplicationWindow) {
         }
     });
     window.add_controller(controller.clone());
-    DELETE_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             delete_keys: cell, ..
+         }| *cell.borrow_mut() = Some(controller),
+    );
 }

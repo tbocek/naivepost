@@ -73,8 +73,7 @@ pub use crate::ui::window_selection::{
     set_preview_volume,
 };
 pub(crate) use crate::ui::window_selection::{
-    held_narration, refresh_selection_readout, refresh_verb_buttons, HELD_NARRATION,
-    PREVIEW_VOLUMES, SELECTED, SELECT_SURFACES,
+    held_narration, refresh_selection_readout, refresh_verb_buttons,
 };
 
 pub use crate::ui::window_trim_strip::{
@@ -137,31 +136,61 @@ pub fn build_window_at(
     note_startup(&[]);
 
     let shell = Rc::new(RefCell::new(start_shell(page)));
-    WINDOW_SHELLS.with(|shells| shells.borrow_mut().push(Rc::clone(&shell)));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_shells: shells,
+             ..
+         }| shells.borrow_mut().push(Rc::clone(&shell)),
+    );
 
     // S5 refits on entering Narrate and S3 writes it out on leaving, so the lines must survive between the
     // two; re-reading per switch (`session_reads`) would flush the pre-refit file. F4.7's text view edits this copy too.
     let held_narration = Rc::new(RefCell::new(session_reads().2));
-    HELD_NARRATION.with(|held| held.borrow_mut().push(Rc::clone(&held_narration)));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             held_narration: held,
+             ..
+         }| held.borrow_mut().push(Rc::clone(&held_narration)),
+    );
 
     // F0.7: which User Context this window's policy answers to; fresh, so the first ▶ asks.
-    POLICY_TRACKERS.with(|trackers| {
-        trackers
-            .borrow_mut()
-            .push(Rc::new(RefCell::new(policy::Tracker::new())))
-    });
-    POLICY_WATCH_WINDOW.with(|watch| *watch.borrow_mut() = Some(window.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             policy_trackers: trackers,
+             ..
+         }| {
+            trackers
+                .borrow_mut()
+                .push(Rc::new(RefCell::new(policy::Tracker::new())))
+        },
+    );
+    WINDOW_PAGE.with(
+        |WindowPage {
+             policy_watch_window: watch,
+             ..
+         }| *watch.borrow_mut() = Some(window.clone()),
+    );
 
     // Rescan (F0.11) and Add sources (F0.12) work on one private session copy shared between them;
     // made before the pages so Prepare's rows can hold a handle to it.
     let session = Rc::new(RefCell::new(project.clone()));
-    SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
+    WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow_mut().push(Rc::clone(&session)));
     // F1.1: ▶ asks `prepare_run` about the LIVE session, not the build-time `project`.
-    PLAY_SESSION.with(|slots| slots.borrow_mut().push(Rc::clone(&session)));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             play_session: slots,
+             ..
+         }| slots.borrow_mut().push(Rc::clone(&session)),
+    );
 
     // §2 S6: remembered before anything can move the cwd; the close hook must not write into `project_autosave::session_dir()`'s cwd-based folder.
     let session_folder = dir.to_path_buf();
-    SESSION_DIRS.with(|held| held.borrow_mut().push(session_folder.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             session_dirs: held, ..
+         }| held.borrow_mut().push(session_folder.clone()),
+    );
     crate::project_autosave::install(Rc::clone(&session), session_folder.clone());
     crate::project_autosave::start();
     crate::watchdog::arm();
@@ -200,14 +229,23 @@ pub fn build_window_at(
 
     let bar = Rc::new(RefCell::new(run::RunBar::default()));
     // Published so a test can read which step the bar holds; `last()` is this window.
-    RUN_BARS.with(|bars| bars.borrow_mut().push(Rc::clone(&bar)));
-    WINDOW_BAR.with(|slots| slots.borrow_mut().push(Rc::clone(&bar)));
+    WINDOW_PAGE.with(|WindowPage { run_bars: bars, .. }| bars.borrow_mut().push(Rc::clone(&bar)));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_bar: slots, ..
+         }| slots.borrow_mut().push(Rc::clone(&bar)),
+    );
 
     // The children a run has out there, so ⏹ can reach them (F0.3 S3).
     let procs = Rc::new(RefCell::new(run::Subprocesses::default()));
 
     let guard = Rc::new(std::cell::Cell::new(false));
-    WINDOW_SWITCH_LATCH.with(|latch| *latch.borrow_mut() = Some(Rc::clone(&guard)));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_switch_latch: latch,
+             ..
+         }| *latch.borrow_mut() = Some(Rc::clone(&guard)),
+    );
 
     // §1's badges **14** and **15**: window-level so a switch updates one pair; built before the switch is wired
     // because a tab click repaints them. Their texts come from `Shell::inputs` / `Shell::outputs`.
@@ -271,7 +309,12 @@ pub fn build_window_at(
     }
 
     let queue = Rc::new(RefCell::new(runqueue::Queue::new()));
-    WINDOW_QUEUE.with(|slots| slots.borrow_mut().push(Rc::clone(&queue)));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             window_queue: slots,
+             ..
+         }| slots.borrow_mut().push(Rc::clone(&queue)),
+    );
     let exchange_log = Rc::new(RefCell::new(exchanges::RunLog::new()));
 
     // Idle is 0 rather than hidden: a vanishing bar makes the row jump when a run starts.
@@ -429,7 +472,11 @@ the Produce settings",
     let tab_info = gtk::Button::from_icon_name("help-about-symbolic");
     tab_info.set_widget_name("tab-info-button");
     tab_info.set_tooltip_text(Some(&shell.borrow().info_tip()));
-    INFO_BUTTON.with(|slots| slots.borrow_mut().push(tab_info.clone()));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             info_button: slots, ..
+         }| slots.borrow_mut().push(tab_info.clone()),
+    );
     header.pack_end(&tab_info);
 
     // Handed over rather than found by name: `page_box` runs once per tab, so `find` would return an arbitrary page's button.
@@ -469,11 +516,16 @@ the Produce settings",
     }
     // F2.5 S6: this window's one preview volume, after `set_content`; only the Cut page builds one slider.
     if preview_volume_scale(&window).is_some() {
-        PREVIEW_VOLUMES.with(|slots| {
-            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
-                cut_hear::PreviewVolume::default(),
-            )))
-        });
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 preview_volumes: slots,
+                 ..
+             }| {
+                slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
+                    cut_hear::PreviewVolume::default(),
+                )))
+            },
+        );
         // §05-cut#8 bullet 2: stream volume to full ONCE, through this app's own element, not the sound server's remembered one.
         crate::ui::preview_sound::reset_stream_volume_once();
         if let Some(scale) = preview_volume_scale(&window) {
@@ -482,16 +534,25 @@ the Produce settings",
     }
     // F2.6: drag surface and cross, wired after `set_content`; the seam takes the drag's seconds so both paths meet in `draw_selection`.
     if select_surface(&window).is_some() {
-        SELECTED.with(|slots| {
-            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
-                None::<cut_select::Selection>,
-            )))
-        });
-        SELECT_SURFACES.with(|slots| {
-            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
-                None::<cut_select::Surface>,
-            )))
-        });
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 selected: slots, ..
+             }| {
+                slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
+                    None::<cut_select::Selection>,
+                )))
+            },
+        );
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 select_surfaces: slots,
+                 ..
+             }| {
+                slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
+                    None::<cut_select::Surface>,
+                )))
+            },
+        );
         wire_select_surface(&window);
         // F2.4 S1: the click that places the red line; the drag above selects.
         wire_line_click_surface(&window);
@@ -516,11 +577,15 @@ the Produce settings",
         .as_ref()
         .and_then(|tree| cut::load(tree).ok())
         .unwrap_or_default();
-    REVIEW_CUTS.with(|slots| {
-        slots
-            .borrow_mut()
-            .push(Rc::new(std::cell::RefCell::new(opened_cut.clone())))
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             review_cuts: slots, ..
+         }| {
+            slots
+                .borrow_mut()
+                .push(Rc::new(std::cell::RefCell::new(opened_cut.clone())))
+        },
+    );
     // F2.13: the history opens on the SAME cut just published, so Revert returns to what this page opened with.
     reopen_history_on(&opened_cut);
     // F2.11/F2.10: SESSION recordings, pushed beside the cut. A dropped stretch only exists inside a run LONGER than
@@ -535,7 +600,11 @@ the Produce settings",
     crate::ui::cut_cut_play::paint_both_skipping_buttons(&window);
     let project_root = project_tree.as_ref().map(|tree| tree.dir().to_path_buf());
     if let Some(root) = project_root.clone() {
-        LINE_ROOTS.with(|slots| slots.borrow_mut().push(root));
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 line_roots: slots, ..
+             }| slots.borrow_mut().push(root),
+        );
     }
     let restored = project_root
         .as_deref()
@@ -543,12 +612,16 @@ the Produce settings",
     if let Some(pos) = restored {
         log_line(&format!("line restored to {}", crate::tools::mm_ss(pos.t)));
     }
-    LINE_STATES.with(|slots| {
-        slots.borrow_mut().push(Rc::new(std::cell::RefCell::new((
-            restored.unwrap_or(cut_line::LinePos { t: 0.0 }),
-            cut_line::LineWriter::default(),
-        ))))
-    });
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_states: slots, ..
+         }| {
+            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new((
+                restored.unwrap_or(cut_line::LinePos { t: 0.0 }),
+                cut_line::LineWriter::default(),
+            ))))
+        },
+    );
     if let Some(pos) = restored {
         crate::ui::cut_picture::note_line_moved(&window, pos.t);
         crate::ui::cut_view::follow_playhead(&window, pos.t);
@@ -821,54 +894,10 @@ pub use crate::ui::window_policy::{
     built_window, derive_policy, live_session_policy, main_window, policy_is_current,
     set_policy_sender_for_tests, set_session_context,
 };
-pub(crate) use crate::ui::window_policy::{
-    schedule_policy_derive, user_context, wire_settings, POLICY_TRACKERS, POLICY_WATCH_WINDOW,
-};
+pub(crate) use crate::ui::window_policy::{schedule_policy_derive, user_context, wire_settings};
 
-thread_local! {
-    pub(crate) static WINDOW_BAR: std::cell::RefCell<Vec<Rc<std::cell::RefCell<run::RunBar>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    /// A copy is a run of its own (F0.12 S0): it reports through the bookkeeping rather than painting its own bar.
-    pub(crate) static WINDOW_QUEUE: std::cell::RefCell<Vec<Rc<std::cell::RefCell<runqueue::Queue>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    /// §1's badge **6** (the header ⓘ), newest last; a switch repaints its tooltip from `Shell::help_page`.
-    pub(crate) static INFO_BUTTON: std::cell::RefCell<Vec<gtk::Button>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    /// The live `Shell` of each window, newest last; the S3 pending-write seam marks a write owed on the one showing.
-    pub(crate) static WINDOW_SHELLS: std::cell::RefCell<Vec<Rc<RefCell<Shell>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-    /// The newest window's re-entrancy latch for `wire_switching`; a flow that moves the stack itself sets it while writing.
-    pub(crate) static WINDOW_SWITCH_LATCH: std::cell::RefCell<Option<Rc<std::cell::Cell<bool>>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-thread_local! {
-    /// The live project handle `build_window` created, so a test can read what Open put in place.
-    pub(crate) static SESSION: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Project>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    pub(crate) static REVIEW_CUTS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<cut::Cut>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-type LineStates =
+pub(crate) type LineStates =
     std::cell::RefCell<Vec<Rc<std::cell::RefCell<(cut_line::LinePos, cut_line::LineWriter)>>>>;
-
-thread_local! {
-    pub(crate) static LINE_STATES: LineStates =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
 
 pub use crate::ui::window_line_step::{
     arrow_steps, flush_line_on_close, line_key_controller, line_position, line_root,
@@ -876,8 +905,7 @@ pub use crate::ui::window_line_step::{
     NO_RECORDING_STATUS,
 };
 pub(crate) use crate::ui::window_line_step::{
-    flush_session_on_close, wire_line_keys, wire_line_step, LINE_ROOTS, LINE_STEP_BUTTONS,
-    SESSION_DIRS,
+    flush_session_on_close, wire_line_keys, wire_line_step, LINE_STEP_BUTTONS,
 };
 
 pub use crate::ui::window_surfaces::{
@@ -906,12 +934,6 @@ pub(crate) use crate::ui::window_review::set_review_segs;
 pub use crate::ui::window_holds::{
     apply_pick, set_held_clip, set_held_edge, set_held_effect, set_watched_row, watched_row,
 };
-
-thread_local! {
-    /// F2.12 S1: `None` means no red line was ever placed ("click the timeline where the insert goes first").
-    pub(crate) static INSERT_PLACE_KNOWN: std::cell::RefCell<Option<bool>> =
-        const { std::cell::RefCell::new(None) };
-}
 
 pub use crate::ui::cut_view::{band_clip_boxes_for_test, strip_clip_boxes_for_test, strip_pps};
 
@@ -950,16 +972,6 @@ pub(crate) use crate::ui::window_logs::log_line;
 pub use crate::ui::window_logs::{
     clear_logs_for_test, logs_for_test, note_startup, note_unload, window_logs,
 };
-
-thread_local! {
-    pub(crate) static RUN_BARS: std::cell::RefCell<Vec<Rc<std::cell::RefCell<crate::run::RunBar>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-thread_local! {
-    pub(crate) static PLAY_SESSION: std::cell::RefCell<Vec<Rc<std::cell::RefCell<Project>>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
 
 pub(crate) use crate::ui::window_history_zoom::{
     cut_history, publish_cut, record_edit, refresh_history_buttons, wire_aspect_choice,
@@ -1049,6 +1061,7 @@ pub(crate) use crate::ui::window_project::{
     SAVE_TIP, SETTINGS_TIP,
 };
 
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 pub(crate) use crate::ui::window_preview::live_player;
 pub use crate::ui::window_preview::newest_review_cut;
 pub use crate::ui::window_preview::{

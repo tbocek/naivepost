@@ -13,6 +13,7 @@ use crate::ui::produce_page_layout as layout;
 pub use crate::ui::produce_page_presses::*;
 pub use crate::ui::produce_page_run::*;
 pub use crate::ui::produce_page_settings::*;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 pub use crate::ui::produce_page_wire::*;
 
 #[derive(Debug, Clone, Default)]
@@ -58,48 +59,25 @@ pub struct ProduceState {
     pub video_shape: (u32, u32),
 }
 
-thread_local! {
-    static PRODUCE_STATE: std::cell::RefCell<ProduceState> = const { std::cell::RefCell::new(ProduceState {
-        frames: Vec::new(), own: false, texts: Vec::new(), title: String::new(),
-        thumb_title: String::new(), title_seeded: false, title_box: None, instruction: String::new(),
-        negative: String::new(), description: String::new(),
-        container: String::new(), codec: String::new(), preset: String::new(),
-        resolution: String::new(), frame_rate: String::new(), audio: String::new(),
-        subtitles: String::new(), translate: Vec::new(), game_volume: 0.22, crf: 24.0,
-        vfr: false, mono: false, blurred_edges: true,
-        clips: 0, seconds: 0.0, to_speak: 0, publish_written: false,
-        session_language: String::new(),
-        cut_line: String::new(), first_spoken: String::new(), mixed_recordings: Vec::new(),
-        voice: String::new(),
-        out_files: 0, out_bytes: 0,
-        base_shape: None, video_shape: (0, 0),
-    }) };
-}
-
-thread_local! {
-    /// `set_selected` / `set_value` / `set_active` emit their own change signals; handlers check this first so the page does not answer its own repaint as an edit.
-    pub(crate) static SETTINGS_GUARD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 pub fn set_state(next: ProduceState) {
-    PRODUCE_STATE.with(|held| *held.borrow_mut() = next);
+    PAGE.with(|ProducePage { state: held, .. }| *held.borrow_mut() = next);
 }
 
 pub fn read_state() -> ProduceState {
-    PRODUCE_STATE.with(|held| held.borrow().clone())
+    PAGE.with(|ProducePage { state: held, .. }| held.borrow().clone())
 }
 
 pub(crate) fn mutate<T>(f: impl FnOnce(&mut ProduceState) -> T) -> T {
-    PRODUCE_STATE.with(|held| f(&mut held.borrow_mut()))
-}
-
-thread_local! {
-    static PAGE_CSS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    PAGE.with(|ProducePage { state: held, .. }| f(&mut held.borrow_mut()))
 }
 
 /// Installs the page's ground colour once per process (a bare `DrawingArea` paints nothing), as `narrate_page`.
 fn install_page_css_once() {
-    if PAGE_CSS_LOADED.with(|cell| cell.get()) {
+    if PAGE.with(
+        |ProducePage {
+             css_loaded: cell, ..
+         }| cell.get(),
+    ) {
         return;
     }
     let css = ".produce-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n\
@@ -112,7 +90,11 @@ fn install_page_css_once() {
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
-    PAGE_CSS_LOADED.with(|cell| cell.set(true));
+    PAGE.with(
+        |ProducePage {
+             css_loaded: cell, ..
+         }| cell.set(true),
+    );
 }
 
 fn heading(text: &str, tip: &str) -> gtk::Label {
@@ -321,7 +303,7 @@ pub fn build() -> gtk::Widget {
     right.set_size_request(-1, PAGE_MIN_H_PX);
     split.set_start_child(Some(&left));
     split.set_end_child(Some(&right));
-    ROOT.with(|held| *held.borrow_mut() = Some(split.clone().upcast()));
+    PAGE.with(|ProducePage { root: held, .. }| *held.borrow_mut() = Some(split.clone().upcast()));
     draw_into(&read_state());
     // After `draw_into`: the slot row gives the left column its natural width.
     split.set_position(PRODUCE_HALF_PX);
@@ -329,7 +311,7 @@ pub fn build() -> gtk::Widget {
 }
 
 pub fn widget_in_root(name: &str) -> Option<gtk::Box> {
-    ROOT.with(|held| held.borrow().clone())
+    PAGE.with(|ProducePage { root: held, .. }| held.borrow().clone())
         .and_then(|root| find(&root, name))
 }
 
@@ -349,25 +331,20 @@ pub(crate) fn find(node: &gtk::Widget, name: &str) -> Option<gtk::Box> {
     None
 }
 
-thread_local! {
-    /// The page's root, remembered at `build()`; ONE per process, so a second window cannot also claim it (see `wire`).
-    pub(crate) static ROOT: std::cell::RefCell<Option<gtk::Widget>> = const { std::cell::RefCell::new(None) };
-}
-
 pub fn held_window() -> Option<adw::ApplicationWindow> {
-    ROOT.with(|held| held.borrow().clone())
+    PAGE.with(|ProducePage { root: held, .. }| held.borrow().clone())
         .and_then(|w| w.downcast::<adw::ApplicationWindow>().ok())
 }
 
 /// Test seam: publish a window as the page's live one without rebuilding. `draw_into` finds the Images box through
 /// `held_window()`, so a check driving its own window must be the one held.
 pub fn hold_window_for_test(window: &adw::ApplicationWindow) {
-    ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
+    PAGE.with(|ProducePage { root: held, .. }| *held.borrow_mut() = Some(window.clone().upcast()));
 }
 
 /// The page's root as `build()` published it (or the window `wire` put there); `page_image_box_for_test` is a box inside it.
 pub fn page_root() -> Option<gtk::Widget> {
-    ROOT.with(|held| held.borrow().clone())
+    PAGE.with(|ProducePage { root: held, .. }| held.borrow().clone())
 }
 
 pub fn page_image_box_for_test() -> Option<gtk::Widget> {
@@ -435,7 +412,12 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     // §A: a row's presence is drawn, so the grid is rebuilt whole, seeded from the held state; construction emits no change signal.
     rebuild_settings(window, &s);
     // These `set_text` calls DO emit `changed`: guard so a keystroke wire does not answer our own repaint (and re-enter `refresh` for the title).
-    SETTINGS_GUARD.with(|guard| guard.set(true));
+    PAGE.with(
+        |ProducePage {
+             settings_guard: guard,
+             ..
+         }| guard.set(true),
+    );
     if let Some(entry) =
         widget_in(window, "title-entry").and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
@@ -451,7 +433,12 @@ pub fn refresh(window: &adw::ApplicationWindow) {
             view.buffer().set_text(text);
         }
     }
-    SETTINGS_GUARD.with(|guard| guard.set(false));
+    PAGE.with(
+        |ProducePage {
+             settings_guard: guard,
+             ..
+         }| guard.set(false),
+    );
 }
 
 /// §15's two session counts: narration lines still to be spoken, and whether `publish.json` exists. The page and

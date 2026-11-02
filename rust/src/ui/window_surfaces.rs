@@ -9,9 +9,10 @@ use crate::cut_screen;
 use crate::cut_select;
 use crate::ui::window_doors::find_widget_by_name;
 use crate::ui::window_line_step::now_ms;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use crate::ui::window_selection::{
     draw_selection, placeholder_surface_bands, press_fx_lane, pressed_surface, select_surface,
-    set_pressed_surface, SELECT_GESTURES,
+    set_pressed_surface,
 };
 
 /// The placeholder surface's pixels-per-second (F2.6).
@@ -20,12 +21,11 @@ pub const SELECT_SURFACE_PPS: f64 = cut_screen::ZOOM_AT_OPEN;
 /// F2.4 S1: the click gesture that places the red line, newest window winning like
 /// [`SELECT_GESTURES`].
 pub fn line_click_gesture() -> Option<gtk::GestureClick> {
-    LINE_CLICKS.with(|cell| cell.borrow().clone())
-}
-
-thread_local! {
-    static LINE_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_clicks: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 pub(crate) fn wire_line_click_surface(window: &adw::ApplicationWindow) {
@@ -40,7 +40,11 @@ pub(crate) fn wire_line_click_surface(window: &adw::ApplicationWindow) {
         crate::ui::cut_line_press::press_strip(&win, x, y, now_ms());
     });
     area.add_controller(gesture.clone());
-    LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             line_clicks: cell, ..
+         }| *cell.borrow_mut() = Some(gesture),
+    );
 }
 
 pub fn wire_band_line_press(window: &adw::ApplicationWindow) {
@@ -54,16 +58,22 @@ pub fn wire_band_line_press(window: &adw::ApplicationWindow) {
     }
 }
 
-thread_local! {
-    static BAND_LINE_CLICKS: std::cell::RefCell<Option<gtk::GestureClick>> =
-        const { std::cell::RefCell::new(None) };
-}
 pub(crate) fn store_band_line_gesture(gesture: gtk::GestureClick) {
-    BAND_LINE_CLICKS.with(|cell| *cell.borrow_mut() = Some(gesture));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             band_line_clicks: cell,
+             ..
+         }| *cell.borrow_mut() = Some(gesture),
+    );
 }
 
 pub fn band_line_gesture_for_test() -> Option<gtk::GestureClick> {
-    BAND_LINE_CLICKS.with(|cell| cell.borrow().clone())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             band_line_clicks: cell,
+             ..
+         }| cell.borrow().clone(),
+    )
 }
 
 pub(crate) fn wire_select_surface(window: &adw::ApplicationWindow) {
@@ -105,7 +115,12 @@ pub(crate) fn wire_select_surface(window: &adw::ApplicationWindow) {
         );
     });
     area.add_controller(gesture.clone());
-    SELECT_GESTURES.with(|cell| *cell.borrow_mut() = Some(gesture));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             select_gestures: cell,
+             ..
+         }| *cell.borrow_mut() = Some(gesture),
+    );
 }
 
 /// Wire the ✕ to [`clear_selection`] and nothing else: the rule for what clearing means (and that

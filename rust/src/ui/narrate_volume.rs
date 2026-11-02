@@ -4,16 +4,14 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::cut_hear;
-use crate::ui::window::{self, PREVIEW_VOLUMES};
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
+use crate::ui::window::{self};
 use crate::ui::window_doors::find_widget_by_name;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// The widget name §1's **6** answers to, spelled once so the build, the wire and the mirror cannot
 /// disagree about which scale on this page is the volume.
 pub(crate) const WIDGET: &str = "narrate-volume";
-
-thread_local! {
-    static OPENED_BY_NARRATE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
 
 /// This page's volume control, if this window has one. Only the Narrate page builds it, so `None` is
 /// "not this page" — the same reading `preview_volume_scale` gives the Cut page's slider.
@@ -30,20 +28,41 @@ pub(crate) fn ensure_slot(window: &adw::ApplicationWindow) {
     if scale(window).is_none() {
         return;
     }
-    let owned = OPENED_BY_NARRATE.with(|flag| flag.get());
-    let fresh = PREVIEW_VOLUMES.with(|slots| slots.borrow().is_empty());
+    let owned = NARRATE_PAGE.with(
+        |NarratePage {
+             opened_by_narrate: flag,
+             ..
+         }| flag.get(),
+    );
+    let fresh = WINDOW_PAGE.with(
+        |WindowPage {
+             preview_volumes: slots,
+             ..
+         }| slots.borrow().is_empty(),
+    );
     if !owned && !fresh {
         // The newest slot is the Cut page's (or an earlier window's): this window already shares it.
         return;
     }
-    PREVIEW_VOLUMES.with(|slots| {
-        let volume = std::rc::Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::default()));
-        // A slot of our own starts at the number the previous window was left at: one setting means a new
-        // window does not reset it (§A.4's "the same setting wherever it is shown").
-        volume.borrow_mut().set_percent(current_percent());
-        slots.borrow_mut().push(volume);
-    });
-    OPENED_BY_NARRATE.with(|flag| flag.set(true));
+    WINDOW_PAGE.with(
+        |WindowPage {
+             preview_volumes: slots,
+             ..
+         }| {
+            let volume =
+                std::rc::Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::default()));
+            // A slot of our own starts at the number the previous window was left at: one setting means a new
+            // window does not reset it (§A.4's "the same setting wherever it is shown").
+            volume.borrow_mut().set_percent(current_percent());
+            slots.borrow_mut().push(volume);
+        },
+    );
+    NARRATE_PAGE.with(
+        |NarratePage {
+             opened_by_narrate: flag,
+             ..
+         }| flag.set(true),
+    );
 }
 
 /// F2.5 S6: a drag here is the same hand on the Cut page's slider — the number goes to
@@ -76,13 +95,18 @@ pub(crate) fn build() -> gtk::Scale {
 /// The one number as this widget's position: whatever the newest slot holds, or the shared default when
 /// this thread has never opened one (a headless page build).
 pub(crate) fn current_percent() -> f64 {
-    PREVIEW_VOLUMES.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|volume| volume.borrow().percent())
-            .unwrap_or(cut_hear::VOLUME_DEFAULT * 100.0)
-    })
+    WINDOW_PAGE.with(
+        |WindowPage {
+             preview_volumes: slots,
+             ..
+         }| {
+            slots
+                .borrow()
+                .last()
+                .map(|volume| volume.borrow().percent())
+                .unwrap_or(cut_hear::VOLUME_DEFAULT * 100.0)
+        },
+    )
 }
 
 pub(crate) fn mirror(window: &adw::ApplicationWindow) {

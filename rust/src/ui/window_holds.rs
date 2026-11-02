@@ -3,13 +3,7 @@
 
 use crate::cut::{self};
 use crate::cut_line;
-
-thread_local! {
-    /// F2.4 S1: which picture row this window watches. Only a picture-band click sets it, while nothing plays
-    /// with sources loaded (`cut_line::watches_row` owns that).
-    static WATCHED_ROW: std::cell::RefCell<Option<usize>> =
-        const { std::cell::RefCell::new(None) };
-}
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// What ⌦ would take first: the effect in hand. A seam so the delete order is testable before the lane pixels exist.
 ///
@@ -54,16 +48,17 @@ pub fn apply_pick(pick: cut_line::PressPick, seg: Option<cut::Seg>) {
 
 /// F2.4 S1: which picture row this window watches, set by a picture-band click through `place_line_press`.
 pub fn watched_row() -> Option<usize> {
-    WATCHED_ROW.with(|cell| *cell.borrow())
+    WINDOW_PAGE.with(
+        |WindowPage {
+             watched_row: cell, ..
+         }| *cell.borrow(),
+    )
 }
 
 pub fn set_watched_row(row: Option<usize>) {
-    WATCHED_ROW.with(|cell| *cell.borrow_mut() = row);
-}
-
-thread_local! {
-    /// F2.12 S1: whether this session has been told where its red line stands; `None` means none was ever
-    /// placed ("click the timeline where the insert goes first").
-    pub(crate) static INSERT_PLACE_KNOWN: std::cell::RefCell<Option<bool>> =
-        const { std::cell::RefCell::new(None) };
+    WINDOW_PAGE.with(
+        |WindowPage {
+             watched_row: cell, ..
+         }| *cell.borrow_mut() = row,
+    );
 }

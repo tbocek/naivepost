@@ -9,8 +9,7 @@
 //! Work goes newest-ask first (a fast scroll's stale asks are what is left waiting, and past [`QUEUE_MAX`] they are
 //! dropped and asked again if their cell comes back), cut by [`WORKERS`] ffmpeg processes at a time.
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 
@@ -25,26 +24,14 @@ const QUEUE_MAX: usize = 96;
 
 /// One picture to cut: the recording, the second in it, and where the picture goes.
 #[derive(Clone)]
-struct Job {
+pub(crate) struct Job {
     file: PathBuf,
     second: f64,
     out: PathBuf,
 }
 
 /// The shared queue the workers take from: newest at the end.
-type Queue = Arc<(Mutex<Vec<Job>>, Condvar)>;
-
-thread_local! {
-    /// Each recording file's cache folder, worked out once per process (its path, size and mtime).
-    static FOLDERS: RefCell<HashMap<PathBuf, Option<PathBuf>>> = RefCell::new(HashMap::new());
-    /// Pictures known to be on disk, so a draw does not ask the file system again.
-    static PRESENT: RefCell<HashSet<PathBuf>> = RefCell::new(HashSet::new());
-    /// Asked and not landed: a repaint does not ask again.
-    static ASKED: RefCell<HashSet<PathBuf>> = RefCell::new(HashSet::new());
-    /// Seconds ffmpeg could not cut (past the end, an unreadable file): asked once, then left to the fallback.
-    static FAILED: RefCell<HashSet<PathBuf>> = RefCell::new(HashSet::new());
-    static QUEUE: RefCell<Option<Queue>> = const { RefCell::new(None) };
-}
+pub(crate) type Queue = Arc<(Mutex<Vec<Job>>, Condvar)>;
 
 /// Where the pictures are kept: the temp folder's `naivepost-thumbs/`, one folder per recording file.
 pub fn cache_root() -> PathBuf {
@@ -70,16 +57,21 @@ pub fn snapped(second: f64, step: f64) -> f64 {
 pub fn picture_at(file: &Path, second: f64) -> Option<PathBuf> {
     let folder = folder_of(file)?;
     let out = folder.join(format!("{}.jpg", (second * 1000.0).round() as u64));
-    if PRESENT.with(|present| present.borrow().contains(&out)) {
+    if CUT_PAGE.with(|CutPage { present, .. }| present.borrow().contains(&out)) {
         return Some(out);
     }
-    if FAILED.with(|failed| failed.borrow().contains(&out))
-        || ASKED.with(|asked| asked.borrow().contains(&out))
+    if CUT_PAGE.with(|CutPage { failed, .. }| failed.borrow().contains(&out))
+        || CUT_PAGE.with(
+            |CutPage {
+                 film_cache_asked: asked,
+                 ..
+             }| asked.borrow().contains(&out),
+        )
     {
         return None;
     }
     if out.is_file() {
-        PRESENT.with(|present| present.borrow_mut().insert(out.clone()));
+        CUT_PAGE.with(|CutPage { present, .. }| present.borrow_mut().insert(out.clone()));
         return Some(out);
     }
     ask(Job {
@@ -93,14 +85,21 @@ pub fn picture_at(file: &Path, second: f64) -> Option<PathBuf> {
 /// How many pictures are cut and known, and how many are still asked for: what a test waits on.
 pub fn counts_for_test() -> (usize, usize) {
     (
-        PRESENT.with(|present| present.borrow().len()),
-        ASKED.with(|asked| asked.borrow().len()),
+        CUT_PAGE.with(|CutPage { present, .. }| present.borrow().len()),
+        CUT_PAGE.with(
+            |CutPage {
+                 film_cache_asked: asked,
+                 ..
+             }| asked.borrow().len(),
+        ),
     )
 }
 
 /// The recording's cache folder: named by its path, size and mtime, so an edited or replaced file gets new pictures.
 fn folder_of(file: &Path) -> Option<PathBuf> {
-    if let Some(known) = FOLDERS.with(|folders| folders.borrow().get(file).cloned()) {
+    if let Some(known) =
+        CUT_PAGE.with(|CutPage { folders, .. }| folders.borrow().get(file).cloned())
+    {
         return known;
     }
     let found = std::fs::metadata(file).ok().map(|meta| {
@@ -116,7 +115,7 @@ fn folder_of(file: &Path) -> Option<PathBuf> {
         let name: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
         cache_root().join(name)
     });
-    FOLDERS.with(|folders| {
+    CUT_PAGE.with(|CutPage { folders, .. }| {
         folders
             .borrow_mut()
             .insert(file.to_path_buf(), found.clone())
@@ -126,7 +125,7 @@ fn folder_of(file: &Path) -> Option<PathBuf> {
 
 /// Queue one picture, starting the workers and the loop that collects their answers on the first ask.
 fn ask(job: Job) {
-    let queue = QUEUE.with(|slot| {
+    let queue = CUT_PAGE.with(|CutPage { queue: slot, .. }| {
         slot.borrow_mut()
             .get_or_insert_with(|| {
                 let queue: Queue = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
@@ -140,7 +139,12 @@ fn ask(job: Job) {
             })
             .clone()
     });
-    ASKED.with(|asked| asked.borrow_mut().insert(job.out.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             film_cache_asked: asked,
+             ..
+         }| asked.borrow_mut().insert(job.out.clone()),
+    );
     let (jobs, wake) = &*queue;
     let mut jobs = jobs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     jobs.push(job);
@@ -148,12 +152,17 @@ fn ask(job: Job) {
         // The oldest asks are the cells a scroll has left: drop them, and let a redraw ask again.
         let surplus = jobs.len() - QUEUE_MAX;
         let dropped: Vec<Job> = jobs.drain(..surplus).collect();
-        ASKED.with(|asked| {
-            let mut asked = asked.borrow_mut();
-            for job in dropped {
-                asked.remove(&job.out);
-            }
-        });
+        CUT_PAGE.with(
+            |CutPage {
+                 film_cache_asked: asked,
+                 ..
+             }| {
+                let mut asked = asked.borrow_mut();
+                for job in dropped {
+                    asked.remove(&job.out);
+                }
+            },
+        );
     }
     wake.notify_one();
 }
@@ -218,12 +227,17 @@ fn collect(told: mpsc::Receiver<(PathBuf, bool)>) {
     glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
         let mut landed = false;
         while let Ok((out, cut)) = told.try_recv() {
-            ASKED.with(|asked| asked.borrow_mut().remove(&out));
+            CUT_PAGE.with(
+                |CutPage {
+                     film_cache_asked: asked,
+                     ..
+                 }| asked.borrow_mut().remove(&out),
+            );
             if cut {
-                PRESENT.with(|present| present.borrow_mut().insert(out));
+                CUT_PAGE.with(|CutPage { present, .. }| present.borrow_mut().insert(out));
                 landed = true;
             } else {
-                FAILED.with(|failed| failed.borrow_mut().insert(out));
+                CUT_PAGE.with(|CutPage { failed, .. }| failed.borrow_mut().insert(out));
             }
         }
         if landed {

@@ -283,31 +283,36 @@ fn marked_band_at(at: f64) -> Option<(f64, f64)> {
 // The F3.1 zoom-by-hand arm group, out of `window.rs`. Rules are in `src/fx_zoom.rs` (`arm`, `NO_LINE`, `ARM_WORDS`/`arm_tail`, `whole_source_shown`, `disarm`); this holds the page's state and wording. `press_zoom_item` stays in `window.rs`.
 
 use crate::fx_lane;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::cut_preview_press;
 use crate::ui::window as ui;
-
-thread_local! {
-    /// Whether this session was ever told where its red line stands, like `ui::INSERT_PLACE_KNOWN`; `None` means never, so arming refuses instead of arming at t = 0.
-    static ZOOM_LINE_KNOWN: std::cell::RefCell<Option<bool>> = const { std::cell::RefCell::new(None) };
-
-    /// Whether ⊕ Zoom is armed, waiting for a box. Read by the drag area's tooltip and `zoom_drag_ended`.
-    static ZOOM_ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-
-    /// The form a finished drag left before Apply; `None` hides `zoom-form`. Held by value, as the cut keeps moving under it.
-    static ZOOM_FORM: std::cell::RefCell<Option<fx_zoom::Form>> =
-        const { std::cell::RefCell::new(None) };
-}
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// Tell the page whether a line exists to zoom at (mirrors `note_place`).
 pub fn note_zoom_place(placed: bool) {
-    ZOOM_LINE_KNOWN.with(|cell| *cell.borrow_mut() = Some(placed));
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_line_known: cell,
+             ..
+         }| *cell.borrow_mut() = Some(placed),
+    );
 }
 
 /// F3.1 S1: what pressing the dropdown's ⊕ Zoom did, as the status sentence. The line is read through the Paste/Insert seam (`paste_line`) gated by `ZOOM_LINE_KNOWN`. Answers are `fx_zoom::arm`'s. Arming records NOTHING on the cut (the box someone draws is the effect); the camera goes down via `fx_zoom::whole_source_shown(true)`.
 pub fn press_zoom_item(window: &adw::ApplicationWindow) -> String {
     // The line is known because the session was told (`note_zoom_place`) or the F2.4/F2.12 seam recorded one (`INSERT_PLACE_KNOWN`): one notion of "a line exists". With neither, S1's refusal.
-    let known = ZOOM_LINE_KNOWN.with(|cell| *cell.borrow()) == Some(true)
-        || crate::ui::window::INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    let known = CUT_PAGE.with(
+        |CutPage {
+             zoom_line_known: cell,
+             ..
+         }| *cell.borrow(),
+    ) == Some(true)
+        || WINDOW_PAGE.with(
+            |WindowPage {
+                 window_insert_place_known: cell,
+                 ..
+             }| *cell.borrow(),
+        ) == Some(true);
     let line = if known {
         Some(crate::ui::cut_lane::paste_line())
     } else {
@@ -335,21 +340,37 @@ pub fn press_zoom_item(window: &adw::ApplicationWindow) -> String {
 }
 
 pub fn zoom_armed() -> bool {
-    ZOOM_ARMED.with(|cell| cell.get())
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_armed: cell, ..
+         }| cell.get(),
+    )
 }
 
 pub fn set_zoom_armed(armed: bool) {
-    ZOOM_ARMED.with(|cell| cell.set(armed));
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_armed: cell, ..
+         }| cell.set(armed),
+    );
 }
 
 /// F3.1 S2 → S4: the form a finished drag left on the page, for widget tests ([`fx_zoom::Form`]).
 pub fn zoom_form_open() -> Option<fx_zoom::Form> {
-    ZOOM_FORM.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_form: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 /// Store or drop the pending form; dropping is Apply and Cancel, and visibility follows in `ui::show_zoom_form`.
 pub fn set_zoom_form(form: Option<fx_zoom::Form>) {
-    ZOOM_FORM.with(|cell| *cell.borrow_mut() = form);
+    CUT_PAGE.with(
+        |CutPage {
+             zoom_form: cell, ..
+         }| *cell.borrow_mut() = form,
+    );
 }
 
 /// F3.1 S2: the panel's picture size in px, pinned at 240 x 135 (see `page_box`); both the `set_size_request` and the drag fallback read it.
@@ -459,7 +480,12 @@ pub fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
         }
     }
     // Everything is built into locals and appended LAST in one pass (GTK asserts on appending a parented widget); the holder is resolved through THIS window's content.
-    LAST_ZOOM_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             last_zoom_window: cell,
+             ..
+         }| *cell.borrow_mut() = Some(window.clone()),
+    );
     let Some(holder) = zoom_form_box(window) else {
         return;
     };
@@ -553,15 +579,31 @@ pub fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
         let owner = owner.clone();
         button.connect_toggled(move |check| {
             // Only turning THIS control on answers, and only for the window owning the live form.
-            if ZOOM_FORM_REFRESH.with(|cell| cell.get()) || !check.is_active() {
+            if CUT_PAGE.with(
+                |CutPage {
+                     zoom_form_refresh: cell,
+                     ..
+                 }| cell.get(),
+            ) || !check.is_active()
+            {
                 return;
             }
             if !ui::zoom_form_owner(&owner) {
                 return;
             }
-            ZOOM_FORM_REFRESH.with(|cell| cell.set(true));
+            CUT_PAGE.with(
+                |CutPage {
+                     zoom_form_refresh: cell,
+                     ..
+                 }| cell.set(true),
+            );
             store_zoom_stay(wants_stay);
-            ZOOM_FORM_REFRESH.with(|cell| cell.set(false));
+            CUT_PAGE.with(
+                |CutPage {
+                     zoom_form_refresh: cell,
+                     ..
+                 }| cell.set(false),
+            );
         });
     }
     let win_apply = window.clone();
@@ -639,11 +681,6 @@ fn find_named(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     None
 }
 
-// S4: the two endings are ONE answer; clicking either re-greys the fade-out via `fx_zoom::fade_out_greyed` and stores `stay`, behind a re-entrancy guard (the `CAMERA_REFRESH` shape).
-thread_local! {
-    static ZOOM_FORM_REFRESH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 fn store_zoom_stay(stay: bool) {
     let Some(mut form) = zoom_form_open() else {
         return;
@@ -670,18 +707,17 @@ fn store_zoom_stay(stay: bool) {
 
 /// Read one numeric field of the open form; unparseable answers `None`, which Apply turns into the stored value.
 pub fn zoom_entry(name: &str) -> Option<gtk::Entry> {
-    LAST_ZOOM_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| ui::find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-    })
-}
-
-thread_local! {
-    /// The window whose form was last shown, so readers look in THIS window's tree.
-    pub static LAST_ZOOM_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
+    CUT_PAGE.with(
+        |CutPage {
+             last_zoom_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| ui::find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        },
+    )
 }
 
 /// F3.1 S2: the box's size in the picture's pixels. The panel is pinned at [`PREVIEW_PANEL_W`] x [`PREVIEW_PANEL_H`] but only `set_halign(Start)`, so GTK reports a natural size far larger (1815 x 1809 measured) and an unrealized width of 0. The pin IS the answer; never `natural.max(...)`, which would hand back an hf at the clamp floor.

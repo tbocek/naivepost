@@ -8,6 +8,7 @@ use gtk4::prelude::*;
 
 use crate::run::{self, RunBar};
 use crate::runqueue::{self, Queue};
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 use crate::ui::{shell_beats, window};
 
 // The open run of this window, copied at each point the shell opens or hands one over. `end_run`
@@ -71,8 +72,17 @@ pub fn paint_live() {
         return;
     };
     let (Some(bar), Some(queue), Some((status, progress, log, view))) = (
-        window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()),
-        window::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_bar: bars, ..
+             }| bars.borrow().last().cloned(),
+        ),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_queue: slots,
+                 ..
+             }| slots.borrow().last().cloned(),
+        ),
         live_widgets(&main),
     ) else {
         return;
@@ -143,18 +153,31 @@ fn live_widgets(main: &adw::ApplicationWindow) -> Option<LiveWidgets> {
 
 /// Whether the window holds an open run right now.
 pub fn run_open() -> bool {
-    window::WINDOW_BAR
-        .with(|bars| bars.borrow().last().cloned())
+    WINDOW_PAGE
+        .with(
+            |WindowPage {
+                 window_bar: bars, ..
+             }| bars.borrow().last().cloned(),
+        )
         .is_some_and(|bar| bar.borrow().running.is_some())
 }
 
 pub fn close_window_run() {
-    let Some(bar) = window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()) else {
+    let Some(bar) = WINDOW_PAGE.with(
+        |WindowPage {
+             window_bar: bars, ..
+         }| bars.borrow().last().cloned(),
+    ) else {
         return;
     };
     let main = window::main_window();
     let (Some(queue), Some(status)) = (
-        window::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
+        WINDOW_PAGE.with(
+            |WindowPage {
+                 window_queue: slots,
+                 ..
+             }| slots.borrow().last().cloned(),
+        ),
         window::find_status(main.upcast_ref()),
     ) else {
         runqueue::end_run(&mut bar.borrow_mut());

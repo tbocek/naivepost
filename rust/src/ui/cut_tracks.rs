@@ -11,6 +11,7 @@ pub use crate::ui::cut_picture_rows::{allow_frame_decoding, first_second, THUMB_
 use crate::{clock, cut, cut_screen, cut_trim, fx_lane, layout, timeline, tools};
 
 use crate::ui::cut_colours::{GROUND, PLAYHEAD_RGB};
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 pub(crate) use crate::ui::cut_tracks_draw::*;
 pub const PLAYHEAD_PX: f64 = 2.0;
 /// §A: ruler 18 px, selection band 22, effects row 26 (`fx_lane::lane_height_px(1)`), picture row `thumbHt + 4`.
@@ -29,33 +30,28 @@ pub const CROSS_MIN_PX: f64 = 50.0;
 /// One picture-row pitch at the open size: the row's height plus §A's 4 px; the live pitch is [`rows_pitch_px`].
 pub const ROWS_PITCH_PX: i32 = (THUMB_DEFAULT_PX as i32) + (PICTURE_ROW_EXTRA_PX as i32);
 
-thread_local! {
-    /// §A's 🖼− / 🖼+ thumbnail height (40..160 px), kept for the session, not saved.
-    static THUMB_PX: std::cell::Cell<u32> = const { std::cell::Cell::new(THUMB_DEFAULT_PX) };
-    /// The sound strip's height as the grip left it; session only, like the thumbnail height.
-    static WAVE_PX: std::cell::Cell<f64> = const { std::cell::Cell::new(ROW_WAVE_PX) };
-}
-
 pub fn thumb_px() -> u32 {
-    THUMB_PX.with(std::cell::Cell::get)
+    CUT_PAGE.with(|page| page.thumb_px.get())
 }
 
 pub fn set_thumb_px(px: u32) {
-    THUMB_PX.with(|cell| cell.set(px.clamp(cut_screen::THUMB_MIN, cut_screen::THUMB_MAX)));
+    CUT_PAGE.with(|CutPage { thumb_px: cell, .. }| {
+        cell.set(px.clamp(cut_screen::THUMB_MIN, cut_screen::THUMB_MAX))
+    });
 }
 
 /// The sound strip's height as the grip left it; every painter and press reader asks this, never the opening [`ROW_WAVE_PX`].
 pub fn row_wave_px() -> f64 {
     let room = thumb_px() as f64 + PICTURE_ROW_EXTRA_PX - FILM_MIN_PX;
-    WAVE_PX
-        .with(std::cell::Cell::get)
+    CUT_PAGE
+        .with(|page| page.wave_px.get())
         .min(room)
         .max(WAVE_MIN_PX)
 }
 
 pub fn set_row_wave_px(px: f64) {
     let room = thumb_px() as f64 + PICTURE_ROW_EXTRA_PX - FILM_MIN_PX;
-    WAVE_PX.with(|cell| cell.set(px.min(room).max(WAVE_MIN_PX)));
+    CUT_PAGE.with(|CutPage { wave_px: cell, .. }| cell.set(px.min(room).max(WAVE_MIN_PX)));
 }
 
 pub fn rows_pitch_px() -> i32 {

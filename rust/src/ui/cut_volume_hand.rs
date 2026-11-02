@@ -8,11 +8,13 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::cut_label_hand::label_entry_of as volume_entry_of;
+use crate::ui::cut_page_state::{CutPage, PAGE as CUT_PAGE};
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
     live_form_refused, log_line, record_edit, refresh_effects_lane, save_insert_cut, selection,
-    trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
+    trim_seconds, zoom_field_row,
 };
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 /// This window's volume-form holder name. Only the Cut tab's instance is ever drawn into or read from —
 /// `page_box` runs once per tab, so an unscoped name exists four times per window and every lookup lands on
@@ -37,7 +39,12 @@ pub fn press_volume_item(window: &adw::ApplicationWindow) -> String {
     let band = selection()
         .filter(|band| band.length() > 0.0)
         .map(|band| (band.start, band.end));
-    let known = INSERT_PLACE_KNOWN.with(|cell| *cell.borrow()) == Some(true);
+    let known = WINDOW_PAGE.with(
+        |WindowPage {
+             window_insert_place_known: cell,
+             ..
+         }| *cell.borrow(),
+    ) == Some(true);
     let line = known.then(|| crate::ui::cut_lane::paste_line());
     match fx_volume::press(band, line) {
         fx_volume::Pressed::Refused => {
@@ -85,7 +92,12 @@ pub(crate) fn show_volume_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     for old in stale {
         holder.remove(&old);
     }
-    LAST_VOLUME_WINDOW.with(|cell| *cell.borrow_mut() = Some(window.clone()));
+    CUT_PAGE.with(
+        |CutPage {
+             last_volume_window: cell,
+             ..
+         }| *cell.borrow_mut() = Some(window.clone()),
+    );
     let fx = &{
         let answered = crate::fx_volume::lane_answer(
             &crate::ui::window_preview::newest_review_cut().lanes,
@@ -188,52 +200,63 @@ fn volume_form_of(fx: &cut::Fx) -> fx_volume::Form {
 /// F3.6 S2/S3: the form waiting on the page, before Apply. What a widget test reads to assert the same state
 /// the logic test asserts ([`fx_volume::Form`]) rather than a painted field.
 pub fn volume_form_open() -> Option<fx_volume::Form> {
-    VOLUME_FORM.with(|cell| cell.borrow().clone())
+    CUT_PAGE.with(
+        |CutPage {
+             volume_form: cell, ..
+         }| cell.borrow().clone(),
+    )
 }
 
 fn set_volume_form(form: Option<fx_volume::Form>) {
-    VOLUME_FORM.with(|cell| *cell.borrow_mut() = form);
-}
-
-thread_local! {
-    /// The form a Volume press left waiting on the page. `None` is no form open, which is also what hides the
-    /// holder — one slot answers both questions so they cannot disagree.
-    static VOLUME_FORM: std::cell::RefCell<Option<fx_volume::Form>> =
-        const { std::cell::RefCell::new(None) };
-
-    /// The window whose volume form was last shown, so the field readers have THIS window's tree to look in
-    /// and a stale window cannot answer for a live one.
-    static LAST_VOLUME_WINDOW: std::cell::RefCell<Option<adw::ApplicationWindow>> =
-        const { std::cell::RefCell::new(None) };
+    CUT_PAGE.with(
+        |CutPage {
+             volume_form: cell, ..
+         }| *cell.borrow_mut() = form,
+    );
 }
 
 fn volume_form_owner(window: &adw::ApplicationWindow) -> bool {
-    LAST_VOLUME_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
-            .unwrap_or(false)
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_volume_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .map(|w: &adw::ApplicationWindow| w.as_ptr() == window.as_ptr())
+                .unwrap_or(false)
+        },
+    )
 }
 
 /// One of this window's volume-field entries, by name, looked up through the window that owns the form.
 fn volume_entry(name: &str) -> Option<gtk::Entry> {
-    LAST_VOLUME_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_volume_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        },
+    )
 }
 
 /// This window's Curve dropdown.
 fn volume_dropdown(name: &str) -> Option<gtk::DropDown> {
-    LAST_VOLUME_WINDOW.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
-            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
-    })
+    CUT_PAGE.with(
+        |CutPage {
+             last_volume_window: cell,
+             ..
+         }| {
+            cell.borrow()
+                .as_ref()
+                .and_then(|w| find_widget_by_name(w.upcast_ref(), name))
+                .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        },
+    )
 }
 
 /// F3.6 S3/S4: Apply. Reads the five fields back, hands them to [`fx_volume::apply`] (which clamps the

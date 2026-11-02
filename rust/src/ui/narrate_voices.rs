@@ -2,6 +2,7 @@
 //! (§A.6). The chooser only picks a path and hands it to [`add_voice_file`], so the tested seam and the
 //! clicked one are the same function.
 
+use crate::ui::narrate_page_state::{NarratePage, PAGE as NARRATE_PAGE};
 use adw::prelude::*;
 use gtk4 as gtk;
 
@@ -33,18 +34,18 @@ pub fn press_add_file(window: &adw::ApplicationWindow) {
         };
         answer_chooser(&win, picked);
     });
-    CHOOSERS_RAISED.with(|raised| raised.set(raised.get() + 1));
+    NARRATE_PAGE.with(
+        |NarratePage {
+             choosers_raised: raised,
+             ..
+         }| raised.set(raised.get() + 1),
+    );
     crate::ui::chooser_hold::show(&chooser);
-}
-
-thread_local! {
-    /// How many "Add file…" choosers the button raised.
-    static CHOOSERS_RAISED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Same count, for a test pressing the real button.
 pub fn choosers_raised_for_test() -> usize {
-    CHOOSERS_RAISED.with(std::cell::Cell::get)
+    NARRATE_PAGE.with(|page| page.choosers_raised.get())
 }
 
 /// The chooser's answer, the one door its response runs and a test drives: no pick says so; a pick is

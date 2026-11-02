@@ -11,6 +11,7 @@ use gtk4 as gtk;
 use crate::produce_screen;
 use crate::project::{TextMark, TitleBox};
 use crate::ui::produce_page::ProduceState;
+use crate::ui::produce_page_state::{ProducePage, PAGE};
 
 pub type PaintedBox = (f64, f64, f64, f64, String);
 
@@ -286,7 +287,7 @@ fn photo_rect(
 const KEPT_SIDE: i32 = 1280;
 
 /// A file as the cache knows it: size and change time, so a rewritten file is decoded again.
-type Stamp = (u64, Option<std::time::SystemTime>);
+pub(crate) type Stamp = (u64, Option<std::time::SystemTime>);
 
 /// What [`decoded`] answers.
 enum Decoded {
@@ -295,15 +296,10 @@ enum Decoded {
     Missing,
 }
 
-type Held = Option<(cairo::ImageSurface, i32, i32)>;
+pub(crate) type Held = Option<(cairo::ImageSurface, i32, i32)>;
 
-thread_local! {
-    /// Every plate picture decoded so far, with the stamp it was decoded at; `ASKED` holds what is on a worker now.
-    static PICTURES: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, (Stamp, Held)>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-    static ASKED: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Stamp>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-}
+/// The session's frames as `(session second, path)`, shared by the slots of one paint.
+pub(crate) type SessionFrames = std::rc::Rc<Vec<(f64, std::path::PathBuf)>>;
 
 /// The picture at `path`, if a worker has decoded this version; otherwise ask for it once and answer
 /// [`Decoded::Coming`]. Reading the file's size and time is the only disk work a paint does.
@@ -312,7 +308,9 @@ fn decoded(area: &gtk::DrawingArea, path: &std::path::Path) -> Decoded {
         return Decoded::Missing;
     };
     let stamp: Stamp = (meta.len(), meta.modified().ok());
-    if let Some((held_at, held)) = PICTURES.with(|pictures| pictures.borrow().get(path).cloned()) {
+    if let Some((held_at, held)) =
+        PAGE.with(|ProducePage { pictures, .. }| pictures.borrow().get(path).cloned())
+    {
         if held_at == stamp {
             return match held {
                 Some((surface, wide, high)) => Decoded::Ready(surface, wide, high),
@@ -320,7 +318,7 @@ fn decoded(area: &gtk::DrawingArea, path: &std::path::Path) -> Decoded {
             };
         }
     }
-    let asked_now = ASKED.with(|asked| {
+    let asked_now = PAGE.with(|ProducePage { asked, .. }| {
         let mut asked = asked.borrow_mut();
         if asked.get(path) == Some(&stamp) {
             return false;
@@ -346,8 +344,10 @@ fn decoded(area: &gtk::DrawingArea, path: &std::path::Path) -> Decoded {
                 let held = answer.and_then(|(bytes, wide, high)| {
                     surface_of(&bytes, wide, high).map(|surface| (surface, wide, high))
                 });
-                ASKED.with(|asked| asked.borrow_mut().remove(&file));
-                PICTURES.with(|pictures| pictures.borrow_mut().insert(file, (stamp, held)));
+                PAGE.with(|ProducePage { asked, .. }| asked.borrow_mut().remove(&file));
+                PAGE.with(|ProducePage { pictures, .. }| {
+                    pictures.borrow_mut().insert(file, (stamp, held))
+                });
                 drop(owed);
                 redraw_plates();
             },
@@ -373,7 +373,7 @@ fn redraw_plates() {
 
 /// For a test: whether this plate picture has been decoded and is held (a paint never decodes).
 pub fn picture_held_for_test(path: &std::path::Path) -> bool {
-    PICTURES.with(|pictures| {
+    PAGE.with(|ProducePage { pictures, .. }| {
         pictures
             .borrow()
             .get(path)
@@ -582,12 +582,16 @@ fn paint_slot(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64, inde
     ground(cr, w, h);
     let path = frame_path(state.frames.get(index));
     let photo = photo_rect(area, cr, &path, w, h);
-    SLOT_SHOWN.with(|shown| {
-        shown.borrow_mut().insert(
-            index,
-            matches!(photo, Photo::Painted(_)).then(|| path.clone()),
-        )
-    });
+    PAGE.with(
+        |ProducePage {
+             slot_shown: shown, ..
+         }| {
+            shown.borrow_mut().insert(
+                index,
+                matches!(photo, Photo::Painted(_)).then(|| path.clone()),
+            )
+        },
+    );
     match photo {
         Photo::Painted(picture) if index == 0 => draw_crop(cr, &state, picture),
         Photo::Painted(_) | Photo::Coming => {}
@@ -595,15 +599,13 @@ fn paint_slot(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64, inde
     }
 }
 
-thread_local! {
-    /// The picture each slot's last real draw showed, for the test that must see a slot fill in without painting it itself.
-    static SLOT_SHOWN: std::cell::RefCell<std::collections::HashMap<usize, Option<std::path::PathBuf>>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
 /// For a test: the picture slot `index`'s last draw by the window showed, if any.
 pub fn slot_shown_for_test(index: usize) -> Option<std::path::PathBuf> {
-    SLOT_SHOWN.with(|shown| shown.borrow().get(&index).cloned().flatten())
+    PAGE.with(
+        |ProducePage {
+             slot_shown: shown, ..
+         }| shown.borrow().get(&index).cloned().flatten(),
+    )
 }
 
 /// A stored row entry as the file it shows. A `frame:<seconds>` entry is the session's extracted frame nearest
@@ -628,7 +630,17 @@ fn frame_path(entry: Option<&String>) -> std::path::PathBuf {
 
 /// Every extracted frame of the session's footage as `(session second, path)`, off the Cut page's frame cache,
 /// listed on a worker (§03-shell §1). `None` means a listing is still coming; its landing repaints ([`repaint_plates`]).
-fn session_frames(tree: &crate::layout::Tree) -> Option<Vec<(f64, std::path::PathBuf)>> {
+fn session_frames(tree: &crate::layout::Tree) -> Option<SessionFrames> {
+    let stems = crate::ui::produce_press_wiring::frame_source_stems();
+    // A paint asks this once per slot: a look at each folder's stamp says whether the frames can have changed, where
+    // walking every recording's frames again took 65 ms a paint on a 24,000-frame lecture.
+    let stamps = crate::ui::cut_picture_cache::folder_stamps(tree, &stems);
+    let held = PAGE.with(|ProducePage { session_frames, .. }| session_frames.borrow().clone());
+    if let Some((at, frames)) = held {
+        if at == stamps {
+            return Some(frames);
+        }
+    }
     let project = crate::ui::window::live_project();
     let names: Vec<&str> = project
         .sources
@@ -637,8 +649,14 @@ fn session_frames(tree: &crate::layout::Tree) -> Option<Vec<(f64, std::path::Pat
         .collect();
     let zero = crate::clock::clock(&names).zero;
     let mut frames = Vec::new();
-    for stem in crate::ui::produce_press_wiring::frame_source_stems() {
-        for path in crate::ui::cut_picture_cache::frames_or_coming(tree, &stem)? {
+    let mut complete = true;
+    // Every folder is asked in this one pass: stopping at the first still coming listed them one per repaint.
+    for stem in &stems {
+        let Some(paths) = crate::ui::cut_picture_cache::frames_or_coming(tree, stem) else {
+            complete = false;
+            continue;
+        };
+        for path in paths {
             let Some(name) = path.file_stem().and_then(|n| n.to_str()) else {
                 continue;
             };
@@ -647,6 +665,13 @@ fn session_frames(tree: &crate::layout::Tree) -> Option<Vec<(f64, std::path::Pat
             }
         }
     }
+    if !complete {
+        return None;
+    }
+    let frames: SessionFrames = std::rc::Rc::new(frames);
+    PAGE.with(|ProducePage { session_frames, .. }| {
+        *session_frames.borrow_mut() = Some((stamps, frames.clone()))
+    });
     Some(frames)
 }
 
@@ -664,18 +689,19 @@ fn session_dir() -> std::path::PathBuf {
         .unwrap_or_else(crate::startup::open_dir)
 }
 
-thread_local! {
-    /// The folder a snapshot asked this page to render. `build_window` resets `save_apply::open_dir` AFTER a
-    /// snapshot stages the real one, so the plates keep their own slot for it.
-    static OPEN_PROJECT: std::cell::RefCell<Option<std::path::PathBuf>> =
-        const { std::cell::RefCell::new(None) };
-}
-
 fn open_project() -> Option<std::path::PathBuf> {
-    OPEN_PROJECT.with(|slot| slot.borrow().clone())
+    PAGE.with(
+        |ProducePage {
+             open_project: slot, ..
+         }| slot.borrow().clone(),
+    )
 }
 
 /// Say which project this page renders, from the snapshot staging step; a live window answers through `save_apply::open_dir`.
 pub fn note_open_project(dir: &std::path::Path) {
-    OPEN_PROJECT.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
+    PAGE.with(
+        |ProducePage {
+             open_project: slot, ..
+         }| *slot.borrow_mut() = Some(dir.to_path_buf()),
+    );
 }

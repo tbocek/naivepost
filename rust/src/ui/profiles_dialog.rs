@@ -10,6 +10,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::profile;
+use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 thread_local! {
     static OPEN: RefCell<Option<gtk::Window>> = const { RefCell::new(None) };
@@ -401,8 +402,8 @@ pub fn open_edit(parent: Option<&gtk::Window>, name: Option<&str>) -> gtk::Windo
             say_summary(&summary, &buffer.text(&start, &end, false));
         });
     }
-    let used = crate::ui::window::SESSION
-        .with(|slots| slots.borrow().last().cloned())
+    let used = WINDOW_PAGE
+        .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .and_then(|session| {
             session
                 .borrow()
