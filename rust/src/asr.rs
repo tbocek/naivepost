@@ -60,7 +60,10 @@ pub fn halve(base: &str, limit: f64) -> Halved {
 
 pub fn retryable(err: &str) -> bool {
     let lower = err.to_lowercase();
-    lower.contains("out of memory") || lower.contains("no room") || lower.contains("oom")
+    lower.contains("out of memory")
+        || lower.contains("no room")
+        || lower.contains("oom")
+        || lower.contains("failed to allocate")
 }
 
 pub fn fits(duration: f64, limit: f64) -> bool {

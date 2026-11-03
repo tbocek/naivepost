@@ -466,15 +466,57 @@ pub fn diar_scan<'a>(
             source,
             |windows: &[(f64, f64)]| {
                 let one = diar_window_ask(tree, paths, source, model);
-                windows.iter().map(|span| one(span.0, span.1)).collect()
+                windows
+                    .iter()
+                    .map(|span| with_room(tree, source, said, || one(span.0, span.1)))
+                    .collect()
             },
             |(from, to), anchor: &crate::diarize::Anchor| {
-                placement_ask(tree, paths, source, model, from, to, anchor)
+                with_room(tree, source, said, || {
+                    placement_ask(tree, paths, source, model, from, to, anchor)
+                })
             },
             |line| said.borrow_mut().push(line.to_string()),
         )?;
         Ok(rung.turns)
     }
+}
+
+/// One ask that may meet a server with no memory left: the models of the steps before it (the recogniser, the
+/// aligner) are still loaded beside the LLM's. Every audio model is unloaded and the ask made once more.
+fn with_room<T>(
+    tree: &Option<Tree>,
+    source: &str,
+    said: &std::cell::RefCell<Vec<String>>,
+    mut ask: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    match ask() {
+        Err(why) if crate::asr::retryable(&why) => {
+            said.borrow_mut().push(format!(
+                "!!! [{source}] diarization: the audio server had no room -- unloading its models and asking again"
+            ));
+            unload_now(tree);
+            ask()
+        }
+        answer => answer,
+    }
+}
+
+/// Unload every audio model and wait for the answer, so the next ask finds the memory free. Best effort: a failed unload
+/// leaves the next ask to fail with the server's own words.
+fn unload_now(tree: &Option<Tree>) {
+    let conf = crate::settings::from_environment()
+        .and_then(|paths| crate::settings::read(&paths).ok())
+        .unwrap_or_default();
+    let endpoint = services::audio_endpoint(&conf, |key| std::env::var(key).ok());
+    let _ = crate::settings_probe::get(
+        tree,
+        Server::Audio,
+        &endpoint,
+        Kind::UnloadAll,
+        "unload",
+        None,
+    );
 }
 
 pub fn placement_ask(
