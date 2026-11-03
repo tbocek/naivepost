@@ -468,3 +468,12 @@ fn f1_4_s4_no_speech_at_all_is_a_real_answer() {
     assert_eq!(chunks.len(), 1);
     assert_eq!((chunks[0].s, chunks[0].e), (0.0, 60.0));
 }
+
+/// The audio server's own words for no memory: a step meeting them makes room and asks again rather than failing.
+#[test]
+fn f1_4_a_server_that_cannot_allocate_is_out_of_memory() {
+    assert!(naivepost::asr::retryable(
+        "answered 500 asking \"sortformer-diar\" to diarize: Failed to allocate Sortformer diar backend tensors"
+    ));
+    assert!(!naivepost::asr::retryable("answered 404: no such model"));
+}
