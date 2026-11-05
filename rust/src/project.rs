@@ -235,9 +235,6 @@ pub struct Produce {
     /// How loud the original audio sits under the narration (drawn on the Narrate page).
     pub game_volume: f64,
     pub crf: u32,
-    /// §A "Frame timing", the tick `peak rate (VFR)`: the frame rate above is a ceiling rather than a
-    /// target, so the encoder only reaches for it when a frame would otherwise be dropped.
-    pub vfr: bool,
     /// §A "Channels", the tick `mono`: mix the finished audio down to a single channel.
     pub mono: bool,
     /// §A "Frame edges", the tick `blurred`: fill the empty edges of the frame with a blown-up, blurred
@@ -323,7 +320,6 @@ impl Default for Produce {
             translate: Vec::new(),
             game_volume: 0.22,
             crf: 24,
-            vfr: false,
             mono: false,
             blurred_edges: true,
         }

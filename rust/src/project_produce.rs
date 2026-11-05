@@ -110,7 +110,6 @@ pub fn read(block: Option<&serde_json::Value>) -> Stored {
         settings.game_volume = found;
     }
     for (key, field) in [
-        ("vfr", &mut settings.vfr),
         ("mono", &mut settings.mono),
         ("blurred_edges", &mut settings.blurred_edges),
     ] {

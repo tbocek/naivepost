@@ -357,7 +357,6 @@ pub fn transcode_args(source: &str, out: &str, settings: &Produce) -> Vec<String
     argv.extend(crate::produce_render::codec_args(settings));
     argv.extend(crate::produce_render::frame_rate_args(
         crate::produce_render::frame_rate_name(settings.frame_rate),
-        settings.vfr,
     ));
     argv.extend([
         "-c:a".into(),

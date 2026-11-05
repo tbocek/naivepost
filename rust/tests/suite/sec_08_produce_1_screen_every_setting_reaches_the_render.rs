@@ -1,6 +1,6 @@
 //! §08-produce#1-screen, the encoder settings, through their REAL widgets: every dropdown (Codec, Preset,
-//! Resolution, Frame rate, Audio, Subtitles) set with `set_selected` and every tick (Frame timing, Channels,
-//! Frame edges) toggled with `set_active` on the widget the page drew. Each change must land in the project file
+//! Resolution, Frame rate, Audio, Subtitles) set with `set_selected` and every tick (Channels, Frame edges)
+//! toggled with `set_active` on the widget the page drew. Each change must land in the project file
 //! (`naivepost.json`'s `produce`, what the next opening and the render read) and move the render's up-to-date
 //! stamp (§F5.3), and where the render's own argv builder reads it, show up in what ffmpeg is told. Before this,
 //! only Container and the CRF slider were driven through a widget; the rest were tested on `set_setting` alone.
@@ -94,8 +94,8 @@ fn sec_08_produce_1_screen_every_setting_reaches_the_project_and_the_render() {
                     );
                 }
                 "Frame rate" => {
-                    // The whole encode: a constant rate reaches ffmpeg as the `fps` filter, a peak rate as
-                    // `-fpsmax`, so neither half alone carries every row change.
+                    // The whole encode: a rate reaches ffmpeg as the `fps` filter in the graph plus
+                    // `-fps_mode cfr`, never `-fpsmax` (the VFR tick is gone, 08 §1).
                     let rate = |p: &Produce| {
                         naivepost::produce_render::encode_command(
                             &naivepost::produce_render::Clip::default(),
@@ -106,17 +106,18 @@ fn sec_08_produce_1_screen_every_setting_reaches_the_project_and_the_render() {
                         )
                     };
                     assert_ne!(rate(&after), rate(&before), "{row}: ffmpeg's rate changed");
+                    assert!(
+                        !rate(&after).iter().any(|arg| arg == "-fpsmax"),
+                        "{row}: no peak-rate path is left: {:?}",
+                        rate(&after)
+                    );
                 }
                 _ => {}
             }
         }
 
         for (tick, read) in [
-            (
-                "tick-peak-rate-vfr",
-                (|p: &Produce| p.vfr) as fn(&Produce) -> bool,
-            ),
-            ("tick-mono", |p: &Produce| p.mono),
+            ("tick-mono", (|p: &Produce| p.mono) as fn(&Produce) -> bool),
             ("tick-blurred", |p: &Produce| p.blurred_edges),
         ] {
             let check = common::widget_in(&window, tick)

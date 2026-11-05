@@ -49,8 +49,7 @@ fn sec_01_project_and_files_2_naivepostjson_empty_file_holds_the_table_defaults(
     assert!(p.produce.translate.is_empty());
     assert_eq!(p.produce.game_volume, 0.22);
     assert_eq!(p.produce.crf, 24);
-    // §A's ticks: frame timing and mono start off, frame edges start blurred.
-    assert!(!p.produce.vfr);
+    // §A's ticks: mono starts off, frame edges start blurred.
     assert!(!p.produce.mono);
     assert!(p.produce.blurred_edges);
 
@@ -106,9 +105,8 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             translate: vec!["de".to_string()],
             game_volume: 0.5,
             crf: 18,
-            // §A's three ticks, all away from their defaults so a round trip proves they are stored:
-            // frame timing off -> on, mono off -> on, blurred edges on -> off.
-            vfr: true,
+            // §A's two ticks, both away from their defaults so a round trip proves they are stored:
+            // mono off -> on, blurred edges on -> off.
             mono: true,
             blurred_edges: false,
         },
@@ -309,6 +307,35 @@ fn sec_01_project_and_files_2_naivepostjson_an_older_no_narration_is_ignored_and
         "the key is never written back: {text}"
     );
     std::fs::remove_dir_all(&root).ok();
+}
+
+/// §01 §2 `produce`: `vfr` (the first rewrite's peak-rate tick, dropped in §08 §1) is gone. An older file with
+/// it, on or off, loads without a word about it, keeps every row beside it, and a save never writes it back.
+#[test]
+fn sec_01_project_and_files_2_naivepostjson_an_older_vfr_is_ignored_and_never_written() {
+    for stored in ["true", "false"] {
+        let (root, t) = with_file(
+            "older-vfr",
+            &format!(
+                r#"{{"context": "kept", "produce": {{"frame_rate": "24", "crf": 20, "vfr": {stored}, "mono": true}}}}"#
+            ),
+        );
+        let (p, report) = project::load_report(t.dir()).expect("an older file still loads");
+        assert_eq!(p.context, "kept", "the rest of the file is read as before");
+        assert_eq!(p.produce.frame_rate, project::FrameRate::F24, "vfr={stored}");
+        assert_eq!(p.produce.crf, 20, "vfr={stored}");
+        assert!(p.produce.mono, "the tick beside it survives: vfr={stored}");
+        assert!(
+            report.iter().all(|line| !line.contains("vfr")),
+            "nothing to say about a dropped key: {report:?}"
+        );
+        project::save(&p, t.dir()).unwrap();
+        let text = read(&t);
+        assert!(!text.contains("vfr"), "the key is never written back: {text}");
+        let again = project::load(t.dir()).expect("the saved file loads");
+        assert_eq!(again.produce, p.produce, "and reads back the same settings");
+        std::fs::remove_dir_all(&root).ok();
+    }
 }
 
 /// §08 §A's Resolution option `original` is written as §A spells it and read back as itself, and a project the

@@ -145,7 +145,11 @@ fn settings_text(settings: &Produce) -> String {
     text.push_str(&format!("preset={:?}\n", settings.preset));
     text.push_str(&format!("resolution={:?}\n", settings.resolution));
     text.push_str(&format!("frame_rate={:?}\n", settings.frame_rate));
-    text.push_str(&format!("vfr={}\n", settings.vfr));
+    // The VFR tick is gone (08 §1); its old `vfr=false` line stays, so a video rendered with it off (the same frames
+    // as now) keeps its stamp, and one rendered with it on no longer matches and encodes again.
+    text.push_str("vfr=false\n");
+    // Frame-exact clips (08 §5): a video made before them drifted from the cut, so it is not up to date.
+    text.push_str("clips=frame-exact\n");
     text.push_str(&format!("mono={}\n", settings.mono));
     text.push_str(&format!("audio_kbps={}\n", settings.audio_kbps));
     text.push_str(&format!("subtitles={:?}\n", settings.subtitles));

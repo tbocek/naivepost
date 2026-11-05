@@ -248,9 +248,9 @@ fn f1_5_s1_the_first_to_answer_serves_the_rest_of_the_run() {
     .expect("the second aligner answered");
 
     let calls = agent.calls();
-    // Window one walked the list; every window after it asked only the aligner that answered. Four
-    // asks for two 60 s pieces: F1.4's ceiling is 300 s, so its chunks are re-cut at this flow's.
-    assert_eq!(calls.len(), 4, "{calls:?}");
+    // Window one walked the list; every window after it asked only the aligner that answered. Three
+    // asks for two pieces: the ASR's two chunks, each with its own text (S2), the first asked twice.
+    assert_eq!(calls.len(), 3, "{calls:?}");
     assert_eq!(calls[0].0, "mms-aligner");
     assert!(
         calls[1..]
@@ -547,7 +547,7 @@ fn f1_5_s3_out_of_memory_halves_the_window_and_never_goes_under_fifteen_seconds(
     OOM.lock().unwrap().clear();
     let (_root, tree) = project("s3-oom");
     // The first ask says there is no room; the second answers. The clip is 20 s — under this flow's
-    // 60 s ceiling, so it was sent without being split and halving is the only thing left to try.
+    // 100 s ceiling (P.eng.alignWindowWholeSeconds), so it was sent without being split and halving is the only thing left to try.
     let outcome = align::run(
         &tree,
         SOURCE,
@@ -575,7 +575,7 @@ fn f1_5_s3_out_of_memory_halves_the_window_and_never_goes_under_fifteen_seconds(
         .find(|line| line.contains("no room"))
         .expect("that the machine is out of room is said out loud");
     assert!(log.contains(SOURCE), "{log}");
-    assert!(log.contains("30 s at a time"), "{log}");
+    assert!(log.contains("50 s at a time"), "half the 100 s ceiling: {log}");
     // Both asks were for the same window: halving changes what a piece may be, not where it starts.
     let asks = OOM.lock().unwrap().clone();
     assert_eq!(asks.len(), 2, "{asks:?}");
@@ -856,3 +856,194 @@ fn f1_5_s6_bare_voiced_seconds_are_warned_about_once() {
 /// The asks of the out-of-memory test, recorded across the closure's captures.
 static OOM: std::sync::LazyLock<Mutex<Vec<(String, String)>>> =
     std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// S3: a window over the limit holding a single word still splits: the word goes with the half that has more sound.
+#[test]
+fn f1_5_s3_a_long_window_with_one_word_splits_without_losing_it() {
+    let span = Span {
+        from: 0.0,
+        to: 140.0,
+        text: "word".into(),
+    };
+    let silences = vec![Silence { start: 60.0, end: 61.0 }, Silence { start: 80.0, end: 140.0 }];
+    let (left, right) = align::split_at(&span, &silences);
+    assert_eq!((left.text.as_str(), right.text.as_str()), ("word", ""), "{left:?} {right:?}");
+}
+
+/// S2: the ASR's chunks are the pieces, each with the text the ASR heard in it, whenever those texts make up the
+/// transcript; a timing-less ASR (qwen3-asr) included, whose word counts never agree.
+#[test]
+fn f1_5_s2_each_asr_chunk_is_aligned_with_its_own_text() {
+    let chunks = vec![
+        Chunk { s: 0.0, e: 40.0, text: "a b c d e f g h".into() },
+        Chunk { s: 40.0, e: 100.0, text: "i j".into() },
+    ];
+    let own = align::own_pieces(&chunks, "a b c d e f g h i j").expect("the texts make up the transcript");
+    assert_eq!(own, vec![((0.0, 40.0), "a b c d e f g h".to_string()), ((40.0, 100.0), "i j".to_string())]);
+    // A transcript that is not the chunks' text (edited since, or another source) falls back to the estimate.
+    assert!(align::own_pieces(&chunks, "a b c d e f g h i").is_none());
+    assert!(align::own_pieces(&[], "a").is_none());
+
+    // Through the stage: two windows, each asked with its own words; a voiced-seconds share would have
+    // handed the 60 s window most of the text.
+    let (_root, tree) = project("s2-own-text");
+    let mut agent = Box_::new(tree.words_aligned_json(SOURCE));
+    align::run(
+        &tree, SOURCE, 100.0, "en", &loud(100.0), &chunks, &[], "a b c d e f g h i j",
+        &["qwen3-aligner".to_string()],
+        |model, clip, text| agent.ask(model, clip, text),
+    )
+    .expect("aligned");
+    let texts: Vec<String> = agent.calls().into_iter().map(|(_, _, text)| text).collect();
+    assert_eq!(texts, ["a b c d e f g h", "i j"]);
+}
+
+/// S4: a server error on a window is asked once more before the window fails; a second error fails it as before.
+#[test]
+fn f1_5_s4_a_server_error_is_asked_once_more() {
+    let chunks = vec![Chunk { s: 0.0, e: 30.0, text: "one two".into() }];
+    let fell_over = "the audio.cpp server at http://box:8765 answered 500 asking \"qwen3-aligner\" to align: \
+        {\"error\":{\"message\":\"Qwen3 forced aligner produced negative timestamp id\",\"type\":\"server_error\"}}";
+    assert!(align::transient(fell_over));
+    assert!(!align::transient("out of memory"), "memory has its own way down");
+
+    for failures in [1usize, 2] {
+        let (_root, tree) = project(&format!("s4-transient-{failures}"));
+        let asked = std::cell::Cell::new(0usize);
+        let outcome = align::run(
+            &tree, SOURCE, 30.0, "en", &loud(30.0), &chunks, &[], "one two",
+            &["qwen3-aligner".to_string()],
+            |_model, _clip, _text| {
+                asked.set(asked.get() + 1);
+                if asked.get() <= failures {
+                    Err(fell_over.to_string())
+                } else {
+                    Ok(json!({"words": [word("one", 0.5, 0.9), word("two", 1.0, 1.4)]}))
+                }
+            },
+        );
+        assert_eq!(asked.get(), 2, "asked twice, never more");
+        match failures {
+            1 => {
+                let outcome = outcome.expect("the second ask answered");
+                assert_eq!(outcome.words.len(), 2);
+                assert!(outcome.logs.iter().any(|l| l.contains("asking once more")), "{:?}", outcome.logs);
+            }
+            _ => assert!(outcome.is_err(), "two failures in a row fail the window, as before"),
+        }
+    }
+}
+
+/// S2: a piece the ASR heard nothing in is not asked about: an empty text is refused by the aligner, and with it the
+/// whole recording (first rewrite: 05-tokens 16-47-22 and 07-webarch 12-28-22 failed so).
+#[test]
+fn f1_5_s2_a_piece_with_no_text_is_not_asked_about() {
+    let chunks = vec![
+        Chunk { s: 0.0, e: 30.0, text: "".into() },
+        Chunk { s: 30.0, e: 60.0, text: "hello".into() },
+    ];
+    let (_root, tree) = project("s2-empty-piece");
+    let mut agent = Box_::new(tree.words_aligned_json(SOURCE));
+    align::run(
+        &tree, SOURCE, 60.0, "en", &loud(60.0), &chunks, &[], "hello",
+        &["qwen3-aligner".to_string()],
+        |model, clip, text| agent.ask(model, clip, text),
+    )
+    .expect("aligned");
+    let texts: Vec<String> = agent.calls().into_iter().map(|(_, _, text)| text).collect();
+    assert_eq!(texts, ["hello"]);
+}
+
+/// S3: the aligner's refusal of a window longer than its model takes is answered like no room: the window is halved and
+/// asked again, never re-asked as it stood.
+#[test]
+fn f1_5_s3_a_window_too_long_for_the_model_is_halved() {
+    let refusal = "the audio.cpp server at http://box:8765 answered 500 asking \"qwen3-aligner\" to align: \
+        {\"error\":{\"message\":\"Qwen3 ASR audio encoder token count exceeds max_source_positions\",\"type\":\"server_error\"}}";
+    assert!(align::too_long(refusal));
+    assert!(!align::transient(refusal), "asking the same window again would only be refused again");
+    let chunks = vec![Chunk { s: 0.0, e: 90.0, text: "one two three four".into() }];
+    let (_root, tree) = project("s3-too-long");
+    let asked: std::cell::RefCell<Vec<String>> = Default::default();
+    let outcome = align::run(
+        &tree, SOURCE, 90.0, "en", &loud(90.0), &chunks, &[], "one two three four",
+        &["qwen3-aligner".to_string()],
+        |_model, clip, _text| {
+            asked.borrow_mut().push(clip.to_string());
+            if asked.borrow().len() == 1 {
+                return Err(refusal.to_string());
+            }
+            Ok(json!({"words": [word("one", 0.5, 1.0)]}))
+        },
+    )
+    .expect("the halves fit");
+    let asked = asked.into_inner();
+    assert!(asked.len() >= 3, "the 90 s window, then its halves: {asked:?}");
+    assert!(outcome.logs.iter().any(|l| l.contains("no room")), "{:?}", outcome.logs);
+}
+
+/// S4: a word the aligner times from past the end of the clip it heard is kept, cut to the clip's end: nothing of the
+/// transcript is lost because the aligner had no sound for it.
+#[test]
+fn f1_5_s4_words_timed_past_the_clip_are_cut_to_it() {
+    let w = |text: &str, from: f64, to: f64| Word {
+        word: text.into(),
+        start_sample: (from * 16000.0) as u64,
+        end_sample: (to * 16000.0) as u64,
+    };
+    let end = (3.0 * 16000.0) as u64;
+    let kept = align::within_clip(vec![w("ja", 1.0, 1.5), w("und", 2.8, 3.4), w("mann", 3.2, 3.6)], end);
+    assert_eq!(kept, vec![w("ja", 1.0, 1.5), w("und", 2.8, 3.0), w("mann", 3.0, 3.0)]);
+
+    // Through the stage: the window is the whole 30 s chunk (no silences), so a word at 31 s is past it.
+    let chunks = vec![Chunk { s: 0.0, e: 30.0, text: "one two".into() }];
+    let (_root, tree) = project("s4-past-the-clip");
+    let outcome = align::run(
+        &tree, SOURCE, 30.0, "en", &loud(30.0), &chunks, &[], "one two",
+        &["qwen3-aligner".to_string()],
+        |_model, _clip, _text| Ok(json!({"words": [word("one", 0.5, 0.9), word("two", 31.0, 31.4)]})),
+    )
+    .expect("aligned");
+    let words: Vec<(&str, f64)> = outcome.words.iter().map(|w| (w.word.as_str(), seconds(w.start_sample))).collect();
+    assert_eq!(words, [("one", 0.5), ("two", 30.0)]);
+}
+
+/// S3: after a split, words the left piece's answer times past its clip were said in the right piece: their text goes
+/// to the front of the right piece's ask, so every word is timed where it was said.
+#[test]
+fn f1_5_s3_words_past_a_split_piece_go_to_the_next_piece() {
+    // One 150 s chunk: over the 100 s ceiling, split at the silence nearest the middle (74-76 s).
+    let silences = vec![Silence { start: 74.0, end: 76.0 }];
+    let text = "a b c d e f";
+    let chunks = vec![Chunk { s: 0.0, e: 150.0, text: text.into() }];
+    let (_root, tree) = project("s3-carry");
+    let asked: std::cell::RefCell<Vec<String>> = Default::default();
+    let outcome = align::run(
+        &tree, SOURCE, 150.0, "en", &silences, &chunks, &[], text,
+        &["qwen3-aligner".to_string()],
+        |_model, _clip, text| {
+            asked.borrow_mut().push(text.to_string());
+            let words: Vec<&str> = text.split_whitespace().collect();
+            Ok(match asked.borrow().len() {
+                // The left clip is 0-75 s (trimmed to 74.25): its last word was not heard in it.
+                1 => json!({"words": words.iter().enumerate().map(|(i, w)| {
+                    let at = if i + 1 == words.len() { 80.0 } else { 10.0 * (i as f64 + 1.0) };
+                    word(w, at, at + 0.5)
+                }).collect::<Vec<_>>()}),
+                _ => json!({"words": words.iter().enumerate().map(|(i, w)| word(w, 1.0 + i as f64, 1.5 + i as f64)).collect::<Vec<_>>()}),
+            })
+        },
+    )
+    .expect("aligned");
+    let asked = asked.into_inner();
+    assert_eq!(asked.len(), 2, "{asked:?}");
+    let left: Vec<&str> = asked[0].split_whitespace().collect();
+    let carried = left.last().copied().unwrap();
+    assert!(asked[1].starts_with(carried), "the unheard word went to the next piece: {asked:?}");
+    let names: Vec<&str> = outcome.words.iter().map(|w| w.word.as_str()).collect();
+    assert_eq!(names, ["a", "b", "c", "d", "e", "f"], "every word once, in order");
+    assert!(
+        outcome.words.windows(2).all(|p| p[0].start_sample <= p[1].start_sample),
+        "in order of time: {:?}", outcome.words
+    );
+}

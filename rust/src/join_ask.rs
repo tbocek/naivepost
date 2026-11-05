@@ -444,6 +444,10 @@ pub fn run_seams(
         pass.logs
             .push(crate::tools::textedit::dedupe_log_head(&note));
     }
+    for note in crate::tools::textedit::restart_joins(&written, times, &mut kept) {
+        pass.logs
+            .push(crate::tools::textedit::dedupe_log_head(&note));
+    }
     // S5: the dropped runs become marks and F1.11 places their edges: the words fence both edges, each lane's cached envelope chooses inside the fence.
     // No envelope leaves the mark on its word times (the documented fallback, not a failure).
     let aligned: Vec<crate::edges::AlignedWord> = words

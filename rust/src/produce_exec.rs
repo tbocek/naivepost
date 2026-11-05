@@ -358,6 +358,20 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         clip.scratch = scratch.clone();
         clip.on_recording = mats.on_recording;
     }
+    // §5 frame-exact clips: every clip's frames from the video's running clock, on the setting's grid ("source": the
+    // first recording's own rate). With no grid known the clips are cut by their seconds, as before.
+    let grid = match settings.frame_rate {
+        crate::project::FrameRate::F60 => 60.0,
+        crate::project::FrameRate::F30 => 30.0,
+        crate::project::FrameRate::F24 => 24.0,
+        crate::project::FrameRate::Source => clips
+            .iter()
+            .find(|clip| clip.source.is_empty())
+            .and_then(|clip| (mats.source_file)(clip))
+            .and_then(|(path, _)| crate::produce_probe::frame_rate_of(Path::new(&path)))
+            .unwrap_or(0.0),
+    };
+    render::frame_grid(&mut clips, grid);
 
     // S4: each clip's lines become cues on its own clock, moved onto the video's by `produced_clocks`' offsets, then tidied
     // ONCE across clips (`tidy` compares cues with each other).
@@ -439,7 +453,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         .enumerate()
         .map(|(index, clip)| {
             let stem = render::clip_stem(index, &stamp);
-            let file = scratch.join(format!("{stem}.{}", container_ext(settings)));
+            let file = scratch.join(format!("{stem}.{}", render::CLIP_EXT));
             let mut clip = clip.clone();
             clip.lane_files = mats
                 .lanes
@@ -576,7 +590,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // §6 names this file `joined.<container>`, the container of `final.<ext>`; one expression feeds the writer and the mux's input.
             render::join_command(
                 &list,
-                &scratch.join(details::joined(container_ext(settings))),
+                &scratch.join(details::joined(render::CLIP_EXT)),
             ),
         ))
     };
@@ -613,7 +627,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             .map(|conf| conf.subtitle_languages)
             .unwrap_or_default(),
     );
-    let joined = scratch.join(details::joined(container_ext(settings)));
+    let joined = scratch.join(details::joined(render::CLIP_EXT));
     let mux = command(
         "muxing",
         render::mux_command(

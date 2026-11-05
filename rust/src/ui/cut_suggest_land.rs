@@ -278,15 +278,33 @@ pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
     landed
 }
 
+/// At most one breath at each join of a suggestion (§ suggestions, [`crate::cut_breaths`]): read off the recordings
+/// the joins fall in; with no session folder the suggestion lands as it came.
+fn with_one_breath(answer: &Applied) -> Applied {
+    let Some(Some(tree)) = session_tree() else {
+        return answer.clone();
+    };
+    let project = crate::ui::window::session_handle().borrow().clone();
+    let (segs, logs) =
+        crate::cut_breaths::apply(&tree, &project, &answer.segs, &answer.kept_inserts);
+    for line in &logs {
+        crate::ui::window::log_line(line);
+    }
+    Applied {
+        segs,
+        ..answer.clone()
+    }
+}
+
 /// Land the WORDS cut (§S2a): the same door as [`land`], from the plain segments a no-model cut
 /// produced.
 pub fn land_spans(window: &adw::ApplicationWindow, spans: &[(f64, f64)]) -> Cut {
-    let answer = Applied {
+    let answer = with_one_breath(&Applied {
         segs: spans.to_vec(),
         kept_inserts: Vec::new(),
         effects: Vec::new(),
         log: Vec::new(),
-    };
+    });
     let landed = suggested_cut(&screen_cut(), &answer);
     // The same order `land` keeps for the model path, for the same reason: one undo step for the
     // cut, then the base moves so Revert keeps the words cut and drops only hand edits after it.
@@ -305,6 +323,7 @@ pub fn land_spans(window: &adw::ApplicationWindow, spans: &[(f64, f64)]) -> Cut 
 /// base moves to it in the same write, because §2 says the base IS the last suggestion. `answer` is
 /// what [`crate::suggest::apply`] produced from the model's segments.
 pub fn land(window: &adw::ApplicationWindow, answer: &Applied) -> Cut {
+    let answer = &with_one_breath(answer);
     let landed = suggested_cut(&screen_cut(), answer);
     // The recorder first: one undo step for the suggestion, so ↶ can take the suggestion back the
     // way it takes any other edit.

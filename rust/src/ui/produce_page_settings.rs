@@ -75,10 +75,9 @@ pub(crate) fn set_scale(window: &adw::ApplicationWindow, row: &str, value: &str)
     say(window, &said)
 }
 
-/// One of the three TICK rows changed (§A); separate from `set_setting`, as a tick has no value string.
+/// One of the two TICK rows changed (§A); separate from `set_setting`, as a tick has no value string.
 pub fn set_toggle(window: &adw::ApplicationWindow, row: &str, on: bool) -> String {
     mutate(|s| match row {
-        "Frame timing" => s.vfr = on,
         "Channels" => s.mono = on,
         "Frame edges" => s.blurred_edges = on,
         _ => (),
@@ -99,7 +98,6 @@ pub fn apply_rows(
     for (row, value) in rows {
         let on = value.trim() == "on";
         match row.as_str() {
-            "Frame timing" => s.vfr = on,
             "Channels" => s.mono = on,
             "Frame edges" => s.blurred_edges = on,
             "Translate" => {
@@ -168,7 +166,6 @@ pub(crate) fn set_encoder_fields(s: &mut ProduceState, p: &crate::project::Produ
     s.translate = p.translate.clone();
     s.game_volume = p.game_volume;
     s.crf = f64::from(p.crf);
-    s.vfr = p.vfr;
     s.mono = p.mono;
     s.blurred_edges = p.blurred_edges;
 }
@@ -331,7 +328,6 @@ pub(crate) fn produce_settings(s: &ProduceState) -> crate::project::Produce {
         subtitles: parse_subtitles(&s.subtitles),
         game_volume: s.game_volume,
         crf: s.crf as u32,
-        vfr: s.vfr,
         mono: s.mono,
         blurred_edges: s.blurred_edges,
         // The ticked languages travel with the settings (§F5.4 S7/S9 write one sidecar per language, in this order).

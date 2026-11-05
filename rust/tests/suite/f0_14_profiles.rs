@@ -461,15 +461,20 @@ Preset: veryslow
 Frame rate: 30
 Translate: German, French
 Quality (CRF): 20
-Frame timing: on
+Frame timing: on         # an older profile's line for the dropped VFR tick
 Channels: on
 Frame edges: off
 ";
     let template = profile::parse(source).expect("a produce section parses");
     assert_eq!(
         template.produce.len(),
-        8,
-        "the comment is not part of the value"
+        7,
+        "the comment is not part of the value, and the dropped Frame timing row is skipped"
+    );
+    assert!(
+        template.produce.iter().all(|(row, _)| row != "Frame timing"),
+        "{:?}",
+        template.produce
     );
     assert!(template.sections.is_empty(), "produce is no prompt section");
     assert!(
@@ -485,7 +490,7 @@ Frame edges: off
     assert_eq!(after.codec, Codec::Vp9, "webm forces vp9, as on the page");
     assert_eq!(after.preset, Preset::VerySlow);
     assert_eq!(after.crf, 20);
-    assert!(after.vfr && after.mono && !after.blurred_edges);
+    assert!(after.mono && !after.blurred_edges);
     assert_eq!(after.translate, ["German", "French"]);
     assert_eq!(
         after.audio_kbps, before.audio_kbps,
@@ -536,7 +541,7 @@ fn f0_14_s1_new_is_one_big_template_with_every_section() {
     }
     assert_eq!(
         template.produce.len(),
-        13,
+        12,
         "and every Produce row, at its default"
     );
     assert!(template

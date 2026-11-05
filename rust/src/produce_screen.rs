@@ -9,7 +9,7 @@ use crate::project::{Codec, Container, Subtitles, TextMark};
 use crate::tools::mm_ss;
 
 /// The rows of the settings scroller, in §A's order, so a test can pin the list against the table.
-pub const SETTINGS_ROWS: [&str; 13] = [
+pub const SETTINGS_ROWS: [&str; 12] = [
     "Container",
     "Codec",
     "Preset",
@@ -20,7 +20,6 @@ pub const SETTINGS_ROWS: [&str; 13] = [
     "Translate",
     "Game audio",
     "Quality (CRF)",
-    "Frame timing",
     "Channels",
     "Frame edges",
 ];
@@ -56,7 +55,6 @@ pub const TRANSLATE_LANGUAGES: [&str; 3] = ["English", "German", "French"];
 pub const CRF_MIN: u32 = 14;
 pub const CRF_MAX: u32 = 34;
 pub const CRF_MARK: u32 = 24;
-pub const VFR_TICK: &str = "peak rate (VFR)";
 pub const MONO_TICK: &str = "mono";
 pub const EDGES_TICK: &str = "blurred";
 
@@ -76,8 +74,8 @@ pub fn options(row: &str) -> Option<&'static [&'static str]> {
     }
 }
 
-/// The default of one row, as §A spells it; `off`/`on` for the three tick rows.
-pub fn defaults() -> [(&'static str, &'static str); 13] {
+/// The default of one row, as §A spells it; `off`/`on` for the two tick rows.
+pub fn defaults() -> [(&'static str, &'static str); 12] {
     [
         ("Container", "mp4"),
         ("Codec", "h264"),
@@ -90,7 +88,6 @@ pub fn defaults() -> [(&'static str, &'static str); 13] {
         ("Translate", ""),
         ("Game audio", "0.22"),
         ("Quality (CRF)", "24"),
-        ("Frame timing", "off"),
         ("Channels", "off"),
         // The one tick that starts on: a black band is the uglier answer to an odd-shaped frame.
         ("Frame edges", "on"),
@@ -104,13 +101,12 @@ pub fn tooltip(row: &str) -> &'static str {
         "Codec" => "h264 is the safe upload; h265 is smaller but slower; vp9 is for webm",
         "Preset" => "how long the encoder may think — slower means smaller at the same quality",
         "Resolution" => "the short side of the frame — the cut page's aspect sets its shape; original keeps the footage's own size",
-        "Frame rate" => "output frame rate — a ceiling rather than a target with VFR on",
+        "Frame rate" => "output frame rate",
         "Audio" => "audio bitrate in kbit/s",
         "Subtitles" => "what the VIDEO carries; an .srt is written beside the video either way, one per language ticked",
         "Translate" => "Also write the subtitles in these languages, translated — this video's own language is not offered",
         "Game audio" => "how loud the original game audio sits under the narration",
         "Quality (CRF)" => "quality: lower is better and bigger (18–24 is the usual range; 24 is the default, marked)",
-        "Frame timing" => "Treat the frame rate above as a ceiling rather than a target",
         "Channels" => "Mix the finished audio down to a single channel",
         "Frame edges" => "Fill the empty edges of the frame with a blown-up, blurred copy of the picture itself, instead of black",
         _ => "",

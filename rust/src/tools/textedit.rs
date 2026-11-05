@@ -18,6 +18,13 @@ pub const SEAM_NOISE_WORDS: usize = 2;
 
 pub const JOIN_REACH_WORDS: usize = 3;
 
+/// How far back before a cut a restart is looked for, in kept words. P.eng.restartReachWords
+pub const RESTART_REACH_WORDS: usize = 60;
+
+/// Fewest words in a row the take after a cut must open with, said already before it, to count as a restart.
+/// P.eng.restartMinWords. Over the 22 lecture projects even 3 found only the one real restart; 5 keeps the margin.
+pub const RESTART_MIN_WORDS: usize = 5;
+
 /// Which side of the join a stretch is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
@@ -253,6 +260,54 @@ pub fn dedupe_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -
             notes.push(dedupe_note(times[go[0]].0, &text));
             break; // one fix per join, the longest match only
         }
+    }
+    notes
+}
+
+pub fn restart_note(seconds: f64, text: &str) -> String {
+    format!("{seconds}: {text:?} started over after the cut -- the first attempt goes")
+}
+
+/// A restart across a cut: the take after the cut opens with [`RESTART_MIN_WORDS`] or more words said already in the
+/// last [`RESTART_REACH_WORDS`] kept words before it. The first attempt begins where those words were said first, and
+/// everything from there to the cut goes; the take after the cut stays whole.
+///
+/// [`dedupe_joins`] only sees a repeat that touches the cut. When the join model trims the first attempt's tail but
+/// not its start, the repeat sits a sentence back: 09-dao, "Und das dritte Problem: Stimmen kann man kaufen. Das beste
+/// Beispiel sind die Curve Wars. Bei Curve entscheiden die Besitzer von" kept, then the new take said it all again.
+pub fn restart_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -> Vec<String> {
+    let mut notes = Vec::new();
+    for j in 1..words.len() {
+        if kept[j] || !kept[j - 1] {
+            continue; // not the first dropped word of a run
+        }
+        let mut k = j;
+        while k < words.len() && !kept[k] {
+            k += 1;
+        }
+        if k >= words.len() {
+            break;
+        }
+        let mut before: Vec<usize> = (0..j).rev().filter(|&i| kept[i]).take(RESTART_REACH_WORDS).collect();
+        before.reverse();
+        let after: Vec<usize> = (k..words.len()).take_while(|&i| kept[i]).take(RESTART_REACH_WORDS).collect();
+        // The earliest start of the longest opening said again: the whole first attempt goes, not half of it.
+        let mut best: Option<(usize, usize)> = None;
+        for from in 0..before.len() {
+            let n = (0..after.len().min(before.len() - from))
+                .take_while(|&x| prepare_decisions::same_word(&words[before[from + x]], &words[after[x]]))
+                .count();
+            if n >= RESTART_MIN_WORDS && best.is_none_or(|(_, longest)| n > longest) {
+                best = Some((from, n));
+            }
+        }
+        let Some((from, _)) = best else { continue };
+        let go = &before[from..];
+        for &idx in go {
+            kept[idx] = false;
+        }
+        let text = go.iter().map(|&idx| words[idx].as_str()).collect::<Vec<_>>().join(" ");
+        notes.push(restart_note(times[go[0]].0, &text));
     }
     notes
 }

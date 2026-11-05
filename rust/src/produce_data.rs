@@ -82,7 +82,7 @@ pub const CLIPS_EXTRA: [&str; 5] = [
     "clips/c%03d_t%02d.svg",
     "clips/<card copy>.svg",
     "clips/<name>.frames/",
-    "clips/joined.<container>",
+    "clips/joined.mkv",
 ];
 
 /// Every file `produce/` holds, §3 first and then §6's additions: what a caller reads when it wants

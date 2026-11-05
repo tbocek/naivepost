@@ -346,8 +346,8 @@ fn s1_fetch(app: &adw::Application) {
         asked[0].0, "/v1/models",
         "and it was the model list §9 names"
     );
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }
 
 /// §9's second half of the list job: Use copies the chosen id into Model (or Decision, once entered), and refuses anything the server
@@ -442,8 +442,8 @@ fn s2_use(app: &adw::Application) {
         "and left Model as it was"
     );
     assert_eq!(badge_tip(settings::USE_KEY), "Decision set to qwen2.5vl:7b");
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }
 
 /// A server that is down fails the row for its own reason — never a ✓, and never the stub's sentence about
@@ -486,8 +486,8 @@ fn s3_down(app: &adw::Application) {
         Vec::<String>::new(),
         "nothing was listed"
     );
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }
 
 /// A server that answers the list with nothing is refused with the endpoint named, because that is the
@@ -530,8 +530,8 @@ fn s4_empty(app: &adw::Application) {
     );
     assert_eq!(settings::listed_models(&window), Vec::<String>::new());
     fake.waited(1);
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }
 
 /// F0.13's first probe through its button: ONE completion, thinking off in every place a server reads it,
@@ -612,8 +612,8 @@ fn s5_completion(app: &adw::Application) {
         serde_json::json!("Reply with the single word: ok")
     );
     assert_eq!(body["model"], serde_json::json!("qwen2.5vl:7b"));
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }
 
 /// F0.13's second probe: the picture must be the generated red square, the row must carry NO token cap
@@ -692,8 +692,8 @@ fn s6_vision(app: &adw::Application) {
         "and names what to serve it with: {why}"
     );
     blind.waited(1);
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }
 
 /// A server that answers with nothing is a failure. The row used to green-light this: the verdict formatted
@@ -728,6 +728,6 @@ fn s7_blank(app: &adw::Application) {
         badge_tip("llm")
     );
     blank.waited(1);
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 }

@@ -381,7 +381,8 @@ fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_
         .collect();
     assert_eq!(dumps.len(), 1, "{dumps:?}");
 
-    // And with no config folder anywhere, the give-up still succeeds: recording is observability.
+    // And with no config folder anywhere, the give-up still succeeds: recording is observability. Unsetting is
+    // safe here and only here: HOME goes too, so nothing can resolve the person's own folder.
     unsafe {
         std::env::remove_var("XDG_CONFIG_HOME");
         std::env::remove_var("HOME");

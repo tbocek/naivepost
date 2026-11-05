@@ -92,12 +92,12 @@ pub fn drifts(planned: f64, actual: f64) -> bool {
 pub const SCRATCH: &str = render::SCRATCH;
 
 pub const SCRATCH_KINDS: [&str; 6] = [
-    "c%03d.<container>",
+    "c%03d.mkv",
     "c%03d_<stamp>.srt",
     "c%03d_t%02d.svg",
     "<card copy>.svg",
     "<name>.frames/",
-    "joined.<container>",
+    "joined.mkv",
 ];
 
 pub fn card_copy(card_file: &str) -> String {

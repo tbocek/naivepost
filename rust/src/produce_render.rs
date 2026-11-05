@@ -105,6 +105,11 @@ pub struct Clip {
     pub ss: f64,
     pub sound_input: usize,
     pub voice_files: Vec<String>,
+    /// Frame-exact clips (§5): how many frames this clip's picture holds, from the video's running clock ([`frame_grid`]);
+    /// 0 when no grid is known, and the clip is cut by its seconds as before.
+    pub frames: usize,
+    /// The frame grid those frames are counted on, frames a second.
+    pub fps: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -245,6 +250,8 @@ pub fn plan_clips(
             scratch: std::path::PathBuf::new(),
             lane_files: Vec::new(),
             voice_files: Vec::new(),
+            frames: 0,
+            fps: 0.0,
         });
     }
     (clips, logs)
@@ -472,6 +479,39 @@ pub fn produced_clocks(clips: &[Clip]) -> Vec<(f64, f64)> {
     clocks
 }
 
+/// Frame-exact clips (§5): each clip gets the frames between where the video's running clock stands at its start and at
+/// its end, each rounded to the grid, so a clip's half-frame of rounding is taken back by the next and the video is never
+/// more than half a frame off the cut, however many clips there are (first rewrite: each clip rounded on its own and
+/// its sound ran to its own length, about 11 ms a join, 1 s over 08-dex's 85 clips).
+pub fn frame_grid(clips: &mut [Clip], fps: f64) {
+    if fps <= 0.0 {
+        return;
+    }
+    let clocks = produced_clocks(clips);
+    for (clip, (start, len)) in clips.iter_mut().zip(clocks) {
+        let first = (start * fps).round() as i64;
+        let last = ((start + len) * fps).round() as i64;
+        clip.frames = (last - first).max(1) as usize;
+        clip.fps = fps;
+    }
+}
+
+/// The clip files' container (§5): Matroska, so the sound can stay uncompressed until the mux; an AAC track in every
+/// clip brought 21 ms of encoder priming to every join.
+pub const CLIP_EXT: &str = "mkv";
+
+/// The clips' own sound: uncompressed, cut to the sample, compressed once by the mux (§7).
+pub const CLIP_AUDIO_CODEC: &str = "pcm_s16le";
+
+/// Seconds read past a frame-exact clip's end, so the picture has its last frame to give; `-frames:v` and the sound's
+/// trim set the length.
+pub const FRAME_MARGIN: f64 = 0.1;
+
+/// The sample a frame-exact clip's sound ends on, at 48 kHz.
+pub fn clip_samples(clip: &Clip) -> u64 {
+    (clip.frames as f64 / clip.fps * 48_000.0).round() as u64
+}
+
 pub fn final_srt_name() -> &'static str {
     "final.srt"
 }
@@ -509,14 +549,11 @@ pub fn clip_stem(no: usize, stamp: &str) -> String {
     format!("c{:03}_{}", no, stamp)
 }
 
-/// S5's `-fps_mode` piece. `source` adds nothing. With frame timing off the `fps` filter set the grid, so the output is
-/// constant; with it on the rate is a ceiling (§A "peak rate (VFR)"), `-fpsmax` ALONE: ffmpeg rejects it beside `-fps_mode vfr`.
-pub fn frame_rate_args(frame_rate: &str, vfr: bool) -> Vec<String> {
+/// S5's `-fps_mode` piece. `source` adds nothing; any other rate is set by the `fps` filter in the graph, so the output is
+/// constant (§A "Frame rate"; the peak-rate VFR tick is gone, 08 §1).
+pub fn frame_rate_args(frame_rate: &str) -> Vec<String> {
     if frame_rate == "source" {
         return Vec::new();
-    }
-    if vfr {
-        return vec!["-fpsmax".into(), frame_rate.into()];
     }
     vec!["-fps_mode".into(), "cfr".into()]
 }
@@ -556,10 +593,12 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
             chain.push(filter);
         }
     }
-    chain.extend(frame_rate_filter(
-        frame_rate_name(settings.frame_rate),
-        settings.vfr,
-    ));
+    // "source" on a frame grid keeps the footage's own rate, as a grid (§5).
+    if settings.frame_rate == project::FrameRate::Source && clip.fps > 0.0 {
+        chain.push(format!("fps=fps={}", clip.fps));
+    } else {
+        chain.extend(frame_rate_filter(frame_rate_name(settings.frame_rate)));
+    }
     if settings.blurred_edges {
         let (wide, high) = clip.frame;
         chain.push("split=2[bdb][bdf]".into());
@@ -582,10 +621,10 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
     chain.extend(built.video);
     chain
 }
-/// The frame rate as a filter, the in-graph half of [`frame_rate_args`]: only for a constant rate; under VFR the rate is the
-/// encoder's ceiling, and a moving camera brings its own grid (`zoompan`'s `fps`).
-fn frame_rate_filter(frame_rate: &str, vfr: bool) -> Vec<String> {
-    if frame_rate == "source" || vfr {
+/// The frame rate as a filter, the in-graph half of [`frame_rate_args`]: nothing for `source`; a moving camera brings its
+/// own grid (`zoompan`'s `fps`).
+fn frame_rate_filter(frame_rate: &str) -> Vec<String> {
+    if frame_rate == "source" {
         return Vec::new();
     }
     vec![format!("fps=fps={frame_rate}")]
@@ -632,6 +671,10 @@ fn audio_parts(
     hush: &[(f64, f64)],
 ) -> AudioParts {
     let mut head = Vec::new();
+    // Frame-exact clips (§5): the sound starts on the picture's first frame, silence filling a later first sample.
+    if clip.frames > 0 {
+        head.push("aresample=async=1:first_pts=0".to_string());
+    }
     if (clip.rate - 1.0).abs() > f64::EPSILON && clip.read_head.is_none() {
         head.push(render_fx::atempo_chain(clip.rate));
     }
@@ -653,10 +696,14 @@ fn audio_parts(
         )
     });
     let layout = if settings.mono { "mono" } else { "stereo" };
-    let tail = vec![
+    let mut tail = vec![
         LIMITER.to_string(),
         format!("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"),
     ];
+    // Frame-exact clips (§5): the sound runs to the sample the picture's last frame ends on, padded or trimmed.
+    if clip.frames > 0 && clip.fps > 0.0 {
+        tail.push(format!("apad,atrim=end_sample={}", clip_samples(clip)));
+    }
     AudioParts {
         head,
         lane_mix,
@@ -863,8 +910,9 @@ pub fn encode_command_with(
     }
     let footage = clip.source.is_empty() || clip.source.starts_with("copy:");
     if footage && clip.rate > 0.0 {
+        let margin = if clip.frames > 0 { FRAME_MARGIN } else { 0.0 };
         argv.push("-t".into());
-        argv.push(format!("{:.3}", clip.on_screen * clip.rate));
+        argv.push(format!("{:.3}", (clip.on_screen + margin) * clip.rate));
     }
     let mut filter_inputs = 0;
     if loops_card {
@@ -944,10 +992,23 @@ pub fn encode_command_with(
         "[a]".into(),
     ]);
     argv.extend(codec_args(settings));
-    argv.extend(frame_rate_args(
-        frame_rate_name(settings.frame_rate),
-        settings.vfr,
-    ));
+    if clip.frames > 0 {
+        // A frame grid is a constant rate, "source" included (its grid is the footage's own rate).
+        argv.extend(["-fps_mode".into(), "cfr".into()]);
+        argv.extend([
+            "-c:a".into(),
+            CLIP_AUDIO_CODEC.into(),
+            "-ac".into(),
+            if settings.mono { "1" } else { "2" }.into(),
+            // §5: the clip's length is its frames; its sound is trimmed to the same sample in the graph.
+            "-frames:v".into(),
+            clip.frames.to_string(),
+        ]);
+        argv.push(out.display().to_string());
+        let _ = filter_inputs;
+        return argv;
+    }
+    argv.extend(frame_rate_args(frame_rate_name(settings.frame_rate)));
     argv.extend([
         "-c:a".into(),
         audio_codec(settings.container).into(),
@@ -1060,6 +1121,21 @@ pub const LOUDNORM: &str = "aresample=async=1:first_pts=0,loudnorm=I=-14:TP=-1.5
 
 pub const MUX_FRACTION: f64 = 0.96;
 
+/// The AAC encoder's priming, in samples at 48 kHz: what an MP4 without an edit list plays before the sound.
+pub const AAC_PRIMING_SAMPLES: u32 = 1024;
+
+/// S8's audio filter for this container. An MP4 is written without an edit list ([`MP4_START_FLAGS`]), so the AAC
+/// priming would play and the sound start 21 ms late: that many samples are trimmed first and the priming takes their
+/// place. Matroska and WebM record the delay themselves; trimming there made the sound 21 ms early (measured).
+pub fn mux_audio_filter(container: project::Container) -> String {
+    match container {
+        project::Container::Mp4 => format!(
+            "{LOUDNORM},aresample=48000,atrim=start_sample={AAC_PRIMING_SAMPLES},asetpts=PTS-STARTPTS"
+        ),
+        _ => LOUDNORM.to_string(),
+    }
+}
+
 /// S8's mp4 stream flags. The mux is `-c:v copy`; subtitle tracks go in only for "track in file", never for webm
 /// ([`crate::produce_screen::apply_container_rules`] decides).
 pub const MP4_STREAM_FLAGS: [&str; 2] = ["-movflags", "+faststart+negative_cts_offsets"];
@@ -1109,7 +1185,7 @@ pub fn mux_command(
         "-c:v".into(),
         "copy".into(),
         "-af".into(),
-        LOUDNORM.into(),
+        mux_audio_filter(settings.container),
         "-ar".into(),
         "48000".into(),
         "-c:a".into(),

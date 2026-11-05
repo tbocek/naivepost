@@ -133,7 +133,6 @@ pub(crate) fn wire_settings(window: &adw::ApplicationWindow) {
         });
     }
     for (row, name) in [
-        ("Frame timing", "tick-peak-rate-vfr"),
         ("Channels", "tick-mono"),
         ("Frame edges", "tick-blurred"),
     ] {

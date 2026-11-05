@@ -330,8 +330,8 @@ impl Scene {
 }
 
 fn leave() {
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
     std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).expect("back to the crate folder");
 }
 
@@ -1033,9 +1033,10 @@ fn f1_3_s4_alignment_is_asked_after_the_asr_wrote_its_words() {
         .find(|seen| seen.body.contains(SCENE_ALIGNER))
         .expect("asked");
     let sent: serde_json::Value = serde_json::from_str(&align.body).expect("the envelope is JSON");
+    // Its numbers said as words (F1.5 S4): "word0 one0" goes out as the aligner can hear it.
     assert_eq!(
         sent["request"]["text"].as_str(),
-        Some("word0 one0"),
+        Some(naivepost::spoken_numbers::spell("word0 one0", "en").0.as_str()),
         "the aligner was given the transcript, not an empty string: {sent}"
     );
 }

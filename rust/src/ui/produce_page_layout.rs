@@ -7,14 +7,14 @@ use gtk4 as gtk;
 use crate::produce_screen as screen;
 use crate::ui::produce_page::{read_state, row_widget, ProduceState};
 
-/// The picture's lines by §1 item: **11** two dropdown lines, **12** Subtitles · Translate, **13**/**14** Quality beside Frame timing, then Channels and Frame edges. Game audio gets its own line (a slider ran past the column); it is left out when narration is off.
+/// The picture's lines by §1 item: **11** two dropdown lines, **12** Subtitles · Translate, **13**/**14** Quality beside Channels, then Frame edges (the picture still draws Frame timing, the VFR tick that is gone). Game audio gets its own line (a slider ran past the column); it is left out when narration is off.
 const LINES: [&[&str]; 6] = [
     &["Container", "Codec", "Preset"],
     &["Resolution", "Frame rate", "Audio"],
     &["Subtitles", "Translate"],
     &["Game audio"],
-    &["Quality (CRF)", "Frame timing"],
-    &["Channels", "Frame edges"],
+    &["Quality (CRF)", "Channels"],
+    &["Frame edges"],
 ];
 
 const DROPDOWN_LINES: usize = 2;
@@ -74,9 +74,8 @@ fn control(s: &ProduceState, name: &str) -> gtk::Widget {
             scale.set_tooltip_text(Some(screen::tooltip(name)));
             scale.upcast()
         }
-        "Frame timing" | "Channels" | "Frame edges" => {
+        "Channels" | "Frame edges" => {
             let (tick_label, widget, on) = match name {
-                "Frame timing" => (screen::VFR_TICK, "tick-peak-rate-vfr", s.vfr),
                 "Channels" => (screen::MONO_TICK, "tick-mono", s.mono),
                 _ => (screen::EDGES_TICK, "tick-blurred", s.blurred_edges),
             };
@@ -165,9 +164,8 @@ pub(crate) fn rows_from(settings: &gtk::Widget) -> Vec<(String, String)> {
         .iter()
         .filter_map(|(row, _)| {
             let value = match *row {
-                "Frame timing" | "Channels" | "Frame edges" => {
+                "Channels" | "Frame edges" => {
                     let tick = match *row {
-                        "Frame timing" => "tick-peak-rate-vfr",
                         "Channels" => "tick-mono",
                         _ => "tick-blurred",
                     };

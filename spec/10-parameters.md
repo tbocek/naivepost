@@ -109,7 +109,7 @@ What the finished video is like: lengths, silences, budgets, what runs. One row 
 
 ## 3. Project settings (tab controls)
 
-Copy sources (on) (Narration on/off is gone: there is no narration switch, [07 §1](07-narrate.md#1-screen); P.project.frameInterval is gone with Freq: describe sees the text gate's changes and a 20 s heartbeat; first rewrite: stops 0.25 to 5, default 1; prototype: the extraction interval, stops 0, 0.1, 0.2, 0.5, 1 … 5), the User Context; encoder settings (mp4, h264, CRF 24, slow (prototype: veryslow), 1080, 30 fps, 128 kbit/s, subtitles none, no languages, VFR off, mono off, blurred edges on); publish state; aspect (source).
+Copy sources (on) (Narration on/off is gone: there is no narration switch, [07 §1](07-narrate.md#1-screen); P.project.frameInterval is gone with Freq: describe sees the text gate's changes and a 20 s heartbeat; first rewrite: stops 0.25 to 5, default 1; prototype: the extraction interval, stops 0, 0.1, 0.2, 0.5, 1 … 5), the User Context; encoder settings (mp4, h264, CRF 24, slow (prototype: veryslow), 1080, 30 fps, 128 kbit/s, subtitles none, no languages, mono off (VFR gone, [08 §1](08-produce.md#1-screen)), blurred edges on); publish state; aspect (source).
 
 ## 4. Prompts
 
@@ -168,6 +168,8 @@ Consequences of a format, a server, a standard or a measurement: nothing a user 
 | P.eng.edgeTailMaxSeconds | 0.25 | word-fenced edge placement: longest tail | retake_edge |
 | P.eng.troughReachSeconds | 0.4 | word-fenced edge placement: trough search | retake_edge |
 | P.eng.joinReachWords | 3 | dedupe across a cut | joinReach |
+| P.eng.restartReachWords | 60 | how far back before a cut, in kept words, a restart is looked for (new) | (none) |
+| P.eng.restartMinWords | 5 | fewest words the take after a cut must open with, said already before it, to count as a restart (new; over the 22 lecture projects even 3 found only the one real restart) | (none) |
 | P.eng.keepReachWords | 200 | backward match look-back | keepReach |
 | P.eng.asrSampleRate | 16000 | the rate ASR and diarization are trained on; everything resampled to it | sampleRate |
 | P.eng.asrCutSeekSeconds | 20 | how far a chunk cut slides to a silence | asrCutSeek |
@@ -181,6 +183,7 @@ Consequences of a format, a server, a standard or a measurement: nothing a user 
 | P.eng.turnGapSeconds | 0.5 | gap that ends a turn | diarTurnGap |
 | P.eng.alignCutSeekSeconds | 4 | how far an alignment cut slides to a silence | alignCutSeek |
 | P.eng.alignSoundPadSeconds | 0.25 | sound kept around an alignment piece | alignSoundPad |
+| P.eng.alignWindowWholeSeconds | 100 | longest alignment window asked about whole (new): qwen3-aligner timed 61-107 s windows with nothing lost and refused 118 s and more ("max_source_positions"), which is answered like no room, by halving | (prototype: windows of 60 s, `alignChunk`) |
 | P.eng.alignClipMaxSeconds | 120 | sanity ceiling on a returned second: past it, the number was not seconds | alignClipMax |
 | P.eng.alignBareWarnSeconds | 10 | voiced audio under no word before a warning | alignBareWarn |
 | P.eng.alignBareShare | 0.08 | share of voiced audio under no word before a warning | alignBareShare |

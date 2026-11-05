@@ -12,7 +12,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Lane, Seg};
 use naivepost::ui;
-use naivepost::{cut_hear, cut_play, cut_play_leg, fx_record, fx_volume};
+use naivepost::{cut_hear, cut_play_leg, fx_record, fx_volume};
 
 use crate::common;
 use crate::common::settle;
@@ -601,11 +601,11 @@ fn sec_06_effects_2_the_lane_and_the_preview_s8_the_playing_leg_routes_the_same_
         cut_play_leg::route(&cut, 9.0, 1.0).gain > 0.0,
         "and everything else runs at the slider"
     );
-    // The rate still travels: silence is a gain question, never a rate one. What is routed is the clip's own
-    // played rate — `cut_play::played_rate`, whose answer for a clip with no rate written is [`cut_play::FLAT_RATE`].
+    // The rate still travels: silence is a gain question, never a rate one. What is routed is the speed's own
+    // flat rate (`cut_speed_play::flat_rate_at`), the rate the render plays these seconds at.
     assert_eq!(
         cut_play_leg::route(&cut, 11.0, 1.0).rate,
-        cut_play::FLAT_RATE,
-        "the picture keeps its own clock under the silence"
+        1.5,
+        "the picture keeps the speed's clock under the silence"
     );
 }

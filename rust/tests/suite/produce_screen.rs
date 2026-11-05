@@ -34,10 +34,16 @@ fn sec_08_produce_1_screen_s1_settings_rows_and_options() {
             "Translate",
             "Game audio",
             "Quality (CRF)",
-            "Frame timing",
             "Channels",
             "Frame edges"
         ]
+    );
+    // The peak-rate (VFR) tick is gone (08 §1): no row, no default, no tooltip.
+    assert!(!ps::SETTINGS_ROWS.contains(&"Frame timing"));
+    assert!(
+        ps::defaults().iter().all(|(row, _)| *row != "Frame timing"),
+        "{:?}",
+        ps::defaults()
     );
 
     // tool:ffmpeg.encode — every one of these lists is ffmpeg's, not a measurement this app makes.
@@ -76,8 +82,7 @@ fn sec_08_produce_1_screen_s1_settings_rows_and_options() {
     assert_eq!((ps::CRF_MIN, ps::CRF_MAX, ps::CRF_MARK), (14, 34, 24));
     assert!((ps::CRF_MIN..=ps::CRF_MAX).contains(&ps::CRF_MARK));
 
-    // The three tick rows carry §A's own labels.
-    assert_eq!(ps::VFR_TICK, "peak rate (VFR)");
+    // The two tick rows carry §A's own labels.
     assert_eq!(ps::MONO_TICK, "mono");
     assert_eq!(ps::EDGES_TICK, "blurred");
 
@@ -85,7 +90,6 @@ fn sec_08_produce_1_screen_s1_settings_rows_and_options() {
     for row in [
         "Game audio",
         "Quality (CRF)",
-        "Frame timing",
         "Channels",
         "Frame edges",
     ] {
@@ -117,11 +121,11 @@ fn sec_08_produce_1_screen_s2_defaults() {
     assert_eq!(of("Translate"), Some(""));
     assert_eq!(of("Game audio"), Some("0.22"));
     assert_eq!(of("Quality (CRF)"), Some("24"));
-    assert_eq!(of("Frame timing"), Some("off"));
+    assert_eq!(of("Frame timing"), None);
     assert_eq!(of("Channels"), Some("off"));
     assert_eq!(of("Frame edges"), Some("on"));
 
-    // The same thirteen answers as the stored record's default — one source of truth for both.
+    // The same twelve answers as the stored record's default — one source of truth for both.
     let settings = project::Produce::default();
     assert_eq!(settings.container, Container::Mp4);
     assert_eq!(settings.codec, Codec::H264);
@@ -132,7 +136,6 @@ fn sec_08_produce_1_screen_s2_defaults() {
     assert_eq!(settings.subtitles, Subtitles::None);
     assert!(settings.translate.is_empty());
     assert_eq!(settings.crf, 24);
-    assert!(!settings.vfr);
     assert!(!settings.mono);
     assert!(settings.blurred_edges);
 
@@ -165,7 +168,7 @@ fn sec_08_produce_1_screen_s3_tooltips_name_the_rule() {
         ps::tooltip("Container")
     );
     assert!(ps::tooltip("Resolution").contains("the short side of the frame"));
-    assert!(ps::tooltip("Frame rate").contains("a ceiling rather than a target with VFR on"));
+    assert_eq!(ps::tooltip("Frame rate"), "output frame rate");
     assert!(ps::tooltip("Quality (CRF)").contains("lower is better and bigger"));
     assert!(ps::tooltip("Frame edges").contains("blurred copy of the picture itself"));
     assert!(ps::tooltip("Game audio").contains("original game audio sits under the narration"));

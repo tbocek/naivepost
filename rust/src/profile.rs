@@ -75,7 +75,7 @@ pub fn split_produce(source: &str) -> (String, Vec<(String, String)>) {
             }
         }
         if inside {
-            if let Ok(row) = produce_row(line.trim()) {
+            if let Ok(Some(row)) = produce_row(line.trim()) {
                 rows.push(row);
             }
             continue;
@@ -275,7 +275,8 @@ pub fn parse(source: &str) -> Result<Template, Vec<String>> {
             continue;
         }
         match produce_row(line.trim()) {
-            Ok(row) => produce.push(row),
+            Ok(Some(row)) => produce.push(row),
+            Ok(None) => {}
             Err(why) => errors.push(format!("line {number}: {why}")),
         }
     }
@@ -321,8 +322,11 @@ pub fn parse(source: &str) -> Result<Template, Vec<String>> {
 /// The section that holds encoder rows rather than prompt words.
 pub const PRODUCE: &str = "produce";
 
-/// One `## produce` line: `Row: value`, the row and the value as the Produce page spells them.
-fn produce_row(line: &str) -> Result<(String, String), String> {
+/// The row of the peak-rate (VFR) tick, gone (08 §1): an older profile's line for it is skipped, never an error.
+const DROPPED_ROW: &str = "Frame timing";
+
+/// One `## produce` line: `Row: value`, the row and the value as the Produce page spells them; `None` for a dropped row.
+fn produce_row(line: &str) -> Result<Option<(String, String)>, String> {
     use crate::produce_screen as screen;
     // A `#` after the value is a comment (the ⓘ help lists each row's choices that way).
     let line = line.split(" #").next().unwrap_or(line);
@@ -330,6 +334,9 @@ fn produce_row(line: &str) -> Result<(String, String), String> {
         .split_once(':')
         .map(|(row, value)| (row.trim(), value.trim()))
         .ok_or("a produce line is `Row: value`, e.g. `Preset: veryslow`")?;
+    if row == DROPPED_ROW {
+        return Ok(None);
+    }
     let rows: Vec<&str> = screen::defaults().iter().map(|(row, _)| *row).collect();
     if !rows.contains(&row) {
         return Err(format!(
@@ -337,7 +344,7 @@ fn produce_row(line: &str) -> Result<(String, String), String> {
             rows.join(", ")
         ));
     }
-    let tick = matches!(row, "Frame timing" | "Channels" | "Frame edges");
+    let tick = matches!(row, "Channels" | "Frame edges");
     let good = match row {
         _ if tick => matches!(value, "on" | "off"),
         "Translate" => {
@@ -368,7 +375,7 @@ fn produce_row(line: &str) -> Result<(String, String), String> {
         };
         return Err(format!("`{value}` is not a {row} -- {allowed}"));
     }
-    Ok((row.to_string(), value.to_string()))
+    Ok(Some((row.to_string(), value.to_string())))
 }
 
 /// One field line: `name: kind [required] ["Label"] [= value | value …]`.

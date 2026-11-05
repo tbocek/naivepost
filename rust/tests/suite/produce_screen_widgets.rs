@@ -48,7 +48,7 @@ const WIDGETS: [&str; 15] = [
     "title-entry",      // **8**  Title                      sec_08_produce_1_screen S1
     "title-suggest",    // **8b** ↻ suggest                  sec_08_produce_1_screen S1
     "description-box",  // **9**  YouTube description        sec_08_produce_1_screen S1
-    "encoder-settings", // **10** the thirteen rows in a scroller  sec_08_produce_1_screen S2
+    "encoder-settings", // **10** the twelve rows in a scroller  sec_08_produce_1_screen S2
     "transcode-save",   // **11** ⤓ save video                sec_08_produce_1_screen S1
     "transcode-again",  // **12** ↻ encode again              sec_08_produce_1_screen S1
     "inputs-readout",   // **13** Inputs readout, the bottom bar's  sec_08_produce_1_screen S4
@@ -82,14 +82,14 @@ fn click_and_pick(window: &adw::ApplicationWindow, name: &str, slot: Option<usiz
     settle();
 }
 
-/// The three tick controls §A names outright; they are rows but do not follow the `setting-<row>`
+/// The two tick controls §A names outright; they are rows but do not follow the `setting-<row>`
 /// spelling, so the row counter accepts them by their own names.
-const TICK_CONTROLS: [&str; 3] = ["tick-peak-rate-vfr", "tick-mono", "tick-blurred"];
+const TICK_CONTROLS: [&str; 2] = ["tick-mono", "tick-blurred"];
 
 /// The settings rows the page has DRAWN, read off the screen rather than from the page's hidden state:
 /// a hidden row must count as absent, so what is under test is `refresh`, not whether a
 /// `ProduceState::default()` agrees with itself. A name counts when it is a `setting-*` control or one
-/// of the three tick controls; sorted, so a failure prints the list in a stable order.
+/// of the two tick controls; sorted, so a failure prints the list in a stable order.
 fn drawn_setting_rows(window: &adw::ApplicationWindow) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     fn walk(node: &gtk::Widget, out: &mut Vec<String>) {
@@ -150,8 +150,8 @@ fn produce_page(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// §08-produce#1-screen — the tab is the page: fifteen widgets, the thirteen settings rows (twelve
-/// while narration is off), webm forcing its codec and dropping the subtitle track, and the images row
+/// §08-produce#1-screen — the tab is the page: fifteen widgets, the twelve settings rows (eleven
+/// drawn, Game audio being the Narrate page's), webm forcing its codec and dropping the subtitle track, and the images row
 /// answering an add.
 fn produce_round(_app: &adw::Application) {
     // --- (a) the plate draws §A's fifteen ------------------------------------------
@@ -184,19 +184,24 @@ fn produce_round(_app: &adw::Application) {
     window.close();
     settle();
 
-    // --- (b) the thirteen rows, twelve with narration off -------------------------
+    // --- (b) the twelve rows, eleven drawn ---------------------------------------
     let window = produce_page(_app);
     ui::produce_page::set_state(published());
     ui::produce_page::refresh(&window);
     let rows_with_narration = drawn_setting_rows(&window);
-    // Game audio is the narration's level and sits on the Narrate page (§07 §1), so this page draws twelve.
+    // Game audio is the narration's level and sits on the Narrate page (§07 §1), so this page draws eleven.
     assert!(
         !rows_with_narration.contains(&"setting-game-audio".to_string()),
         "the Game audio row is not on the Produce page"
     );
+    // The peak-rate (VFR) tick is gone (08 §1).
+    assert!(
+        widget_in(&window, "tick-peak-rate-vfr").is_none(),
+        "the dropped VFR tick is not drawn"
+    );
     assert_eq!(
         rows_with_narration.len(),
-        12,
+        11,
         "§A's rows but Game audio, each found by its control name: {rows_with_narration:?}"
     );
     RAN_SETTINGS.store(true, Ordering::SeqCst);
@@ -727,7 +732,7 @@ fn check_inputs_read_the_session(_app: &adw::Application) {
 
 /// §1 item **15**: the Inputs "no narration" clause follows the narration the session holds, not a switch
 /// (there is none, §07 §1). Three lines with words and no takes read "3 to speak"; the same session with a
-/// narration of no words reads "no narration", and the page's rows are the same twelve either way.
+/// narration of no words reads "no narration", and the page's rows are the same eleven either way.
 fn check_game_audio_follows_the_project(_app: &adw::Application) {
     let tree = empty_session_tree();
     seven_clip_cut(&tree);
@@ -764,7 +769,7 @@ fn check_game_audio_follows_the_project(_app: &adw::Application) {
     assert_eq!(
         drawn_setting_rows(&window).len(),
         naivepost::produce_screen::settings_rows_shown().len(),
-        "the page draws its twelve rows"
+        "the page draws its eleven rows"
     );
     assert!(
         inputs_text(&window).contains("3 to speak"),

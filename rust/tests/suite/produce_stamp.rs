@@ -194,7 +194,6 @@ fn f5_3_s1_every_encoder_setting_moves_the_hash() {
         ("preset", |s| s.preset = Preset::Fast),
         ("resolution", |s| s.resolution = project::Resolution::P720),
         ("frame_rate", |s| s.frame_rate = project::FrameRate::F60),
-        ("vfr", |s| s.vfr = !s.vfr),
         ("mono", |s| s.mono = !s.mono),
         ("audio_kbps", |s| s.audio_kbps = 192),
         ("subtitles", |s| s.subtitles = Subtitles::BurnedIn),
@@ -212,14 +211,6 @@ fn f5_3_s1_every_encoder_setting_moves_the_hash() {
         );
         assert_eq!(changed(&base, &moved), vec!["settings"], "{row}");
     }
-
-    // The frame rate and what it means are two different files: 30 as a target and 30 as a ceiling.
-    let target = base
-        .clone()
-        .with_settings(|s| s.frame_rate = project::FrameRate::F30);
-    let ceiling = target.clone().with_settings(|s| s.vfr = true);
-    assert_eq!(target.settings.frame_rate, project::FrameRate::F30);
-    assert_ne!(ceiling.stamp(), target.stamp());
 
     // The same ticks in another order are the same render — the languages are hashed sorted.
     let one = base

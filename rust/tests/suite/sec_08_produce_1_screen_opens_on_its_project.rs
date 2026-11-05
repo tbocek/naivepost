@@ -50,8 +50,8 @@ fn sec_08_produce_1_screen_the_page_opens_on_the_projects_settings_and_keeps_a_c
             "the encoder rows are the project's"
         );
         assert!(
-            state.vfr && state.mono && !state.blurred_edges,
-            "and its ticks"
+            state.mono && !state.blurred_edges,
+            "and its ticks (the file's old `vfr` key, the dropped tick, is read past)"
         );
         assert_eq!(
             state.title, "Episode 6",
