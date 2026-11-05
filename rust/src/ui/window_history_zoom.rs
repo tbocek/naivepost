@@ -180,6 +180,8 @@ pub(crate) fn publish_cut(cut_: &cut::Cut) {
             }
         },
     );
+    // The skipping buttons read this slot: repaint them when it changes.
+    crate::ui::cut_cut_play::repaint_soon();
 }
 
 pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {

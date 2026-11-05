@@ -28,6 +28,11 @@ pub const MISPLACED_GAP_SECONDS: f64 = 0.2;
 
 /// How finely the gap is walked for where the sound starts: the wave cache's own 5 ms bucket.
 const ONSET_STEP_SECONDS: f64 = 0.005;
+/// How far either side of an aligned boundary between two touching words the place they part is looked for: one step
+/// of the aligner's 80 ms grid. `P.eng.partReachSeconds`; `params::prepare()` rows it from here.
+pub const PART_REACH: f64 = 0.08;
+/// Two word times this close are one boundary (`retakes.tsv` keeps two decimals).
+const TOUCH: f64 = 0.006;
 
 /// A recording's first word stamped too early: the corrected span, or `None` when it stands where it is.
 pub fn misplaced_first_word(
@@ -123,6 +128,33 @@ impl Edges {
             return -1;
         }
         i
+    }
+
+    /// Where two words that touch in the aligner's times part in the sound: the quiet 5 ms nearest the boundary `t`
+    /// (at most one step above the quietest within [`PART_REACH`]), when `t` itself is clearly on sound (twice that
+    /// quietest and more). `None` leaves the boundary where it is: already quiet, or no quieter moment to go to.
+    ///
+    /// The aligner's 80 ms grid puts such a boundary up to a step off: 09-account 69.34, the cut after "Ethereum,"
+    /// sat 40 ms into the removed "wie" and was heard; the two parted at 69.32.
+    pub fn parting(&self, t: f64) -> Option<f64> {
+        let i = self.at(t);
+        if i < 0 {
+            return None;
+        }
+        let peaks = self.peaks();
+        let reach = (PART_REACH * self.wave.hz).round() as i64;
+        let lo = (i - reach).max(0) as usize;
+        let hi = ((i + reach) as usize).min(peaks.len() - 1);
+        let quietest = i32::from(*peaks[lo..=hi].iter().min()?);
+        if i32::from(peaks[i as usize]) < 2 * quietest + 4 {
+            return None;
+        }
+        // The nearest quiet bucket, the earlier of two at the same distance.
+        let near = (0..=reach)
+            .flat_map(|d| [i - d, i + d])
+            .filter(|&j| j >= lo as i64 && j <= hi as i64)
+            .find(|&j| i32::from(peaks[j as usize]) <= quietest + 1)?;
+        Some(self.off + (near as f64 + 0.5) / self.wave.hz)
     }
 
     /// The loudest bucket between two session seconds; `None` where the span holds no bucket of this file.
@@ -292,6 +324,11 @@ impl Edges {
     }
 }
 
+/// Does a word end at `t` and another start there: a boundary with no sound asked of it (§F1.11).
+fn touching(words: &[AlignedWord], t: f64) -> bool {
+    words.iter().any(|w| (w.e - t).abs() <= TOUCH) && words.iter().any(|w| (w.s - t).abs() <= TOUCH)
+}
+
 /// The last word ending at or before this second.
 fn last_word(words: &[AlignedWord], t: f64) -> Option<&AlignedWord> {
     words
@@ -319,6 +356,14 @@ fn spoken_between(spoken: &[(f64, f64)], from: f64, to: f64) -> bool {
     spoken.iter().any(|(s, e)| *e > from && *s < to)
 }
 
+fn parting_note(was: f64, at: f64) -> String {
+    format!(
+        ">>> {}: the cut moves {:+.0} ms to where the two words part, off the aligner's boundary",
+        mm_ss(at),
+        (at - was) * 1000.0
+    )
+}
+
 /// S1–S7 of the placement: every mark's two edges moved onto the sound.
 pub fn place_edges<'a>(
     marks: Vec<Retake>,
@@ -343,6 +388,12 @@ pub fn place_edges<'a>(
                         mm_ss(mark.s),
                         before - s
                     ));
+                } else if touching(words, mark.s) {
+                    // The kept word and the dropped one touch in the word times: the cut goes where they part.
+                    if let Some(at) = edge_of(mark.s).and_then(|e| e.parting(mark.s)) {
+                        notes.push(parting_note(mark.s, at));
+                        mark.s = at;
+                    }
                 }
                 if mark.again > mark.e && !words_between(words, mark.e, mark.again) {
                     let mut to = (mark.again - WORD_PAD).max(mark.e);
@@ -358,6 +409,15 @@ pub fn place_edges<'a>(
                             mm_ss(to)
                         ));
                         mark.to = to;
+                    }
+                }
+                // The same where the cut resumes on a kept word that touches the last dropped one.
+                if mark.to > mark.s && touching(words, mark.to) {
+                    if let Some(at) = edge_of(mark.to).and_then(|e| e.parting(mark.to)) {
+                        if at > mark.s {
+                            notes.push(parting_note(mark.to, at));
+                            mark.to = at;
+                        }
                     }
                 }
                 return mark;

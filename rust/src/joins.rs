@@ -281,54 +281,12 @@ pub fn refusal_line(k: usize, reason: &str, tail: &str) -> String {
     format!("!!! text edit: join {k}: {reason} -- {tail}")
 }
 
-pub fn session_lanes(tree: &Tree, words: &[Word]) -> Vec<crate::edges::Lane> {
-    let bases = distinct_sources(words);
-    let offsets = crate::fix_transcripts::placement(
-        &bases
-            .iter()
-            .map(|base| base.as_str())
-            .collect::<Vec<&str>>(),
-    );
-    bases
-        .iter()
-        .zip(offsets)
-        .filter_map(|(base, off)| {
-            let (size, mtime) = stat_recording(tree, base)?;
-            Some(crate::edges::Lane {
-                key: lane_key(base),
-                off,
-                size,
-                mtime,
-            })
-        })
-        .collect()
-}
-
-/// The wave-cache key of a recording named in a word's `source` field: the base name without its
-/// extension, which is what every per-recording folder is keyed under.
-fn lane_key(base: &str) -> String {
-    match base.rfind('.') {
-        Some(dot) if dot > 0 => base[..dot].to_string(),
-        _ => base.to_string(),
-    }
-}
-
-/// A recording's own size and mtime, off the name the word list carries. `project:`-prefixed names
-/// resolve inside the project folder. These are the stamps `crate::wave::read` checks the cache header
-/// against, so they come from the recording and never from the cache file itself.
-fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
-    let path = match stored.strip_prefix("project:") {
-        Some(rel) => tree.dir().join(rel),
-        None => std::path::PathBuf::from(stored),
-    };
-    let meta = std::fs::metadata(&path).ok()?;
-    let mtime = meta
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs() as i64;
-    Some((meta.len() as i64, mtime))
+/// The session's lanes for F1.11's edge placement, from the project's stored source paths: the word list's `source`
+/// is a bare recording name, never a path (first rewrite: it was stat-ed as one, found nothing, and no join edge was
+/// ever placed by the sound).
+pub fn project_lanes(tree: &Tree, project: &crate::project::Project) -> Vec<crate::edges::Lane> {
+    let stored: Vec<String> = project.sources.iter().map(|source| source.path.clone()).collect();
+    crate::hand_edit::session_lanes(tree, &stored)
 }
 
 /// S5: the dropped runs as marks, their edges placed by the sound.

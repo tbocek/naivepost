@@ -458,7 +458,10 @@ pub fn run_seams(
             e: word.end,
         })
         .collect();
-    let held = crate::edges::load(tree, &joins::session_lanes(tree, words));
+    // The project's stored source paths, as the words cut reads them (`hand_edit::session_lanes`): the word list's
+    // `source` is a bare recording name, never a path, so stat-ing it found no recording and every join edge was
+    // placed without the sound (first rewrite: 09-account 69.34 cut 40 ms into the dropped "wie").
+    let held = crate::edges::load(tree, &joins::project_lanes(tree, project));
     let (marks, edge_notes) =
         joins::marks_for(times, &kept, &aligned, crate::edges::finder(&held), &spoken);
     pass.logs.extend(edge_notes);
