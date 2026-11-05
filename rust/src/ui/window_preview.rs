@@ -224,6 +224,8 @@ pub fn seed_review_cut(cut_: &cut::Cut) {
             cut_,
         ));
     }
+    // The skipping buttons read this slot: repaint them when it changes.
+    crate::ui::cut_cut_play::repaint_soon();
 }
 
 pub fn newest_review_cut() -> cut::Cut {

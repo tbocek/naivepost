@@ -183,6 +183,7 @@ Consequences of a format, a server, a standard or a measurement: nothing a user 
 | P.eng.turnGapSeconds | 0.5 | gap that ends a turn | diarTurnGap |
 | P.eng.alignCutSeekSeconds | 4 | how far an alignment cut slides to a silence | alignCutSeek |
 | P.eng.alignSoundPadSeconds | 0.25 | sound kept around an alignment piece | alignSoundPad |
+| P.eng.partReachSeconds | 0.08 | how far either side of an aligned boundary between two touching words the place they part is looked for (one step of the aligner's grid; new) | (none) |
 | P.eng.alignWindowWholeSeconds | 100 | longest alignment window asked about whole (new): qwen3-aligner timed 61-107 s windows with nothing lost and refused 118 s and more ("max_source_positions"), which is answered like no room, by halving | (prototype: windows of 60 s, `alignChunk`) |
 | P.eng.alignClipMaxSeconds | 120 | sanity ceiling on a returned second: past it, the number was not seconds | alignClipMax |
 | P.eng.alignBareWarnSeconds | 10 | voiced audio under no word before a warning | alignBareWarn |

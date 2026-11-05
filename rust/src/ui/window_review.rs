@@ -66,4 +66,6 @@ pub(crate) fn set_review_segs(segs: &[cut::Seg]) {
             }
         },
     );
+    // The skipping buttons read this slot: repaint them when it changes.
+    crate::ui::cut_cut_play::repaint_soon();
 }

@@ -45,6 +45,21 @@ fn two_takes() -> Vec<Word> {
     words
 }
 
+/// The project the two takes belong to, its recordings stored as a session stores them.
+fn two_take_project() -> naivepost::project::Project {
+    naivepost::project::Project {
+        sources: ["take-a", "take-b"]
+            .iter()
+            .map(|base| naivepost::project::Source {
+                path: format!("project:sources/{base}.mkv"),
+                footage: true,
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
 fn strings(words: &[String]) -> Vec<&str> {
     words.iter().map(String::as_str).collect()
 }
@@ -643,22 +658,17 @@ fn f1_10_s5_a_dropped_run_reaches_the_sound_for_its_edges() {
 #[test]
 fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
     // The other half of the case above: the recordings ARE on disk and their lane has a cache, so
-    // `session_lanes` hands back a lane, `edges::finder` answers an envelope, and F1.11's sound rules run
+    // `project_lanes` hands back a lane, `edges::finder` answers an envelope, and F1.11's sound rules run
     // for a JOIN mark -- which is what `join_ask::run_seams` now does on every press.
     let tree = temp_tree("lanes-hit");
-    let words: Vec<Word> = two_takes()
-        .into_iter()
-        .map(|mut word| {
-            // The spelling a session file carries, because `session_lanes` stats exactly this string
-            // (`stat_recording` resolves `project:` inside the project folder).
-            word.source = format!("project:sources/{}.mkv", word.source);
-            word
-        })
-        .collect();
+    // The word list names recordings bare, as Prepare writes it ("take-a"); the project holds their stored paths,
+    // which is what the lanes are stat-ed from (first rewrite: the bare name was stat-ed as a path and found nothing).
+    let words: Vec<Word> = two_takes();
+    let project = two_take_project();
     // The cache key is the base name without its extension (`lane_key`), which is how every per-recording
     // folder is keyed -- NOT the stored path, which still carries `project:sources/`.
     const LANE_A_SUFFIX: &str = "take-a";
-    // Two real files: `session_lanes` stats each one, so they must exist to be lanes at all.
+    // Two real files: `project_lanes` stats each one, so they must exist to be lanes at all.
     let mut stamps: Vec<(String, i64, i64)> = Vec::new();
     for base in ["take-a.mkv", "take-b.mkv"] {
         // `stat_recording` resolves a `project:`-prefixed name inside the project folder, which is how a
@@ -690,7 +700,7 @@ fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
     }
     // The cache key is what `lane_key` produced from the stored path: read back off the lane rather than
     // guessed at here, so the test cannot drift from the program's own key.
-    let held_lanes = joins::session_lanes(&tree, &words);
+    let held_lanes = joins::project_lanes(&tree, &project);
     let lane_a = held_lanes
         .iter()
         .find(|lane| lane.key.ends_with(LANE_A_SUFFIX))
@@ -773,17 +783,17 @@ fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
 
 #[test]
 fn f1_10_s5_a_lane_with_no_wave_cache_answers_no_envelope() {
-    // `session_lanes` keys a lane by the recording's base name and stamps it with the real file. A word
-    // list naming recordings that are not on disk therefore yields NO lane, and `edges::finder` over an
+    // `project_lanes` keys a lane by the recording's base name and stamps it with the real file. A project
+    // naming recordings that are not on disk therefore yields NO lane, and `edges::finder` over an
     // empty set answers `None` everywhere — which is how "no audio extracted yet" reaches F1.11: the
     // marks stand on their word times rather than on a guessed envelope.
     let tree = temp_tree("lanes");
-    let words = two_takes();
+    let project = two_take_project();
     assert!(
-        joins::session_lanes(&tree, &words).is_empty(),
+        joins::project_lanes(&tree, &project).is_empty(),
         "a recording that cannot be stat-ed has no envelope to offer"
     );
-    let held = naivepost::edges::load(&tree, &joins::session_lanes(&tree, &words));
+    let held = naivepost::edges::load(&tree, &joins::project_lanes(&tree, &project));
     assert!(held.is_empty());
     assert!(
         naivepost::edges::finder(&held)(1.0).is_none(),

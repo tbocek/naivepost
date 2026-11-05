@@ -45,6 +45,25 @@ pub fn paint_both_skipping_buttons(window: &adw::ApplicationWindow) {
     crate::ui::cut_review_play::paint(window);
 }
 
+/// Repaint ▶✂ and ▶✂✂ once the cut slot they read has changed, on the next idle turn: whatever wrote the slot (a
+/// suggestion landing, an edit, ↶/↷, Prepare's end, a rescan) may still hold the player or the page borrowed, and
+/// several writes in one turn take one repaint. First rewrite: only the window's build and a press of ▶ repainted
+/// them, so the first suggestion's green clips stood beside a grey ▶✂ until ▶ had been pressed once.
+pub fn repaint_soon() {
+    thread_local! {
+        static PENDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if PENDING.with(|pending| pending.replace(true)) {
+        return;
+    }
+    glib::idle_add_local_once(|| {
+        PENDING.with(|pending| pending.set(false));
+        if let Some(window) = crate::ui::window_policy::built_window() {
+            paint_both_skipping_buttons(&window);
+        }
+    });
+}
+
 /// Preroll the spare at `at`.
 pub fn preroll_spare(at: f64) -> bool {
     // The built-in player seeks within its pipeline instead of holding a second process at the join.

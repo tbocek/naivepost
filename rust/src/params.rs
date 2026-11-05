@@ -334,6 +334,11 @@ fn audio() -> Vec<Param> {
         ),
         param("P.eng.alignSoundPadSeconds", num(align::PAD), "align::PAD"),
         param(
+            "P.eng.partReachSeconds",
+            num(crate::edges::PART_REACH),
+            "edges::PART_REACH",
+        ),
+        param(
             "P.eng.alignWindowWholeSeconds",
             num(align::WINDOW_WHOLE),
             "align::WINDOW_WHOLE",
