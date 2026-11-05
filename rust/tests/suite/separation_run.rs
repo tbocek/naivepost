@@ -67,8 +67,8 @@ fn enter(scene: &Scene) {
 /// [`ENV`] here: `leave` and `drop(_guard)` are the two halves of one release, in that order — dropping the
 /// guard first would let another thread walk into this scene's folders while its env still pointed at them.
 fn leave() {
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
     std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).expect("back to the crate folder");
 }
 

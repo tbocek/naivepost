@@ -81,7 +81,7 @@ fn f0_14_s9_the_profiles_window_sets_produce_with_the_produce_pages_own_controls
         assert!(parsed
             .produce
             .contains(&("Channels".to_string(), "on".to_string())));
-        assert_eq!(parsed.produce.len(), 13, "every row is written");
+        assert_eq!(parsed.produce.len(), 12, "every row is written");
 
         // Opened again, the form shows them and the box still holds no produce text.
         dialog::load_from(&profile::dir(&paths).join("Encoded.txt"));

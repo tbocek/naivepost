@@ -375,8 +375,8 @@ impl Scene {
     }
 
     fn leave() {
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::remove_var("XDG_DATA_HOME");
+        crate::common::park_env("XDG_CONFIG_HOME");
+        crate::common::park_env("XDG_DATA_HOME");
         std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).expect("back to the crate folder");
     }
 

@@ -1228,3 +1228,22 @@ pub fn respelled_rows_answer(body: &str) -> String {
         .collect();
     serde_json::json!({ "choices": [ { "message": { "content": rows.join("\n") } } ] }).to_string()
 }
+
+/// Put a folder variable back to a place that is never the person's own: the run's private folder when `just test`
+/// named one (`NAIVEPOST_TEST_<NAME>`), else a folder under the temp dir. Tests used to `remove_var` these, and a
+/// parallel test then resolved `$HOME/.config/naivepost` and wrote its fake audio server (`127.0.0.1:<port>`) into
+/// the real `llm.conf` and `servers.json`.
+pub fn park_env(name: &str) {
+    let own = std::env::var(format!("NAIVEPOST_TEST_{name}"))
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            std::env::temp_dir()
+                .join("naivepost-tests-parked")
+                .join(name.to_lowercase())
+                .to_string_lossy()
+                .into_owned()
+        });
+    let _ = std::fs::create_dir_all(&own);
+    std::env::set_var(name, own);
+}

@@ -697,13 +697,15 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         .expect("the strip carries its rate");
     assert_eq!(argv[rate + 1], produce_cards::bake_fps_arg(), "{argv:?}");
     assert_eq!(argv[rate + 1], "25", "P.card.bakeFps: {argv:?}");
-    // §5's `-t` goes on the OUTPUT, so after every input — including the one naming this strip. A `-t` before `-i`
-    // would trim what the filters were built from.
+    // §5 frame-exact clips: the insert is held to its slot by its frames, on the OUTPUT after every input — a length
+    // before `-i` would trim what the filters were built from.
     let limit = argv
         .iter()
-        .position(|a| a == "-t")
+        .position(|a| a == "-frames:v")
         .expect("the insert is trimmed to its slot");
-    assert_eq!(argv[limit + 1], format!("{:.3}", 4.0), "{argv:?}");
+    let clip = &plan.clips[0];
+    assert_eq!(argv[limit + 1], clip.frames.to_string(), "{argv:?}");
+    assert!((clip.frames as f64 / clip.fps - 4.0).abs() <= 0.5 / clip.fps, "{} frames at {}", clip.frames, clip.fps);
     assert!(
         limit > argv.iter().position(|a| a.ends_with("f%05d.svg")).unwrap(),
         "the limit follows the input it trims: {argv:?}"
@@ -811,12 +813,14 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
         argv[loops + 1] == "1" || argv[loops + 1] == "-1",
         "{argv:?}"
     );
-    // And looping is only safe because `-t` trims the loop back to the seconds the cut asked for.
+    // And looping is only safe because the clip's frames trim the loop back to the seconds the cut asked for.
     let limit = argv
         .iter()
-        .position(|a| a == "-t")
+        .position(|a| a == "-frames:v")
         .expect("the loop is trimmed to the slot");
-    assert_eq!(argv[limit + 1], format!("{:.3}", seconds), "{argv:?}");
+    let clip = &plan.clips[0];
+    assert_eq!(argv[limit + 1], clip.frames.to_string(), "{argv:?}");
+    assert!((clip.frames as f64 / clip.fps - seconds).abs() <= 0.5 / clip.fps, "{} frames at {}", clip.frames, clip.fps);
 }
 
 /// A run carrying this cut, with the settings a render would use.

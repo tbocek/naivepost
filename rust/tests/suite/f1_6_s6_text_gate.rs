@@ -256,8 +256,8 @@ fn f1_6_s6_the_walk_moves_the_bar_while_the_gate_judges() {
         &[],
         &mut |queue, _| seen.push((queue.fraction(), queue.text_and_tip().0)),
     );
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
 
     assert!(
         matches!(drive, naivepost::run_stages::Drive::Done { ran: 1, .. }),
@@ -478,8 +478,8 @@ fn three_recordings(slots: u32) -> (naivepost::run_stages::Drive, usize, usize, 
         &[],
         &mut |queue, _| lines.push(queue.text_and_tip().0),
     );
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
     let written = ["one", "two", "three"]
         .iter()
         .filter(|lane| text_gate::path(&tree, lane).exists())
@@ -573,8 +573,8 @@ fn f1_8_recordings_are_fixed_side_by_side_up_to_the_servers_slots() {
         &[],
         &mut |_, _| {},
     );
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
     assert!(
         matches!(drive, naivepost::run_stages::Drive::Done { ran: 3, .. }),
         "{drive:?}"
@@ -601,8 +601,8 @@ fn f5_4_translation_batches_go_side_by_side_up_to_the_servers_slots() {
             .map(|n| (format!("TRANSLATE {n}"), vec![n]))
             .collect();
         naivepost::produce_translate_ask::warm(&tree, &asks, &mut |_| {});
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::remove_var("XDG_DATA_HOME");
+        crate::common::park_env("XDG_CONFIG_HOME");
+        crate::common::park_env("XDG_DATA_HOME");
         assert_eq!(
             most.load(std::sync::atomic::Ordering::SeqCst),
             expected,
@@ -620,7 +620,7 @@ fn sec_03_shell_5_the_llm_row_says_the_servers_slots() {
     let (url, _) = fake_slots(4);
     let (_root, _project, _tree) = three_transcripts(url);
     let said = naivepost::settings_probe::probe("llm", "").expect("the row answers");
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
     assert!(said.contains("4 slot(s)"), "{said}");
 }

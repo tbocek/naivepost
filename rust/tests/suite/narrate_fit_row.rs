@@ -448,6 +448,8 @@ fn f4_3_s11_a_line_without_a_wav_takes_no_room() {
         scratch: std::path::PathBuf::new(),
         lane_files: Vec::new(),
         voice_files: Vec::new(),
+        frames: 0,
+        fps: 0.0,
         // Both lines as `plan_clips` leaves them before any wav is measured: length 0.
         lines: vec![
             r::Placed {

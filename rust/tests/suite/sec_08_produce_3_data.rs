@@ -6,7 +6,7 @@
 //! - the catalogue [`naivepost::produce_data::catalogue`] is §3's eleven entries in §3's order followed by
 //!   §6's five, and every `clips/` entry is scratch while the video's neighbours are output and the record
 //!   under `publish/` is state;
-//! - the stream-copy join is named `joined.<container>` (§6) and ONE expression feeds both the command that
+//! - the stream-copy join is `joined.mkv` whatever the container (§5 frame-exact clips) and ONE expression feeds both the command that
 //!   writes it and the mux that reads it back, so a container change moves both together;
 //! - the files §3 lists actually appear: the cue sheet beside the video, the poster off the drawn thumbnail,
 //!   and `publish/publish.json` surviving a render untouched.
@@ -107,9 +107,8 @@ fn seed_page(_window: &adw::ApplicationWindow) {
     page.subtitles = row[6].1.to_string();
     page.game_volume = row[8].1.parse().expect("game audio parses");
     page.crf = row[9].1.parse().expect("crf parses");
-    page.vfr = row[10].1 == "on";
-    page.mono = row[11].1 == "on";
-    page.blurred_edges = row[12].1 == "on";
+    page.mono = row[10].1 == "on";
+    page.blurred_edges = row[11].1 == "on";
     page.voice = "1".to_string();
     ui::produce_page::set_state(page);
 }
@@ -185,7 +184,7 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     }
     // The scratch folder carries another render's leftovers, so the sweep §6 asks for is proved rather than
     // assumed: the file below can only be gone if the press really cleared the folder first.
-    let stale = tree.clips_dir().join("joined.mp4");
+    let stale = tree.clips_dir().join("joined.mkv");
     std::fs::create_dir_all(tree.clips_dir()).unwrap();
     std::fs::write(&stale, b"an older render's join").unwrap();
     let seen: SpawnedArgv = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -239,7 +238,7 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     );
     let join = tree
         .clips_dir()
-        .join(naivepost::produce_details::joined("mp4"));
+        .join(naivepost::produce_details::joined(naivepost::produce_render::CLIP_EXT));
     assert_eq!(
         stale, join,
         "the planted leftover is exactly the file this container's run writes"
@@ -372,7 +371,7 @@ fn sec_08_produce_3_data_s2_kind_sorts_every_entry_into_its_group() {
 /// One run per container: the scratch join carries the container this run writes, and the SAME path appears
 /// in the join command and as the mux's input.
 #[test]
-fn sec_08_produce_3_data_s4_the_join_is_named_after_the_container_and_shared_by_both_commands() {
+fn sec_08_produce_3_data_s4_the_join_is_matroska_whatever_the_container_and_shared_by_both_commands() {
     for (container, code) in [
         (Container::Mp4, "mp4"),
         (Container::Webm, "webm"),
@@ -390,8 +389,10 @@ fn sec_08_produce_3_data_s4_the_join_is_named_after_the_container_and_shared_by_
             settings.clone(),
         );
         let plan = exec::plan(&run, &tree2, &mats(&[], exec::Cues::default()));
-        let want = tree.clips_dir().join(format!("joined.{code}"));
-        assert_eq!(want, tree.clips_dir().join(details::joined(code)));
+        // Frame-exact clips (§5): the clips and their join are Matroska whatever the final container, so the sound
+        // can stay uncompressed until the mux.
+        let want = tree.clips_dir().join("joined.mkv");
+        assert_eq!(want, tree.clips_dir().join(details::joined(naivepost::produce_render::CLIP_EXT)));
         let join = plan
             .join
             .clone()
@@ -399,7 +400,7 @@ fn sec_08_produce_3_data_s4_the_join_is_named_after_the_container_and_shared_by_
         assert_eq!(
             Some(want.display().to_string()),
             join.argv.last().map(|s| s.to_string()),
-            "the join writes {code}'s stream copy: {:?}",
+            "the {code} run's join is the Matroska stream copy: {:?}",
             join.argv
         );
         // The mux reads exactly that file back: one name, two commands.
@@ -728,12 +729,15 @@ fn sec_08_produce_3_data_s9_the_scratch_sweep_clears_every_clips_kind() {
             "{stale} survived the sweep: {left:?}"
         );
     }
-    // `joined.mp4` was planted AND written by this run (the fake spawner lays down its own output), so the
-    // honest claim about it is that the sweep counted it: the planted bytes are gone, replaced by the run's.
+    // An older render's `joined.mp4` is a leftover now (the join is `joined.mkv`, §5): swept, and this run writes its own.
+    assert!(
+        !scratch.join("joined.mp4").exists(),
+        "the older join was swept: {left:?}"
+    );
     assert_eq!(
-        std::fs::read(scratch.join("joined.mp4")).ok(),
+        std::fs::read(scratch.join("joined.mkv")).ok(),
         Some(b"a rendered file of some length".to_vec()),
-        "the planted join was cleared and rewritten by this run"
+        "this run wrote its own join"
     );
     assert!(
         scratch.is_dir(),

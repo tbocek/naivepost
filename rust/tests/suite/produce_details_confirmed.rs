@@ -779,7 +779,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_store
     // An unoffered resolution, with a KNOWN subtitle mode beside it: only the resolution falls back.
     std::fs::write(
         root.join("naivepost.json"),
-        r#"{"produce": {"container": "mkv", "subtitles": "trackinfile", "resolution": "4k", "crf": 19, "translate": ["de", "fr"], "vfr": true}}"#,
+        r#"{"produce": {"container": "mkv", "subtitles": "trackinfile", "resolution": "4k", "crf": 19, "translate": ["de", "fr"], "mono": true, "vfr": true}}"#,
     )
     .unwrap();
     let (loaded, report) =
@@ -800,8 +800,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_store
         vec!["de".to_string(), "fr".to_string()]
     );
     assert!(
-        loaded.produce.vfr,
-        "the ticks survive a stale neighbour too"
+        loaded.produce.mono,
+        "the ticks survive a stale neighbour too (and the dropped `vfr` key beside them costs nothing)"
     );
     assert!(
         report

@@ -1876,7 +1876,9 @@ fn f5_2_s5_a_heard_lane_is_mixed_into_the_bed() {
         .expect("a filter graph");
     assert!(
         graph.contains(&format!("[{index}:a]aformat="))
-            && graph.contains("[0:a][ln0]amix=inputs=2:duration=first:normalize=0[bed]"),
+            // Frame-exact clips: the clip's own sound starts on the picture's first frame, then joins as `[own]`.
+            && graph.contains("[0:a]aresample=async=1:first_pts=0[own]")
+            && graph.contains("[own][ln0]amix=inputs=2:duration=first:normalize=0[bed]"),
         "the lane joins the clip's own sound by its label: {graph}"
     );
     assert!(

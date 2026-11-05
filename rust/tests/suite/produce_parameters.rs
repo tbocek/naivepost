@@ -343,8 +343,8 @@ fn sec_08_produce_4_parameters_used_s6_the_encoder_settings_are_stored_state() {
     assert_eq!(settings.resolution, Resolution::P1080);
     assert_eq!(render::frame_rate_name(settings.frame_rate), "30");
     assert_eq!(settings.audio_kbps, 128);
-    // The page's rows and the settings' fields are the same thirteen.
-    assert_eq!(screen::SETTINGS_ROWS.len(), 13);
+    // The page's rows and the settings' fields are the same twelve (the VFR tick is gone, 08 §1).
+    assert_eq!(screen::SETTINGS_ROWS.len(), 12);
 
     let argv = render::codec_args(&settings).join(" ");
     assert!(argv.contains("libx264"), "{argv}");

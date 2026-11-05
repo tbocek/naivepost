@@ -916,8 +916,8 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled
     // `ask_run` builds its system turn from the project's own note (see `user_context` there), which is what
     // puts the precedence rule on this request at all.
     let outcome = naivepost::retakes_ask::ask_run(&tree, &paths, &conf, &brief, 0, &mut marks);
-    std::env::remove_var("XDG_CONFIG_HOME");
-    std::env::remove_var("XDG_DATA_HOME");
+    crate::common::park_env("XDG_CONFIG_HOME");
+    crate::common::park_env("XDG_DATA_HOME");
     std::env::remove_var("NAIVEPOST_RETRY_SCALE");
     assert!(
         matches!(outcome, naivepost::retakes_ask::RunOutcome::Answered { .. }),

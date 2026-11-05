@@ -333,6 +333,11 @@ fn audio() -> Vec<Param> {
             "align::CUT_SEEK",
         ),
         param("P.eng.alignSoundPadSeconds", num(align::PAD), "align::PAD"),
+        param(
+            "P.eng.alignWindowWholeSeconds",
+            num(align::WINDOW_WHOLE),
+            "align::WINDOW_WHOLE",
+        ),
         // A bare number past this ceiling was a sample count that did not say so.
         param(
             "P.eng.alignClipMaxSeconds",
@@ -411,6 +416,16 @@ fn engineering() -> Vec<Param> {
             "P.eng.joinReachWords",
             textedit::JOIN_REACH_WORDS.to_string(),
             "tools::textedit::JOIN_REACH_WORDS",
+        ),
+        param(
+            "P.eng.restartReachWords",
+            textedit::RESTART_REACH_WORDS.to_string(),
+            "tools::textedit::RESTART_REACH_WORDS",
+        ),
+        param(
+            "P.eng.restartMinWords",
+            textedit::RESTART_MIN_WORDS.to_string(),
+            "tools::textedit::RESTART_MIN_WORDS",
         ),
         // How many words of the later take may be skipped while looking for the next tail word.
         param(

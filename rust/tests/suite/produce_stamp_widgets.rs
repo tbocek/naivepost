@@ -120,7 +120,7 @@ fn write_cut(tree: &Tree) {
 
 /// The settings the test hashes. `page_settings` pairs with the page seeded through `seed_page`: the
 /// page rebuilds its hashed struct from `produce_screen::defaults()`, which reparses to exactly
-/// `Produce::default()` (mp4/h264/slow/1080p/30/128k/none, game 0.22, crf 24, vfr off, mono off,
+/// `Produce::default()` (mp4/h264/slow/1080p/30/128k/none, game 0.22, crf 24, mono off,
 /// blurred edges on).
 fn page_settings() -> Produce {
     Produce::default()
@@ -218,9 +218,8 @@ fn seed_page(_window: &adw::ApplicationWindow) {
     page.subtitles = row[6].1.to_string();
     page.game_volume = row[8].1.parse().expect("game audio parses");
     page.crf = row[9].1.parse().expect("crf parses");
-    page.vfr = row[10].1 == "on";
-    page.mono = row[11].1 == "on";
-    page.blurred_edges = row[12].1 == "on";
+    page.mono = row[10].1 == "on";
+    page.blurred_edges = row[11].1 == "on";
     page.voice = "1".to_string();
     ui::produce_page::set_state(page);
 }

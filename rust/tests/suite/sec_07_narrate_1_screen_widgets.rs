@@ -460,11 +460,11 @@ fn round(app: &adw::Application) {
         // Hand the machine's own settings folders back to the rest of this process.
         match held_config {
             Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
+            None => crate::common::park_env("XDG_CONFIG_HOME"),
         }
         match held_data {
             Some(value) => std::env::set_var("XDG_DATA_HOME", value),
-            None => std::env::remove_var("XDG_DATA_HOME"),
+            None => crate::common::park_env("XDG_DATA_HOME"),
         }
         window.close();
         settle();

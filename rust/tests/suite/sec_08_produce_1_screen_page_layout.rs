@@ -393,11 +393,10 @@ fn collect_controls(
     }
 }
 
-/// The name a row's CONTROL wears on the page, spelled the way `produce_page` spells it: the three tick
+/// The name a row's CONTROL wears on the page, spelled the way `produce_page` spells it: the two tick
 /// rows have their own names (§A words them), every other row follows `setting-<row>`.
 fn control_name(row: &str) -> String {
     match row {
-        "Frame timing" => "tick-peak-rate-vfr".to_string(),
         "Channels" => "tick-mono".to_string(),
         "Frame edges" => "tick-blurred".to_string(),
         other => ui::produce_page::row_widget(other),
@@ -527,20 +526,25 @@ fn check_encoder_lines_match_the_picture(window: &adw::ApplicationWindow) {
             line.len()
         );
     }
-    // Item 13 beside item 14: the CRF slider shares its line with Frame timing, exactly as the picture
-    // draws them, and Channels shares one with Frame edges.
+    // Item 13 beside item 14: the picture draws the CRF slider beside Frame timing, the VFR tick that is
+    // gone (08 §1), so Channels moves up beside it, two pairs to a line, and Frame edges ends alone.
     let shares = |a: &str, b: &str| {
         names
             .iter()
             .any(|line| line.contains(&a) && line.contains(&b))
     };
     assert!(
-        shares("setting-quality--crf", "tick-peak-rate-vfr"),
-        "{ITEM}: Quality (CRF) and Frame timing are on one line in the picture; lines read {names:?}"
+        shares("setting-quality--crf", "tick-mono"),
+        "{ITEM}: Quality (CRF) and Channels share a line; lines read {names:?}"
+    );
+    assert_eq!(
+        names.last().map(Vec::as_slice),
+        Some(&["tick-blurred"][..]),
+        "{ITEM}: Frame edges is the last line, alone; lines read {names:?}"
     );
     assert!(
-        shares("tick-mono", "tick-blurred"),
-        "{ITEM}: Channels and Frame edges share a line in the picture; lines read {names:?}"
+        !names.iter().flatten().any(|name| *name == "tick-peak-rate-vfr"),
+        "{ITEM}: the dropped VFR tick is not drawn; lines read {names:?}"
     );
     // The Game-audio line sits where §A's order puts it — after Subtitles, before Quality — without
     // claiming a grouping the picture cannot show (it has no Game audio at all).

@@ -351,9 +351,8 @@ fn seed_live_cut(window: &adw::ApplicationWindow) {
     page.subtitles = row[6].1.to_string();
     page.game_volume = row[8].1.parse().expect("game audio parses");
     page.crf = row[9].1.parse().expect("crf parses");
-    page.vfr = row[10].1 == "on";
-    page.mono = row[11].1 == "on";
-    page.blurred_edges = row[12].1 == "on";
+    page.mono = row[10].1 == "on";
+    page.blurred_edges = row[11].1 == "on";
     page.voice = "1".to_string();
     // An edit instruction, so ↻ over the thumbnail has something to tell the image model: without one the
     // walk refuses with NO_INSTRUCTION rather than drawing noise, which is its own rule but not this check's.

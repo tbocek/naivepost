@@ -14,6 +14,11 @@ use crate::transcribe::SAMPLE_RATE;
 
 /// S2: audio per align request, the same as the ASR's chunks ([`asr::CHUNK_QWEN`]) so pieces line up (go/align.go:656).
 pub const WINDOW: f64 = asr::CHUNK_QWEN;
+/// S3: the longest window asked about whole, the ASR's own chunks included (older projects carry chunks up to 300 s).
+/// qwen3-aligner timed whole windows of 61-107 s with no word lost and none squeezed, and refused 118 s and more
+/// ("audio encoder token count exceeds max_source_positions"); a longer window is split, and its text then shared
+/// by voiced seconds. `P.eng.alignWindowWholeSeconds` (100); `params::prepare()` rows it from this constant.
+pub const WINDOW_WHOLE: f64 = 100.0;
 /// S3: below this a piece cannot be made smaller, for either reason (go/align.go:660 `alignChunkMin`).
 pub const MIN_PIECE: f64 = 15.0;
 /// S2: how far a cut between align windows may slide to land in a silence (go/align.go:670 `alignCutSeek`). Far less than F1.4's
@@ -139,6 +144,29 @@ pub fn pieces(
     edges.windows(2).map(|pair| (pair[0], pair[1])).collect()
 }
 
+/// S2: the ASR's chunks as the pieces, each with the text the ASR heard in it, when their texts joined are the
+/// transcript word for word. The text is then known per piece, not estimated: a voiced-seconds share hands a piece
+/// words said in its neighbour, and the aligner crams them into the piece's last moments at one frame (80 ms) each.
+/// [`counts_agree`] never held in practice: qwen3-asr writes no word times unless its server was started with a forced
+/// aligner, and nemotron-asr times sub-word pieces ("w", "ie"), never one per written word; so every recording took
+/// the estimate (first rewrite; 84 of the 824 recordings in /mnt/rec carry such chains).
+pub fn own_pieces(chunks: &[Chunk], transcript: &str) -> Option<Vec<((f64, f64), String)>> {
+    if chunks.is_empty() {
+        return None;
+    }
+    let joined: Vec<&str> = chunks.iter().flat_map(|c| c.text.split_whitespace()).collect();
+    let said: Vec<&str> = transcript.split_whitespace().collect();
+    if joined != said || chunks.windows(2).any(|pair| pair[1].s < pair[0].e - 1e-6) {
+        return None;
+    }
+    Some(
+        chunks
+            .iter()
+            .map(|c| ((c.s, c.e), c.text.split_whitespace().collect::<Vec<_>>().join(" ")))
+            .collect(),
+    )
+}
+
 /// S2: the text each piece was asked to align, shared by voiced seconds (a silence holds no words), rounded to word boundaries
 /// so the pieces together are the whole transcript with nothing lost or duplicated.
 pub fn share_text(pieces: &[(f64, f64)], text: &str, silences: &[Silence]) -> Vec<String> {
@@ -259,7 +287,12 @@ pub fn split_at(span: &Span, silences: &[Silence]) -> (Span, Span) {
         0
     } else {
         let share = left_voiced / (left_voiced + right_voiced).max(f64::EPSILON);
-        ((words.len() as f64 * share).round() as usize).clamp(1, words.len() - 1)
+        match words.len() {
+            // One word cannot be divided: it goes with the half that has more sound (first rewrite: `clamp(1, 0)`
+            // panicked on a long window holding a single word).
+            1 => usize::from(share >= 0.5),
+            n => ((n as f64 * share).round() as usize).clamp(1, n - 1),
+        }
     };
     let right = words.split_off(take);
     (
@@ -543,15 +576,26 @@ where
         return Ok(out);
     }
 
-    // S2: the ASR's pieces where word counts agree, windows otherwise; text shared out by voiced seconds.
-    let spans = pieces(chunks, words, duration, silences, WINDOW);
-    let texts = share_text(&spans, transcript, silences);
+    // S2: the ASR's own chunks with the text it heard in each, whenever those texts make up the transcript; else
+    // windows cut at silences with the text shared out by voiced seconds, an estimate.
+    let (spans, texts) = match own_pieces(chunks, transcript) {
+        Some(own) => own.into_iter().unzip(),
+        None => {
+            let spans = pieces(chunks, words, duration, silences, WINDOW);
+            let texts = share_text(&spans, transcript, silences);
+            (spans, texts)
+        }
+    };
     let mut picker = Picker::default();
     let mut placed: Vec<Placed> = Vec::new();
 
     for (index, (from, to)) in spans.iter().enumerate() {
         out.steps.push(progress(index, spans.len()));
         let text = texts.get(index).cloned().unwrap_or_default();
+        // A piece the ASR heard nothing in has no word to place: no server is asked about it.
+        if text.trim().is_empty() {
+            continue;
+        }
         let windows = align_windows(
             tree,
             &mut picker,
@@ -621,14 +665,18 @@ where
         to,
         text: text.to_string(),
     }];
-    let mut limit = WINDOW;
+    let mut limit = WINDOW_WHOLE;
     let mut done = Vec::new();
 
     while let Some(span) = queue.pop() {
         let window = match trim((span.from, span.to), silences) {
             Some(window) => window,
-            // Nothing in it has sound: nothing to place, and no server asked.
-            None => continue,
+            // Nothing in it has sound: nothing to place, and no server asked. Words a split shared out to it were
+            // said in the next piece, so they go there; a chunk with no sound at all holds only what the ASR made up.
+            None => {
+                carry(&mut queue, &span.text);
+                continue;
+            }
         };
         if window.1 - window.0 > limit && window.1 - window.0 > MIN_PIECE {
             let (left, right) = split_at(&span, silences);
@@ -641,12 +689,24 @@ where
         match ask_span(
             tree, picker, all, source, &window, &span.text, language, ask, out,
         ) {
-            Ok(words) => done.push(Placed {
-                from: span.from,
-                to: span.to,
-                words,
-            }),
-            Err(err) if asr::retryable(&err) => {
+            Ok(mut words) => {
+                // S3: words timed from past the clip's end were not heard in it. After a split that is the share
+                // being off, and they are said in the next piece: their text goes to the front of it (first rewrite:
+                // kept with made-up times, out of order; 07-webarch 20-16-01 "andere sprachen haben ihre mvc ...").
+                let end = to_sample(window.1);
+                let tokens: Vec<&str> = span.text.split_whitespace().collect();
+                let over = words.iter().rev().take_while(|w| w.start_sample >= end).count();
+                if over > 0 && !queue.is_empty() && words.len() == tokens.len() {
+                    carry(&mut queue, &tokens[tokens.len() - over..].join(" "));
+                    words.truncate(words.len() - over);
+                }
+                done.push(Placed {
+                    from: span.from,
+                    to: span.to,
+                    words: within_clip(words, end),
+                })
+            }
+            Err(err) if asr::retryable(&err) || too_long(&err) => {
                 // The ceiling is what a *clip* may be: a piece is only too big while the audio actually sent exceeds it.
                 if asked > limit || asked <= MIN_PIECE {
                     return Err(err);
@@ -690,12 +750,25 @@ where
 {
     let clip = clip(window.0);
     let plan = clip_plan(window.0, window.1);
+    // S4: digits have no sound the aligner knows; it is asked with them said as words, and the answer folded back.
+    let (spoken, tokens) = crate::spoken_numbers::spell(text, language);
+    let text = spoken.as_str();
     let mut last = String::from("no aligner served");
     let candidates = picker.ask(all);
     for model in &candidates {
         // S3/S4: the scratch is kept when a window fails, so what was asked is recoverable (as in `asr`).
         make_scratch(tree, source, &clip, &plan, &body(&clip, text, language))?;
-        match ask(model, &clip, text) {
+        let mut answer = ask(model, &clip, text);
+        // A server that fell over on this window is asked once more before the window counts as failed: the
+        // same request answers on a second try (05-tokens 16-56-25, "negative timestamp id", 1 window in 824
+        // recordings, fine on every re-ask).
+        if let Err(err) = &answer {
+            if transient(err) {
+                out.logs.push(transient_log(source, model, err));
+                answer = ask(model, &clip, text);
+            }
+        }
+        match answer {
             Ok(answer) => {
                 let words = match parse_words(&answer) {
                     Ok(words) => words,
@@ -708,7 +781,7 @@ where
                 };
                 // S4: the answer timed the clip, so its seconds belong to the recording from here.
                 let offset = to_sample(window.0);
-                let words = words
+                let words = crate::spoken_numbers::merge(words, &tokens)
                     .into_iter()
                     .map(|word| Word {
                         word: word.word,
@@ -728,6 +801,47 @@ where
         }
     }
     Err(last)
+}
+
+/// S3: words carried to the next piece of a split, at the front of its text.
+fn carry(queue: &mut [Span], text: &str) {
+    if text.trim().is_empty() {
+        return;
+    }
+    if let Some(next) = queue.last_mut() {
+        next.text = format!("{text} {}", next.text).trim().to_string();
+    }
+}
+
+/// S4: what is left past the clip's end, once nothing more can be carried, is cut to it and kept: the aligner heard
+/// no sound for it (the ASR's stock phrases over silence, or speech too quiet to count as sound), so it cannot say
+/// when it was said, and no word of the transcript is lost for that (first rewrite: such words sat past their
+/// recording's end, 20 of them in the lecture projects).
+pub fn within_clip(words: Vec<Word>, end_sample: u64) -> Vec<Word> {
+    words
+        .into_iter()
+        .map(|word| Word {
+            start_sample: word.start_sample.min(end_sample),
+            end_sample: word.end_sample.min(end_sample),
+            ..word
+        })
+        .collect()
+}
+
+/// S4: an answer worth one more ask: the server erred (HTTP 500) on its own, not for want of memory ([`asr::retryable`]
+/// has its own way down) and not because it serves no such model.
+pub fn transient(err: &str) -> bool {
+    !asr::retryable(err) && !too_long(err) && (err.contains("answered 500") || err.contains("server_error"))
+}
+
+/// S3: the aligner's own word for a window longer than its model takes; answered like no room, by halving.
+pub fn too_long(err: &str) -> bool {
+    err.contains("max_source_positions")
+}
+
+/// S4: the log line for the second ask.
+pub fn transient_log(source: &str, model: &str, err: &str) -> String {
+    format!("!!! [{source}] align: {model} failed on a window ({}) -- asking once more", head(err))
 }
 
 /// Write one window's plan into `align/` beside the source's other files.

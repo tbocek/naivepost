@@ -14,12 +14,45 @@ pub struct Tick {
     pub ended: bool,
     pub armed_before: Option<f64>,
     pub jumped: bool,
+    /// The kept run the player stands in ends this many seconds from now, inside this tick: the line holds where the
+    /// player is and the loop jumps at that moment ([`start_cut_preview_tick`]), as the render cuts there, not up to a
+    /// tick early.
+    pub seam_in: Option<f64>,
+}
+
+/// S5: whether the crossing timed for the run ending at `end` is still the one to make when its moment comes: the
+/// cut still has a kept run ending there, and the player (when it can say) stands within a tick of it.
+pub fn seam_still_due(cut: &Cut, end: f64, player: Option<f64>) -> bool {
+    let tick = crate::preview::TICK_MS as f64 / 1000.0;
+    let runs_end_there = cut_play::kept_runs(&cut.segs)
+        .iter()
+        .any(|&(_, e)| (e - end).abs() < 1e-6);
+    runs_end_there && player.is_none_or(|at| (at - end).abs() <= tick)
+}
+
+/// S5: how far the end of the kept run holding `from` is, when it comes before `within` seconds have passed.
+pub fn seam_within(cut: &Cut, from: f64, within: f64) -> Option<f64> {
+    cut_play::kept_runs(&cut.segs)
+        .into_iter()
+        .find(|&(s, e)| from >= s && from < e)
+        .map(|(_, e)| e - from)
+        .filter(|left| *left < within)
 }
 
 /// S5: advance the preview one tick. A jump over a removed stretch is reported as the new head, not elapsed time. `clock` falls back to the whole cut length when the head is off kept material (only on `ended`).
 pub fn tick(cut: &Cut, from: f64, elapsed_ms: u64) -> Tick {
     let elapsed = elapsed_ms as f64 / 1000.0;
     let armed_before = peek_spare();
+    if let Some(left) = seam_within(cut, from, elapsed) {
+        return Tick {
+            head: from,
+            clock: cut_play::cut_time(&cut.segs, from).unwrap_or_else(|| kept_length(cut)),
+            ended: false,
+            armed_before,
+            jumped: false,
+            seam_in: Some(left),
+        };
+    }
     let moved = cut_play::advance(&cut.segs, from, elapsed);
     match moved {
         cut_play::At::Kept { t } | cut_play::At::JumpTo { t } => Tick {
@@ -28,6 +61,7 @@ pub fn tick(cut: &Cut, from: f64, elapsed_ms: u64) -> Tick {
             ended: false,
             armed_before,
             jumped: matches!(moved, cut_play::At::JumpTo { .. }),
+            seam_in: None,
         },
         cut_play::At::Ended => {
             // Hold the line on the last kept end rather than where the tick overshot.
@@ -40,6 +74,7 @@ pub fn tick(cut: &Cut, from: f64, elapsed_ms: u64) -> Tick {
                 ended: true,
                 armed_before,
                 jumped: false,
+                seam_in: None,
             }
         }
     }
@@ -176,9 +211,19 @@ pub struct Frame {
 pub fn frame(cut: &Cut, seg: Option<&Seg>, t: f64) -> Frame {
     Frame {
         still: cut_play::shows_a_still(cut, t),
+        // A rate stamped on the seg wins; the page's cut is never split by speed (only the render's
+        // `cut_speed_split::sped_cut` stamps rates), so a ⏩ Speed over these seconds is read off the effects
+        // themselves, at their flat rate (§06 §2) — else ▶✂ played every speed at 1× while the render did not.
         rate: seg
+            .filter(|seg| seg.rate > 0.0)
             .map(cut_play::played_rate)
-            .unwrap_or(cut_play::FLAT_RATE),
+            .unwrap_or_else(|| {
+                if seg.is_some() {
+                    crate::cut_speed_play::flat_rate_at(&cut.fx, t)
+                } else {
+                    cut_play::FLAT_RATE
+                }
+            }),
         volume: seg.map(cut_play::volume_applies).unwrap_or(true),
     }
 }
@@ -216,37 +261,62 @@ pub fn start_cut_preview_tick(page: Rc<dyn CutPreviewPage>) {
                 .player_second()
                 .or_else(|| page.playhead())
                 .unwrap_or(0.0);
+            let step = tick(&page.cut(), from, crate::preview::TICK_MS);
+            if let Some(left) = step.seam_in {
+                // The seam falls inside this tick: cross it when the player gets there, at the render's cut.
+                let page = page.clone();
+                let end = from + left;
+                glib::timeout_add_local_once(
+                    std::time::Duration::from_secs_f64(left.max(0.0)),
+                    move || {
+                        if !page.cut_only() || !page.playing() {
+                            return;
+                        }
+                        let cut_ = page.cut();
+                        // Only the crossing that was timed: not after a hand moved the line, the player already
+                        // jumped, or an edit took the seam away; the next tick answers those as it always did.
+                        if seam_still_due(&cut_, end, page.player_second()) {
+                            let step = tick(&cut_, end, 0);
+                            run_step(&*page, &cut_, step);
+                        }
+                    },
+                );
+            }
             let cut_ = page.cut();
-            let step = tick(&cut_, from, crate::preview::TICK_MS);
-            page.set_playhead(step.head);
-            // S5 order: the swap first (the join must not wait), then the spare for the NEXT jump, then the three answers.
-            let onto_the_spare = step.jumped
-                || reached_spare(step.armed_before, step.head)
-                || reached_spare(peek_spare(), step.head);
-            if onto_the_spare {
-                let found = page.cross_into_spare();
-                note_spare_swapped(found);
-                if found {
-                    clear_spare(&*page);
-                }
-            }
-            arm_spare_page(&cut_, step.head, &*page);
-            let answers = route(&cut_, step.head, page.volume());
-            let released = page.hold_still(answers.still);
-            // Ask for a rate only when the process is not held on a stop's frame; a re-cue would lose the still.
-            if changed_rate(answers.rate) && !released {
-                page.play_rate(answers.rate, step.head);
-            }
-            page.apply_gain(answers.gain, step.head);
-            page.say_clock(step.clock, step.ended);
-            if step.ended {
-                clear_spare(&*page);
-                // Past the last clip the preview pauses. Left playing, this tick moved the line back and wrote all this again ten times a second.
-                page.pause_at_end();
-            }
+            run_step(&*page, &cut_, step);
             glib::ControlFlow::Continue
         },
     );
+}
+
+/// One step of the ▶✂ loop: the line, the spare, the rate, the gain and the clock, in S5's order.
+fn run_step(page: &dyn CutPreviewPage, cut_: &Cut, step: Tick) {
+    page.set_playhead(step.head);
+    // S5 order: the swap first (the join must not wait), then the spare for the NEXT jump, then the three answers.
+    let onto_the_spare = step.jumped
+        || reached_spare(step.armed_before, step.head)
+        || reached_spare(peek_spare(), step.head);
+    if onto_the_spare {
+        let found = page.cross_into_spare();
+        note_spare_swapped(found);
+        if found {
+            clear_spare(page);
+        }
+    }
+    arm_spare_page(cut_, step.head, page);
+    let answers = route(cut_, step.head, page.volume());
+    let released = page.hold_still(answers.still);
+    // Ask for a rate only when the process is not held on a stop's frame; a re-cue would lose the still.
+    if changed_rate(answers.rate) && !released {
+        page.play_rate(answers.rate, step.head);
+    }
+    page.apply_gain(answers.gain, step.head);
+    page.say_clock(step.clock, step.ended);
+    if step.ended {
+        clear_spare(page);
+        // Past the last clip the preview pauses. Left playing, this tick moved the line back and wrote all this again ten times a second.
+        page.pause_at_end();
+    }
 }
 
 /// What the tick loop needs from the page; `src/ui/window.rs` implements it over its player and cut slots.

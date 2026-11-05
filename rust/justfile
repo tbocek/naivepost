@@ -50,7 +50,13 @@ _files filter:
         [ "$up" -eq "$jobs" ] && break
         sleep 0.1
     done
-    [ -n "{{filter}}" ] || DISPLAY=":$base" cargo test --lib --bins || exit
+    # The unit tests get folders of their own too: none of them may read or write the person's settings.
+    if [ -z "{{filter}}" ]; then
+        unit=$(mktemp -d)
+        DISPLAY=":$base" XDG_CONFIG_HOME="$unit/config" XDG_DATA_HOME="$unit/data" XDG_CACHE_HOME="$unit/cache" \
+            cargo test --lib --bins || { rm -rf "$unit"; exit 1; }
+        rm -rf "$unit"
+    fi
     bin=$(cargo test --test all --no-run --message-format=json-render-diagnostics | sed -n 's|.*"name":"all".*"executable":"\([^"]*\)".*|\1|p')
     [ -n "$bin" ] || exit 1
     files=$(sed -n 's/^mod \(.*\);$/\1/p' tests/suite/mod.rs | grep -F -- "{{filter}}") || { echo "no test file in tests/suite/mod.rs matches {{filter}}"; exit 1; }
@@ -67,6 +73,7 @@ _files filter:
         local own start=$EPOCHREALTIME
         own=$(mktemp -d)
         DISPLAY=":$((base + $1))" TMPDIR="$own" XDG_CONFIG_HOME="$own/config" XDG_DATA_HOME="$own/data" XDG_CACHE_HOME="$own/cache" \
+            NAIVEPOST_TEST_XDG_CONFIG_HOME="$own/config" NAIVEPOST_TEST_XDG_DATA_HOME="$own/data" \
             "$bin" "suite::$2::" >"$logs/$2.log" 2>&1
         local code=$?
         rm -rf "$own"
