@@ -16,7 +16,7 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
   stems/                             voice-separation products: <base>.split-voice.wav, <base>.split-novoice.wav|.mkv
   prepare/
     inputs/meta.env                  INTERVAL (the 0.25 s extraction grid), SCALE always; VIDEO_FILE, VIDEO_BASE when there is footage; AUDIO_FILE, AUDIO_BASE when narrator 1 resolves
-    inputs/<source>/                 voice16k.wav, transcript.txt, transcript.tsv, transcript.srt,
+    inputs/<source>/                 voice16k.wav (on the recording's own clock; voice16k.clock beside it says so), transcript.txt, transcript.tsv, transcript.srt,
                                      words.json, asrchunks.json, words.aligned.json, turns.json
                                      (scratch while running: asr/c00.wav… chunks, kept on failure, removed on success; align/ w<ms>.wav per window and its .plan; diar/ s.wav, a00.wav…, anchor.list, anchor.wav, seg.wav, cc.list, win.wav)
     inputs/frames/<source>/          <YYYY-MM-DD_HH-MM-SS.mmm>.jpg on the 250 ms grid restarted at each scene change, named by the real instant (the recording's file-name stamp plus the second into it; first rewrite: session seconds printed as 1970-01-01_…, renamed in place on the next run);

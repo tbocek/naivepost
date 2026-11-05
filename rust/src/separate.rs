@@ -65,6 +65,9 @@ fn nearest_silence(silences: &[f64], edge: f64) -> Option<f64> {
 pub fn decode_plan() -> Vec<String> {
     vec![
         "-vn".into(),
+        // On the recording's own clock, as `voice16k.wav` is (F1.3 S1): the split halves are what later steps decode.
+        "-af".into(),
+        crate::decode_audio::CLOCK_FILTER.into(),
         "-ar".into(),
         SAMPLE_RATE.into(),
         "-ac".into(),

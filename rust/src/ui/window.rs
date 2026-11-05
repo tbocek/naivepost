@@ -1002,6 +1002,9 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     fn set_playhead(&self, at: f64) {
         set_playhead(&self.0, at)
     }
+    fn silence_after(&self, session: Option<f64>, now: bool) {
+        crate::ui::cut_record_play::silence_after(session, now)
+    }
     fn cut(&self) -> Cut {
         newest_review_cut()
     }

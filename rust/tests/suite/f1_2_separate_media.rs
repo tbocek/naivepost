@@ -115,7 +115,7 @@ fn f1_2_s1_the_decode_runs_the_configured_ffmpeg_at_44_1khz_stereo() {
     assert_eq!(argv.len(), 1, "one command for one decode: {argv:?}");
     // The plan's own tail, in order: no video, the rate, the channels, the raw format.
     assert!(
-        argv[0].contains("-vn -ar 44100 -ac 2 -f s16le"),
+        argv[0].contains("-vn -af aresample=async=1:first_pts=0 -ar 44100 -ac 2 -f s16le"),
         "the decode carries decode_plan()'s arguments verbatim: {}",
         argv[0]
     );
@@ -136,7 +136,7 @@ fn f1_2_s1_the_decode_runs_the_configured_ffmpeg_at_44_1khz_stereo() {
     );
     assert_eq!(
         separate::decode_plan(),
-        vec!["-vn", "-ar", "44100", "-ac", "2", "-f", "s16le"]
+        vec!["-vn", "-af", "aresample=async=1:first_pts=0", "-ar", "44100", "-ac", "2", "-f", "s16le"]
             .into_iter()
             .map(String::from)
             .collect::<Vec<_>>(),

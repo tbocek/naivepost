@@ -291,6 +291,13 @@ pub fn start_cut_preview_tick(page: Rc<dyn CutPreviewPage>) {
 
 /// One step of the ▶✂ loop: the line, the spare, the rate, the gain and the clock, in S5's order.
 fn run_step(page: &dyn CutPreviewPage, cut_: &Cut, step: Tick) {
+    // The sound stops at the stretch's end in the stream itself: what the output already holds past it is silence. Set
+    // before the line moves, so a jump's cue installs it before the new place decodes; the stretch being left stays
+    // silenced until that seek has flushed it.
+    page.silence_after(
+        if step.ended { None } else { stretch_end(cut_, step.head) },
+        !step.jumped,
+    );
     page.set_playhead(step.head);
     // S5 order: the swap first (the join must not wait), then the spare for the NEXT jump, then the three answers.
     let onto_the_spare = step.jumped
@@ -345,6 +352,17 @@ pub trait CutPreviewPage {
     fn player_second(&self) -> Option<f64> {
         None
     }
+    /// S5: silence the player's sound from this session second on, in the stream (the end of the kept stretch it plays),
+    /// or nothing for `None`. The default answers for a page whose player has no such filter.
+    fn silence_after(&self, _session: Option<f64>, _now: bool) {}
+}
+
+/// S5: the end of the kept stretch holding `at`, which the sound is silenced from while ▶✂ plays it.
+pub fn stretch_end(cut: &Cut, at: f64) -> Option<f64> {
+    cut_play::kept_runs(&cut.segs)
+        .into_iter()
+        .find(|&(s, e)| at >= s - 1e-6 && at < e)
+        .map(|(_, e)| e)
 }
 
 /// The cut's rate as last handed to the player, so a re-cue costs one per rate CHANGE; thread-local, as each window's tick is the only writer.
