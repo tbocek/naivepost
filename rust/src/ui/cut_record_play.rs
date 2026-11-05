@@ -98,7 +98,9 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
         ));
         return false;
     };
-    match crate::play_built_in::cue(&file, local, play) {
+    // The file starts at `at - local` on the session clock; the wanted silence goes on its clock before it decodes.
+    let silence = WANTED_SILENCE.with(|cell| cell.get()).map(|t| t - (at - local));
+    match crate::play_built_in::cue_silenced(&file, local, play, silence) {
         Ok(()) => {
             CUT_PAGE
                 .with(|CutPage { in_video: cell, .. }| cell.set(Some((at - local, recording.end))));
@@ -109,6 +111,22 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
             log_line(&preview::playback_failure("Cut", &why));
             false
         }
+    }
+}
+
+thread_local! {
+    /// The session second ▶✂ wants the sound silenced from: what the next cue installs before it decodes.
+    static WANTED_SILENCE: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Silence the built-in player's sound from this session second on (F2.2 S5). It is what every later cue installs
+/// before the pipeline decodes ([`play_in_preview`]); `now` also applies it to the file playing, on its own clock — not
+/// at a jump, where the stretch being left must stay silenced until the seek has flushed it.
+pub fn silence_after(session: Option<f64>, now: bool) {
+    WANTED_SILENCE.with(|cell| cell.set(session));
+    if now {
+        let start = CUT_PAGE.with(|CutPage { in_video: cell, .. }| cell.get()).map(|(start, _)| start);
+        crate::play_built_in::silence_from(session.zip(start).map(|(t, start)| t - start));
     }
 }
 

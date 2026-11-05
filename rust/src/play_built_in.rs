@@ -10,6 +10,78 @@ const PREROLL_WAIT_S: u64 = 3;
 /// How often a cue in flight looks at the pipeline again.
 const CUE_POLL_MS: u64 = 20;
 
+/// The second of the playing file from which its sound is silenced in the stream (f64 bits; NaN for none): what ▶✂
+/// sets to the end of the kept stretch it plays. Read on GStreamer's streaming thread, hence an atomic.
+static SILENCE_FROM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0x7ff8_0000_0000_0000);
+
+/// Silence the playing file's sound from `local` seconds on, in the stream itself (F2.2 S5): whatever the sound
+/// card has already been handed past a clip's end is then silence, however far ahead the output runs, so ▶✂ plays a
+/// cut's end where the render cuts it. `None` lets everything play. A cue clears it.
+pub fn silence_from(local: Option<f64>) {
+    SILENCE_FROM.store(local.unwrap_or(f64::NAN).to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The second the stream is silenced from, if any.
+pub fn silenced_from() -> Option<f64> {
+    let at = f64::from_bits(SILENCE_FROM.load(std::sync::atomic::Ordering::Relaxed));
+    (!at.is_nan()).then_some(at)
+}
+
+/// The audio filter the playbin runs its sound through: floats, and a probe that zeroes every sample at or past
+/// [`silenced_from`] on the file's own clock (stream time). First rewrite: the jump at a clip's end came after the
+/// output had been handed the next tens of milliseconds, so the start of a dropped word was heard (09-account,
+/// "Ethereum," | "wie").
+pub fn silencer() -> Result<gst::Element, String> {
+    let bin = gst::parse::bin_from_description(
+        "audioconvert ! audio/x-raw,format=F32LE,layout=interleaved ! identity name=silencer",
+        true,
+    )
+    .map_err(|err| format!("the sound filter: {err}"))?;
+    let pad = bin
+        .by_name("silencer")
+        .and_then(|element| element.static_pad("src"))
+        .ok_or("the sound filter has no output")?;
+    pad.add_probe(gst::PadProbeType::BUFFER, |pad, info| {
+        let Some(from) = silenced_from() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let (Some(caps), Some(segment)) = (pad.current_caps(), pad.sticky_event::<gst::event::Segment>(0)) else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Some(structure) = caps.structure(0) else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let (Ok(rate), Ok(channels)) = (structure.get::<i32>("rate"), structure.get::<i32>("channels")) else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Ok(segment) = segment.segment().clone().downcast::<gst::ClockTime>() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        if let Some(gst::PadProbeData::Buffer(ref mut buffer)) = info.data {
+            let Some(start) = buffer.pts().and_then(|pts| segment.to_stream_time(pts)) else {
+                return gst::PadProbeReturn::Ok;
+            };
+            silence_past(buffer.make_mut(), start.nseconds() as f64 / 1e9, from, rate as usize, channels as usize);
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(bin.upcast())
+}
+
+/// Zero the samples of `buffer` (interleaved f32 starting at `start` seconds) that sit at or past `from`.
+fn silence_past(buffer: &mut gst::BufferRef, start: f64, from: f64, rate: usize, channels: usize) {
+    let Ok(mut map) = buffer.map_writable() else {
+        return;
+    };
+    let frame = 4 * channels.max(1);
+    let frames = map.len() / frame;
+    let first = ((from - start) * rate as f64).ceil().max(0.0) as usize;
+    if first >= frames {
+        return;
+    }
+    map[first * frame..].fill(0);
+}
+
 /// A cue that has not landed yet: where it stands, whether it plays, and which step it is on.
 #[derive(Clone, Copy)]
 struct Pending {
@@ -68,6 +140,10 @@ fn build() -> Result<Pipe, String> {
         .property("video-sink", &sink)
         .build()
         .map_err(|err| format!("playbin: {err}"))?;
+    // The sound passes the silencer, so a cut's end is kept to the sample however far ahead the output runs.
+    if let Ok(filter) = silencer() {
+        playbin.set_property("audio-filter", &filter);
+    }
     Ok(Pipe {
         playbin,
         sink,
@@ -79,6 +155,13 @@ fn build() -> Result<Pipe, String> {
 }
 
 pub fn cue(file: &str, at_secs: f64, play: bool) -> Result<(), String> {
+    cue_silenced(file, at_secs, play, None)
+}
+
+/// [`cue`], with the second of `file` its sound is silenced from set BEFORE the pipeline starts decoding, so not one
+/// buffer of the new place passes the filter without it (the decoder runs ahead of the sound you hear).
+pub fn cue_silenced(file: &str, at_secs: f64, play: bool, silence: Option<f64>) -> Result<(), String> {
+    silence_from(silence);
     let generation = PIPE.with(|slot| -> Result<u64, String> {
         let mut slot = slot.borrow_mut();
         if slot.is_none() {
