@@ -132,6 +132,11 @@ pub fn start(window: Rc<adw::ApplicationWindow>) {
     let page = Rc::new(WindowPage(window));
     let last = Rc::new(RefCell::new(Instant::now()));
     glib::timeout_add_local(Duration::from_millis(TICK_MS), move || {
+        // ▶ plays everything, cuts and all: no stretch end ▶✂ set may silence it, also when ▶ took over mid-play
+        // without a new cue (F2.1 S1). First rewrite: the dropped stretches played silent after a ▶✂.
+        if !ui::preview_player().cut_only {
+            cut_record_play::silence_after(None, true);
+        }
         if !page.is_recording_playing() {
             return glib::ControlFlow::Continue;
         }

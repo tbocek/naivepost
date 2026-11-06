@@ -71,21 +71,44 @@ pub fn wire_with(button: &gtk::Button, open: &Opener) {
     });
 }
 
+thread_local! {
+    /// The last dialog a press put up, for a test to read where it starts.
+    static LAST_DIALOG: std::cell::RefCell<Option<gtk::FileDialog>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The folder in the same file dialog the top bar's Open uses, started in it: what the app can see is what it
+/// shows, wherever the app runs (first rewrite: it handed the folder to the desktop, and in the dev container,
+/// with no desktop to hand it to, the press did nothing). A file picked in it is opened as a log link is.
 pub fn folder_opener() -> Opener {
-    std::rc::Rc::new(
-        |dir: std::path::PathBuf| match glib::filename_to_uri(&dir, None) {
-            Ok(uri) => {
-                if let Err(why) = super::log_link::open(&uri) {
-                    let name = dir
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    super::window_logs::log_line(&format!("!!! could not open {name}: {why}"));
+    std::rc::Rc::new(|dir: std::path::PathBuf| {
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let dialog = gtk::FileDialog::builder()
+            .title(format!("Outputs \u{2014} {name}"))
+            .accept_label("Open")
+            .build();
+        dialog.set_initial_folder(Some(&gio::File::for_path(&dir)));
+        LAST_DIALOG.with(|last| *last.borrow_mut() = Some(dialog.clone()));
+        dialog.open(
+            None::<&gtk::Window>,
+            None::<&gio::Cancellable>,
+            move |chosen: Result<gio::File, glib::Error>| {
+                let Some(path) = chosen.ok().and_then(|file| file.path()) else {
+                    return; // dismissed
+                };
+                if let Ok(uri) = glib::filename_to_uri(&path, None) {
+                    if let Err(why) = super::log_link::open(&uri) {
+                        super::window_logs::log_line(&format!("!!! could not open {}: {why}", path.display()));
+                    }
                 }
-            }
-            Err(err) => super::window_logs::log_line(&format!(
-                "!!! could not open the output folder: {err}"
-            )),
-        },
-    )
+            },
+        );
+    })
+}
+
+/// The dialog the last press put up. Test-only by name.
+pub fn last_dialog_for_test() -> Option<gtk::FileDialog> {
+    LAST_DIALOG.with(|last| last.borrow().clone())
 }

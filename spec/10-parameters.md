@@ -37,6 +37,7 @@ How the servers are driven and how the passes are sized: request sizes, windows,
 | P.machine.strayWordGapSeconds | 1.0 | …and it must start this long after the word before it | strayGapSeconds |
 | P.machine.seamNoiseWords | 2 | stretches this short elsewhere are respellings (measured: 5→2) | seamNoise |
 | P.machine.textEditThinking | on | thinking for the join pass (measured: 15/29 → 20/29 joins right, ~2 min a join) |  |
+| P.machine.joinTemperature | 0.6 | the join pass's temperature, under the 1.0 of the other thinking jobs: a join has one right answer, and at 1.0 the same join came back differently from run to run (09-account, 2026-11-05); it is part of the join's cache key |  |
 | P.machine.describeFramesPerReq | 4 | frames per vision request | framesPerReq |
 | P.machine.describeRecentEvents | 3 | previous EVENT lines carried along | recentEvents |
 | P.machine.describeCtxSegs | 2 | speech context: segments per side per source | ctxSegs |

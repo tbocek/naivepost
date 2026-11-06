@@ -31,6 +31,18 @@ const ONSET_STEP_SECONDS: f64 = 0.005;
 /// How far either side of an aligned boundary between two touching words the place they part is looked for: one step
 /// of the aligner's 80 ms grid. `P.eng.partReachSeconds`; `params::prepare()` rows it from here.
 pub const PART_REACH: f64 = 0.08;
+/// F1.11's hiss: a 5 ms bucket whose sound crosses zero at least this often per sample is an s, z or sch, not a
+/// vowel. 0.375 is 30 crossings in a 16 kHz bucket of 80 samples; measured 09-account "Tokens signiert": the hiss
+/// 42-67, the vowels around it 1-8.
+pub const HISS_CROSSINGS: f64 = 0.375;
+/// A hiss is only that loud a share of the loudest sound around it, so a breath or the room's noise is none.
+const HISS_SHARE: i32 = 10;
+/// Nor quieter than this on the s16 scale, whatever is around it.
+const HISS_FLOOR: i32 = 300;
+/// The shortest hiss that is a sound of its own; a lone noisy bucket inside a vowel is not one.
+const HISS_MIN: f64 = 0.03;
+/// How much sound either side of the boundary the hiss is looked for in.
+const HISS_LOOK: f64 = 0.3;
 /// Two word times this close are one boundary (`retakes.tsv` keeps two decimals).
 const TOUCH: f64 = 0.006;
 
@@ -74,7 +86,10 @@ pub fn load(tree: &crate::layout::Tree, lanes: &[Lane]) -> Vec<(Lane, Edges)> {
         .iter()
         .filter_map(|lane| {
             let wave = crate::wave::read(tree, &lane.key, lane.size, lane.mtime).ok()??;
-            Some((lane.clone(), Edges::new(wave, lane.off)))
+            let edges = Edges::new(wave, lane.off);
+            let voice = tree.voice16k_wav(&lane.key);
+            let edges = if voice.is_file() { edges.with_voice(voice) } else { edges };
+            Some((lane.clone(), edges))
         })
         .collect()
 }
@@ -106,11 +121,71 @@ pub struct Edges {
     pub wave: Wave,
     /// The session second this file's first sample lands on.
     pub off: f64,
+    /// The recording's own sound (`voice16k.wav`, 16 kHz, on the same clock as `wave`), read around an edge for
+    /// the hiss rule. None: the rule is skipped and the loudness alone places the edge.
+    pub voice: Option<std::path::PathBuf>,
 }
 
 impl Edges {
     pub fn new(wave: Wave, off: f64) -> Self {
-        Self { wave, off }
+        Self {
+            wave,
+            off,
+            voice: None,
+        }
+    }
+
+    /// The same envelope with the recording's 16 kHz sound beside it, for [`Self::hiss`].
+    pub fn with_voice(mut self, voice: std::path::PathBuf) -> Self {
+        self.voice = Some(voice);
+        self
+    }
+
+    /// The hiss (an s, z or sch) nearest the session second `t`, as its first and last session second: a run of 5 ms
+    /// buckets that cross zero at [`HISS_CROSSINGS`] and carry sound, at least [`HISS_MIN`] long, holding `t` or
+    /// ending within [`PART_REACH`] of it. One quiet bucket inside does not break it. None without the sound file.
+    ///
+    /// Two words that share a hiss have no quieter moment between them: 09-account "Tokens signiert" said the two s
+    /// as one 215 ms hiss, and the loudness put the cut after it, keeping the s of the dropped "signiert".
+    pub fn hiss(&self, t: f64) -> Option<(f64, f64)> {
+        const RATE: f64 = crate::transcribe::SAMPLE_RATE as f64;
+        let voice = self.voice.as_ref()?;
+        let first = ((t - HISS_LOOK - self.off) * RATE).max(0.0) as usize;
+        let last = ((t + HISS_LOOK - self.off) * RATE).max(0.0) as usize;
+        let x = crate::wave_build::read_wav_span(voice, first, last.saturating_sub(first)).ok()?;
+        let step = crate::wave_build::SAMPLES_PER_BUCKET;
+        let buckets: Vec<(i32, f64)> = x
+            .chunks_exact(step)
+            .map(|b| {
+                let peak = b.iter().map(|v| i32::from(v.unsigned_abs())).max().unwrap_or(0);
+                let crossings = b.windows(2).filter(|p| (p[0] < 0) != (p[1] < 0)).count();
+                (peak, crossings as f64 / (step - 1) as f64)
+            })
+            .collect();
+        let loudest = buckets.iter().map(|b| b.0).max()?;
+        let hissing: Vec<bool> = buckets
+            .iter()
+            .map(|&(peak, rate)| peak >= HISS_FLOOR.max(loudest / HISS_SHARE) && rate >= HISS_CROSSINGS)
+            .collect();
+        let at = |i: usize| self.off + (first + i * step) as f64 / RATE;
+        let mut runs = Vec::new();
+        let mut i = 0;
+        while i < hissing.len() {
+            if !hissing[i] {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j + 1 < hissing.len() && (hissing[j + 1] || hissing.get(j + 2) == Some(&true)) {
+                j += 1;
+            }
+            runs.push((at(i), at(j + 1)));
+            i = j + 1;
+        }
+        let away = |(a, b): (f64, f64)| if t < a { a - t } else if t > b { t - b } else { 0.0 };
+        runs.into_iter()
+            .filter(|&(a, b)| b - a >= HISS_MIN - 1e-9 && away((a, b)) <= PART_REACH)
+            .min_by(|&p, &q| away(p).total_cmp(&away(q)))
     }
 
     fn peaks(&self) -> &[u8] {
@@ -130,31 +205,74 @@ impl Edges {
         i
     }
 
-    /// Where two words that touch in the aligner's times part in the sound: the quiet 5 ms nearest the boundary `t`
-    /// (at most one step above the quietest within [`PART_REACH`]), when `t` itself is clearly on sound (twice that
-    /// quietest and more). `None` leaves the boundary where it is: already quiet, or no quieter moment to go to.
+    /// Where two words that touch in the aligner's times part in the sound: the quietest 5 ms nearest the boundary `t`
+    /// in the valley between them, the valley `t` sits in or the one a slope down from `t` runs into, within
+    /// [`PART_REACH`]. Quiet is under half the loudest bucket in reach. A boundary inside a stretch that stays loud
+    /// (two words said in one breath) has no valley to go to and stays: `None`, as for one already at the valley's
+    /// quietest. The answer is the start of that bucket, so the cut keeps none of it.
     ///
-    /// The aligner's 80 ms grid puts such a boundary up to a step off: 09-account 69.34, the cut after "Ethereum,"
-    /// sat 40 ms into the removed "wie" and was heard; the two parted at 69.32.
+    /// The aligner's 80 ms grid puts such a boundary up to a step off: 09-account 69.36, the cut after "Ethereum," kept
+    /// the first 12 ms of the dropped "wie", a soft onset from 69.3475; the two part at 69.340.
     pub fn parting(&self, t: f64) -> Option<f64> {
         let i = self.at(t);
         if i < 0 {
             return None;
         }
         let peaks = self.peaks();
+        let level = |j: i64| i32::from(peaks[j as usize]);
         let reach = (PART_REACH * self.wave.hz).round() as i64;
-        let lo = (i - reach).max(0) as usize;
-        let hi = ((i + reach) as usize).min(peaks.len() - 1);
-        let quietest = i32::from(*peaks[lo..=hi].iter().min()?);
-        if i32::from(peaks[i as usize]) < 2 * quietest + 4 {
+        let lo = (i - reach).max(0);
+        let hi = (i + reach).min(peaks.len() as i64 - 1);
+        let loudest = (lo..=hi).map(level).max()?;
+        // Nothing in reach to tell a word from the room by.
+        if loudest < 8 {
             return None;
         }
-        // The nearest quiet bucket, the earlier of two at the same distance.
-        let near = (0..=reach)
+        let quiet = |j: i64| level(j) * 2 < loudest;
+        // The valley `t` sits in, or the one a slope down from it reaches: each step no louder than the one before
+        // (one byte of give), and never more than two steps along a loud stretch that does not fall.
+        let seed = if quiet(i) {
+            Some(i)
+        } else {
+            [-1i64, 1]
+                .into_iter()
+                .filter_map(|dir| {
+                    let (mut j, mut prev, mut flat) = (i, level(i), 0);
+                    loop {
+                        j += dir;
+                        if j < lo || j > hi || level(j) > prev + 1 {
+                            return None;
+                        }
+                        if quiet(j) {
+                            return Some(j);
+                        }
+                        if level(j) >= prev {
+                            flat += 1;
+                            if flat > 2 {
+                                return None;
+                            }
+                        }
+                        prev = level(j);
+                    }
+                })
+                .min_by_key(|j| (j - i).abs())
+        }?;
+        // The valley: every quiet bucket joined to the seed, within reach.
+        let (mut from, mut to) = (seed, seed);
+        while from > lo && quiet(from - 1) {
+            from -= 1;
+        }
+        while to < hi && quiet(to + 1) {
+            to += 1;
+        }
+        let floor = (from..=to).map(level).min()?;
+        let best = (0..=reach)
             .flat_map(|d| [i - d, i + d])
-            .filter(|&j| j >= lo as i64 && j <= hi as i64)
-            .find(|&j| i32::from(peaks[j as usize]) <= quietest + 1)?;
-        Some(self.off + (near as f64 + 0.5) / self.wave.hz)
+            .find(|&j| j >= from && j <= to && level(j) <= floor + 1)?;
+        if best == i {
+            return None;
+        }
+        Some(self.off + best as f64 / self.wave.hz)
     }
 
     /// The loudest bucket between two session seconds; `None` where the span holds no bucket of this file.
@@ -356,6 +474,51 @@ fn spoken_between(spoken: &[(f64, f64)], from: f64, to: f64) -> bool {
     spoken.iter().any(|(s, e)| *e > from && *s < to)
 }
 
+/// Does the word begin with a hiss (s, z, sch, x, ß, a soft c)? The aligner's word names are lower case.
+fn hiss_first(word: &str) -> bool {
+    let mut letters = word.chars();
+    match letters.next() {
+        Some('s' | 'z' | 'x' | 'ß') => true,
+        Some('c') => matches!(letters.next(), Some('e' | 'i' | 'y')),
+        _ => false,
+    }
+}
+
+/// Does the word end in a hiss (s, z, tz, sch, x, ß, ce)?
+fn hiss_last(word: &str) -> bool {
+    word.ends_with(['s', 'z', 'x', 'ß']) || word.ends_with("sch") || word.ends_with("ce")
+}
+
+/// Where two touching words part when a hiss is at their boundary `t`, by which of them the hiss belongs to: both
+/// ("Tokens signiert") → its middle, half to each; one → the edge goes round it, taking the kept word's own hiss in
+/// whole and leaving the dropped word's out. `keep_after` says the word after `t` is the kept one (the cut resumes
+/// there). Already clear of a dropped word's hiss, the edge stays: it never moves to take in more of a dropped word.
+fn hiss_parting(edges: &Edges, words: &[AlignedWord], t: f64, keep_after: bool) -> Option<f64> {
+    let before = words.iter().rfind(|w| (w.e - t).abs() <= TOUCH)?;
+    let after = words.iter().find(|w| (w.s - t).abs() <= TOUCH)?;
+    let (ends, starts) = (hiss_last(&before.word), hiss_first(&after.word));
+    if !ends && !starts {
+        return None;
+    }
+    let (a, b) = edges.hiss(t)?;
+    let at = match (ends, starts, keep_after) {
+        (true, true, _) => (a + b) / 2.0,
+        // The hiss is the word before's: kept → the clip ends after it; dropped → the clip resumes after it.
+        (true, false, _) => b.max(t),
+        // The word after's: dropped → the clip ends before it; kept → the clip resumes before it.
+        _ => a.min(t),
+    };
+    ((at - t).abs() > 1e-9).then_some(at)
+}
+
+fn hiss_note(was: f64, at: f64) -> String {
+    format!(
+        ">>> {}: the cut moves {:+.0} ms to where the two words part in the hiss between them",
+        mm_ss(at),
+        (at - was) * 1000.0
+    )
+}
+
 fn parting_note(was: f64, at: f64) -> String {
     format!(
         ">>> {}: the cut moves {:+.0} ms to where the two words part, off the aligner's boundary",
@@ -389,10 +552,16 @@ pub fn place_edges<'a>(
                         before - s
                     ));
                 } else if touching(words, mark.s) {
-                    // The kept word and the dropped one touch in the word times: the cut goes where they part.
-                    if let Some(at) = edge_of(mark.s).and_then(|e| e.parting(mark.s)) {
-                        notes.push(parting_note(mark.s, at));
-                        mark.s = at;
+                    // The kept word and the dropped one touch in the word times: the cut goes where they part, in
+                    // the hiss when one is at the boundary, else at the quietest moment between them.
+                    if let Some(e) = edge_of(mark.s) {
+                        if let Some(at) = hiss_parting(e, words, mark.s, false) {
+                            notes.push(hiss_note(mark.s, at));
+                            mark.s = at;
+                        } else if let Some(at) = e.parting(mark.s) {
+                            notes.push(parting_note(mark.s, at));
+                            mark.s = at;
+                        }
                     }
                 }
                 if mark.again > mark.e && !words_between(words, mark.e, mark.again) {
@@ -413,8 +582,12 @@ pub fn place_edges<'a>(
                 }
                 // The same where the cut resumes on a kept word that touches the last dropped one.
                 if mark.to > mark.s && touching(words, mark.to) {
-                    if let Some(at) = edge_of(mark.to).and_then(|e| e.parting(mark.to)) {
-                        if at > mark.s {
+                    if let Some(e) = edge_of(mark.to) {
+                        let hissed = hiss_parting(e, words, mark.to, true).filter(|at| *at > mark.s);
+                        if let Some(at) = hissed {
+                            notes.push(hiss_note(mark.to, at));
+                            mark.to = at;
+                        } else if let Some(at) = e.parting(mark.to).filter(|at| *at > mark.s) {
                             notes.push(parting_note(mark.to, at));
                             mark.to = at;
                         }

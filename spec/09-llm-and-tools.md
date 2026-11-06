@@ -9,7 +9,7 @@
 ## 1. Request contract
 
 - `POST <server>/v1/chat/completions`, bearer key when set; model id required ("no LLM model configured -- use the gear button").
-- Body: `model`, `messages` (text parts and `image_url` data URLs), sampling `top_p 0.95, top_k 20, min_p 0, presence_penalty 0`; thinking mode `temperature 1.0, max_tokens 65536, enable_thinking true`; execute mode `temperature 0.6, max_tokens 8192, enable_thinking false`; thinking switch sent top-level and in `chat_template_kwargs` (llama.cpp reads one, other servers the other), `preserve_thinking true`; `tools` when offered; `stream true` when the caller streams.
+- Body: `model`, `messages` (text parts and `image_url` data URLs), sampling `top_p 0.95, top_k 20, min_p 0, presence_penalty 0`; thinking mode `temperature 1.0, max_tokens 65536, enable_thinking true` (the join pass at 0.6, P.machine.joinTemperature); execute mode `temperature 0.6, max_tokens 8192, enable_thinking false`; thinking switch sent top-level and in `chat_template_kwargs` (llama.cpp reads one, other servers the other), `preserve_thinking true`; `tools` when offered; `stream true` when the caller streams.
 - Response: `choices[0].message.{content, reasoning_content, tool_calls}` and `finish_reason`. Streaming only when the response is `text/event-stream`: `data:` chunks, `[DONE]`, tool calls reassembled by index; reasoning kept apart and never returned as the answer; EOF without `[DONE]` keeps what arrived.
 - Every request rides the run's cancel context.
 

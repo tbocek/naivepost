@@ -823,6 +823,15 @@ fn s5b_outputs_folder_button_opens_the_pages_folder(app: &adw::Application) {
         [session.join("prepare")],
         "a press asks for the shown page's output folder"
     );
+    // The window's own handler shows that folder in the same in-app file dialog the top bar's Open uses, so it
+    // works wherever the app runs (first rewrite: it was handed to the desktop, and in the dev container that
+    // did nothing).
+    let shown = ui::outputs_dialog_for_test().expect("the press put up the file dialog");
+    assert_eq!(
+        shown.initial_folder().and_then(|f| f.path()),
+        Some(session.join("prepare")),
+        "the dialog starts in the output folder"
+    );
     // The same button after a switch opens the page the row now counts — the folder is read at press
     // time, which is the whole of "sync" for badge 15. The row's page is `Shell::page`, and a switch moves
     // it — read through the same door the press reads rather than through a stack poke that bypasses S3-S5.

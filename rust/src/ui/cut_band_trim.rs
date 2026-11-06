@@ -1,5 +1,5 @@
-//! F2.8 on the PAINTED band: the left button drags a clip border it lands within 6 px of (on the picture row or
-//! the green bar), the right button drags a border it lands on or else moves what it pressed (S2's order). The
+//! F2.8 on the PAINTED band: the left button drags a clip border it lands within 6 px of (on the picture row, its
+//! sound strip or the green bar), the right button drags a border it lands on or else moves what it pressed (S2's order). The
 //! first rewrite wired these two gestures only to `track-strip`, a placeholder strip packed under the band, so on
 //! the band a person sees no border could be dragged and no clip moved: a real drag there drew a selection or
 //! held nothing. The rules are the strip's own (`cut_trim_press`), measured here at the band's zoom and scroll.
@@ -83,6 +83,16 @@ fn trim_to(window: &adw::ApplicationWindow, drag: &mut BorderDrag, x: f64, last:
     cut_view::repaint_page(window);
 }
 
+/// Where a press near a clip border takes it: the pictures, the row's sound strip under them (the border is drawn
+/// down through it) and the green bar. First rewrite: the sound strip was left out, so a border could not be
+/// dragged there and the press drew a sound selection.
+fn on_trim_ground(surface: Surface) -> bool {
+    matches!(
+        surface,
+        Surface::PictureRow(_) | Surface::WaveStrip | Surface::SelectionBand
+    )
+}
+
 pub fn cursor_at(x: f64, y: f64) -> Option<&'static str> {
     let scene = cut_view::band_scene_for();
     let rows = crate::ui::cut_tracks::rows_for_press(&scene);
@@ -95,7 +105,7 @@ pub fn cursor_at(x: f64, y: f64) -> Option<&'static str> {
     }
     let geo = Geometry::of();
     let surface = geo.surface_at(y);
-    if !matches!(surface, Surface::PictureRow(_) | Surface::SelectionBand) {
+    if !on_trim_ground(surface) {
         return None;
     }
     if border_under(&geo, x).is_some() {
@@ -161,11 +171,9 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             return;
         }
         let geo = Geometry::of();
-        let on_trim_ground = matches!(
-            geo.surface_at(y),
-            Surface::PictureRow(_) | Surface::SelectionBand
-        );
-        let taken = on_trim_ground.then(|| border_under(&geo, x)).flatten();
+        let taken = on_trim_ground(geo.surface_at(y))
+            .then(|| border_under(&geo, x))
+            .flatten();
         CUT_PAGE.with(|CutPage { left: cell, .. }| {
             *cell.borrow_mut() = taken.map(|(index, border)| BorderDrag {
                 index,

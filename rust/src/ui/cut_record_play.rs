@@ -99,7 +99,12 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
         return false;
     };
     // The file starts at `at - local` on the session clock; the wanted silence goes on its clock before it decodes.
-    let silence = WANTED_SILENCE.with(|cell| cell.get()).map(|t| t - (at - local));
+    // Only ▶✂ silences past a stretch's end; ▶ plays everything, cuts and all.
+    let cutting = crate::ui::preview_player().cut_only;
+    let silence = WANTED_SILENCE
+        .with(|cell| cell.get())
+        .filter(|_| cutting)
+        .map(|t| t - (at - local));
     match crate::play_built_in::cue_silenced(&file, local, play, silence) {
         Ok(()) => {
             CUT_PAGE

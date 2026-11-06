@@ -1,6 +1,7 @@
 //! §03-shell §1 badge 15, the Outputs folder button: no seam, no forced sensitivity. A project opened the way the
-//! program opens one, the readouts left to land, then a click that reaches the opener. A test binary opens nothing
-//! on the real desktop (`log_link::open` counts the press instead), so reaching the opener is what is checked.
+//! program opens one, the readouts left to land, then a click that puts up the in-app file dialog in the shown page's
+//! output folder, the same dialog Open uses (first rewrite: the folder went to the desktop's launcher, and in the dev
+//! container that did nothing). Nothing is handed to the desktop.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -29,18 +30,20 @@ fn sec_03_shell_1_the_outputs_button_opens_or_says_why() {
         );
         let before = ui::log_link::blocked_opens_for_test();
         folder.emit_clicked();
-        // The press answers late, off the readouts: turn the loop until it has reached the opener.
+        // The press answers late, off the readouts: turn the loop until the dialog is up.
         let until = Instant::now() + Duration::from_secs(10);
         let context = glib::MainContext::default();
-        while Instant::now() < until && ui::log_link::blocked_opens_for_test() == before {
+        while Instant::now() < until && ui::outputs_dialog_for_test().is_none() {
             context.iteration(false);
             std::thread::sleep(Duration::from_millis(10));
         }
+        let shown = ui::outputs_dialog_for_test().expect("the press put up the file dialog");
         assert_eq!(
-            ui::log_link::blocked_opens_for_test(),
-            before + 1,
-            "the press reached the opener, once"
+            shown.initial_folder().and_then(|f| f.path()),
+            Some(session.join("prepare")),
+            "in the Prepare page's output folder"
         );
+        assert_eq!(ui::log_link::blocked_opens_for_test(), before, "and handed nothing to the desktop");
         RAN.store(true, Ordering::SeqCst);
         app.quit();
     });

@@ -149,6 +149,11 @@ pub fn press_play_recording(window: &adw::ApplicationWindow, runs: &[(f64, f64)]
         panic!("the window has no preview player");
     };
     let pressed = preview::press_recording(&mut player.borrow_mut(), runs);
+    // ▶ plays everything, cuts and all, from its very first sample: the stretch end a ▶✂ before it silenced goes now,
+    // not on ▶'s next tick (first version: the first ▶ after a ▶✂ muted the start of the removed part it ran into).
+    if !player.borrow().cut_only {
+        crate::ui::cut_record_play::silence_after(None, true);
+    }
     match pressed {
         // S1: the clock changed meaning, so say so.
         Press::SwitchedToRecording { .. } => status.set_text(preview::RECORDING_STATUS),

@@ -115,11 +115,13 @@ pub struct Materials<'a> {
     pub base_of: &'a dyn Fn(&Seg) -> String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClipEncode {
     pub stem: String,
     pub file: PathBuf,
     pub command: Command,
+    /// How long the clip runs on screen: its share of the bar while the clips encode.
+    pub seconds: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -573,6 +575,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                 stem,
                 file,
                 command: command("clip", argv),
+                seconds: clip.on_screen,
             }
         })
         .collect();
@@ -810,25 +813,41 @@ where
     }
 
     // S5: the command is logged before it runs: the one that hung is the one worth reading.
+    // Each clip's share of the bar is its time on screen, filled as ffmpeg says how far it got: by count alone the
+    // bar stood empty through the whole first clip and then crept by one 64th (first rewrite: it looked gone).
     let clips = plan.encodes.len();
+    let total: f64 = plan.encodes.iter().map(|e| e.seconds.max(0.0)).sum();
+    let mut done = 0.0;
     for (index, encode) in plan.encodes.iter().enumerate() {
-        crate::run_stages::report_progress(
+        let (from, share) = if total > 0.0 {
+            (done / total, encode.seconds.max(0.0) / total)
+        } else {
+            (index as f64 / clips as f64, 1.0 / clips as f64)
+        };
+        crate::run_stages::encoding(
             &format!("encoding clip {} of {clips}", index + 1),
-            Some(index as f64 / clips as f64),
+            from,
+            share,
+            encode.seconds,
         );
+        done += encode.seconds.max(0.0);
         if !ask(At::BeforeTools, "between clips") {
+            crate::run_stages::encoding_done();
             ran.stopped_at = Some("between clips");
             return ran;
         }
         log(&encode.command.log);
-        match spawn(&encode.command) {
+        let spawned = spawn(&encode.command);
+        match spawned {
             Ok(()) => ran.encoded.push(encode.stem.clone()),
             Err(why) => {
+                crate::run_stages::encoding_done();
                 ran.failed = Some(format!("clip {}: {why}", encode.stem));
                 return ran;
             }
         }
     }
+    crate::run_stages::encoding_done();
 
     crate::run_stages::report_progress("joining the clips", Some(1.0));
     if !ask(At::BeforeJoin, render::JOINING) {
@@ -1028,9 +1047,12 @@ pub const FFMPEG: &str = "ffmpeg";
 
 pub fn spawn_tool(command: &Command) -> Result<(), String> {
     let args: Vec<&str> = command.args().iter().map(|a| a.as_str()).collect();
-    crate::subprocess::run_listed(command.program(), &args, |line| {
-        crate::ui::window::log_line(line)
-    })
+    crate::subprocess::run_listed_timed(
+        command.program(),
+        &args,
+        crate::ui::window::log_line,
+        crate::run_stages::encoded_to,
+    )
     .map(|_| ())
 }
 
