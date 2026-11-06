@@ -171,6 +171,15 @@ fn sec_05_cut_every_surface_answers_real_input() {
             Some("col-resize"),
             "near a border on the green bar"
         );
+        // And on the row's sound strip, which the border is drawn down through (first rewrite: there it drew a
+        // sound selection). Below the strip's top grip (3 px), so the press is the border's, not the strip size's.
+        let wave_y = bands.first_picture + bands.row_height + (bands.wave_height / 2.0).max(4.0);
+        crate::common::real_input::real_hover(&band, x_of(6.0) + 2.0, wave_y);
+        assert_eq!(
+            cursor(&band).as_deref(),
+            Some("col-resize"),
+            "near a border on the sound strip"
+        );
         // The bar's ✕ sits in its middle: a button, so the pointing hand; the bar beside it, the open hand.
         crate::common::real_input::real_hover(&band, x_of(3.5), bar_y);
         assert_eq!(
@@ -202,6 +211,17 @@ fn sec_05_cut_every_surface_answers_real_input() {
         real_key(&window, "ctrl+y");
         assert!(near(segs()[0].1, 7.0, 0.15), "Ctrl+Y: {:?}", segs());
         real_key(&window, "ctrl+z");
+        // The same drag on the sound strip under the pictures.
+        real_drag(&band, (x_of(6.0), wave_y), (x_of(7.0), wave_y), 1);
+        assert!(
+            near(segs()[0].1, 7.0, 0.15),
+            "a border drag on the sound strip moved clip 1's end to {:?} (status \"{}\")",
+            segs(),
+            status(&window)
+        );
+        assert!(ui::selection().is_none(), "and drew no sound selection");
+        real_key(&window, "ctrl+z");
+        assert!(near(segs()[0].1, 6.0, 0.01), "Ctrl+Z: {:?}", segs());
 
         // F2.8 S2: a right drag in the middle of clip 2 slides it, length kept.
         let pps = ui::cut_view::band_scene_for().pps;

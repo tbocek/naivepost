@@ -65,6 +65,41 @@ pub fn read_wav_samples(path: &Path) -> Result<Vec<i16>, String> {
     Err(why("no data chunk -- nothing was decoded into it"))
 }
 
+/// `count` s16 samples of the same wav from sample `from` on, read in place: a seek, not the whole file. Fewer where the
+/// file ends first. F1.11's hiss rule reads a few hundred milliseconds around one edge this way.
+pub fn read_wav_span(path: &Path, from: usize, count: usize) -> Result<Vec<i16>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let why = |what: String| format!("{}: {what}", path.display());
+    let mut file = std::fs::File::open(path).map_err(|err| why(err.to_string()))?;
+    let mut head = [0u8; 12];
+    file.read_exact(&mut head).map_err(|err| why(err.to_string()))?;
+    if &head[..4] != b"RIFF" || &head[8..12] != b"WAVE" {
+        return Err(why("not a RIFF/WAVE file".into()));
+    }
+    loop {
+        let mut chunk = [0u8; 8];
+        file.read_exact(&mut chunk)
+            .map_err(|_| why("no data chunk -- nothing was decoded into it".into()))?;
+        let len = u64::from(u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
+        if &chunk[..4] == b"data" {
+            let have = (len / 2) as usize;
+            let from = from.min(have);
+            let count = count.min(have - from);
+            file.seek(SeekFrom::Current(from as i64 * 2)).map_err(|err| why(err.to_string()))?;
+            let mut bytes = vec![0u8; count * 2];
+            file.read_exact(&mut bytes).map_err(|err| why(err.to_string()))?;
+            return Ok(bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+                .collect());
+        }
+        file.seek(SeekFrom::Current((len + len % 2) as i64))
+            .map_err(|err| why(err.to_string()))?;
+    }
+}
+
 pub(crate) fn stamp(recording: &Path) -> Result<(i64, i64), String> {
     let meta =
         std::fs::metadata(recording).map_err(|err| format!("{}: {err}", recording.display()))?;

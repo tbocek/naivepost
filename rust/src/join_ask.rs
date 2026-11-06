@@ -252,14 +252,16 @@ fn chat_body_with(model: &str, conversation: &[Message]) -> Result<serde_json::V
     // §4: every call is streamed. The request ASKS for `stream` and the reader routes on the RESPONSE's content type
     // (`llm_request::reply_from` / `is_event_stream`), so a one-shot fake that answers plain JSON is still read.
     // §4 gives the text edit thinking ON, read from the prompt table (§10 §4).
-    llm_request::body(
+    let mut body = llm_request::body(
         joins::STEP,
         model,
         conversation,
         crate::prompts::mode_of("textedit"),
         None,
         true,
-    )
+    )?;
+    body["temperature"] = serde_json::json!(joins::JOIN_TEMPERATURE);
+    Ok(body)
 }
 
 /// The answer text out of a chat reply: `content`, never the reasoning; an event-stream body is read as chunks, anything else as one JSON envelope (§1).
@@ -274,7 +276,12 @@ fn answer_of(content_type: &str, reply: &str) -> String {
 /// Public so a caller can plant or check an answer through the door the pass hashes: it takes the two finished messages,
 /// since `joins::request` and `join_system` are private.
 pub fn seam_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
-    let state = seam_retries::ask_slot(system, attempt);
+    // The temperature rides in the key: an answer drawn at another temperature is not this ask's answer.
+    let state = format!(
+        "{}\ntemperature {}",
+        seam_retries::ask_slot(system, attempt),
+        joins::JOIN_TEMPERATURE
+    );
     let request = llm_cache::Request {
         system,
         user,

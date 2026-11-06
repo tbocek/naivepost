@@ -256,6 +256,34 @@ pub fn report_progress(status: &str, fraction: Option<f64>) {
     }
 }
 
+/// The clip an encode is on: its sentence, where its share of the bar starts, how big the share is, and how many seconds
+/// of picture it writes. The stats ffmpeg prints as it goes fill the share ([`encoded_to`]).
+static ENCODING: std::sync::Mutex<Option<(String, f64, f64, f64)>> = std::sync::Mutex::new(None);
+
+/// A clip encode starts: report where it starts, and let [`encoded_to`] move the bar through its share.
+pub fn encoding(status: &str, from: f64, share: f64, seconds: f64) {
+    if let Ok(mut held) = ENCODING.lock() {
+        *held = Some((status.to_string(), from, share, seconds));
+    }
+    report_progress(status, Some(from));
+}
+
+/// The encodes are over: a later ffmpeg's stats (the join, the mux) move nothing.
+pub fn encoding_done() {
+    if let Ok(mut held) = ENCODING.lock() {
+        *held = None;
+    }
+}
+
+/// The running clip encode has written `t` seconds: the bar goes that far through the clip's share.
+pub fn encoded_to(t: f64) {
+    let held = ENCODING.lock().ok().and_then(|held| held.clone());
+    if let Some((status, from, share, seconds)) = held {
+        let done = if seconds > 0.0 { (t / seconds).clamp(0.0, 1.0) } else { 0.0 };
+        report_progress(&status, Some(from + share * done));
+    }
+}
+
 /// The newest report, taken: the next look finds nothing until the walk says something new.
 pub fn take_progress() -> Option<(String, Option<f64>)> {
     PROGRESS.lock().ok().and_then(|mut held| held.take())

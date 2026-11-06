@@ -141,6 +141,11 @@ pub fn wide_view(
 /// Whether this job thinks. Kept as a named question rather than assumed at the call site: §F1.10's
 /// diagram says "thinking ON" per seam, and if `prompts::THINKING_ON` ever drops `textedit` the
 /// flow should notice rather than quietly get worse.
+/// The join ask's temperature: lower than the 1.0 every other thinking job runs at (§09 §1). A join has one right
+/// answer and needs no surprising connection, and at 1.0 the same join came back differently from one run to the next
+/// (09-account, 2026-11-05: 2 of 3 runs right on a join the prompt answers right). `P.machine.joinTemperature`.
+pub const JOIN_TEMPERATURE: f64 = 0.6;
+
 pub fn thinking_on() -> bool {
     prompts::thinking("textedit")
 }

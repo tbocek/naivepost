@@ -67,3 +67,28 @@ fn f1_11_the_resume_edge_of_touching_words_moves_too() {
     let (placed, _) = place_edges(vec![mark], &words, |_| Some(&env), &[]);
     assert!((2.27..2.335).contains(&placed[0].to), "the cut resumes in the dip: {:.4}", placed[0].to);
 }
+
+/// One 5 ms peak per entry from `start` on, the room (3) elsewhere.
+fn measured(start: f64, peaks: &[u8]) -> Edges {
+    let mut wave = common::wave(4.0, &[], HZ, ROOM);
+    let first = (start * HZ).round() as usize;
+    wave.chans[0][first..first + peaks.len()].copy_from_slice(peaks);
+    Edges::new(wave, 0.0)
+}
+
+#[test]
+fn f1_11_a_soft_onset_is_left_out_of_the_kept_clip() {
+    // 09-account on the recording's own clock, 69.240-69.400 s laid at 2.240: "-rum" falls, a valley, the soft "w"
+    // of the dropped "wie" from 69.3475, the aligner's boundary at 69.364.
+    let env = measured(2.240, &[18, 12, 10, 16, 16, 8, 10, 9, 7, 9, 6, 5, 8, 5, 7, 4, 5, 3, 4, 7, 4, 6, 6, 9, 7, 15, 22, 26, 18, 25, 23, 23]);
+    let at = env.parting(2.364).expect("the boundary sits on the start of the w");
+    assert!((at - 2.340).abs() < 1e-9, "the cut leaves the w out: {at:.4}");
+}
+
+#[test]
+fn f1_11_a_short_word_said_straight_into_the_next_keeps_its_end() {
+    // A pause, then the kept "Weg" for 60 ms straight into the dropped "und": no valley at the boundary, and the
+    // pause before "Weg" is no place to cut — it would take the word.
+    let env = edges(&[(1.0, 2.0, 25), (2.1, 2.16, 25), (2.16, 2.4, 25)]);
+    assert_eq!(env.parting(2.16), None, "two words in one breath: the boundary stands");
+}
