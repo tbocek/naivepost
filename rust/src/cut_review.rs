@@ -147,6 +147,28 @@ pub fn tick(cut: &Cut, review: &mut Review, line: f64) -> Move {
     Move::Done
 }
 
+/// F2.2 S5 for the review's own seek: the run-up the review will seek to next, once that seek is within the
+/// preload lead of the line — the end of the join's window, where [`tick`] moves on. `None` while the seek is
+/// farther off, when the next run-up is already behind the window's end (it is played into, not sought), and
+/// after the last join. What the page prerolls the spare at, so the seek is a swap and not a reload.
+pub fn seek_ahead(cut: &Cut, review: &Review, line: f64) -> Option<f64> {
+    let last = joins(cut).checked_sub(1)?;
+    if review.join >= last {
+        return None;
+    }
+    let here = window(&cut.segs, review.join);
+    if line < here.from || line >= here.to {
+        return None;
+    }
+    if here.to - line > crate::preview::PRELOAD_LEAD_SECONDS {
+        return None;
+    }
+    (review.join + 1..=last)
+        .map(|join| window(&cut.segs, join))
+        .find(|next| here.to < next.from)
+        .map(|next| next.from)
+}
+
 /// S5's sentence for a hand on the line. The pause needs no sentence of its own — see [`PAUSE_STATUS`].
 pub const LINE_MOVED: &str =
     "the line was moved \u{2014} the cut review is over; ▶✂✂ starts it again";

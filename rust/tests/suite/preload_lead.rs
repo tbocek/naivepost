@@ -29,13 +29,19 @@ fn p_eng_preloadleadseconds_s1_three_seconds_a_hundredth_of_slack() {
 #[test]
 fn p_eng_preloadleadseconds_s2_inside_the_lead_it_opens() {
     common::pin_private_cwd();
-    // One second left on the current run, the next starts at 12: three seconds ahead, exactly the lead.
+    // One second left on the current run, the next starts at 12: the jump is a second off, inside the lead.
     assert_eq!(preview::preload_target(RUNS, 9.0), Some(12.0));
-    // Inclusive at the boundary — three seconds is the amount asked for, so three is enough.
+    // Inclusive at the boundary — three seconds TO THE JUMP (the run's end at 10) is the amount asked for.
     let lead = preview::PRELOAD_LEAD_SECONDS;
-    assert_eq!(preview::preload_target(RUNS, 12.0 - lead), Some(12.0));
+    assert_eq!(preview::preload_target(RUNS, 10.0 - lead), Some(12.0));
     // And that really is the lead distance, not a shorter one.
-    assert_eq!(12.0 - (12.0 - lead), lead);
+    assert_eq!(10.0 - (10.0 - lead), lead);
+    // The lead is measured to the JUMP, not to the target: a hole longer than the lead still gets its spare,
+    // because the transport leaves the run at its end however far the next start is. First rewrite measured to
+    // the start, and a six-second hole was never prerolled.
+    let long_hole: &[(f64, f64)] = &[(0.0, 10.0), (16.0, 20.0)];
+    assert_eq!(preview::preload_target(long_hole, 8.0), Some(16.0));
+    assert_eq!(preview::preload_target(long_hole, 6.0), None);
 }
 
 // --- S3: farther off, nothing opens yet -------------------------------------------------------
@@ -43,24 +49,24 @@ fn p_eng_preloadleadseconds_s2_inside_the_lead_it_opens() {
 #[test]
 fn p_eng_preloadleadseconds_s3_past_the_lead_it_waits() {
     common::pin_private_cwd();
-    // Four seconds to the next start: too far. Opening now would idle the spare while the playhead is
-    // still three-plus seconds away from the cut.
-    assert_eq!(preview::preload_target(RUNS, 8.0), None);
+    // Four seconds to the jump (the run ends at 10): too far. Opening now would idle the spare while the
+    // playhead is still three-plus seconds away from the cut.
+    assert_eq!(preview::preload_target(RUNS, 6.0), None);
     // Just outside the lead ...
     assert_eq!(
-        preview::preload_target(RUNS, 8.9),
+        preview::preload_target(RUNS, 6.9),
         None,
-        "3.1 s ahead is not yet worth opening"
+        "3.1 s before the jump is not yet worth opening"
     );
     // ... and inside it. The offsets are built from the constant so the boundary is exact rather than a
     // decimal that float happens to round one way or the other.
     let lead = preview::PRELOAD_LEAD_SECONDS;
-    assert_eq!(preview::preload_target(RUNS, 12.0 - lead), Some(12.0));
-    assert_eq!(preview::preload_target(RUNS, 12.0 - (lead + 0.1)), None);
+    assert_eq!(preview::preload_target(RUNS, 10.0 - lead), Some(12.0));
+    assert_eq!(preview::preload_target(RUNS, 10.0 - (lead + 0.1)), None);
     assert_eq!(
         preview::preload_target(RUNS, 10.5),
         Some(12.0),
-        "1.5 s ahead opens"
+        "in the removed stretch the jump is now, so the next start is handed over at once"
     );
     // Past the last run there is nothing ahead to open at all.
     assert_eq!(preview::next_jump_ahead(RUNS, 21.0), None);

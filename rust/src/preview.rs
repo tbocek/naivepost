@@ -141,10 +141,19 @@ pub fn next_jump_ahead(runs: &[(f64, f64)], t: f64) -> Option<f64> {
         .map(|(start, _)| *start)
 }
 
-/// Which second to hand the spare pipeline from `t`, if any.
+/// Which second to hand the spare pipeline from `t`, if any: the next run's start, once the JUMP to it is within the
+/// lead — the end of the run holding `t`, which is where the transport leaves it, however long the removed stretch
+/// after it. Measured to the next start instead, a hole longer than the lead was never prerolled: the line jumped
+/// six seconds before the target came within three, and every such join reloaded. In a removed stretch the jump is
+/// now, so the next start is handed over at once.
 pub fn preload_target(runs: &[(f64, f64)], t: f64) -> Option<f64> {
     let next = next_jump_ahead(runs, t)?;
-    if next - t <= PRELOAD_LEAD_SECONDS {
+    let leaves_at = runs
+        .iter()
+        .find(|(start, end)| t >= *start && t < *end)
+        .map(|(_, end)| *end)
+        .unwrap_or(t);
+    if leaves_at - t <= PRELOAD_LEAD_SECONDS {
         Some(next)
     } else {
         None

@@ -294,11 +294,13 @@ fn f2_2_s5_preloads_the_next_jump_three_seconds_ahead() {
     assert_eq!(naivepost::preview::PRELOAD_LEAD_SECONDS, 3.0);
     let cut = two_clips_with_a_hole();
 
-    // Exactly at the lead: inclusive, because opening one clip early costs an idle pipeline while
-    // opening it late stalls every join visibly.
+    // In the removed stretch the jump is now: the next clip opens at once.
     assert_eq!(cut_play::preload_ahead(&cut.segs, 17.0), Some(20.0));
+    // Exactly at the lead before the run's end (the jump): inclusive, because opening one clip early costs an
+    // idle pipeline while opening it late stalls every join visibly.
+    assert_eq!(cut_play::preload_ahead(&cut.segs, 7.0), Some(20.0));
     // Too far off: nothing opens, the spare stays free for the stretch we are actually in.
-    assert_eq!(cut_play::preload_ahead(&cut.segs, 10.0), None);
+    assert_eq!(cut_play::preload_ahead(&cut.segs, 5.0), None);
     // Inside the second clip: no further jump exists, so nothing to arm.
     assert_eq!(cut_play::preload_ahead(&cut.segs, 25.0), None);
 

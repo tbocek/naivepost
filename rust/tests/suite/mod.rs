@@ -195,6 +195,7 @@ mod f2_14_words_mode;
 mod f2_1_built_in_player;
 mod f2_1_recording_play;
 mod f2_1_recording_play_widgets;
+mod f2_2_built_in_spare;
 mod f2_2_spare_pipeline;
 mod f2_5_lane_pipelines;
 mod f2_6_painted_select;

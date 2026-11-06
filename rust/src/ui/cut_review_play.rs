@@ -151,13 +151,25 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
         Outcome::Stay => {
             let head = cut_play_leg::tick(&cut_, from, preview::TICK_MS).head;
             ui::set_playhead(window, head);
+            // F2.2 S5 for the review's own seek: the next run-up is prerolled before the window closes, so the
+            // seek below is a swap and not a reload (which showed the next recording's first frame on the way).
+            if let Some(at) = cut_review::seek_ahead(&cut_, &review, head) {
+                crate::ui::cut_cut_play::preroll_spare_once(at);
+            }
             *held().lock().expect("the review slot") = Some(review);
         }
         Outcome::SeekTo { to, status } => {
-            // The real player jumps to the run-up: with a subprocess media leg a seek IS a re-cue at that
-            // second, and that is what "plays 10 s before and after each join" means here.
+            // The real player jumps to the run-up. With the built-in player the line's move IS the seek
+            // (`cut_picture::refresh` cues the picture there, swapping the prerolled spare in when it holds that
+            // second); cueing again on top of it would reload what was just swapped in. A subprocess media leg has
+            // no picture to follow the line, so for it a seek is a re-cue at that second.
             ui::set_playhead(window, to);
-            crate::ui::cut_cut_play::cue_running(window, to);
+            if crate::play_built_in::in_use() {
+                crate::ui::cut_record_play::follow_in_video(window, to);
+            } else {
+                crate::ui::cut_cut_play::cue_running(window, to);
+            }
+            crate::ui::cut_cut_play::forget_review_arm();
             say(window, &status);
             *held().lock().expect("the review slot") = Some(review);
         }
