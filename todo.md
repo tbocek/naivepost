@@ -21,9 +21,6 @@ Found by reading the code while updating the spec. None reproduced or run yet. T
 - `prepare.rs:185`, `prepare_run.rs:306`: `rfind('.')` lanes disagree with `source_lane` for dotted names.
 - `fix_transcripts.rs:492`: the fix cache key omits the model. `fix_transcripts.rs:552`: `Reply::Flag` appears never constructed.
 
-**Cut edges**
-- `retakes_ask.rs:178`: the retakes pass places its edges with no envelope (`|_| None`) and then writes the unplaced marks (`merge_marks(applied)`) to `retakes.tsv`, so F1.11 never moves a retake edge, by the words or by the sound. Found 2026-11-05 next to the join pass's lane bug (fixed); not changed, since it moves every retake-mode project's edges.
-
 **Project and LLM**
 - `layout.rs:400`: nothing creates `produce/publish`, so new projects write to the legacy `publish/`.
 - `project.rs:797,815`: `*_hints` and `prompts` logged as adopted, but the text is discarded.
