@@ -641,9 +641,9 @@ last run's value (an empty box is easier to notice than a wrong line); the
 description is always replaced.
 
 Under the picture, the page's runs cost very different things. **↻** over the
-picture redraws from the images and the instruction as they stand: one drawing
-call, nothing rewritten, ending "thumbnail drawn — ▶ renders the video"; with
-the words asked for again it costs one model call on top, never a second draw.
+picture asks the model for the picture again, as the prompt says: a frame of the
+video is taken as it is with nothing drawn, an instruction is drawn with one
+drawing call; one model call either way, and the title and description stay.
 **↻ beside Title** is the only thing that rewrites text — one model call for its
 three answers — and it does not touch the picture at all. Marking your own image
 as the thumbnail copies it rather than referencing it, so it survives reopening,

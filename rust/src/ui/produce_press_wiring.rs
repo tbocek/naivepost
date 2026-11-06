@@ -375,7 +375,13 @@ pub fn redraw_from_button(window: &adw::ApplicationWindow) {
         move |legs| {
             crate::produce_presses::press_redraw_thumbnail(
                 legs,
-                || with_run(run.as_ref(), crate::ui::produce_languages::redraw_half),
+                // With no run the press has already refused on its missing cut.
+                || {
+                    run.as_ref().map_or_else(
+                        || Err(runs::REDRAW_NO_CUT.to_string()),
+                        crate::ui::produce_languages::redraw_half,
+                    )
+                },
                 crate::ui::window::log_line,
             )
         },
