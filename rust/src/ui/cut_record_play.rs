@@ -105,6 +105,14 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
         .with(|cell| cell.get())
         .filter(|_| cutting)
         .map(|t| t - (at - local));
+    // F2.2 S5: the jump the spare was prerolled for — the pipelines swap, nothing reloads, and the picture never shows
+    // the next file's first frame on the way to the seeked one.
+    if play && crate::play_built_in::swap_in(&file, local, silence) {
+        CUT_PAGE.with(|CutPage { in_video: cell, .. }| cell.set(Some((at - local, recording.end))));
+        crate::ui::cut_picture::show_video(window);
+        SWAPPED.with(|cell| cell.set(true));
+        return true;
+    }
     match crate::play_built_in::cue_silenced(&file, local, play, silence) {
         Ok(()) => {
             CUT_PAGE
@@ -122,6 +130,46 @@ pub fn play_in_preview(window: &adw::ApplicationWindow, at: f64, play: bool) -> 
 thread_local! {
     /// The session second ▶✂ wants the sound silenced from: what the next cue installs before it decodes.
     static WANTED_SILENCE: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+    /// A jump was crossed by swapping the spare in since the tick last asked ([`take_swapped`]).
+    static SWAPPED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// F2.2 S5 through the built-in player: preroll the spare at session second `at` — the recording the picture will
+/// show there, at that second of its file, silenced from the end of the kept stretch it starts. Answers whether a
+/// pipeline is (or already was) prerolling there.
+pub fn preroll_in_preview(at: f64) -> bool {
+    let Some((recording, local)) = crate::ui::cut_picture::picture_source(at) else {
+        log_line(&format!(
+            "    built-in player: no spare for the join at {}: nothing filmed there",
+            crate::tools::mm_ss(at)
+        ));
+        return false;
+    };
+    let Some(file) = source_file(&recording.base) else {
+        log_line(&format!(
+            "    built-in player: no spare for the join at {}: {} is not on disk",
+            crate::tools::mm_ss(at),
+            recording.base
+        ));
+        return false;
+    };
+    let cut = crate::ui::window::newest_review_cut();
+    let silence = crate::cut_play_leg::stretch_end(&cut, at).map(|end| end - (at - local));
+    match crate::play_built_in::preroll(&file, local, silence) {
+        Ok(()) => true,
+        Err(why) => {
+            log_line(&format!(
+                "    built-in player: no spare for the join at {}: {why}",
+                crate::tools::mm_ss(at)
+            ));
+            false
+        }
+    }
+}
+
+/// Whether a swap crossed a join since this was last asked; the tick reads it once per step.
+pub fn take_swapped() -> bool {
+    SWAPPED.with(|cell| cell.replace(false))
 }
 
 /// Silence the built-in player's sound from this session second on (F2.2 S5). It is what every later cue installs

@@ -114,11 +114,14 @@ fn f2_2_s5_the_spare_pipeline_arms_three_seconds_before_the_jump() {
         "the slot holds what was just armed"
     );
 
-    // Too far off: nothing opens, so the spare stays free for the stretch actually being played.
+    // In the removed stretch the jump is now: the next clip is armed at once.
+    assert_eq!(cut_play_leg::arm_spare(&cut, 10.0), Some(20.0));
+    // Too far off — five seconds before the run's end, where the jump is made: nothing opens, so the spare
+    // stays free for the stretch actually being played.
     assert_eq!(
-        cut_play_leg::arm_spare(&cut, 10.0),
+        cut_play_leg::arm_spare(&cut, 5.0),
         None,
-        "10 s out is outside the lead"
+        "5 s before the jump is outside the lead"
     );
     assert_eq!(
         cut_play_leg::peek_spare(),

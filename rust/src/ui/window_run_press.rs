@@ -299,8 +299,11 @@ pub(crate) fn wire_play(
                 )
                 .is_some_and(|tracker| tracker.borrow().needs_derive(&context))
             {
-                // Prepare asks the live model on its worker (§03-shell §1); a test's own answerer answers at once, so it is asked here.
-                if prepare_asked && !super::window_policy::answerer_installed() {
+                // The live model is asked on a worker (§03-shell §1): Prepare's own walk derives first, every other step's
+                // derivation lands before its ▶ is forwarded (below). A test's own answerer answers at once, and an empty
+                // context asks no model (F0.7 S1), so those are derived here and the press keeps its opening line.
+                if !super::window_policy::answerer_installed() && !crate::policy::is_empty(&context)
+                {
                     derive_on_worker = Some((
                         context.clone(),
                         crate::ui::window_policy::live_session_policy(),
@@ -448,6 +451,40 @@ pub(crate) fn wire_play(
                 return;
             }
             let _ = &asked;
+            // F0.7's second door on Narrate and Produce: the context is derived on a worker, and the step's ▶ is forwarded
+            // (`tail`) once the derivation has landed on the session the step reads. The run stays open meanwhile, so ⏹
+            // reaches it; a stop that came first leaves the policy derived and forwards nothing (first worker version: the
+            // model was asked inside the click, "not responding" for as long as it took).
+            if let Some((context, live)) = derive_on_worker.take() {
+                let bar = bar.clone();
+                let tail = tail.clone();
+                paint_run_bar(play, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                status.set_text(&bar.borrow().status);
+                super::background::run(
+                    "policy",
+                    move || {
+                        crate::policy_call::set_live_policy(&live);
+                        let mut policy = live.clone();
+                        let derived = crate::policy::derive(
+                            &mut policy,
+                            &context,
+                            &mut crate::policy_call::answer,
+                        );
+                        (policy, derived, context)
+                    },
+                    move |(policy, derived, context)| {
+                        super::window_policy::apply_derivation(policy, derived, &context);
+                        if bar.borrow().running.is_none() {
+                            tail(false, None);
+                            return;
+                        }
+                        let drive = crate::run_stages::Drive::Done { ran: 0, skipped: 0 };
+                        crate::run_stages::say_outcome(&drive, ui::log_line);
+                        tail(true, refusal);
+                    },
+                );
+                return;
+            }
             let drive = crate::run_stages::Drive::Done { ran: 0, skipped: 0 };
             crate::run_stages::say_outcome(&drive, ui::log_line);
         }

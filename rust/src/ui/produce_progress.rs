@@ -13,6 +13,7 @@ pub const PARKED_STATUS: &str = "paused \u{2014} \u{25b6} carries on";
 /// Follow the run until `running` says it is over.
 pub fn follow(window: &adw::ApplicationWindow, running: impl Fn() -> bool + 'static) {
     let _ = crate::run_stages::take_progress();
+    crate::run_stages::forget_shown();
     let window = window.clone();
     let mut last = String::new();
     glib::timeout_add_local(LOOK, move || {

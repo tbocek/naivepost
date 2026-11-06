@@ -490,3 +490,46 @@ fn f2_3_s5_a_hand_on_the_line_after_the_review_was_inside_the_window_ends_it() {
         "so the review waits instead of declaring the person changed their mind"
     );
 }
+
+/// F2.2 S5 for the review's own seek: the next run-up is handed to the spare once the window's end — where the
+/// review moves on — is within the preload lead, and only when that run-up lies ahead of the window (one already
+/// behind it is played into, F2.3 S3). First rewrite re-cued at the seek, and a run-up on another recording showed
+/// that recording's first frame on the way.
+#[test]
+fn f2_3_s3_the_next_run_up_is_prerolled_before_the_window_closes() {
+    let cut = three_clips();
+    let lead = naivepost::preview::PRELOAD_LEAD_SECONDS;
+    // Join 0's window is [50, 110]; join 1's run-up is 150, well ahead of 110.
+    let review = cut_review::Review {
+        join: 0,
+        armed: true,
+    };
+    assert_eq!(
+        cut_review::seek_ahead(&cut, &review, 110.0 - lead),
+        Some(150.0)
+    );
+    assert_eq!(cut_review::seek_ahead(&cut, &review, 109.0), Some(150.0));
+    assert_eq!(
+        cut_review::seek_ahead(&cut, &review, 110.0 - lead - 0.1),
+        None,
+        "farther than the lead from the window's end: not yet"
+    );
+    assert_eq!(
+        cut_review::seek_ahead(&cut, &review, 40.0),
+        None,
+        "short of the window"
+    );
+    // On the last join there is no seek left to prepare.
+    let last = cut_review::Review {
+        join: 1,
+        armed: true,
+    };
+    assert_eq!(cut_review::seek_ahead(&cut, &last, 209.0), None);
+    // A run-up already behind the next window's end is played into, never sought: nothing to preroll.
+    let close = Cut {
+        segs: vec![seg(0.0, 60.0), seg(70.0, 75.0), seg(100.0, 160.0)],
+        ..Default::default()
+    };
+    // Join 0's window is [50, 75]; join 1's run-up is 70, behind 75.
+    assert_eq!(cut_review::seek_ahead(&close, &review, 74.0), None);
+}

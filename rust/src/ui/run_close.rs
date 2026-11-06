@@ -210,6 +210,8 @@ pub fn close_step_run(
     // would be a second `Handles` for one call.
     #![allow(clippy::too_many_arguments)]
     let said = queue.borrow().text();
+    // The bar is the queue's again: what the closed run's walk reported must not hold it full.
+    crate::run_stages::forget_shown();
     // §10: the run says what it sent outside, in one line per service, as its last word in the log.
     // Said BEFORE anything is unwound so the sentence belongs to this run and not the next one.
     crate::request_run::log_closing_line();

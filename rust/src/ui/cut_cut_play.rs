@@ -66,19 +66,45 @@ pub fn repaint_soon() {
 
 /// Preroll the spare at `at`.
 pub fn preroll_spare(at: f64) -> bool {
-    // The built-in player seeks within its pipeline instead of holding a second process at the join.
+    // The built-in player's spare is a second pipeline of its own, prerolled at the join's second of the recording
+    // the picture will show there; the swap happens in `play_in_preview` when the line jumps.
     if crate::play_built_in::in_use() {
-        return false;
+        return ui::cut_record_play::preroll_in_preview(at);
     }
     let files = ui::cut_record_play::files_for(&ui::cut_record_play::runs_now());
     crate::cut_play_back::preroll(&files, at, &|line| log_line(line)).is_ok()
 }
 
+/// [`preroll_spare`] for a seek the REVIEW will make (F2.3 S3): asked every tick, it arms once per second — the
+/// second it last armed is remembered until the seek is made or the media is paused, so the process-player
+/// leg does not respawn a spare ten times a second.
+pub fn preroll_spare_once(at: f64) -> bool {
+    if REVIEW_ARMED
+        .with(|cell| cell.get())
+        .is_some_and(|armed| (armed - at).abs() < 1e-6)
+    {
+        return true;
+    }
+    let armed = preroll_spare(at);
+    REVIEW_ARMED.with(|cell| cell.set(armed.then_some(at)));
+    armed
+}
+
+/// Forget the second [`preroll_spare_once`] armed: the seek was made, or the media stopped.
+pub fn forget_review_arm() {
+    REVIEW_ARMED.with(|cell| cell.set(None));
+}
+
+thread_local! {
+    static REVIEW_ARMED: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+}
+
 /// The join arrived and the spare was sitting on it: swap it in. Answers whether one was there to swap.
 pub fn swap_spare() -> bool {
-    // No spare with the built-in player: the line's jump is followed by a seek (`cut_picture::refresh`).
+    // With the built-in player the swap already happened as the line jumped (`cut_picture::refresh` → `play_in_preview`
+    // found the spare sitting on the second); this only reports it.
     if crate::play_built_in::in_use() {
-        return false;
+        return ui::cut_record_play::take_swapped();
     }
     crate::cut_play_back::swap_spare_in(&|line| log_line(line)).is_some()
 }
@@ -100,6 +126,8 @@ pub fn freeze(hold: bool) -> bool {
 pub fn pause_media() {
     crate::cut_play_back::halt();
     crate::play_built_in::pause();
+    crate::play_built_in::drop_spare();
+    forget_review_arm();
 }
 
 /// S5 "speed effects at their flat rate", handed to the player at the head. What the player's argv can and
