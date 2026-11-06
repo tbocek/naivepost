@@ -250,9 +250,29 @@ pub fn parked() -> bool {
 /// far along the bar it is.
 static PROGRESS: std::sync::Mutex<Option<(String, Option<f64>)>> = std::sync::Mutex::new(None);
 
+/// The last fraction such a step reported, kept (not taken) until its run closes: the shell's repaint after every
+/// worker line draws the bar from the run queue, which a self-driving step leaves empty, so without this the bar
+/// fell back to empty at each log line (first worker version: an empty bar through Produce's whole translation).
+static SHOWN: std::sync::Mutex<Option<f64>> = std::sync::Mutex::new(None);
+
 pub fn report_progress(status: &str, fraction: Option<f64>) {
     if let Ok(mut held) = PROGRESS.lock() {
         *held = Some((status.to_string(), fraction));
+    }
+    if let (Some(fraction), Ok(mut shown)) = (fraction, SHOWN.lock()) {
+        *shown = Some(fraction.clamp(0.0, 1.0));
+    }
+}
+
+/// How far the bar stands for a self-driving step, `None` when no such step has reported since its run opened.
+pub fn shown_fraction() -> Option<f64> {
+    SHOWN.lock().ok().and_then(|held| *held)
+}
+
+/// A run opened or closed: the bar is the queue's again until a self-driving step reports.
+pub fn forget_shown() {
+    if let Ok(mut held) = SHOWN.lock() {
+        *held = None;
     }
 }
 

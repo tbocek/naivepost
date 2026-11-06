@@ -252,6 +252,7 @@ mod f4_5_transport_widgets;
 mod f4_5_wire_picture_play_and_stop;
 mod f5_1_s4_the_render_speak_leg_dials_audio_cpp;
 mod f5_1_where_it_runs_the_press_returns_with_the_run_open;
+mod f5_2_the_bar_holds_through_worker_lines;
 mod f5_5_video_tag_live;
 mod f5_7_s5_the_words_box_snaps;
 mod f5_7_s6_s7_paths_and_ladder;
