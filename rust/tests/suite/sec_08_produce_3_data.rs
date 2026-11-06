@@ -236,9 +236,9 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
         "{} is §3's scratch sheet",
         data::scratch_srt(&tree).display()
     );
-    let join = tree
-        .clips_dir()
-        .join(naivepost::produce_details::joined(naivepost::produce_render::CLIP_EXT));
+    let join = tree.clips_dir().join(naivepost::produce_details::joined(
+        naivepost::produce_render::CLIP_EXT,
+    ));
     assert_eq!(
         stale, join,
         "the planted leftover is exactly the file this container's run writes"
@@ -371,7 +371,8 @@ fn sec_08_produce_3_data_s2_kind_sorts_every_entry_into_its_group() {
 /// One run per container: the scratch join carries the container this run writes, and the SAME path appears
 /// in the join command and as the mux's input.
 #[test]
-fn sec_08_produce_3_data_s4_the_join_is_matroska_whatever_the_container_and_shared_by_both_commands() {
+fn sec_08_produce_3_data_s4_the_join_is_matroska_whatever_the_container_and_shared_by_both_commands(
+) {
     for (container, code) in [
         (Container::Mp4, "mp4"),
         (Container::Webm, "webm"),
@@ -392,7 +393,11 @@ fn sec_08_produce_3_data_s4_the_join_is_matroska_whatever_the_container_and_shar
         // Frame-exact clips (§5): the clips and their join are Matroska whatever the final container, so the sound
         // can stay uncompressed until the mux.
         let want = tree.clips_dir().join("joined.mkv");
-        assert_eq!(want, tree.clips_dir().join(details::joined(naivepost::produce_render::CLIP_EXT)));
+        assert_eq!(
+            want,
+            tree.clips_dir()
+                .join(details::joined(naivepost::produce_render::CLIP_EXT))
+        );
         let join = plan
             .join
             .clone()

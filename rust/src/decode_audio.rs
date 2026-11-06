@@ -112,7 +112,8 @@ pub fn ensure(
     } else {
         decode(configured_ffmpeg, source, &out, log)?;
     }
-    std::fs::write(&mark, "the recording's own clock\n").map_err(|err| format!("{}: {err}", mark.display()))?;
+    std::fs::write(&mark, "the recording's own clock\n")
+        .map_err(|err| format!("{}: {err}", mark.display()))?;
     Ok(out)
 }
 
@@ -140,7 +141,12 @@ fn move_to_the_recordings_clock(
         }
         log(&moved_log(lane, lead as u64));
     } else {
-        for path in [tree.words_json(lane), tree.words_aligned_json(lane), tree.turns_json(lane), tree.asrchunks_json(lane)] {
+        for path in [
+            tree.words_json(lane),
+            tree.words_aligned_json(lane),
+            tree.turns_json(lane),
+            tree.asrchunks_json(lane),
+        ] {
             let _ = std::fs::remove_file(path);
         }
         log(&format!(

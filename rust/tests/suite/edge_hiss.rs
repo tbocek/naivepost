@@ -73,7 +73,14 @@ fn tokens_signiert(with_voice: bool) -> Edges {
 }
 
 fn mark(s: f64, to: f64) -> Retake {
-    Retake { s, e: to, again: 0.0, to, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e: to,
+        again: 0.0,
+        to,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 fn placed(edges: &Edges, words: &[AlignedWord], m: Retake) -> (Retake, Vec<String>) {
@@ -83,28 +90,62 @@ fn placed(edges: &Edges, words: &[AlignedWord], m: Retake) -> (Retake, Vec<Strin
 
 #[test]
 fn f1_11_the_hiss_is_found_where_the_sound_crosses_zero_fast() {
-    let (a, b) = tokens_signiert(true).hiss(OFF + 0.49).expect("a hiss at the boundary");
-    assert!((a - (OFF + 0.295)).abs() <= 0.006 && (b - (OFF + 0.510)).abs() <= 0.006, "{a:.3}..{b:.3}");
-    assert_eq!(tokens_signiert(true).hiss(OFF + 0.15), None, "inside a vowel there is none");
-    assert_eq!(tokens_signiert(false).hiss(OFF + 0.49), None, "and without the sound file nothing is guessed");
+    let (a, b) = tokens_signiert(true)
+        .hiss(OFF + 0.49)
+        .expect("a hiss at the boundary");
+    assert!(
+        (a - (OFF + 0.295)).abs() <= 0.006 && (b - (OFF + 0.510)).abs() <= 0.006,
+        "{a:.3}..{b:.3}"
+    );
+    assert_eq!(
+        tokens_signiert(true).hiss(OFF + 0.15),
+        None,
+        "inside a vowel there is none"
+    );
+    assert_eq!(
+        tokens_signiert(false).hiss(OFF + 0.49),
+        None,
+        "and without the sound file nothing is guessed"
+    );
 }
 
 #[test]
 fn f1_11_a_shared_hiss_is_cut_in_its_middle() {
-    let words = vec![word("tokens", OFF, OFF + 0.49), word("signiert", OFF + 0.49, OFF + 1.13)];
+    let words = vec![
+        word("tokens", OFF, OFF + 0.49),
+        word("signiert", OFF + 0.49, OFF + 1.13),
+    ];
     let (cut, notes) = placed(&tokens_signiert(true), &words, mark(OFF + 0.49, OFF + 1.13));
-    assert!((cut.s - (OFF + 0.4025)).abs() <= 0.006, "half the hiss stays with \"Tokens\": {:.4}", cut.s);
-    assert!(notes.iter().any(|n| n.contains("in the hiss between them")), "{notes:?}");
+    assert!(
+        (cut.s - (OFF + 0.4025)).abs() <= 0.006,
+        "half the hiss stays with \"Tokens\": {:.4}",
+        cut.s
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("in the hiss between them")),
+        "{notes:?}"
+    );
     // Without the sound file the loudness alone places it, as before.
-    let (_, loud) = placed(&tokens_signiert(false), &words, mark(OFF + 0.49, OFF + 1.13));
+    let (_, loud) = placed(
+        &tokens_signiert(false),
+        &words,
+        mark(OFF + 0.49, OFF + 1.13),
+    );
     assert!(!loud.iter().any(|n| n.contains("hiss")), "{loud:?}");
 }
 
 #[test]
 fn f1_11_a_dropped_words_own_hiss_is_left_out_whole() {
-    let words = vec![word("der", OFF, OFF + 0.49), word("signiert", OFF + 0.49, OFF + 1.13)];
+    let words = vec![
+        word("der", OFF, OFF + 0.49),
+        word("signiert", OFF + 0.49, OFF + 1.13),
+    ];
     let (cut, _) = placed(&tokens_signiert(true), &words, mark(OFF + 0.49, OFF + 1.13));
-    assert!((cut.s - (OFF + 0.295)).abs() <= 0.006, "the clip ends before the s: {:.4}", cut.s);
+    assert!(
+        (cut.s - (OFF + 0.295)).abs() <= 0.006,
+        "the clip ends before the s: {:.4}",
+        cut.s
+    );
 }
 
 #[test]
@@ -116,13 +157,24 @@ fn f1_11_a_kept_words_own_hiss_comes_in_whole() {
         word("signiert", OFF + 0.40, OFF + 1.13),
     ];
     let (cut, _) = placed(&tokens_signiert(true), &words, mark(OFF - 0.5, OFF + 0.40));
-    assert!((cut.to - (OFF + 0.295)).abs() <= 0.006, "the clip resumes at the start of the s: {:.4}", cut.to);
+    assert!(
+        (cut.to - (OFF + 0.295)).abs() <= 0.006,
+        "the clip resumes at the start of the s: {:.4}",
+        cut.to
+    );
 }
 
 #[test]
 fn f1_11_an_edge_already_clear_of_a_dropped_hiss_stays_clear() {
     // The boundary before the hiss starts: moving to the hiss would take in what lies between.
-    let words = vec![word("ab", OFF, OFF + 0.25), word("spaetestens", OFF + 0.25, OFF + 1.13)];
+    let words = vec![
+        word("ab", OFF, OFF + 0.25),
+        word("spaetestens", OFF + 0.25, OFF + 1.13),
+    ];
     let (cut, _) = placed(&tokens_signiert(true), &words, mark(OFF + 0.25, OFF + 1.13));
-    assert!(cut.s <= OFF + 0.25 + 1e-9, "never later than the aligner's boundary: {:.4}", cut.s);
+    assert!(
+        cut.s <= OFF + 0.25 + 1e-9,
+        "never later than the aligner's boundary: {:.4}",
+        cut.s
+    );
 }

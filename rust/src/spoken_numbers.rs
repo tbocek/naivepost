@@ -46,7 +46,9 @@ pub fn spell(text: &str, language: &str) -> (String, Vec<Token>) {
         .map(|written| Token {
             written: written.to_string(),
             spoken: match lang {
-                Some(lang) if written.chars().any(|c| c.is_ascii_digit()) => spell_token(written, lang),
+                Some(lang) if written.chars().any(|c| c.is_ascii_digit()) => {
+                    spell_token(written, lang)
+                }
                 _ => vec![written.to_string()],
             },
         })
@@ -174,26 +176,36 @@ fn spell_core(core: &str, lang: Lang) -> Vec<String> {
             // digits with group separators: 1.000.000 (de) / 1,000,000 (en)
             let grouped = |at: usize| {
                 chars[at] == group
-                    && chars.get(at + 1..at + 4).is_some_and(|d| d.iter().all(char::is_ascii_digit))
+                    && chars
+                        .get(at + 1..at + 4)
+                        .is_some_and(|d| d.iter().all(char::is_ascii_digit))
                     && !chars.get(at + 4).is_some_and(char::is_ascii_digit)
             };
             while i < chars.len() && (chars[i].is_ascii_digit() || grouped(i)) {
                 i += 1;
             }
-            let whole: String = chars[start..i].iter().filter(|c| c.is_ascii_digit()).collect();
+            let whole: String = chars[start..i]
+                .iter()
+                .filter(|c| c.is_ascii_digit())
+                .collect();
             // four bare digits are read as a year where a year is what they sound like ("1997", "2023")
             let plain = i - start == whole.len();
             let fresh = start == 0 || !chars[start - 1].is_ascii_digit();
-            match (plain && fresh && whole.len() == 4).then(|| year(&whole, lang)).flatten() {
+            match (plain && fresh && whole.len() == 4)
+                .then(|| year(&whole, lang))
+                .flatten()
+            {
                 Some(words) => out.extend(words),
                 None => out.extend(cardinal(&whole, lang)),
             }
             if i + 1 < chars.len() && chars[i] == decimal && chars[i + 1].is_ascii_digit() {
-                out.push(match lang {
-                    Lang::De => "Komma",
-                    Lang::En => "point",
-                }
-                .to_string());
+                out.push(
+                    match lang {
+                        Lang::De => "Komma",
+                        Lang::En => "point",
+                    }
+                    .to_string(),
+                );
                 i += 1;
                 while i < chars.len() && chars[i].is_ascii_digit() {
                     out.push(digit(chars[i], lang).to_string());
@@ -203,17 +215,22 @@ fn spell_core(core: &str, lang: Lang) -> Vec<String> {
             // a dot between digits that is neither a decimal nor a thousands group is a version's "Punkt" / "point"
             // (0.9.0, 0.8-Reihe); the next part reads as a number of its own
             if i + 1 < chars.len() && chars[i] == '.' && chars[i + 1].is_ascii_digit() {
-                out.push(match lang {
-                    Lang::De => "Punkt",
-                    Lang::En => "point",
-                }
-                .to_string());
+                out.push(
+                    match lang {
+                        Lang::De => "Punkt",
+                        Lang::En => "point",
+                    }
+                    .to_string(),
+                );
                 i += 1;
                 continue;
             }
             // English ordinals and decades: 1st, 14th, 90s
             if lang == Lang::En {
-                let letters: String = chars[i..].iter().take_while(|c| c.is_alphabetic()).collect();
+                let letters: String = chars[i..]
+                    .iter()
+                    .take_while(|c| c.is_alphabetic())
+                    .collect();
                 let lower = letters.to_lowercase();
                 let n: u64 = whole.parse().unwrap_or(0);
                 if matches!(lower.as_str(), "st" | "nd" | "rd" | "th") {
@@ -232,11 +249,13 @@ fn spell_core(core: &str, lang: Lang) -> Vec<String> {
                 out.push(unit.to_string());
             }
         } else if c == '%' {
-            out.push(match lang {
-                Lang::De => "Prozent",
-                Lang::En => "percent",
-            }
-            .to_string());
+            out.push(
+                match lang {
+                    Lang::De => "Prozent",
+                    Lang::En => "percent",
+                }
+                .to_string(),
+            );
             i += 1;
         } else if c == '€' || c == '$' {
             let unit = match (c, lang) {
@@ -268,8 +287,12 @@ fn spell_core(core: &str, lang: Lang) -> Vec<String> {
 fn digit(c: char, lang: Lang) -> &'static str {
     let n = c.to_digit(10).unwrap_or(0) as usize;
     match lang {
-        Lang::De => ["null", "eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun"][n],
-        Lang::En => ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"][n],
+        Lang::De => [
+            "null", "eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun",
+        ][n],
+        Lang::En => [
+            "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        ][n],
     }
 }
 
@@ -394,11 +417,30 @@ fn de_below_million(n: u64) -> String {
 
 fn de_below_thousand(n: u64) -> String {
     const ONES: [&str; 20] = [
-        "", "ein", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf",
-        "dreizehn", "vierzehn", "fünfzehn", "sechzehn", "siebzehn", "achtzehn", "neunzehn",
+        "",
+        "ein",
+        "zwei",
+        "drei",
+        "vier",
+        "fünf",
+        "sechs",
+        "sieben",
+        "acht",
+        "neun",
+        "zehn",
+        "elf",
+        "zwölf",
+        "dreizehn",
+        "vierzehn",
+        "fünfzehn",
+        "sechzehn",
+        "siebzehn",
+        "achtzehn",
+        "neunzehn",
     ];
     const TENS: [&str; 10] = [
-        "", "", "zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig",
+        "", "", "zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig",
+        "neunzig",
     ];
     let mut s = String::new();
     let hundreds = (n / 100) as usize;
@@ -427,7 +469,11 @@ fn en(n: u64) -> Vec<String> {
     }
     let mut out = Vec::new();
     let mut rest = n;
-    for (size, name) in [(1_000_000_000, "billion"), (1_000_000, "million"), (1000, "thousand")] {
+    for (size, name) in [
+        (1_000_000_000, "billion"),
+        (1_000_000, "million"),
+        (1000, "thousand"),
+    ] {
         let k = rest / size;
         rest %= size;
         if k > 0 {
@@ -441,8 +487,26 @@ fn en(n: u64) -> Vec<String> {
 
 fn en_below_thousand(n: u64) -> Vec<String> {
     const ONES: [&str; 20] = [
-        "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
-        "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+        "",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
     ];
     const TENS: [&str; 10] = [
         "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",

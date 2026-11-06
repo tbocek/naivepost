@@ -72,7 +72,8 @@ pub fn read_wav_span(path: &Path, from: usize, count: usize) -> Result<Vec<i16>,
     let why = |what: String| format!("{}: {what}", path.display());
     let mut file = std::fs::File::open(path).map_err(|err| why(err.to_string()))?;
     let mut head = [0u8; 12];
-    file.read_exact(&mut head).map_err(|err| why(err.to_string()))?;
+    file.read_exact(&mut head)
+        .map_err(|err| why(err.to_string()))?;
     if &head[..4] != b"RIFF" || &head[8..12] != b"WAVE" {
         return Err(why("not a RIFF/WAVE file".into()));
     }
@@ -85,9 +86,11 @@ pub fn read_wav_span(path: &Path, from: usize, count: usize) -> Result<Vec<i16>,
             let have = (len / 2) as usize;
             let from = from.min(have);
             let count = count.min(have - from);
-            file.seek(SeekFrom::Current(from as i64 * 2)).map_err(|err| why(err.to_string()))?;
+            file.seek(SeekFrom::Current(from as i64 * 2))
+                .map_err(|err| why(err.to_string()))?;
             let mut bytes = vec![0u8; count * 2];
-            file.read_exact(&mut bytes).map_err(|err| why(err.to_string()))?;
+            file.read_exact(&mut bytes)
+                .map_err(|err| why(err.to_string()))?;
             return Ok(bytes
                 .as_chunks::<2>()
                 .0

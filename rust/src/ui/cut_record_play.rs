@@ -178,7 +178,9 @@ pub fn take_swapped() -> bool {
 pub fn silence_after(session: Option<f64>, now: bool) {
     WANTED_SILENCE.with(|cell| cell.set(session));
     if now {
-        let start = CUT_PAGE.with(|CutPage { in_video: cell, .. }| cell.get()).map(|(start, _)| start);
+        let start = CUT_PAGE
+            .with(|CutPage { in_video: cell, .. }| cell.get())
+            .map(|(start, _)| start);
         crate::play_built_in::silence_from(session.zip(start).map(|(t, start)| t - start));
     }
 }

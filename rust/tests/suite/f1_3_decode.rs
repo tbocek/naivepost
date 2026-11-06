@@ -105,10 +105,20 @@ fn f1_3_s1_the_run_decodes_the_source_to_mono_16khz_when_it_is_absent() {
     );
     assert_eq!(
         decode_audio::decode_plan(),
-        vec!["-vn", "-af", "aresample=async=1:first_pts=0", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>(),
+        vec![
+            "-vn",
+            "-af",
+            "aresample=async=1:first_pts=0",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le"
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>(),
         "the plan is built from SAMPLE_RATE, not a literal beside it"
     );
     assert_eq!(
@@ -135,7 +145,11 @@ fn f1_3_s1_an_existing_voice16k_is_not_decoded_again() {
     std::fs::create_dir_all(pcm.parent().expect("the input folder")).expect("the folder");
     std::fs::write(&pcm, b"already-here").expect("the earlier decode");
     // On the recording's own clock already: an older decode without the mark is moved over (tests/suite/decode_clock.rs).
-    std::fs::write(decode_audio::clock_mark(&tree, LANE), "the recording's own clock\n").expect("the mark");
+    std::fs::write(
+        decode_audio::clock_mark(&tree, LANE),
+        "the recording's own clock\n",
+    )
+    .expect("the mark");
 
     let back = decode_audio::ensure(
         &tree,

@@ -88,7 +88,11 @@ pub fn load(tree: &crate::layout::Tree, lanes: &[Lane]) -> Vec<(Lane, Edges)> {
             let wave = crate::wave::read(tree, &lane.key, lane.size, lane.mtime).ok()??;
             let edges = Edges::new(wave, lane.off);
             let voice = tree.voice16k_wav(&lane.key);
-            let edges = if voice.is_file() { edges.with_voice(voice) } else { edges };
+            let edges = if voice.is_file() {
+                edges.with_voice(voice)
+            } else {
+                edges
+            };
             Some((lane.clone(), edges))
         })
         .collect()
@@ -157,7 +161,11 @@ impl Edges {
         let buckets: Vec<(i32, f64)> = x
             .chunks_exact(step)
             .map(|b| {
-                let peak = b.iter().map(|v| i32::from(v.unsigned_abs())).max().unwrap_or(0);
+                let peak = b
+                    .iter()
+                    .map(|v| i32::from(v.unsigned_abs()))
+                    .max()
+                    .unwrap_or(0);
                 let crossings = b.windows(2).filter(|p| (p[0] < 0) != (p[1] < 0)).count();
                 (peak, crossings as f64 / (step - 1) as f64)
             })
@@ -165,7 +173,9 @@ impl Edges {
         let loudest = buckets.iter().map(|b| b.0).max()?;
         let hissing: Vec<bool> = buckets
             .iter()
-            .map(|&(peak, rate)| peak >= HISS_FLOOR.max(loudest / HISS_SHARE) && rate >= HISS_CROSSINGS)
+            .map(|&(peak, rate)| {
+                peak >= HISS_FLOOR.max(loudest / HISS_SHARE) && rate >= HISS_CROSSINGS
+            })
             .collect();
         let at = |i: usize| self.off + (first + i * step) as f64 / RATE;
         let mut runs = Vec::new();
@@ -182,7 +192,15 @@ impl Edges {
             runs.push((at(i), at(j + 1)));
             i = j + 1;
         }
-        let away = |(a, b): (f64, f64)| if t < a { a - t } else if t > b { t - b } else { 0.0 };
+        let away = |(a, b): (f64, f64)| {
+            if t < a {
+                a - t
+            } else if t > b {
+                t - b
+            } else {
+                0.0
+            }
+        };
         runs.into_iter()
             .filter(|&(a, b)| b - a >= HISS_MIN - 1e-9 && away((a, b)) <= PART_REACH)
             .min_by(|&p, &q| away(p).total_cmp(&away(q)))
@@ -583,7 +601,8 @@ pub fn place_edges<'a>(
                 // The same where the cut resumes on a kept word that touches the last dropped one.
                 if mark.to > mark.s && touching(words, mark.to) {
                     if let Some(e) = edge_of(mark.to) {
-                        let hissed = hiss_parting(e, words, mark.to, true).filter(|at| *at > mark.s);
+                        let hissed =
+                            hiss_parting(e, words, mark.to, true).filter(|at| *at > mark.s);
                         if let Some(at) = hissed {
                             notes.push(hiss_note(mark.to, at));
                             mark.to = at;

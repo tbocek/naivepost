@@ -300,7 +300,11 @@ fn run_step(page: &dyn CutPreviewPage, cut_: &Cut, step: Tick) {
     // before the line moves, so a jump's cue installs it before the new place decodes; the stretch being left stays
     // silenced until that seek has flushed it.
     page.silence_after(
-        if step.ended { None } else { stretch_end(cut_, step.head) },
+        if step.ended {
+            None
+        } else {
+            stretch_end(cut_, step.head)
+        },
         !step.jumped,
     );
     page.set_playhead(step.head);

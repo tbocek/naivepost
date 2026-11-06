@@ -43,7 +43,11 @@ fn sec_03_shell_1_the_outputs_button_opens_or_says_why() {
             Some(session.join("prepare")),
             "in the Prepare page's output folder"
         );
-        assert_eq!(ui::log_link::blocked_opens_for_test(), before, "and handed nothing to the desktop");
+        assert_eq!(
+            ui::log_link::blocked_opens_for_test(),
+            before,
+            "and handed nothing to the desktop"
+        );
         RAN.store(true, Ordering::SeqCst);
         app.quit();
     });

@@ -705,7 +705,12 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         .expect("the insert is trimmed to its slot");
     let clip = &plan.clips[0];
     assert_eq!(argv[limit + 1], clip.frames.to_string(), "{argv:?}");
-    assert!((clip.frames as f64 / clip.fps - 4.0).abs() <= 0.5 / clip.fps, "{} frames at {}", clip.frames, clip.fps);
+    assert!(
+        (clip.frames as f64 / clip.fps - 4.0).abs() <= 0.5 / clip.fps,
+        "{} frames at {}",
+        clip.frames,
+        clip.fps
+    );
     assert!(
         limit > argv.iter().position(|a| a.ends_with("f%05d.svg")).unwrap(),
         "the limit follows the input it trims: {argv:?}"
@@ -820,7 +825,12 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
         .expect("the loop is trimmed to the slot");
     let clip = &plan.clips[0];
     assert_eq!(argv[limit + 1], clip.frames.to_string(), "{argv:?}");
-    assert!((clip.frames as f64 / clip.fps - seconds).abs() <= 0.5 / clip.fps, "{} frames at {}", clip.frames, clip.fps);
+    assert!(
+        (clip.frames as f64 / clip.fps - seconds).abs() <= 0.5 / clip.fps,
+        "{} frames at {}",
+        clip.frames,
+        clip.fps
+    );
 }
 
 /// A run carrying this cut, with the settings a render would use.

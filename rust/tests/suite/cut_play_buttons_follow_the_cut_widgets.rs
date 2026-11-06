@@ -28,11 +28,16 @@ fn empty_cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let session = naivepost::startup::session_dir(&std::env::current_dir().expect("a cwd"));
     std::fs::create_dir_all(&session).expect("the session folder");
-    naivepost::cut::save(&Cut::default(), &naivepost::layout::Tree::new(&session).expect("a .naivepost folder"))
-        .expect("an empty cut beside the cwd");
+    naivepost::cut::save(
+        &Cut::default(),
+        &naivepost::layout::Tree::new(&session).expect("a .naivepost folder"),
+    )
+    .expect("an empty cut beside the cwd");
     let window = ui::build_window(app, &model, "Prepare");
     common::size_to_minimum(&window);
-    ui::tab_button(&window, Page::Cut).expect("the shell has a Cut tab").emit_clicked();
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_clicked();
     common::wait_for_stable_layout(&window);
     window
 }
@@ -57,7 +62,10 @@ fn check(app: &adw::Application) {
     // The first suggestion lands: its clips are on the band, and ▶✂ can play them at once. Nothing presses ▶.
     ui::cut_suggest_land::land_spans(&window, &[(1.0, 4.0), (6.0, 9.0)]);
     settle();
-    assert!(play_cut.is_sensitive(), "the suggestion's clips are playable without pressing ▶ first");
+    assert!(
+        play_cut.is_sensitive(),
+        "the suggestion's clips are playable without pressing ▶ first"
+    );
     assert_eq!(
         review.is_sensitive(),
         naivepost::cut_screen::can_review(&ui::window_preview::newest_review_cut()),

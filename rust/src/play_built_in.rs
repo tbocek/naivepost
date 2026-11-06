@@ -87,7 +87,13 @@ fn silencer_reading(own: Option<Arc<AtomicU64>>) -> Result<gst::Element, String>
             let Some(start) = buffer.pts().and_then(|pts| segment.to_stream_time(pts)) else {
                 return gst::PadProbeReturn::Ok;
             };
-            silence_past(buffer.make_mut(), start.nseconds() as f64 / 1e9, from, rate as usize, channels as usize);
+            silence_past(
+                buffer.make_mut(),
+                start.nseconds() as f64 / 1e9,
+                from,
+                rate as usize,
+                channels as usize,
+            );
         }
         gst::PadProbeReturn::Ok
     });
@@ -211,7 +217,12 @@ pub fn cue(file: &str, at_secs: f64, play: bool) -> Result<(), String> {
 
 /// [`cue`], with the second of `file` its sound is silenced from set BEFORE the pipeline starts decoding, so not one
 /// buffer of the new place passes the filter without it (the decoder runs ahead of the sound you hear).
-pub fn cue_silenced(file: &str, at_secs: f64, play: bool, silence: Option<f64>) -> Result<(), String> {
+pub fn cue_silenced(
+    file: &str,
+    at_secs: f64,
+    play: bool,
+    silence: Option<f64>,
+) -> Result<(), String> {
     silence_from(silence);
     let generation = PIPE.with(|slot| -> Result<u64, String> {
         let mut slot = slot.borrow_mut();

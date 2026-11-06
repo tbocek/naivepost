@@ -41,7 +41,10 @@ fn f1_5_s4_german_numbers_are_said_as_words() {
     assert_eq!(spoken("0.8-Reihe", "de"), "null Punkt acht Reihe");
     assert_eq!(spoken("2026", "de"), "zweitausendsechsundzwanzig");
     assert_eq!(spoken("1.000.000", "de"), "eine Million");
-    assert_eq!(spoken("3.500.000", "de"), "drei Millionen fünfhunderttausend");
+    assert_eq!(
+        spoken("3.500.000", "de"),
+        "drei Millionen fünfhunderttausend"
+    );
     assert_eq!(spoken("10%", "de"), "zehn Prozent");
     assert_eq!(spoken("(5€)", "de"), "(fünf Euro)");
     assert_eq!(spoken("ERC20", "de"), "ERC zwanzig");
@@ -171,8 +174,14 @@ fn f1_5_s4_the_stage_asks_with_words_and_writes_the_written_tokens() {
         },
     )
     .expect("aligned");
-    assert_eq!(asked.lock().unwrap().as_slice(), ["und null Komma acht eins Ethers"]);
-    let written = requests::read_aligned(&tree, source).unwrap().expect("written").words;
+    assert_eq!(
+        asked.lock().unwrap().as_slice(),
+        ["und null Komma acht eins Ethers"]
+    );
+    let written = requests::read_aligned(&tree, source)
+        .unwrap()
+        .expect("written")
+        .words;
     let names: Vec<&str> = written.iter().map(|w| w.word.as_str()).collect();
     assert_eq!(names, ["und", "081", "ethers"]);
     // The number runs from its first spoken word's start to its last one's end.
@@ -186,7 +195,12 @@ fn f1_5_s4_the_stage_asks_with_words_and_writes_the_written_tokens() {
 fn f1_5_s4_the_folded_word_keeps_the_apostrophe_the_aligner_keeps() {
     let (text, tokens) = spell("im März '26 wurden", "de");
     assert_eq!(text, "im März 'sechsundzwanzig wurden");
-    let answer = vec![w("im", 0, 1), w("märz", 1, 2), w("'sechsundzwanzig", 2, 9), w("wurden", 9, 12)];
+    let answer = vec![
+        w("im", 0, 1),
+        w("märz", 1, 2),
+        w("'sechsundzwanzig", 2, 9),
+        w("wurden", 9, 12),
+    ];
     let names: Vec<String> = merge(answer, &tokens).into_iter().map(|w| w.word).collect();
     assert_eq!(names, ["im", "märz", "'26", "wurden"]);
 }

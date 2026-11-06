@@ -132,10 +132,7 @@ pub(crate) fn wire_settings(window: &adw::ApplicationWindow) {
             set_scale(&w, &row, &scale.value().to_string());
         });
     }
-    for (row, name) in [
-        ("Channels", "tick-mono"),
-        ("Frame edges", "tick-blurred"),
-    ] {
+    for (row, name) in [("Channels", "tick-mono"), ("Frame edges", "tick-blurred")] {
         let Some(tick) =
             widget_in(window, name).and_then(|w| w.downcast::<gtk::CheckButton>().ok())
         else {

@@ -101,7 +101,17 @@ pub fn has_sound(file: &Path) -> bool {
 /// The first video stream's frame rate (`r_frame_rate`, "30000/1001" read as 29.97), for "source" on a frame grid.
 pub fn frame_rate_of(file: &Path) -> Option<f64> {
     let name = file.display().to_string();
-    let args = ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", name.as_str()];
+    let args = [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=r_frame_rate",
+        "-of",
+        "csv=p=0",
+        name.as_str(),
+    ];
     let reply = crate::subprocess::run(&ffprobe_program(), &args, |_| ()).ok()?;
     parse_rate(reply.trim())
 }
@@ -109,7 +119,9 @@ pub fn frame_rate_of(file: &Path) -> Option<f64> {
 /// "60/1" → 60, "30000/1001" → 29.97…, "25" → 25; nothing for 0 or a malformed answer.
 pub fn parse_rate(text: &str) -> Option<f64> {
     let rate = match text.split_once('/') {
-        Some((n, d)) => n.trim().parse::<f64>().ok()? / d.trim().parse::<f64>().ok().filter(|d| *d > 0.0)?,
+        Some((n, d)) => {
+            n.trim().parse::<f64>().ok()? / d.trim().parse::<f64>().ok().filter(|d| *d > 0.0)?
+        }
         None => text.parse::<f64>().ok()?,
     };
     (rate > 0.0 && rate.is_finite()).then_some(rate)

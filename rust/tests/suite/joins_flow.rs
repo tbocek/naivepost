@@ -350,13 +350,23 @@ fn f1_10_s3_thinking_is_on_for_this_job() {
 fn f1_10_s3_a_join_is_asked_at_the_lower_temperature() {
     // P.machine.joinTemperature: a join has one right answer; at the 1.0 of the other thinking jobs the same join
     // came back differently from run to run.
-    let body: serde_json::Value =
-        serde_json::from_str(&naivepost::join_ask::body_for_test(&["a".into(), "b".into()])).expect("a JSON body");
+    let body: serde_json::Value = serde_json::from_str(&naivepost::join_ask::body_for_test(&[
+        "a".into(),
+        "b".into(),
+    ]))
+    .expect("a JSON body");
     assert_eq!(body["temperature"], serde_json::json!(0.6));
     assert_eq!(joins::JOIN_TEMPERATURE, 0.6);
-    assert_eq!(body["enable_thinking"], serde_json::json!(true), "and it still thinks");
+    assert_eq!(
+        body["enable_thinking"],
+        serde_json::json!(true),
+        "and it still thinks"
+    );
     // The cache keys the temperature: an answer drawn at another one is not served for this ask.
-    let parts = format!("{:?}", naivepost::join_ask::seam_parts("system", "user", "model", 0));
+    let parts = format!(
+        "{:?}",
+        naivepost::join_ask::seam_parts("system", "user", "model", 0)
+    );
     assert!(parts.contains("temperature 0.6"), "{parts}");
 }
 

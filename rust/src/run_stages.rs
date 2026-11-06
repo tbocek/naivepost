@@ -299,7 +299,11 @@ pub fn encoding_done() {
 pub fn encoded_to(t: f64) {
     let held = ENCODING.lock().ok().and_then(|held| held.clone());
     if let Some((status, from, share, seconds)) = held {
-        let done = if seconds > 0.0 { (t / seconds).clamp(0.0, 1.0) } else { 0.0 };
+        let done = if seconds > 0.0 {
+            (t / seconds).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         report_progress(&status, Some(from + share * done));
     }
 }

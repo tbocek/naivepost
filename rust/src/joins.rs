@@ -290,7 +290,11 @@ pub fn refusal_line(k: usize, reason: &str, tail: &str) -> String {
 /// is a bare recording name, never a path (first rewrite: it was stat-ed as one, found nothing, and no join edge was
 /// ever placed by the sound).
 pub fn project_lanes(tree: &Tree, project: &crate::project::Project) -> Vec<crate::edges::Lane> {
-    let stored: Vec<String> = project.sources.iter().map(|source| source.path.clone()).collect();
+    let stored: Vec<String> = project
+        .sources
+        .iter()
+        .map(|source| source.path.clone())
+        .collect();
     crate::hand_edit::session_lanes(tree, &stored)
 }
 

@@ -472,7 +472,10 @@ Frame edges: off
         "the comment is not part of the value, and the dropped Frame timing row is skipped"
     );
     assert!(
-        template.produce.iter().all(|(row, _)| row != "Frame timing"),
+        template
+            .produce
+            .iter()
+            .all(|(row, _)| row != "Frame timing"),
         "{:?}",
         template.produce
     );

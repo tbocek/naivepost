@@ -1036,7 +1036,11 @@ fn f1_3_s4_alignment_is_asked_after_the_asr_wrote_its_words() {
     // Its numbers said as words (F1.5 S4): "word0 one0" goes out as the aligner can hear it.
     assert_eq!(
         sent["request"]["text"].as_str(),
-        Some(naivepost::spoken_numbers::spell("word0 one0", "en").0.as_str()),
+        Some(
+            naivepost::spoken_numbers::spell("word0 one0", "en")
+                .0
+                .as_str()
+        ),
         "the aligner was given the transcript, not an empty string: {sent}"
     );
 }

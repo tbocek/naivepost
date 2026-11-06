@@ -100,7 +100,10 @@ pub fn folder_opener() -> Opener {
                 };
                 if let Ok(uri) = glib::filename_to_uri(&path, None) {
                     if let Err(why) = super::log_link::open(&uri) {
-                        super::window_logs::log_line(&format!("!!! could not open {}: {why}", path.display()));
+                        super::window_logs::log_line(&format!(
+                            "!!! could not open {}: {why}",
+                            path.display()
+                        ));
                     }
                 }
             },

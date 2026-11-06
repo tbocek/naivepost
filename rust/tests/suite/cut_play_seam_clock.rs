@@ -78,7 +78,12 @@ fn f2_2_s5_the_preview_crosses_a_seam_at_the_clips_end() {
     };
     // Three seams, each landing at a different point between two ticks.
     let cut_ = Cut {
-        segs: vec![seg(0.0, 10.0), seg(20.0, 20.437), seg(30.0, 30.271), seg(40.0, 41.0)],
+        segs: vec![
+            seg(0.0, 10.0),
+            seg(20.0, 20.437),
+            seg(30.0, 30.271),
+            seg(40.0, 41.0),
+        ],
         ..Default::default()
     };
     let player = Rc::new(Player {

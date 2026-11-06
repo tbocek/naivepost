@@ -154,7 +154,10 @@ pub fn own_pieces(chunks: &[Chunk], transcript: &str) -> Option<Vec<((f64, f64),
     if chunks.is_empty() {
         return None;
     }
-    let joined: Vec<&str> = chunks.iter().flat_map(|c| c.text.split_whitespace()).collect();
+    let joined: Vec<&str> = chunks
+        .iter()
+        .flat_map(|c| c.text.split_whitespace())
+        .collect();
     let said: Vec<&str> = transcript.split_whitespace().collect();
     if joined != said || chunks.windows(2).any(|pair| pair[1].s < pair[0].e - 1e-6) {
         return None;
@@ -162,7 +165,12 @@ pub fn own_pieces(chunks: &[Chunk], transcript: &str) -> Option<Vec<((f64, f64),
     Some(
         chunks
             .iter()
-            .map(|c| ((c.s, c.e), c.text.split_whitespace().collect::<Vec<_>>().join(" ")))
+            .map(|c| {
+                (
+                    (c.s, c.e),
+                    c.text.split_whitespace().collect::<Vec<_>>().join(" "),
+                )
+            })
             .collect(),
     )
 }
@@ -695,7 +703,11 @@ where
                 // kept with made-up times, out of order; 07-webarch 20-16-01 "andere sprachen haben ihre mvc ...").
                 let end = to_sample(window.1);
                 let tokens: Vec<&str> = span.text.split_whitespace().collect();
-                let over = words.iter().rev().take_while(|w| w.start_sample >= end).count();
+                let over = words
+                    .iter()
+                    .rev()
+                    .take_while(|w| w.start_sample >= end)
+                    .count();
                 if over > 0 && !queue.is_empty() && words.len() == tokens.len() {
                     carry(&mut queue, &tokens[tokens.len() - over..].join(" "));
                     words.truncate(words.len() - over);
@@ -831,7 +843,9 @@ pub fn within_clip(words: Vec<Word>, end_sample: u64) -> Vec<Word> {
 /// S4: an answer worth one more ask: the server erred (HTTP 500) on its own, not for want of memory ([`asr::retryable`]
 /// has its own way down) and not because it serves no such model.
 pub fn transient(err: &str) -> bool {
-    !asr::retryable(err) && !too_long(err) && (err.contains("answered 500") || err.contains("server_error"))
+    !asr::retryable(err)
+        && !too_long(err)
+        && (err.contains("answered 500") || err.contains("server_error"))
 }
 
 /// S3: the aligner's own word for a window longer than its model takes; answered like no room, by halving.
@@ -841,7 +855,10 @@ pub fn too_long(err: &str) -> bool {
 
 /// S4: the log line for the second ask.
 pub fn transient_log(source: &str, model: &str, err: &str) -> String {
-    format!("!!! [{source}] align: {model} failed on a window ({}) -- asking once more", head(err))
+    format!(
+        "!!! [{source}] align: {model} failed on a window ({}) -- asking once more",
+        head(err)
+    )
 }
 
 /// Write one window's plan into `align/` beside the source's other files.
