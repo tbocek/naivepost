@@ -224,17 +224,16 @@ fn f5_7_s6_the_rung_picker_takes_the_first_that_fits_and_otherwise_the_last() {
 // ---- S1: ⊙ Thumbnail only ---------------------------------------------------------
 
 #[test]
-fn f5_7_s1_a_redraw_costs_one_sd_call_and_keeps_the_words() {
+fn f5_7_s1_a_redraw_asks_for_the_picture_and_keeps_the_words() {
     let redraw = runs::redraw();
+    assert_eq!(redraw.llm_calls, 1);
     assert_eq!(redraw.sd_calls, 1);
-    assert_eq!(
-        redraw.keeps,
-        ["title", "description", "publish record", "chapter times"]
-    );
+    assert_eq!(redraw.keeps, ["title", "description", "chapter times"]);
     assert_eq!(
         runs::DRAW_AGAIN_LOG,
-        "publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten"
+        "publish: making the thumbnail again — one LLM call for the picture (a frame, or one sd.cpp call), title and description kept"
     );
+    assert!(runs::REDRAW_TAKEN.contains('\u{25b6}'));
 }
 
 // ---- S2: Reword -------------------------------------------------------------------

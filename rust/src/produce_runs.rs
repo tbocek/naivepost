@@ -8,7 +8,7 @@ use crate::project::{Container, Produce, TitleBox};
 // ---- S1: Redraw ------------------------------------------------------------------
 
 pub const DRAW_AGAIN_LOG: &str =
-    "publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten";
+    "publish: making the thumbnail again — one LLM call for the picture (a frame, or one sd.cpp call), title and description kept";
 
 /// The redraw's own no-cut answer; the thumbnail can also come from the cut's own frames, so this says which one is awaited.
 pub const REDRAW_NO_CUT: &str =
@@ -16,6 +16,10 @@ pub const REDRAW_NO_CUT: &str =
 
 /// The redraw's ending; `\u{25b6}` is spelled in because a video still has to render.
 pub const REDRAW_DONE: &str = "thumbnail drawn \u{2014} \u{25b6} renders the video";
+
+/// …and its ending when the answer was a frame of the video: nothing was drawn.
+pub const REDRAW_TAKEN: &str =
+    "thumbnail taken from the video, nothing drawn \u{2014} \u{25b6} renders the video";
 
 /// ↻ beside Title's no-cut answer: the Cut step's own sentence, re-exported so both presses read refusals from this module.
 pub const REWORD_NO_CUT: &str = crate::cut::NO_CUT_YET;
@@ -87,16 +91,19 @@ pub fn jpeg_rung(sizes: &[u64]) -> Option<usize> {
 /// What one redraw press does; `keeps` is what a test pins as untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redraw {
-    /// sd.cpp calls — one, whatever the box says. A second draw would be a second picture, not a redraw.
+    /// LLM calls — one, asking for the picture only.
+    pub llm_calls: usize,
+    /// sd.cpp calls at most — one when the answer is an instruction, none when it is a frame.
     pub sd_calls: usize,
     pub keeps: &'static [&'static str],
 }
 
-/// S1: one sd.cpp call and no rewritten text.
+/// S1: one LLM call for the picture, at most one sd.cpp call, and no rewritten text.
 pub fn redraw() -> Redraw {
     Redraw {
+        llm_calls: 1,
         sd_calls: 1,
-        keeps: &["title", "description", "publish record", "chapter times"],
+        keeps: &["title", "description", "chapter times"],
     }
 }
 

@@ -296,35 +296,67 @@ pub fn reword_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     print("title", std::slice::from_ref(&next.thumb_title))
 }
 
-/// ↻ over the thumbnail: the run's walk with the stamp forgotten, so it always draws. The record
-/// goes back as it was if the draw fails: a server that is down must not cost a chosen picture.
-pub fn redraw_half(run: &crate::produce_flow::Run) -> Result<(), String> {
+/// ↻ over the thumbnail: ask the model for the picture again, then the run's walk with the stamp
+/// forgotten. The prompt decides: a frame it names is taken as it is (nothing drawn), an instruction
+/// it writes replaces the one in the box and is drawn. Title and description are not touched. The
+/// record goes back as it was if the walk fails: a server that is down must not cost a chosen picture.
+pub fn redraw_half(
+    run: &crate::produce_flow::Run,
+) -> Result<crate::produce_presses::Redrawn, String> {
     let tree = session_tree();
     let found = publish_of_run(run);
     let publish = crate::project::Publish {
         own: false,
         ..found.clone()
     };
+    // The model is asked as if no picture had been chosen yet, so it is free to answer either way
+    // and whatever it names, even the frame or the instruction already standing, reads as an answer.
+    let unchosen = crate::project::Publish {
+        own: false,
+        prompt: String::new(),
+        frames: Vec::new(),
+        ..found.clone()
+    };
+    let ask = upload_ask(
+        &tree,
+        &unchosen,
+        extracted_frames(&tree, run),
+        starts_of(run),
+        false,
+    );
+    let reply = ask(&upload_brief_for(&tree, run))?;
+    let answered = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
+    let answers = crate::produce_upload::Answers {
+        instruction: answered.instruction,
+        negative: answered.negative,
+        picked_frame: answered.picked_frame,
+        ..Default::default()
+    };
+    if answers.picked_frame.is_none() && answers.instruction.is_none() {
+        crate::ui::window::log_line(REDRAW_NO_ANSWER_LOG);
+    }
     let legs = upload_legs(&tree, run);
     let mut mats = upload_mats(&legs, run);
     mats.stored_stamp = None;
-    let outcome = crate::produce_upload::walk(
-        "",
-        &publish,
-        &crate::produce_upload::Answers::default(),
-        &mats,
-        |line: &str| {
-            if !line.is_empty() {
-                crate::ui::window::log_line(line);
-            }
-        },
-    );
-    let Some(why) = outcome.error else {
-        return Ok(());
-    };
-    (legs.save_publish)(&found)?;
-    Err(why)
+    let outcome = crate::produce_upload::walk("", &publish, &answers, &mats, |line: &str| {
+        if !line.is_empty() {
+            crate::ui::window::log_line(line);
+        }
+    });
+    if let Some(why) = outcome.error {
+        (legs.save_publish)(&found)?;
+        return Err(why);
+    }
+    if outcome.calls.iter().any(|call| call == "draw") {
+        Ok(crate::produce_presses::Redrawn::Drawn)
+    } else {
+        Ok(crate::produce_presses::Redrawn::Taken)
+    }
 }
+
+/// ↻ over the thumbnail when the model named neither a frame nor an instruction: what stands is used.
+pub const REDRAW_NO_ANSWER_LOG: &str =
+    "    publish: the model named no frame and no instruction \u{2014} using the images and instruction on the page";
 
 /// The clips the render makes of the run's cut, in its order: "clip n" means the same to the model
 /// as in the video.

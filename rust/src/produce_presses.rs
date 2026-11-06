@@ -66,21 +66,37 @@ impl Outcome {
     }
 }
 
+/// How ↻ over the thumbnail ended: the model's answer decides whether sd.cpp was asked at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Redrawn {
+    /// An instruction: one sd.cpp call drew the picture, and it is the app's again (`own` cleared).
+    Drawn,
+    /// A frame of the video (the model named one, or there was no instruction): taken as it is, nothing drawn.
+    Taken,
+}
+
+/// ↻ over the thumbnail: ask the model for the picture (one LLM call, title and description untouched),
+/// then take the frame it names or draw its instruction. No instruction is needed up front: the prompt
+/// decides, so a context that says "pick a frame" is never sent to sd.cpp.
 pub fn press_redraw_thumbnail(
     legs: &Legs,
-    draw: impl FnOnce() -> Result<(), String>,
+    draw: impl FnOnce() -> Result<Redrawn, String>,
     mut log: impl FnMut(&str),
 ) -> Outcome {
     let mut out = Outcome::default();
     if !(legs.has_cut)() {
         return Outcome::refusal(runs::REDRAW_NO_CUT);
     }
-    if (legs.instruction)().trim().is_empty() {
-        return Outcome::refusal(upload::NO_INSTRUCTION);
-    }
     log(runs::DRAW_AGAIN_LOG);
-    if let Err(why) = draw() {
-        return fail(out, "the thumbnail", &why, legs);
+    out.llm_calls = 1;
+    let redrawn = match draw() {
+        Ok(redrawn) => redrawn,
+        Err(why) => return fail(out, "the thumbnail", &why, legs),
+    };
+    if redrawn == Redrawn::Taken {
+        out.calls.push("take".to_string());
+        out.status = runs::ending("the thumbnail", runs::REDRAW_TAKEN, true, false);
+        return out;
     }
     out.sd_calls = 1;
     out.calls.push("draw".to_string());

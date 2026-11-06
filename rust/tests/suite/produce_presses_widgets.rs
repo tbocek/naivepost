@@ -44,6 +44,7 @@ static EXPORT_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SAVE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static TRANSCODE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static REDRAW_REAL_FAIL: Mutex<Option<String>> = Mutex::new(None);
+static REDRAW_FRAME_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static REFUSAL_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static EXPORT_MEASURED_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SET_THUMB_SOLE_FAIL: Mutex<Option<String>> = Mutex::new(None);
@@ -1372,6 +1373,72 @@ fn check_redraw(root: &Path) {
     settle();
 }
 
+/// ↻ over the thumbnail when the prompt says to pick a frame: the model's answer names one, so that frame is
+/// the thumbnail as it is. No sd.cpp call, the row holds that frame only, the picture is one's own, and the
+/// edit instruction left over from an earlier run is not drawn. The title and description stay.
+fn check_redraw_takes_a_frame(root: &Path) {
+    let tree = session(root);
+    let _scripted = script_legs();
+    // Clip 2 starts at session 10 (`two_segs`), so "clip 2 +2" is session 12: one frame there.
+    let seconds = 12.0;
+    let frame = tree
+        .frames_dir(FOOTAGE)
+        .join(format!("{}.jpg", naivepost::clock::frame_name(seconds)));
+    std::fs::create_dir_all(frame.parent().unwrap()).expect("frame folder");
+    make_noisy_png(&frame, 640, 360);
+    // The run lists frames under its footage recordings, so the session names one.
+    let mut project = naivepost::project::load(tree.dir()).unwrap_or_default();
+    project.sources = vec![naivepost::project::Source {
+        path: format!("sources/{FOOTAGE}.mkv"),
+        footage: true,
+        ..Default::default()
+    }];
+    naivepost::project::save(&project, tree.dir()).expect("the session names its footage");
+    let fake = FakeLlm::start(
+        "TITLE: a title the redraw must not take\nTHUMBNAIL: frame: clip 2 +2\nDESCRIPTION: nor this",
+    );
+    point_settings_at(fake.address());
+    let window = produce_window(&app_in_round());
+    seed_live_cut(&window);
+    let before = ui::produce_page::read_state();
+    assert!(
+        !before.instruction.trim().is_empty(),
+        "an instruction from an earlier run stands"
+    );
+    let mark = log_mark();
+    let said = press(&window, "thumbnail-redraw");
+    let logged = logs_since(mark);
+    assert_eq!(
+        said,
+        naivepost::produce_runs::REDRAW_TAKEN,
+        "status: {said:?}, log: {logged:#?}"
+    );
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "a frame answer never reaches sd.cpp"
+    );
+    let state = ui::produce_page::read_state();
+    assert_eq!(
+        state.frames,
+        vec![format!("frame:{seconds:.1}")],
+        "the row holds that frame only"
+    );
+    assert!(
+        state.own,
+        "the taken frame is the picture, not something to draw over"
+    );
+    assert_eq!(state.title, before.title, "the title stays");
+    let written = naivepost::publish::load(&tree).expect("the redraw wrote the record");
+    assert!(written.own, "and the record says so for the next \u{25b6}");
+    assert!(
+        tree.thumbnail_png().is_file(),
+        "the taken frame is on disk as the thumbnail"
+    );
+    window.close();
+    settle();
+}
+
 /// A fake sd.cpp on loopback: `POST /sdcpp/v1/img_gen` answers a job id, `GET /sdcpp/v1/jobs/<id>` answers it
 /// done with `png` as `result.images[0].b64_json` (the shape `produce_upload_draw::state_of` reads). Every request
 /// line is recorded, so a check proves the REAL submit and poll went out.
@@ -1766,6 +1833,14 @@ fn run_round(app: &adw::Application) {
         std::panic::AssertUnwindSafe(in_root("redraw-real".to_string(), check_redraw_real_server)),
     );
     record(
+        &REDRAW_FRAME_FAIL,
+        "redraw press with a frame answer",
+        std::panic::AssertUnwindSafe(in_root(
+            "redraw-frame".to_string(),
+            check_redraw_takes_a_frame,
+        )),
+    );
+    record(
         &REWORD_FAIL,
         "reword press",
         std::panic::AssertUnwindSafe(in_root("reword".to_string(), check_reword)),
@@ -1897,7 +1972,13 @@ fn f5_7_s1_pressing_the_page_buttons_runs_each_walk_through_the_real_widget() {
     let save = SAVE_FAIL.lock().unwrap().take();
     let transcode = TRANSCODE_FAIL.lock().unwrap().take();
     let redraw_real = REDRAW_REAL_FAIL.lock().unwrap().take();
+    let redraw_frame = REDRAW_FRAME_FAIL.lock().unwrap().take();
     assert!(redraw_real.is_none(), "{}", redraw_real.unwrap_or_default());
+    assert!(
+        redraw_frame.is_none(),
+        "{}",
+        redraw_frame.unwrap_or_default()
+    );
     assert!(refusals.is_none(), "{}", refusals.unwrap_or_default());
     assert!(redraw.is_none(), "{}", redraw.unwrap_or_default());
     assert!(reword.is_none(), "{}", reword.unwrap_or_default());
