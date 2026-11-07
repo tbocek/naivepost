@@ -93,15 +93,22 @@ fn read_turn(
     Ok(turn)
 }
 
-pub fn system(paths: Option<&Paths>) -> String {
+/// The system message; a User Context adds the precedence rule, as on every other job.
+pub fn system(paths: Option<&Paths>, context: &str) -> String {
     crate::prompt_assembly::system_message(
         &wording(paths, "system"),
         "youtube",
         &wording(paths, "youtube"),
-        "",
+        context,
         false,
         false,
     )
+}
+
+/// The user message: the User Context block ahead of the brief. The context is what says "pick a frame" or
+/// "draw it", what the title should carry and how the description reads, so the call is not made without it.
+pub fn user(context: &str, brief: &str) -> String {
+    crate::prompt_assembly::user_message(context, "youtube", brief)
 }
 
 pub fn messages(system: &str, brief: &str) -> Vec<Message> {
@@ -150,6 +157,7 @@ pub struct Frames<'a> {
 
 pub fn call<FLog>(
     tree: &Tree,
+    context: &str,
     brief: &str,
     publish: &Publish,
     frames: &Frames,
@@ -161,8 +169,9 @@ where
     FLog: FnMut(&str),
 {
     let paths = settings::from_environment();
-    let system = system(paths.as_ref());
+    let system = system(paths.as_ref(), context);
     let mut state = State {
+        context: context.to_string(),
         publish: publish.clone(),
         wrote: false,
         answers: Vec::new(),
@@ -193,7 +202,7 @@ where
     // Read one dialled response as the loop's turn, recording the prose it spoke. Declared before
     // `ask` because every leg -- the ordinary one and S5's resend-without-tools -- ends by calling
     // it.
-    let mut conversation = messages(&system, brief);
+    let mut conversation = messages(&system, &user(context, brief));
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
         // Settings are re-read per round so an address edited mid-call lands on the next request
         // (§1).
@@ -364,6 +373,8 @@ struct State {
     interval: f64,
     lines: Vec<crate::textfmt::SessionLine>,
     edited_by_hand: bool,
+    /// The User Context, which `get_context` hands back (§3.1).
+    context: String,
 }
 
 impl State {
@@ -480,6 +491,19 @@ impl State {
                     // than quietly shipping last run's words under this video.
                     format!("still missing: {}", missing.join(", "))
                 };
+                self.answers.push(answer.clone());
+                answer
+            }
+            n if n == Tool::GetContext.name() => {
+                let read = crate::tool_reads::Context {
+                    user_context: &self.context,
+                    job: Job::UploadText,
+                    policy: &[],
+                    lines: &[],
+                    events: &[],
+                    frames: &[],
+                };
+                let answer = crate::tool_reads::dispatch(&read, asked).unwrap_or_default();
                 self.answers.push(answer.clone());
                 answer
             }

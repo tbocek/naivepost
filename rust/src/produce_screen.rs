@@ -263,8 +263,7 @@ pub const NEGATIVE_TIP: &str =
 pub const EXPORT_TIP: &str =
     "Export the thumbnail as a JPEG — what YouTube takes, under its 2 MB limit";
 
-pub const REDRAW_TIP: &str =
-    "Draw the thumbnail again from the images and the instruction as they stand — a fresh draw";
+pub const REDRAW_TIP: &str = "Make the thumbnail again — the model takes a frame of the video or writes an instruction to draw; the title and description stay";
 
 /// §A ("Text overlays"): the picture column's width, the smallest box that holds words, the snap distance
 /// to edges, middles and other boxes, and the ✎ chip's size.

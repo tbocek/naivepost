@@ -45,6 +45,8 @@ static SAVE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static TRANSCODE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static REDRAW_REAL_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static REDRAW_FRAME_FAIL: Mutex<Option<String>> = Mutex::new(None);
+/// Every request body the fake LLM was sent, in order: what the model was actually told.
+static LLM_BODIES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static REFUSAL_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static EXPORT_MEASURED_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SET_THUMB_SOLE_FAIL: Mutex<Option<String>> = Mutex::new(None);
@@ -476,6 +478,10 @@ fn serve_one(mut stream: std::net::TcpStream, reply: &str) {
     if length > 0 && reader.read_exact(&mut payload).is_err() {
         return;
     }
+    LLM_BODIES
+        .lock()
+        .unwrap()
+        .push(String::from_utf8_lossy(&payload).into_owned());
     let body = serde_json::json!({ "choices": [ { "message": { "content": reply }, "finish_reason": "stop" } ] }).to_string();
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -1393,12 +1399,18 @@ fn check_redraw_takes_a_frame(root: &Path) {
         footage: true,
         ..Default::default()
     }];
+    // The User Context is what says "pick a frame": the model must be shown it.
+    let context = "For the thumbnail just pick a frame of the video and put the title on it.";
+    project.context = context.to_string();
     naivepost::project::save(&project, tree.dir()).expect("the session names its footage");
+    LLM_BODIES.lock().unwrap().clear();
     let fake = FakeLlm::start(
         "TITLE: a title the redraw must not take\nTHUMBNAIL: frame: clip 2 +2\nDESCRIPTION: nor this",
     );
     point_settings_at(fake.address());
     let window = produce_window(&app_in_round());
+    // Also in the window's session: autosave writes that whole, so the file alone could lose it before the press.
+    ui::window::set_session_context(context);
     seed_live_cut(&window);
     let before = ui::produce_page::read_state();
     assert!(
@@ -1412,6 +1424,12 @@ fn check_redraw_takes_a_frame(root: &Path) {
         said,
         naivepost::produce_runs::REDRAW_TAKEN,
         "status: {said:?}, log: {logged:#?}"
+    );
+    let bodies = LLM_BODIES.lock().unwrap().clone();
+    assert!(
+        bodies.iter().any(|body| body.contains(context)),
+        "the User Context reaches the model: {} request(s)",
+        bodies.len()
     );
     assert_eq!(
         DRAWS.load(Ordering::SeqCst),

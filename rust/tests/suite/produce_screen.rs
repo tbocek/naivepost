@@ -190,7 +190,7 @@ fn sec_08_produce_1_screen_s3_tooltips_name_the_rule() {
         ps::EXPORT_TIP
     );
     assert!(
-        ps::REDRAW_TIP.contains("Draw the thumbnail again"),
+        ps::REDRAW_TIP.contains("Make the thumbnail again") && ps::REDRAW_TIP.contains("frame"),
         "{}",
         ps::REDRAW_TIP
     );

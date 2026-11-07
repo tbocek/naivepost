@@ -66,16 +66,15 @@ Found by reading the code while updating the spec. None reproduced or run yet. T
 - `ui/produce_press_wiring.rs:416`: Transcode input equals output.
 - `ui/produce_page_run.rs:179`: flag never set, always "transcoding". `ui/produce_page_rows.rs:32`: "FAILED: <size>".
 - `produce_translate.rs:122`: false cache line; `:132` " / " stays literal.
-- `produce_upload_call.rs:486`: `get_context`, `get_events` unanswered.
+- `produce_upload_call.rs`: `get_events` unanswered.
 - `produce_screen.rs:136`: webm clears burned-in; `:251` pixel compare; `:519` wrong tooltip.
 - `ui/produce_slots.rs:100`: crop box undraggable. `ui/produce_page_presses.rs:118`: empty box kept.
 
 ### Found in the 2026-11-07 spec sync
 
-Same rules as above: read, not run, unless marked **confirmed** (traced through the code by hand).
+Same rules as above: read, not run.
 
 **Prepare**
-- **confirmed** `seam_retries.rs:65`: `Asking::refused` returns a tail after the second refusal, so a join with seamRetries=1 is asked three times and logs "nothing removed there" twice.
 - `transcribe.rs:309`: no aligner plus an ASR without word times gives an empty transcript, no hard error.
 - `diar_scan.rs:67`: "new audio each" prints anchor_per, not the hop. `align.rs:589`: the aligner is picked per recording, not per run.
 - `decode_audio.rs:143`: a lead out of range keeps `transcript.fixed.tsv` on the old times. `asr.rs:256`: no ⏸ checkpoint between ASR chunks. `asr.rs:65`: "oom" also matches "room"/"zoom".
@@ -107,7 +106,5 @@ Same rules as above: read, not run, unless marked **confirmed** (traced through 
 - `voice_ref.rs:263`: prints "X" for the recording name. `narrate_call.rs:266,276`: a rejection counts as "wrote nothing" and turns thinking off. `ui/narrate_lines.rs:101`: an unparseable time is refused as "00:00 is outside the cut". `narrate_screen.rs:208`: the empty-list note uses ＋, which draws as a box.
 
 **Produce**
-- **confirmed** `produce_upload_call.rs:96,486`: the upload/thumbnail call never sees the User Context (no context in the system message or brief, `get_context` answered "no such tool"), so a context saying "pick a frame" has no effect on ↻ or ▶.
-- `produce_screen.rs:266`: `REDRAW_TIP` still says ↻ redraws from the standing images; since 7da375d it asks the model and may take a frame.
 - `produce_exec.rs:784`: lines spoken so far printed as seconds in "synthesis for Ns". `produce_render.rs:456`: a lane is mixed only if it plays at the clip's first second (`LANE_MIN_MIX_SECONDS` unused).
 - `produce_upload.rs:114`: narration `at` (offset in its clip) printed as a video time; `:494`: "taking 3 from the cut" after an empty spread; `:566`: "no images" while references are sent; `:655`: a failed `thumbnail.stamp` write uses the render-stamp sentence.

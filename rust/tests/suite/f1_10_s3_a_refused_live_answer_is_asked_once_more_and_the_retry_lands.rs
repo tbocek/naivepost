@@ -43,6 +43,16 @@ fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
         "the retry is told why: {}",
         clip(&second.body)
     );
+    // seamRetries = 1 is two asks in all: the second refusal ends the join, said once.
+    assert_eq!(llm.drained(), 0, "no third ask after the retry was refused");
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains("nothing removed there"))
+            .count(),
+        1,
+        "the join's end is said once: {lines:?}"
+    );
     // Both asks refused: the join is kept as recorded, and the pass says so loudly at the end.
     assert!(
         lines

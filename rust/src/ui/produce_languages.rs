@@ -736,8 +736,15 @@ pub fn upload_ask(
             lines: &rows,
         };
         let cancelled = || false;
+        // The window's copy first: it is newer than the file until the next autosave.
+        let context = crate::ui::window_policy::live_user_context().unwrap_or_else(|| {
+            crate::project::load(tree.dir())
+                .map(|project| project.context)
+                .unwrap_or_default()
+        });
         let collected = crate::produce_upload_call::call(
             &tree,
+            &context,
             brief,
             &publish,
             &frames,
