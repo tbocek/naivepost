@@ -420,18 +420,18 @@ pub fn run_seams(
                         unanswered += 1;
                         break;
                     }
-                    match asking.refused() {
-                        Some(tail) => pass.logs.push(joins::refusal_line(k, &reason, tail)),
-                        None => {
-                            pass.logs.push(joins::refusal_line(
-                                k,
-                                &reason,
-                                "nothing removed there",
-                            ));
-                            keep_for_good(tree, &project.context, k, n, &wide, &before, &after);
-                            unanswered += 1;
-                            break;
-                        }
+                    let tail = asking.refused();
+                    pass.logs.push(joins::refusal_line(
+                        k,
+                        &reason,
+                        tail.unwrap_or("nothing removed there"),
+                    ));
+                    // The refusal on the last allowed ask ends the join: its tail already said "nothing removed
+                    // there", and asking once more would be a third ask with seamRetries = 1 (and a second line).
+                    if tail.is_none() || asking.attempt >= seam_retries::attempts(asking.retries) {
+                        keep_for_good(tree, &project.context, k, n, &wide, &before, &after);
+                        unanswered += 1;
+                        break;
                     }
                     // The retry is told why, so it does not answer the same way again.
                     last_refusal = Some(reason);

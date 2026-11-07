@@ -116,10 +116,15 @@ pub fn set_policy_sender_for_tests(
 
 /// The window's User Context text, read through the session the bench writes.
 pub(crate) fn user_context() -> String {
+    live_user_context().unwrap_or_default()
+}
+
+/// The User Context as the window holds it now, `None` with no window: newer than `naivepost.json` until the next
+/// autosave, so a context typed just before a press is the one that goes.
+pub(crate) fn live_user_context() -> Option<String> {
     WINDOW_PAGE
         .with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
         .map(|session| session.borrow().context.clone())
-        .unwrap_or_default()
 }
 
 /// The window's User Context text, as the bench and `derive_policy` read it.
