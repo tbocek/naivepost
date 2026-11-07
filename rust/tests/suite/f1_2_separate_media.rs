@@ -136,10 +136,20 @@ fn f1_2_s1_the_decode_runs_the_configured_ffmpeg_at_44_1khz_stereo() {
     );
     assert_eq!(
         separate::decode_plan(),
-        vec!["-vn", "-af", "aresample=async=1:first_pts=0", "-ar", "44100", "-ac", "2", "-f", "s16le"]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>(),
+        vec![
+            "-vn",
+            "-af",
+            "aresample=async=1:first_pts=0",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            "-f",
+            "s16le"
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>(),
         "and the plan itself is still the one §F1.2 S1 names"
     );
 }

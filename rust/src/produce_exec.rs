@@ -591,10 +591,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         Some(command(
             render::JOINING,
             // §6 names this file `joined.<container>`, the container of `final.<ext>`; one expression feeds the writer and the mux's input.
-            render::join_command(
-                &list,
-                &scratch.join(details::joined(render::CLIP_EXT)),
-            ),
+            render::join_command(&list, &scratch.join(details::joined(render::CLIP_EXT))),
         ))
     };
 

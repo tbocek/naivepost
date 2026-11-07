@@ -543,7 +543,10 @@ fn check_encoder_lines_match_the_picture(window: &adw::ApplicationWindow) {
         "{ITEM}: Frame edges is the last line, alone; lines read {names:?}"
     );
     assert!(
-        !names.iter().flatten().any(|name| *name == "tick-peak-rate-vfr"),
+        !names
+            .iter()
+            .flatten()
+            .any(|name| *name == "tick-peak-rate-vfr"),
         "{ITEM}: the dropped VFR tick is not drawn; lines read {names:?}"
     );
     // The Game-audio line sits where §A's order puts it — after Subtitles, before Quality — without

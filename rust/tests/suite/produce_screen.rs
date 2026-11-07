@@ -87,12 +87,7 @@ fn sec_08_produce_1_screen_s1_settings_rows_and_options() {
     assert_eq!(ps::EDGES_TICK, "blurred");
 
     // A row with no list is a slider or a tick — never a guessed one.
-    for row in [
-        "Game audio",
-        "Quality (CRF)",
-        "Channels",
-        "Frame edges",
-    ] {
+    for row in ["Game audio", "Quality (CRF)", "Channels", "Frame edges"] {
         assert_eq!(ps::options(row), None, "{row} has no option list");
     }
     assert_eq!(ps::options("Whatever"), None);

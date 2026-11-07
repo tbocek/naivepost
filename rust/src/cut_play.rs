@@ -199,22 +199,21 @@ pub fn preload_ahead(segs: &[Seg], t: f64) -> Option<f64> {
 
 pub const PRELOAD_ARM_GAP_MS: u64 = (preview::PRELOAD_LEAD_SECONDS * 1000.0) as u64;
 
-/// Whether an arm asked at `since_last_arm_ms` is worth a process at all: at or inside the lead, and the armed
-/// second is not the one the slot already holds. A plain function of two numbers so the cadence is testable
-/// without a player: `None` on the left means "never armed yet", which is always worth the first arm.
+/// Whether an arm is worth a process at all: there is a jump to arm for, and its second is not the one the
+/// slot already holds. A plain function so the rule is testable without a player.
+///
+/// `since_last_arm_ms` is accepted for the record and not consulted. First rewrite refused a NEW second for
+/// `PRELOAD_ARM_GAP_MS` after the last arm — meant to stop one jump being rebuilt every tick, which the held-second
+/// test already stops — and with clips shorter than the lead the next jump was armed milliseconds before it came, or
+/// never: the join reloaded, which is the stall the spare exists to remove.
 pub fn worth_arming(
     since_last_arm_ms: Option<u64>,
     armed_held: Option<f64>,
     wants: Option<f64>,
 ) -> bool {
+    let _ = since_last_arm_ms;
     let Some(at) = wants else { return false };
-    if armed_held == Some(at) {
-        return false;
-    }
-    match since_last_arm_ms {
-        None => true,
-        Some(elapsed) => elapsed >= PRELOAD_ARM_GAP_MS,
-    }
+    armed_held != Some(at)
 }
 
 /// The cut's own second for a session second: the kept length before it, plus how far into the clip

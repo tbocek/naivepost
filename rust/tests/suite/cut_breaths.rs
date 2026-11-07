@@ -8,7 +8,10 @@ use naivepost::cut_breaths::{one_breath, Recording, SR};
 struct Noise(u64);
 impl Noise {
     fn next(&mut self) -> f32 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((self.0 >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0
     }
 }
@@ -36,7 +39,14 @@ fn record(parts: &[Part]) -> Vec<i16> {
             let t = n as f32 / SR as f32;
             let w = noise.next();
             let v = match kind {
-                0 => (1..=12).map(|h| (2.0 * std::f32::consts::PI * 150.0 * h as f32 * t).sin() / h as f32).sum::<f32>() * 0.12,
+                0 => {
+                    (1..=12)
+                        .map(|h| {
+                            (2.0 * std::f32::consts::PI * 150.0 * h as f32 * t).sin() / h as f32
+                        })
+                        .sum::<f32>()
+                        * 0.12
+                }
                 // tilted down: centre about 3 kHz
                 1 => (w + 0.5 * last) * 0.012,
                 // tilted up: centre about 5.5 kHz
@@ -47,7 +57,9 @@ fn record(parts: &[Part]) -> Vec<i16> {
             out.push(v);
         }
     }
-    out.iter().map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16).collect()
+    out.iter()
+        .map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16)
+        .collect()
 }
 
 fn speech_then(end: Part) -> Vec<i16> {
@@ -55,14 +67,25 @@ fn speech_then(end: Part) -> Vec<i16> {
 }
 
 fn breath_then_speech(start: Part) -> Vec<i16> {
-    record(&[start, Part::Quiet(0.05), Part::Speech(1.5), Part::Quiet(0.3)])
+    record(&[
+        start,
+        Part::Quiet(0.05),
+        Part::Speech(1.5),
+        Part::Quiet(0.3),
+    ])
 }
 
 /// The clip before runs on recording A (at session 0) up to its end; the clip after starts at session 100 on B.
 fn scene(a: &[i16], b: &[i16]) -> (Vec<(f64, f64)>, Vec<Recording>) {
     let a_end = a.len() as f64 / SR as f64 - 0.06;
-    let spans = vec![(0.2, a_end), (100.06, 100.0 + b.len() as f64 / SR as f64 - 0.1)];
-    (spans, vec![Recording::new(0.0, a), Recording::new(100.0, b)])
+    let spans = vec![
+        (0.2, a_end),
+        (100.06, 100.0 + b.len() as f64 / SR as f64 - 0.1),
+    ];
+    (
+        spans,
+        vec![Recording::new(0.0, a), Recording::new(100.0, b)],
+    )
 }
 
 #[test]
@@ -75,7 +98,10 @@ fn two_breaths_at_a_join_become_one() {
     assert!(logs[0].contains("two breaths in a row"), "{logs:?}");
     // The breath on A starts at 0.3 + 1.5 + 0.1 = 1.9 s: the clip before ends there, give or take a 20 ms frame.
     assert!((out[0].1 - 1.9).abs() <= 0.04, "{out:?}");
-    assert_eq!(out[1], spans[1], "the breath before the next sentence stays");
+    assert_eq!(
+        out[1], spans[1],
+        "the breath before the next sentence stays"
+    );
 }
 
 #[test]

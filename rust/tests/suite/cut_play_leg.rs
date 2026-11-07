@@ -37,7 +37,10 @@ fn f2_2_s5_the_tick_skips_a_removed_stretch_and_returns_the_cuts_clock() {
     // ends, so the loop crosses at that moment, where the render cuts (first rewrite: the tick jumped as soon as
     // the player was within one tick of the end, so up to 100 ms of every kept clip never played).
     let near = cut_play_leg::tick(&cut, 9.5, 1000);
-    assert_eq!(near.head, 9.5, "the line stays on the player until the clip ends");
+    assert_eq!(
+        near.head, 9.5,
+        "the line stays on the player until the clip ends"
+    );
     assert_eq!(near.seam_in, Some(0.5), "the clip ends half a second on");
     assert!(!near.jumped);
     // ...at the end of the clip, crossing into the removed stretch jumps to the next clip's first playable second...
@@ -70,7 +73,11 @@ fn f2_2_s5_the_tick_skips_a_removed_stretch_and_returns_the_cuts_clock() {
 fn f2_2_s5_the_tick_ends_past_the_last_clip_so_the_page_pauses() {
     let cut = two_clips_with_a_hole();
     let near = cut_play_leg::tick(&cut, 29.5, 1000);
-    assert_eq!(near.seam_in, Some(0.5), "the last clip ends inside the tick: crossed when it does");
+    assert_eq!(
+        near.seam_in,
+        Some(0.5),
+        "the last clip ends inside the tick: crossed when it does"
+    );
     assert!(!near.ended);
     let over = cut_play_leg::tick(&cut, 30.0, 0);
     assert!(
@@ -114,11 +121,14 @@ fn f2_2_s5_the_spare_pipeline_arms_three_seconds_before_the_jump() {
         "the slot holds what was just armed"
     );
 
-    // Too far off: nothing opens, so the spare stays free for the stretch actually being played.
+    // In the removed stretch the jump is now: the next clip is armed at once.
+    assert_eq!(cut_play_leg::arm_spare(&cut, 10.0), Some(20.0));
+    // Too far off — five seconds before the run's end, where the jump is made: nothing opens, so the spare
+    // stays free for the stretch actually being played.
     assert_eq!(
-        cut_play_leg::arm_spare(&cut, 10.0),
+        cut_play_leg::arm_spare(&cut, 5.0),
         None,
-        "10 s out is outside the lead"
+        "5 s before the jump is outside the lead"
     );
     assert_eq!(
         cut_play_leg::peek_spare(),
@@ -232,17 +242,40 @@ fn f2_2_s2_space_a_picture_click_and_the_run_bar_refuse_an_empty_cut() {
 #[test]
 fn f2_2_s5_a_seam_is_crossed_where_the_render_cuts() {
     let cut = two_clips_with_a_hole();
-    assert_eq!(cut_play_leg::seam_within(&cut, 9.93, 0.1).map(|l| (l * 1000.0).round()), Some(70.0));
-    assert_eq!(cut_play_leg::seam_within(&cut, 9.8, 0.1), None, "200 ms on: the next tick sees it");
-    assert_eq!(cut_play_leg::seam_within(&cut, 15.0, 0.1), None, "off kept material: no seam to time");
+    assert_eq!(
+        cut_play_leg::seam_within(&cut, 9.93, 0.1).map(|l| (l * 1000.0).round()),
+        Some(70.0)
+    );
+    assert_eq!(
+        cut_play_leg::seam_within(&cut, 9.8, 0.1),
+        None,
+        "200 ms on: the next tick sees it"
+    );
+    assert_eq!(
+        cut_play_leg::seam_within(&cut, 15.0, 0.1),
+        None,
+        "off kept material: no seam to time"
+    );
     let joined = Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 10.0,
+                e: 20.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
-    assert_eq!(cut_play_leg::seam_within(&joined, 9.95, 0.1), None, "clips that touch play straight through");
+    assert_eq!(
+        cut_play_leg::seam_within(&joined, 9.95, 0.1),
+        None,
+        "clips that touch play straight through"
+    );
     let inside = cut_play_leg::tick(&joined, 9.95, 100);
     assert!(inside.head > 10.0 && !inside.jumped, "{inside:?}");
 }
@@ -252,13 +285,32 @@ fn f2_2_s5_a_seam_is_crossed_where_the_render_cuts() {
 #[test]
 fn f2_2_s5_a_timed_crossing_is_made_only_while_it_is_still_due() {
     let cut = two_clips_with_a_hole();
-    assert!(cut_play_leg::seam_still_due(&cut, 10.0, Some(9.99)), "the player is at the seam");
-    assert!(cut_play_leg::seam_still_due(&cut, 10.0, None), "a player that cannot say: trust the timer");
-    assert!(!cut_play_leg::seam_still_due(&cut, 10.0, Some(4.0)), "a hand moved the line back");
-    assert!(!cut_play_leg::seam_still_due(&cut, 10.0, Some(20.02)), "the player already jumped");
+    assert!(
+        cut_play_leg::seam_still_due(&cut, 10.0, Some(9.99)),
+        "the player is at the seam"
+    );
+    assert!(
+        cut_play_leg::seam_still_due(&cut, 10.0, None),
+        "a player that cannot say: trust the timer"
+    );
+    assert!(
+        !cut_play_leg::seam_still_due(&cut, 10.0, Some(4.0)),
+        "a hand moved the line back"
+    );
+    assert!(
+        !cut_play_leg::seam_still_due(&cut, 10.0, Some(20.02)),
+        "the player already jumped"
+    );
     let edited = Cut {
-        segs: vec![Seg { s: 0.0, e: 30.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 30.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
-    assert!(!cut_play_leg::seam_still_due(&edited, 10.0, Some(9.99)), "the hole was filled meanwhile");
+    assert!(
+        !cut_play_leg::seam_still_due(&edited, 10.0, Some(9.99)),
+        "the hole was filled meanwhile"
+    );
 }

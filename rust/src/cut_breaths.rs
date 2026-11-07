@@ -134,13 +134,24 @@ impl Analyser {
         let s = Self::centred(seg);
         let zero: f64 = s.iter().map(|v| v * v).sum();
         (40..320)
-            .map(|lag| s[..WIN - lag].iter().zip(&s[lag..]).map(|(a, b)| a * b).sum::<f64>() / (zero + 1e-12))
+            .map(|lag| {
+                s[..WIN - lag]
+                    .iter()
+                    .zip(&s[lag..])
+                    .map(|(a, b)| a * b)
+                    .sum::<f64>()
+                    / (zero + 1e-12)
+            })
             .fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// Spectral flatness and centre frequency of the Hann-windowed frame.
     fn spectrum(&self, seg: &[f64]) -> (f64, f64) {
-        let w: Vec<f64> = Self::centred(seg).iter().zip(&self.window).map(|(v, h)| v * h).collect();
+        let w: Vec<f64> = Self::centred(seg)
+            .iter()
+            .zip(&self.window)
+            .map(|(v, h)| v * h)
+            .collect();
         let bins = WIN / 2 + 1;
         let (mut log_sum, mut sum, mut weighted) = (0.0, 0.0, 0.0);
         for k in 0..bins {
@@ -155,7 +166,10 @@ impl Analyser {
             sum += mag;
             weighted += mag * (k as f64 * SR as f64 / WIN as f64);
         }
-        ((log_sum / bins as f64).exp() / (sum / bins as f64), weighted / sum)
+        (
+            (log_sum / bins as f64).exp() / (sum / bins as f64),
+            weighted / sum,
+        )
     }
 
     /// Whether frame `seg` is breath, measuring only as far as the answer needs.
@@ -205,7 +219,10 @@ fn breath_spans(an: &Analyser, rec: &Recording, t0: f64, t1: f64) -> Vec<(f64, f
         while j < breath.len() && breath[j] {
             j += 1;
         }
-        let (s, e) = (t0 + (i * HOP) as f64 / SR as f64, t0 + (j * HOP) as f64 / SR as f64);
+        let (s, e) = (
+            t0 + (i * HOP) as f64 / SR as f64,
+            t0 + (j * HOP) as f64 / SR as f64,
+        );
         if e - s >= MIN_BREATH - 1e-9 {
             spans.push((s, e));
         }
@@ -220,14 +237,22 @@ fn toward_speech(an: &Analyser, rec: &Recording, t: f64, before: bool) -> (f64, 
     let to = if before { t } else { t + REACH };
     let a = (from.max(0.0) * SR as f64) as usize;
     let b = ((to * SR as f64) as usize).min(rec.samples.len());
-    let x = if b > a { &rec.samples[a..b] } else { &rec.samples[0..0] };
+    let x = if b > a {
+        &rec.samples[a..b]
+    } else {
+        &rec.samples[0..0]
+    };
     let n = Analyser::count(x);
     let voiced = |i: usize| Analyser::is_voiced(&Analyser::segment(x, i), rec.speech_db);
     let start = a as f64 / SR as f64;
     let _ = an;
     if before {
         // The nearest voiced frame before the cut: scanned from the cut backwards.
-        let k = (0..n).rev().find(|&i| voiced(i)).map(|k| k + 1).unwrap_or(0);
+        let k = (0..n)
+            .rev()
+            .find(|&i| voiced(i))
+            .map(|k| k + 1)
+            .unwrap_or(0);
         (start + (k * HOP) as f64 / SR as f64, t)
     } else {
         let k = (0..n).find(|&i| voiced(i)).unwrap_or(n);
@@ -259,7 +284,10 @@ pub fn joins(spans: &[(f64, f64)], recordings: &[Recording]) -> Vec<JoinBreaths>
             let (a0, a1) = toward_speech(&an, ra, end - ra.off, true);
             let (b0, b1) = toward_speech(&an, rb, start - rb.off, false);
             let shift = |r: &Recording, spans: Vec<(f64, f64)>| -> Vec<(f64, f64)> {
-                spans.into_iter().map(|(s, e)| (s + r.off, e + r.off)).collect()
+                spans
+                    .into_iter()
+                    .map(|(s, e)| (s + r.off, e + r.off))
+                    .collect()
             };
             Some(JoinBreaths {
                 at: end,
@@ -271,7 +299,10 @@ pub fn joins(spans: &[(f64, f64)], recordings: &[Recording]) -> Vec<JoinBreaths>
 }
 
 /// The spans with at most one breath at each join, and a log line per join changed.
-pub fn one_breath(spans: &[(f64, f64)], recordings: &[Recording]) -> (Vec<(f64, f64)>, Vec<String>) {
+pub fn one_breath(
+    spans: &[(f64, f64)],
+    recordings: &[Recording],
+) -> (Vec<(f64, f64)>, Vec<String>) {
     let mut sorted = spans.to_vec();
     sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut logs = Vec::new();

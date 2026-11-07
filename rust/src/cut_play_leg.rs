@@ -99,7 +99,7 @@ pub struct SpareArm {
 /// Ask for the next jump's spare AND record it, as the tick loop does. See [`arm_spare`] and [`spare_arms_for_test`].
 pub fn arm_spare_page(cut: &Cut, t: f64, page: &dyn CutPreviewPage) -> Option<f64> {
     let opened = arm_spare(cut, t);
-    // Re-arming the held second would only rebuild a pipeline, so the page is asked only when the armed second CHANGED and at the §6 lead's cadence ([`cut_play::worth_arming`], on times handed in).
+    // Re-arming the held second would only rebuild a pipeline, so the page is asked only when the armed second CHANGED ([`cut_play::worth_arming`]); the time since the last arm is handed in for the record.
     let now = std::time::UNIX_EPOCH
         .elapsed()
         .map(|since| since.as_millis() as u64)
@@ -117,7 +117,12 @@ pub fn arm_spare_page(cut: &Cut, t: f64, page: &dyn CutPreviewPage) -> Option<f6
     if prerolled {
         LAST_ARM_AT_MS.with(|slot| *slot.borrow_mut() = Some(now));
     }
-    LAST_ARMED.with(|slot| *slot.borrow_mut() = opened);
+    // Only a second the page really prerolled is "held": an arm refused for coming too soon after the last one
+    // is asked again on the next tick. First rewrite wrote the wanted second down either way, so the next tick
+    // read it as already armed and the join after a short clip was never prerolled.
+    if prerolled || opened.is_none() {
+        LAST_ARMED.with(|slot| *slot.borrow_mut() = opened);
+    }
     let swapped = SWAPPED.with(|cell| cell.take());
     SPARE_ARMS.with(|log| {
         log.borrow_mut().push(SpareArm {
@@ -295,7 +300,11 @@ fn run_step(page: &dyn CutPreviewPage, cut_: &Cut, step: Tick) {
     // before the line moves, so a jump's cue installs it before the new place decodes; the stretch being left stays
     // silenced until that seek has flushed it.
     page.silence_after(
-        if step.ended { None } else { stretch_end(cut_, step.head) },
+        if step.ended {
+            None
+        } else {
+            stretch_end(cut_, step.head)
+        },
         !step.jumped,
     );
     page.set_playhead(step.head);

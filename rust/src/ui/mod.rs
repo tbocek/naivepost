@@ -598,8 +598,8 @@ pub use window::remove_effect_at;
 pub use window::remove_held_effect;
 /// §1 badge **15**: the Outputs folder button's own module (its press, its opener seam).
 pub use window_outputs::{
-    folder_now, last_dialog_for_test as outputs_dialog_for_test, wire_with as wire_outputs_folder_with,
-    Opener as OutputsOpener,
+    folder_now, last_dialog_for_test as outputs_dialog_for_test,
+    wire_with as wire_outputs_folder_with, Opener as OutputsOpener,
 };
 pub(crate) mod cut_page_state;
 pub(crate) mod narrate_page_state;

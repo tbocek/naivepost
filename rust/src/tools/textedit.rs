@@ -302,14 +302,23 @@ pub fn restart_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) 
         if k >= words.len() {
             break;
         }
-        let mut before: Vec<usize> = (0..j).rev().filter(|&i| kept[i]).take(RESTART_REACH_WORDS).collect();
+        let mut before: Vec<usize> = (0..j)
+            .rev()
+            .filter(|&i| kept[i])
+            .take(RESTART_REACH_WORDS)
+            .collect();
         before.reverse();
-        let after: Vec<usize> = (k..words.len()).take_while(|&i| kept[i]).take(RESTART_REACH_WORDS).collect();
+        let after: Vec<usize> = (k..words.len())
+            .take_while(|&i| kept[i])
+            .take(RESTART_REACH_WORDS)
+            .collect();
         // The earliest start of the longest opening said again: the whole first attempt goes, not half of it.
         let mut best: Option<(usize, usize)> = None;
         for from in 0..before.len() {
             let n = (0..after.len().min(before.len() - from))
-                .take_while(|&x| prepare_decisions::same_word(&words[before[from + x]], &words[after[x]]))
+                .take_while(|&x| {
+                    prepare_decisions::same_word(&words[before[from + x]], &words[after[x]])
+                })
                 .count();
             if n >= RESTART_MIN_WORDS && best.is_none_or(|(_, longest)| n > longest) {
                 best = Some((from, n));
@@ -320,7 +329,11 @@ pub fn restart_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) 
         for &idx in go {
             kept[idx] = false;
         }
-        let text = go.iter().map(|&idx| words[idx].as_str()).collect::<Vec<_>>().join(" ");
+        let text = go
+            .iter()
+            .map(|&idx| words[idx].as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
         notes.push(restart_note(times[go[0]].0, &text));
     }
     notes

@@ -154,7 +154,8 @@ pub fn stats_time(line: &str) -> Option<f64> {
     let negative = field.starts_with('-');
     let mut parts = field.trim_start_matches('-').split(':');
     let (h, m, s) = (parts.next()?, parts.next()?, parts.next()?);
-    let t = h.parse::<f64>().ok()? * 3600.0 + m.parse::<f64>().ok()? * 60.0 + s.parse::<f64>().ok()?;
+    let t =
+        h.parse::<f64>().ok()? * 3600.0 + m.parse::<f64>().ok()? * 60.0 + s.parse::<f64>().ok()?;
     Some(if negative { 0.0 } else { t })
 }
 

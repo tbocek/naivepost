@@ -1019,6 +1019,7 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     }
     fn drop_spare(&self) {
         crate::cut_play_back::drop_spare();
+        crate::play_built_in::drop_spare();
     }
     fn hold_still(&self, hold: bool) -> bool {
         crate::ui::cut_cut_play::freeze(hold)

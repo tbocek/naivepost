@@ -122,8 +122,10 @@ fn sec_05_cut_6_parameters_used_s4_the_band_decodes_six_frames_a_batch() {
     assert_eq!(cut_tracks::THUMB_BATCH, 6);
 }
 
-/// `P.eng.preloadLeadSeconds` on the arm cadence: the same three seconds decide both when a jump is worth
-/// opening and how often the arm may rebuild a process for it.
+/// `P.eng.preloadLeadSeconds` on the arm: the three seconds decide when a jump is worth opening; what stops a
+/// jump being rebuilt every tick is the second the slot already holds, never a clock. First rewrite also refused a
+/// NEW second for a lead's worth of time after the last arm, so with clips shorter than the lead the next spare was
+/// armed milliseconds before its jump, or never.
 #[test]
 fn sec_05_cut_6_parameters_used_s5_the_spare_arms_at_the_leads_cadence() {
     assert_eq!(row("P.eng.preloadLeadSeconds"), "3");
@@ -132,11 +134,11 @@ fn sec_05_cut_6_parameters_used_s5_the_spare_arms_at_the_leads_cadence() {
         (naivepost::preview::PRELOAD_LEAD_SECONDS * 1000.0) as u64
     );
     let lead = cut_play::PRELOAD_ARM_GAP_MS;
-    // Never armed: the first arm is free. After the lead: worth it again.
+    // Never armed: the first arm is free. After the lead, and inside it: a new second is always worth it.
     assert!(cut_play::worth_arming(None, None, Some(12.0)));
     assert!(cut_play::worth_arming(Some(lead), None, Some(12.0)));
-    // Inside the lead the line keeps crawling toward the same jump and nothing new is built.
-    assert!(!cut_play::worth_arming(Some(lead - 1), None, Some(12.0)));
+    assert!(cut_play::worth_arming(Some(lead - 1), None, Some(12.0)));
+    assert!(cut_play::worth_arming(Some(1), Some(14.0), Some(22.0)));
     // The second already held is never worth a process, however long it has been.
     assert!(!cut_play::worth_arming(
         Some(lead * 10),

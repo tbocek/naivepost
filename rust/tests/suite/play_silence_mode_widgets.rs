@@ -33,14 +33,19 @@ fn run_for(ms: u64) {
 }
 
 fn transport(playing: bool) -> naivepost::run::Transport {
-    naivepost::run::Transport { playing, started: playing }
+    naivepost::run::Transport {
+        playing,
+        started: playing,
+    }
 }
 
 fn check(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     common::size_to_minimum(&window);
-    ui::tab_button(&window, Page::Cut).expect("a Cut tab").emit_clicked();
+    ui::tab_button(&window, Page::Cut)
+        .expect("a Cut tab")
+        .emit_clicked();
     common::wait_for_stable_layout(&window);
 
     // ▶✂ is the preview and a stretch's end is silenced in the stream (set on the player directly: this window plays
@@ -48,12 +53,20 @@ fn check(app: &adw::Application) {
     ui::set_preview_state(true, false, transport(false));
     naivepost::play_built_in::silence_from(Some(5.0));
     run_for(250);
-    assert_eq!(silenced_from(), Some(5.0), "while ▶✂ is the preview, the stretch's end holds");
+    assert_eq!(
+        silenced_from(),
+        Some(5.0),
+        "while ▶✂ is the preview, the stretch's end holds"
+    );
 
     // Pressing ▶ clears it in the same moment, before ▶ plays a sample: no tick has run when this is read.
     let runs = [(0.0, 60.0)];
     let _ = ui::press_play_recording(&window, &runs);
-    assert_eq!(silenced_from(), None, "▶ plays the dropped stretches from its first sample");
+    assert_eq!(
+        silenced_from(),
+        None,
+        "▶ plays the dropped stretches from its first sample"
+    );
 
     // And when ▶ takes over without a press (mid-play, no new cue), its own tick clears it.
     ui::set_preview_state(true, false, transport(false));

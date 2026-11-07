@@ -623,7 +623,8 @@ pub fn paint_progress(
     expanded: bool,
 ) {
     let (_text, tip) = queue.text_and_tip();
-    progress.set_fraction(queue.fraction());
+    // A self-driving step (Produce) reports its own fraction; the queue it leaves empty would read 0.
+    progress.set_fraction(crate::run_stages::shown_fraction().unwrap_or_else(|| queue.fraction()));
     // A run with nothing queued yet leaves the standing tooltip rather than blanking it (§2).
     if !tip.is_empty() {
         progress.set_tooltip_text(Some(&tip));

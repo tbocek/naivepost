@@ -322,7 +322,11 @@ fn sec_01_project_and_files_2_naivepostjson_an_older_vfr_is_ignored_and_never_wr
         );
         let (p, report) = project::load_report(t.dir()).expect("an older file still loads");
         assert_eq!(p.context, "kept", "the rest of the file is read as before");
-        assert_eq!(p.produce.frame_rate, project::FrameRate::F24, "vfr={stored}");
+        assert_eq!(
+            p.produce.frame_rate,
+            project::FrameRate::F24,
+            "vfr={stored}"
+        );
         assert_eq!(p.produce.crf, 20, "vfr={stored}");
         assert!(p.produce.mono, "the tick beside it survives: vfr={stored}");
         assert!(
@@ -331,7 +335,10 @@ fn sec_01_project_and_files_2_naivepostjson_an_older_vfr_is_ignored_and_never_wr
         );
         project::save(&p, t.dir()).unwrap();
         let text = read(&t);
-        assert!(!text.contains("vfr"), "the key is never written back: {text}");
+        assert!(
+            !text.contains("vfr"),
+            "the key is never written back: {text}"
+        );
         let again = project::load(t.dir()).expect("the saved file loads");
         assert_eq!(again.produce, p.produce, "and reads back the same settings");
         std::fs::remove_dir_all(&root).ok();
