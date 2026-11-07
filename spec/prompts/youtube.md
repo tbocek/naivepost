@@ -24,7 +24,7 @@ The thumbnail.
 
 There are two ways to answer for it, and the user context decides which.
 
-- Where the context asks for a picture the video ALREADY CONTAINS -- a slide, a title card, a particular moment, anything phrased as "use the frame that shows ...", "pick one", "do not generate" -- the thumbnail line is a frame line: answer it as "THUMBNAIL: frame: clip <n> +<seconds>", naming the clip whose block that picture is described in and the offset stamped on the EVENT line that describes it -- both copied off the brief, neither worked out -- and write no instruction anywhere. The editor takes that frame as it is and prints the title onto it. This is the better answer whenever the context offers it: a frame out of the video cannot promise something the video does not contain.
+- Where the context asks for a picture the video ALREADY CONTAINS -- a slide, a title card, a particular moment, anything phrased as "use the frame that shows ...", "pick one", "do not generate" -- the thumbnail line is a frame line: answer it as "THUMBNAIL: frame: clip <n> +<seconds>", naming the clip whose block that picture is described in and the offset stamped on the SEEN line that describes it ("SEEN +12.5: ...") -- both copied off the brief, neither worked out -- and write no instruction anywhere. The editor takes that frame as it is and prints the title onto it. This is the better answer whenever the context offers it: a frame out of the video cannot promise something the video does not contain.
 - Otherwise the thumbnail line is the instruction below, and no second is named.
 
 The thumbnail instruction.

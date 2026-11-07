@@ -333,7 +333,7 @@ CLOSE TO THE CUT:
 <15 words> [CUT] <15 words>
 
 BEFORE (the end of the take that was interrupted):
-...<its last 25 words; the quote is matched against P.machine.seamReachWords of them>
+...<its last 25 words said (an entry the fixed transcript left empty is neither shown nor counted, here or in the close-up; five of them at 09-admin's join 4 pushed the start of a reworded restart out of view); the quote is matched against P.machine.seamReachWords of them>
 
 AFTER (the whole take that follows, up to where the next one starts):
 <that take's words, at most P.machine.seamReachWords>

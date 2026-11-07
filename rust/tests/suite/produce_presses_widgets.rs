@@ -1409,14 +1409,15 @@ fn check_redraw_takes_a_frame(root: &Path) {
     );
     point_settings_at(fake.address());
     let window = produce_window(&app_in_round());
-    // Also in the window's session: autosave writes that whole, so the file alone could lose it before the press.
-    ui::window::set_session_context(context);
     seed_live_cut(&window);
     let before = ui::produce_page::read_state();
     assert!(
         !before.instruction.trim().is_empty(),
         "an instruction from an earlier run stands"
     );
+    // Set last, right before the press: the window applies the opened project and earlier checks' windows write theirs,
+    // either of which can land after an earlier set under load. The window's copy is the one the press reads.
+    ui::window::set_session_context(context);
     let mark = log_mark();
     let said = press(&window, "thumbnail-redraw");
     let logged = logs_since(mark);

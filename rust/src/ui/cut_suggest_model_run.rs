@@ -37,6 +37,10 @@ pub fn filmed_spans(inputs: &cut_suggest_words_run::Inputs) -> Vec<(f64, f64)> {
 }
 
 pub const WATCH_IDLE: &str = "";
+/// The fault of an attempt that never called `finish_cut`: the cut is taken only from that call.
+pub const NOT_FINISHED: &str =
+    "finish_cut was never called -- place the segments with add_segment, then call \
+     finish_cut; the cut is taken from that call, not from text or JSON in a reply";
 pub fn correction(problems: &[String]) -> String {
     format!(
         "That is not a valid cut: {}. Add, drop or move segments and call finish_cut again.",
@@ -56,7 +60,7 @@ fn read_answer(plan: &cutpass::Plan, call: &ToolCall) -> Option<String> {
         "get_frames" | "get_context" => {
             let frames = frames_of_footage(plan.footage_end());
             let ctx = crate::tool_reads::Context {
-                user_context: "",
+                user_context: plan.context(),
                 job: crate::roles::Job::ModelCut,
                 policy: &[("targetLengthSeconds", plan.target().to_string())],
                 lines: &[],
@@ -503,7 +507,7 @@ where
         if let Some(line) = crate::llm_web_offer::unavailable_log(STEP, &firefox) {
             logs.push(line);
         }
-        let mut plan = new_plan(&inputs, &walk, end, target);
+        let mut plan = new_plan(&inputs, &walk, end, target).with_context(&project.context);
         last_reply.borrow_mut().clear();
         // §12: and the model is TOLD which of the two changed, beside the complaint about its last answer.
         // Read AFTER `offer`, which owns the withdrawal and marks the sentence as owed.
@@ -555,7 +559,14 @@ where
         if call.answered(&replies_text(&last_reply)) {
             call.note_rejected();
         }
-        previous = Some(suggest::whole_cut_problems(&placed(&plan), target));
+        let mut problems = suggest::whole_cut_problems(&placed(&plan), target);
+        if !finished {
+            // The attempt ended without finish_cut: that is the fault, named first. With no target the length check
+            // had nothing to say about what was placed, the correction read "That is not a valid cut: ." and the
+            // model, never told what was wrong, did the same again (09-admin, 2026-11-07).
+            problems.insert(0, NOT_FINISHED.to_string());
+        }
+        previous = Some(problems);
     }
     logs.push(format!(">>> {STEP}: {}", suggest::NO_VALID_CUT));
     Landed {
@@ -678,6 +689,8 @@ pub(crate) struct Press {
     paths: Option<Paths>,
     project: Project,
     cut: crate::cut::Cut,
+    /// The page's recordings, read on the window's thread: the worker cannot see them.
+    recordings: Vec<crate::timeline::Recording>,
 }
 
 /// Why a press cannot ask, and whose sentence it is.
@@ -700,6 +713,7 @@ pub(crate) fn press_parts() -> Result<(Tree, Press), Blocked> {
             paths,
             project: crate::ui::window::session_handle().borrow().clone(),
             cut: crate::ui::window::newest_review_cut(),
+            recordings: crate::ui::cut_folds::page_recordings(),
         },
     ))
 }
@@ -731,6 +745,7 @@ pub fn press() -> Landed {
 /// The ask half of [`press`], with what [`press_parts`] read off the window: what Suggest's worker runs
 /// (§03-shell §1). The run's `llm/` page is this thread's, so it is opened and closed around the ask.
 pub(crate) fn ask_on_worker(tree: Tree, parts: Press) -> Landed {
+    crate::ui::cut_folds::hold_on_this_thread(parts.recordings.clone());
     crate::exchange_leg::note_run_started();
     let conf = match parts.paths.as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,

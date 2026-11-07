@@ -33,6 +33,18 @@ pub fn page_recordings() -> Vec<crate::timeline::Recording> {
     )
 }
 
+/// A worker's own copy of the page's recordings, taken on the window's thread at the press. [`page_recordings`] reads a
+/// thread-local that is empty on any other thread, so the model cut asked on a worker found no footage on a project with
+/// no cut yet and refused "run Describe first" (09-admin). Only the slot: nothing is repainted from a worker.
+pub(crate) fn hold_on_this_thread(recordings: Vec<crate::timeline::Recording>) {
+    CUT_PAGE.with(
+        |CutPage {
+             session_recordings: slots,
+             ..
+         }| slots.borrow_mut().push(Rc::new(RefCell::new(recordings))),
+    );
+}
+
 pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
     let held = CUT_PAGE.with(
         |CutPage {

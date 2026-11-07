@@ -515,3 +515,34 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_ve
     assert!(html.contains("the model answered nothing at all"), "{html}");
     assert!(html.contains("connection refused"), "{html}");
 }
+
+/// A reply made of tool calls alone has no text, and is still an answer: the log names the calls instead of saying the
+/// model answered nothing (09-admin's cut read as a fault while it was placing segments).
+#[test]
+fn a_reply_of_tool_calls_alone_names_them_rather_than_nothing() {
+    let tool = |name: &str| ToolCall {
+        name: name.into(),
+        args: "{}".into(),
+        result: String::new(),
+    };
+    let called = Call {
+        tool_calls: vec![tool("add_segment"), tool("add_segment"), tool("finish_cut")],
+        ..call("cut", 1_024, "")
+    };
+    let lines = exchanges::log_lines(&called);
+    assert_eq!(
+        lines.last().map(String::as_str),
+        Some(">>> cut: the model called add_segment \u{d7}2, finish_cut"),
+        "{lines:?}"
+    );
+    assert!(
+        !lines.iter().any(|line| line.contains("answered nothing")),
+        "{lines:?}"
+    );
+    let silent = exchanges::log_lines(&call("cut", 1_024, ""));
+    assert_eq!(
+        silent.last().map(String::as_str),
+        Some(">>> cut: the model answered nothing at all"),
+        "no text and no calls is still nothing"
+    );
+}

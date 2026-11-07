@@ -10,6 +10,7 @@ use adw::prelude::*;
 /// on the window thread; the halves walk on a worker and the run's ending closes the bar, so ⏹ reaches it (§03-shell §1).
 /// Answers the sentence when the press ended here, empty while it goes on.
 pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
+    crate::ui::produce_languages::note_context_at_press();
     let s = read_state();
     let project = crate::ui::window::live_project();
     let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok();
@@ -187,6 +188,7 @@ pub(crate) fn snapshot_run(
 }
 
 pub(crate) fn press_run() -> Option<crate::produce_flow::Run> {
+    crate::ui::produce_languages::note_context_at_press();
     let cut = crate::ui::window_preview::newest_review_cut();
     if cut.segs.is_empty() {
         return None;

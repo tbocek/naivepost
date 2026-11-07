@@ -524,3 +524,61 @@ fn offered_names() -> Vec<&'static str> {
 fn env_paths() -> Option<Paths> {
     settings::from_environment()
 }
+
+/// `get_context` on the cut answers the project's User Context, not an empty one (09-admin: a model that asked was told
+/// there was none).
+#[test]
+fn f2_14_s2b_get_context_answers_the_user_context() {
+    let mut plan = cutpass::Plan::new(60.0, 0.0)
+        .with_context("A weekly admin segment. Cut only at the seams.");
+    let answer = model::answer_call(&mut plan, &call("get_context", "{}"));
+    assert!(
+        answer.contains("Cut only at the seams"),
+        "the context comes back: {answer}"
+    );
+}
+
+/// An attempt that never calls `finish_cut` is told so: with no target the length check has nothing to say, and the
+/// correction read "That is not a valid cut: ." (09-admin), so the model repeated the same answer.
+#[test]
+fn f2_14_s2b_an_attempt_without_finish_cut_is_told_to_call_it() {
+    let s = Scenario::fresh("no-finish")
+        .with_timeline()
+        .with_words("cam0", &[("hi", 2.0), ("yo", 30.0)]);
+    let cut = cam_cut(0.0, 60.0);
+    let mut asked: Vec<String> = Vec::new();
+    // The first attempt places a segment and spends its rounds without finish_cut (09-admin), the second finishes.
+    let mut script: Vec<Turn> = vec![turn(vec![add(2.0, 20.0)])];
+    script.extend((0..8).map(|_| turn(vec![call("cut_status", "{}")])));
+    script.push(turn(vec![add(2.0, 20.0), call("finish_cut", "{}")]));
+    let mut turns = script.into_iter();
+    let made = model::run_model(
+        &s.tree,
+        &s.project,
+        &cut,
+        0.0,
+        Some(&s.paths),
+        |conversation, _tools| {
+            asked.push(
+                conversation
+                    .iter()
+                    .flat_map(|message| message.parts.iter())
+                    .filter_map(|part| match part {
+                        naivepost::exchanges::Part::Text(text) => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+            turns.next().ok_or_else(|| "no more turns".to_string())
+        },
+    );
+    assert!(made.wrote, "the second attempt landed: {:?}", made.log);
+    let retry = asked.last().expect("asked at least once");
+    assert!(
+        retry.contains(model::NOT_FINISHED),
+        "the second attempt is told what was wrong: {}",
+        &retry[retry.len().saturating_sub(1500)..]
+    );
+    assert!(!retry.contains("That is not a valid cut: ."), "{retry}");
+}
