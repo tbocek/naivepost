@@ -44,7 +44,7 @@ Video frame showing the finished picture (crop, zoom, freeze, titles via the sha
 
 ### A.5 Per-clip rows
 
-List box, single selection. Selecting a row seeks the preview to the line's lead-in (only place the preview jumps by itself).
+List box, single selection; with no entries one dimmed row "no narration lines yet — ＋ puts one at the playhead". Selecting a row seeks the preview to the line's lead-in (only place the preview jumps by itself).
 Row = header + text box.
 Header, in order:
 
@@ -58,17 +58,17 @@ Text box: monospace, word wrap, framed, at least 2 lines tall. Tooltip: `[emotio
 
 ### A.6 Voice picker
 
-Row 1: dropdown "who speaks": "No audio — captions only" (id `captions`); narrator slots 1 up to the highest slot tagged, at most 4 (none when nothing is tagged), labelled "Narrator N — everything they say in the cut" (every recording tagged N, as far as the cut keeps it; first rewrite: "Narrator N — cut from the recording", which drew one recording); then every .wav in the voices folder. Tooltip: "Who speaks the narration. Every line is spoken by cloning the selected recording; switching voices keeps what you already synthesized". A stored voice not on offer → an empty list, nothing selected and a status ("narrator N is not tagged on the Prepare step — tag a recording, or pick another voice" / "voice "X" is no longer in DIR — pick another"). Beside it: the take band's ＋ － ▶ and "Add file…" ("Copy one recording into the voices folder and use it"; file chooser "Choose a voice sample", `.wav` only).
+Row 1: dropdown "who speaks": "No audio — captions only" (id `captions`); narrator slots 1 up to the highest slot tagged, at most 4 (none when nothing is tagged), labelled "Narrator N — everything they say in the cut" (every recording tagged N, as far as the cut keeps it; first rewrite: "Narrator N — cut from the recording", which drew one recording); then every .wav in the voices folder. Tooltip: "Who speaks the narration. Every line is spoken by cloning the selected recording; switching voices keeps what you already synthesized". A stored voice not on offer → an empty list, nothing selected and a status ("narrator N is not tagged on the Prepare step — tag a recording, or pick another voice" / "voice "X" is no longer in DIR — pick another"). Beside it: the take band's ＋ － ▶ (tooltips: the two "drag across …" sentences of A.7, "Play the takes from the red bar") and "Add file…" ("Copy one recording into the voices folder and use it"; file chooser "Choose a voice sample", `.wav` only).
 Row 2: the take band (below).
 Row 3: sample entry (default "This is the voice the narration will be spoken in. It should stay clear and easy to follow for a couple of minutes.", tooltip "Spoken in the selected voice"; Enter does nothing), ▶ "speak the sample in this voice", ⏹ "stop the sample", ⟳ "a new take of the sample"; "pitch:" slider −6..+6 semitones step 0.5, the value printed beside it, tooltip "Shift the reference recording before it is cloned — a different speaker, not the same one transposed", each move applied 400 ms after it.
 
 ### A.7 The take band
 
-Waveform of everything the narrator says in the cut, or of one file whole; visible for a voice with a recording. Tooltip "With no takes the seconds are chosen for you.", none once there are takes. Drag selects; click (<3 px) sets the red bar; wheel zooms 1.25^−dy (max 200 px/s); Shift+wheel pans by w/8. ＋ "drag across the wave first — ＋ makes the selection a take" (min 0.4 s: "that is N s — a take has to be at least 0.4 s"); － "drag across the takes you want gone — － removes those seconds" (subtracts seconds, splitting takes); ▶ "Play the takes from the red bar" (becomes ⏹). With no takes, ▶ plays the raw recording from the bar. Takes are cleaned: sorted, ≥0.4 s, merged when overlapping/touching. Status after commit: "takes — N take(s), X s of reference (14 s is plenty). Re-cut on the next line spoken." Drawing colours documented in source (dark background, blue envelope, green takes, red cue bar).
+Waveform of everything the narrator says in the cut, or of one file whole; visible for a voice with a recording. Tooltip "With no takes the seconds are chosen for you.", none once there are takes. Drag selects; click (<3 px) sets the red bar; wheel zooms 1.25^−dy (max 200 px/s); Shift+wheel pans by w/8. ＋ "drag across the wave first — ＋ makes the selection a take" (min 0.4 s: "that is N s — a take has to be at least 0.4 s"); － "drag across the takes you want gone — － removes those seconds" (subtracts seconds, splitting takes); ▶ "Play the takes from the red bar" (becomes ⏹). With no takes, ▶ plays the raw recording from the bar. Takes are cleaned: sorted, ≥0.4 s, merged when overlapping/touching. Status after commit: "takes — N take(s), X s of reference (14 s is plenty). Re-cut on the next line spoken." Drawing: dark ground, the wave in the Cut page's strip colours, takes translucent green with their duration in white, blue live selection, red cue bar.
 
 ### A.8 Bottom bar
 
-Inputs label: "N clip(s) · mm:ss" or "no cut yet — build one on the Cut step"; "· ⚠ N clip(s) unwritten, N line(s) off the cut" when stale; "· no timeline" without session.tsv. An unwritten clip is one with no entry and not silent; the row's count treats every clip as silent once any silent mark exists. Tooltip details: cut file, why stale, session.tsv line count and the ±4 s rule, the session context, "Spoken by <voice> at ±N semitones (narrate/voice_ref.wav)".
+Inputs label: "N clip(s) · mm:ss" or "no cut yet — build one on the Cut step"; "· ⚠ N clip(s) unwritten, N line(s) off the cut" when stale; "· no timeline" without session.tsv. An unwritten clip is one with no entry and not silent; the row's count treats every clip as silent once any silent mark exists. Tooltip details: cut file, the ⚠ counts ("N clips unwritten, N lines off the cut", plural-aware) + "— ▶ writes the narration again", session.tsv line count and the ±4 s rule, the session context, "Spoken by <voice> at ±N semitones (narrate/voice_ref.wav)".
 Outputs: folder button "narrate/ — narration.json, the voice reference and the synthesis cache", the same sentence as the label, whatever the folder holds.
 
 ### A.9 Enabled/disabled rules
@@ -121,7 +121,7 @@ lineText: "" if blank; tag = pos, else emotion; "[tag] text". Parsing a typed bo
 
 Constants: lead 0.3 s (earliest a line may start), gap 0.3 s between lines, tail 0.2 s, maxExtend 4 s, maxTempo 1.25.
 
-1. Each line's delay = max(lead, at/speed), clamped inside the clip; lines packed in order, never before the previous line's end + gap.
+1. Each line's delay = max(lead, at/speed), clamped inside the clip; lines packed in order, never before the previous line's end + gap + tail.
 2. Need = packed end + tail. If need > clip length: grow the clip by min(need−length, 4 s), never past the footage (an insert is unbounded).
 3. Still over: slide the whole schedule earlier down to the 0.3 s lead ("clip N: the narration does not fit where it was placed — moved X s earlier").
 4. Still over: speed the speech up to at most 1.25× ("clip N: narration X s does not fit Y s — sped up Zx"), repack, slide once more.
@@ -139,13 +139,13 @@ Take band walk: from the red bar, the takes in order (trimmed to the bar); with 
 - Tick (100 ms): follow position; hold clip boundary while a line still speaks (up to 4 s past the clip end); gap skipping forward only (past last clip → pause); reload when two touching scenes are on different lanes; rate sync for speed effects; when entering a line: play its wav from the offset the picture is at; wav missing → pause picture, synthesize, then resume at the line's start ("synthesizing line N", "line N ready"); failed → sticky per wav, "line N failed to synthesize — see log; its ▶ retries".
 - Row ▶: blank or caption → says its sentence, nothing plays; else audition from 3 s ahead, floored at the start of the line above on the clip, and carry on down the cut; no recording covering → the take with no bed. Row selection's lead-in is 3 s ahead, or the line itself when another line owns that second.
 - Sound equals the render's: whole clip ducked by game volume when it speaks; hush and mute follow the cut; speed effects applied at seeks.
-- Seeking snaps to the cut: a target in a gap lands on the previous clip's end −0.05 (backwards) or the next clip's start (forwards). Frame step is a fixed 30 fps.
+- Seeking snaps to the cut: a target in a gap lands on the previous clip's end −0.05 (backwards) or the next clip's start (forwards). Frame step is a fixed 25 fps.
 - ▶ starts from the narration line under the playhead, else the first clip; pause holds both players (SIGSTOP) and ▶ thaws them.
 - ⏹: stop both players, forget state, hand ▶ back to the step ("▶ is the step's again — the preview stopped").
 
 ### C.5 Editing lines
 
-- Add at playhead: between clips → "the playhead is between clips — the cut has nothing to narrate here"; within 1 s of an existing line → jump to it ("a line already starts here — edit it, or move the playhead (it is at m:ss.s)"); inside a speaking line (+0.3 s) → "a line is speaking here until mm:ss — add after it". Insert in placement order.
+- Add at playhead: between clips → "the playhead is between clips — the cut has nothing to narrate here"; within 1 s of an existing line → jump to it ("a line already starts here — edit it, or move the playhead (it is at m:ss.s)"); inside a speaking line (chars / 15 + the 0.2 s tail, cut short by the next line) → "a line is speaking here until mm:ss.s — add after it". Insert in placement order.
 - Add below: at = previous audio end, the line's start with no take, + 0.5 (wordless row: +1.2); "no room after this line — the clip ends first".
 - Move (time field commit): to another clip adopts its bounds; a gap is refused: "mm:ss is outside the cut — this line stays in its clip (a–b), at c"; "moved this line to the clip at a — it now starts at b". A time in the clip's last second keeps the line's old offset.
 - Delete: "line removed" | "line removed — the clip at mm:ss plays its own audio" (clip added to silent list).
@@ -168,7 +168,7 @@ Prose validation: entries matched to clips by echoed start/end within 0.5 s scan
 Preflight: reference on disk, built first when missing; GET /health; GET /v1/models must list the TTS model (default index-tts2) and it must be able to clone; upload the reference every line: POST /v1/ui/upload → server path (a 401/403/405 is answered with the fix).
 POST /v1/audio/speech: `{"model","input":<text>,"voice_ref":<server path>,"language":"en","options":{"emotion_alpha":"0.85","seed":"<uint32>", then one of: "emotion_vector":"<8 floats>" with emotion_alpha "1" | "use_emotion_text":"true","emotion_text":"<names>"}}`. Language = the project's, "en" when empty (prototype: hard-coded "en"). An empty tag sends neither emotion option. Response = wav bytes; <1000 bytes or non-200 = failure. No client timeout. After a run: POST /v1/tasks/unload_all_models (20 s timeout, quiet).
 Emotion vocabulary: 8 bases (happy, angry, sad, afraid, disgusted, melancholic, surprised, calm) with kin lists; 21 named blends (excited, ecstatic, playful, proud, relieved, hopeful, tender, nostalgic, solemn, awed, alarmed, horrified, desperate, confused, frustrated, bitter, contemptuous, dismayed, heartbroken, ominous, tense) as recipes over the 8 axes; weights clamped 0..1; unknown names fall to the judge (text) path; never an error.
-Sample: key from the text and roll, file samples/<voice>_<hash>.wav, seed from the key; logs "sample: … (N kB, spoken in just now | spoken earlier)"; "!!! sample: … is N bytes — no audio came back" under 46 bytes.
+Sample: file samples/<voice>_<hash>.wav keyed by voice and text (not roll, so ⟳ replaces it), seed from the TTS key of text, roll and voice; spoken with no emotion; logs "sample: … (N kB, spoken in just now | spoken earlier)"; "!!! sample: … is N bytes — no audio came back" under 46 bytes.
 
 ## F. IMPLICIT CONSTANTS
 
@@ -188,7 +188,7 @@ Sample: key from the text and roll, file samples/<voice>_<hash>.wav, seed from t
 | still-speaking pad | 0.3 s | |
 | marker ＋ offset | 1.2 s; line ＋ offset +0.5 s | |
 | last-second rule | at ≤ len−1 | |
-| seek debounce | 120 ms; tick 100 ms; jump 3 s; frame step 30 fps | |
+| seek debounce | 120 ms; tick 100 ms; jump 3 s; frame step 25 fps | |
 | editWait | 400 ms | autosave and pitch apply debounce |
 | narrLead/narrGap/narrTail | 0.3/0.3/0.2 s | render packing |
 | maxExtend | 4.0 s | clip growth |
@@ -236,5 +236,5 @@ Sample: key from the text and roll, file samples/<voice>_<hash>.wav, seed from t
 
 <!-- nav -->
 ---
-[← Inventory: effects (Cut page) and their rendering](effects.md) · [↑ top](#inventory-narrate-tab-extracted-from-the-prototype-guinarratego) · [↑ Contents](../README.md) · [Inventory: Prepare tab and pipeline →](prepare.md)
+[← Inventory: effects (Cut page) and their rendering](effects.md) · [↑ top](#inventory-narrate-tab-extracted-from-the-prototype-gonarratego) · [↑ Contents](../README.md) · [Inventory: Prepare tab and pipeline →](prepare.md)
 <!-- /nav -->

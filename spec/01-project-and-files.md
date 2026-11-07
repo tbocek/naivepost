@@ -33,6 +33,7 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
   cache/waves/<lane>.wave            waveform envelopes
   cache/edges/                       mono envelopes for edge placement
   cache/svg/                         512 px preview copies of drawings, one png per source file
+  cache/preview-cards/<card path>/   an animated card's frames for the Cut preview, one folder per card path with its `?key=value` (non-alphanumerics as `_`)
   cut/cut.json                       the cut (§3)
   cut/line.json                      {"t": <session second>} — the red line
   cut/zoom.txt                       the Cut page's last zoom, pixels a second

@@ -69,3 +69,45 @@ Found by reading the code while updating the spec. None reproduced or run yet. T
 - `produce_upload_call.rs:486`: `get_context`, `get_events` unanswered.
 - `produce_screen.rs:136`: webm clears burned-in; `:251` pixel compare; `:519` wrong tooltip.
 - `ui/produce_slots.rs:100`: crop box undraggable. `ui/produce_page_presses.rs:118`: empty box kept.
+
+### Found in the 2026-11-07 spec sync
+
+Same rules as above: read, not run, unless marked **confirmed** (traced through the code by hand).
+
+**Prepare**
+- **confirmed** `seam_retries.rs:65`: `Asking::refused` returns a tail after the second refusal, so a join with seamRetries=1 is asked three times and logs "nothing removed there" twice.
+- `transcribe.rs:309`: no aligner plus an ASR without word times gives an empty transcript, no hard error.
+- `diar_scan.rs:67`: "new audio each" prints anchor_per, not the hop. `align.rs:589`: the aligner is picked per recording, not per run.
+- `decode_audio.rs:143`: a lead out of range keeps `transcript.fixed.tsv` on the old times. `asr.rs:256`: no ⏸ checkpoint between ASR chunks. `asr.rs:65`: "oom" also matches "room"/"zoom".
+- `describe_call.rs:30`, `text_gate.rs:282`: a footage-only index used as a row index, so the "hearing X" offsets are wrong. `describe_call.rs:327`: every chunk's first frame is NEW SCENE. `:416`: read tools' answers never reach the model. `:547`: speech block reads only the video's own `words.json`. `:606`: a chunk without `set_state` blanks `state.txt`.
+- `fix_session.rs:296`: any "!!!" line leaves `session.txt` unmarked; `:82`: on resume the marking pass runs twice.
+- `joins.rs:425`: `|cut N|` counts misattributed; `:461`: with 1–3 words `final.txt` and `retakes.tsv` are removed. `join_ask.rs:481`: whole takes never reach the sixth column or the yellow tint. `hand_edit.rs:242`: the remake compares against raw `words.json` on each recording's own clock.
+- `retakes.rs:48,162`, `retakes_ask.rs:178,238,248`: the retake brief has no words and no User Context, cached runs lose their marks, the rephrase trim never runs, edges are never placed. `retakes_ask.rs:389`: log says `cache/retakes/<key>`, file is under `cache/llm/retakes/`.
+
+**Shell and LLM**
+- `llm_request.rs:130`: tools go on the wire as name and parameters only (`web_tools::schemas` has no callers), so `prompts/tools.md`'s descriptions never reach the model. `llm_web_offer.rs:35`: an empty firefox setting counts as available without a PATH check.
+- `ui/window_page_box.rs:90`: the "copy into project" tick is never written back. `add_sources.rs:146`: `vid_dir`/`aud_dir` stored, never read.
+- `sources.rs:14`: legend names ✂ for the voice split (button is 🗣); `:28`: tooltip promises a "nobody yet" state the button never reaches. `ui/source_rows.rs:169`: `any_track_out` hard-coded false.
+- `ui/window_project.rs:580`: Open refuses a running job only after the pick; `:62`: New treats "no sources" as empty and drops a typed User Context without asking. `ui/save_apply.rs:19`: a renaming Save leaves the remembered project on the old folder.
+- `checks.rs:1`: comment says ten Test buttons; there are twelve.
+
+**Cut**
+- `ui/cut_suggest_land.rs:304`: the words cut gives `cut_breaths::apply` no inserts, so joins at hand-placed cards can be shortened. `suggest.rs:206`: status counts segments before the walk-back.
+- `ui/window_line_step.rs:382`: Space only flips the flag; `:474`: Shift+`,`/`.` arrive as `<`/`>`, so the five-frame step never fires. `ui/cut_preview_press.rs:181`: a picture click skips `after_press`.
+- `ui/cut_record_tick.rs:107`: lanes mixed only under ▶, `lane_hear.rs:224` restarts each lane every tick, ▶ ignores rates; `:145`: in-play statuses overwritten within a tick.
+- `ui/cut_band_trim.rs:232,250,263,296`: left border drag never merges; right press near a border trims; right-drag starts at 4 px, not 3; no row change reachable. `ui/cut_trim_press.rs:231,258`: a row slide shifts only recordings in `cut.shift`; a slid scene can leave its recording.
+- `cut_select.rs:251`: selection ends don't snap to recording ends. `cut_verbs.rs:302`: Split cuts overlay cards; `:607`: "added on cam 0" is 0-based and always row 0.
+- `ui/window_history_zoom.rs:647`: Clear greyed on an opened cut until the first edit. `ui/cut_tracks_draw.rs:77,426`: sound pieces ignore gaps and folds; in/out marks stop after the first picture row. `ui/cut_view.rs:137`: `total_px` counts folded seconds. `ui/cut_page_layout.rs:132`: insert form footer below the tracks.
+
+**Effects and Narrate**
+- `cut_captions.rs:149`: caption starts summed from batch clip lengths, restarting each batch. `ui/clip_pass.rs:14`, `ui/cut_effects_pass.rs:133`: clip rates never set, so the brief never says "plays at Nx".
+- `effect_overlap.rs:39`: no check that the lens switch is inside the band. `ui/cut_band_press.rs:169`: a press without motion opens no form. `ui/cut_speed_hand.rs:147`: cost note never refreshes.
+- `cut_cards.rs:440`, `produce_cards.rs:881`: a tier row prints its letter, not its items; logos never drawn. `produce_cards.rs:136`: cards bake at 25 fps, not the render fps.
+- `fx_svg.rs:108`, `fx_volume.rs:139`, `fx_label.rs:116`: refusal reads "(0.3) s". `ui/cut_zoom_hand.rs:423`: literal "{:.0} px".
+- `voice_ref.rs:263`: prints "X" for the recording name. `narrate_call.rs:266,276`: a rejection counts as "wrote nothing" and turns thinking off. `ui/narrate_lines.rs:101`: an unparseable time is refused as "00:00 is outside the cut". `narrate_screen.rs:208`: the empty-list note uses ＋, which draws as a box.
+
+**Produce**
+- **confirmed** `produce_upload_call.rs:96,486`: the upload/thumbnail call never sees the User Context (no context in the system message or brief, `get_context` answered "no such tool"), so a context saying "pick a frame" has no effect on ↻ or ▶.
+- `produce_screen.rs:266`: `REDRAW_TIP` still says ↻ redraws from the standing images; since 7da375d it asks the model and may take a frame.
+- `produce_exec.rs:784`: lines spoken so far printed as seconds in "synthesis for Ns". `produce_render.rs:456`: a lane is mixed only if it plays at the clip's first second (`LANE_MIN_MIX_SECONDS` unused).
+- `produce_upload.rs:114`: narration `at` (offset in its clip) printed as a video time; `:494`: "taking 3 from the cut" after an empty spread; `:566`: "no images" while references are sent; `:655`: a failed `thumbnail.stamp` write uses the render-stamp sentence.
