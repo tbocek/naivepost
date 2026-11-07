@@ -10,7 +10,7 @@ renders the video, and writes the title, description, subtitles and thumbnail
 you upload with. Every one of those is a proposal you can overrule; none of
 them is a black box you have to accept whole.
 
-It is a GTK4 and libadwaita application in Rust (`rust/`), talking to four local
+It is a GTK4 and libadwaita application in Rust (`rust/`), talking to three local
 HTTP servers over the network — nothing is compiled in, nothing calls out to a
 cloud service unless you point it at one.
 
@@ -33,8 +33,9 @@ means frames come out of it and it can be cut; a microphone tags who is
 speaking, voice 1 being the one the narration is spoken in. One file can be
 both.
 
-Everything is placed on **one clock**, taken from the timestamp in the filename
-or the file's own creation time and length. That is what puts a separate
+Everything is placed on **one clock**, taken from the timestamp in the filename;
+a file whose name carries none starts where the session does, never at its
+mtime, and a drag on its row lines it up by ear. That is what puts a separate
 recorder's words, waveform and sound where they belong against the footage. The
 footage is the master: a recording is heard for exactly the part of it that was
 running while the footage was.
@@ -66,7 +67,8 @@ Pressing ▶ then does, in order:
    another model, with word-level times. A long
    recording is asked about in even pieces (60 s for the qwen3 family, 300 s
    otherwise), each cut moved to a silence where one is nearby, and an
-   out-of-memory answer halves the piece size down to 20 s; hearing nothing at all
+   out-of-memory answer (the audio server's "Failed to allocate" counts as one)
+   halves the piece size down to 20 s; hearing nothing at all
    is a real answer — an empty transcript, not a failure. A file
    under two seconds — a recorder opened and closed again — is written up as
    silence without asking any server, and a video shorter than the frame
@@ -76,15 +78,20 @@ Pressing ▶ then does, in order:
    word times at all, ASR timestamps elsewhere run a third of a second late, and
    every cut point in the app is placed on a word edge. The aligner is given the
    recording one piece at a time, and each piece carries the words the ASR heard
-   in exactly those seconds (`asrchunks.json`) — never a guess at how many words
-   a stretch of audio ought to hold. A forced aligner cannot decline the text it
+   in exactly those seconds (`asrchunks.json`) whenever those pieces' texts make
+   up the transcript word for word — only otherwise is the text shared out by an
+   estimate. A forced aligner cannot decline the text it
    is handed, so a guess that runs high compresses real speech and leaves the
    rest of the recording with no words over it, which the cut then deletes as
-   footage where nobody spoke.
+   footage where nobody spoke. Digits have no sound the aligner knows, so a
+   number is handed to it said as words and folded back into the digits after.
 5. **Diarization** — who spoke when, merged into the transcript. The window it
    asks for shrinks until the server can hold it (90 s, then 45, then 25): the
    model permits 90 s, but the buffer grows with the window and a machine with
-   an LLM's weights pinned beside it may have no 2.9 GB hole to put one in.
+   an LLM's weights pinned beside it may have no 2.9 GB hole to put one in. When
+   the server answers that it has no room, its audio models (the recogniser and
+   aligner still loaded from the steps before) are unloaded and the window asked
+   once more, which the log says.
 6. **Text gate and Describe** — first the text gate: pairs of frames at most 20 s apart go
    to the decision model (the main model when none is set), which says whether the text on
    screen changed; a changed pair is halved down to a second, so the gate's changes become
@@ -150,7 +157,8 @@ Along the bottom of the window, `Inputs:` counts what Prepare has read — frame
 to the describe model and transcript lines to the fixer — with the same
 arithmetic broken down per file on hover; `Outputs: Prepare:` counts what the
 page has written, its folder button naming the three subfolders the count
-covers. Both refresh when you switch tabs.
+covers; pressing it opens the app's own file dialog in the page's output folder,
+and a file picked there opens as a log link does. Both refresh when you switch tabs.
 
 ### Video style
 
@@ -165,7 +173,8 @@ that is what the model is asked about: one join at a time, the last words of
 the take that was interrupted and the first words of the take that follows, as
 they are written. It offers no tools and answers with the words that come off each
 side, quoted (`{"drop_before","drop_after"}`), so the two run on as one sentence, and
-*nothing* else. Joins are asked one at a time. Two empty quotes
+*nothing* else. Joins are asked one at a time, at temperature 0.6 rather than the 1.0
+other thinking jobs run at, since a join has one right answer. Two empty quotes
 are a whole answer: a recording stopped to change a slide is not a stumble. The
 side **before** the join is cut first and as far back as the repetition goes,
 because what was said last is what you meant to keep.
@@ -179,8 +188,14 @@ word there by hand, press Cut, and it is out of the video, with no model asked.
 A join's answer is checked before anything is removed. It must leave out one
 stretch, next to the join: an answer that cuts two separate stretches, or more
 than forty words, or more than sixty percent of what it was shown, is refused
-and the stumble stays in, with the reason on the log. A refused join is asked
-once more; if that fails too, nothing is removed there. And when a join takes
+and the stumble stays in, with the reason on the log. Both limits count words
+that were said: an entry the fixed transcript wrote out of the text is no word
+on either side. A refused join is asked
+once more; if that fails too, nothing is removed there. Where the take after a
+cut opens by saying again five or more words already said in the sixty before
+it, that is a restart the model trimmed only the tail of: the whole first
+attempt goes, from where those words were first said, and the log says
+`… started over after the cut -- the first attempt goes`. And when a join takes
 out every word of a recording, that recording is not silently dropped — it is
 flagged yellow on the Cut page as gone whole, worth a look.
 
@@ -205,7 +220,8 @@ the verbs (＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane),
 and stops at both ends — in at 240 px a second, out where the whole session
 fits, so you can never scroll past the end of your own recording. Drag the bottom edge
 of a picture row (the pointer turns into an up-down arrow there) to make the
-thumbnails bigger or smaller, between 40 and 160 px; the page opens at 64 px.
+thumbnails bigger or smaller, between 40 and 160 px; the page opens at 64 px. The
+line above a row's sound strip sizes the strip the same way.
 
 Picking an entry under **✚ Effect** adds that kind of effect at the red line with its kind's own
 default: a bare caption lands in the lower third, a drawing in the middle, a volume on the whole bed
@@ -347,6 +363,8 @@ with no model at all. It refuses before asking anything when it cannot do the jo
 going, while you have hand edits ("press Revert first for a fresh suggestion"), or before Describe has
 produced a session timeline. With a target length it aims the cut at that window; with none it keeps what
 is worth keeping, and it only asks for the captions, speed and decoration passes your policy switched on.
+A join where the clip before ends on an inhale and the clip after opens with one gets one breath, not two:
+the first clip ends where its breath begins, and the log names each such join.
 Whatever comes back lands as one Undo, keeps the inserts you placed by hand, and replaces the effects with
 the ones that still sit on footage the cut actually keeps.
 
@@ -358,7 +376,9 @@ closing the window always saves the line, even a moment after the last automatic
 so the position you closed on is the position you open on. Beside it sits **▶✂ Play the cut**, which
 plays the finished video instead: removed stretches are skipped, the line jumps to
 the next clip's first playable second and stops past the last one, speed effects
-hold their flat rate, a stop shows its still and volume applies — and the clock
+hold their flat rate, a stop shows its still and volume applies; the sound is
+silenced past each kept stretch's end, so a clip ends where the render cuts it
+rather than letting the next word's start through — and the clock
 reads the cut's own time, not the session's. Pressing it while the preview is the
 recording switches over and snaps the line onto kept material ("preview is the cut —
 the clock reads the finished video"); pressing it during a review ends the review
@@ -429,8 +449,9 @@ without watching the minutes between them.
 
 From then on the cut is yours: drag to select, ＋ Add,
 ✕ to drop, ⌦ for whatever is in hand, Revert to go back to the suggestion.
-**Trim a clip edge by dragging it** — with either button, on the pictures or on
-the green bar above them — or ‹f and f› a frame at a time once it is a clip in hand.
+**Trim a clip edge by dragging it** — with either button, on the pictures, on the
+row's sound strip under them or on the green bar above them — or ‹f and f› a frame
+at a time once it is a clip in hand.
 The strip you drag on shows the ruler along the top, its ticks counting seconds of
 footage on a spacing that follows the zoom, so a night between two recordings is no
 jump in the numbers; under it the kept stretches of the cut as one green bar
@@ -525,7 +546,8 @@ without a voice and its Inputs say "no narration".
 The page itself splits into a working column and the lines. Top left: the **Game audio** slider, the preview
 with its transport (back 3 s · ▶ · forward 3 s) and ＋ to start a line at this second, a slider on the
 cut's own clock with the readout `session · cut/length`, and the shared volume. Below it: the voice
-picker — *No audio — captions only*, then Narrator 1..4, then every `.wav` in the voices folder — with
+picker — *No audio — captions only*, then Narrator 1..4 (up to the highest voice a
+source on Prepare is tagged with), then every `.wav` in the voices folder — with
 **Add file…** beside it, the take band — its waveform shows only once the voice on offer has a recording
 on disk (`narrate/voice_ref_base.wav`), since there is nothing to select from otherwise; an empty voice
 means *captions only*, so no band and nothing to clone — and answers to `＋` (make a take of what you
@@ -549,7 +571,7 @@ list-add icon.
 
 Renders the video. Every clip is encoded once from its own recording, joined by
 stream copy, loudness-normalized over the whole thing so the joins do not pump.
-Container, codec, quality, resolution, frame rate, audio bitrate, mono, frame
+Container, codec, preset, quality, resolution, frame rate, audio bitrate, mono, frame
 edges — all here.
 
 **webm is its own answer**: picking it forces vp9 and turns "track in file"
@@ -569,7 +591,9 @@ text changes, until you edit the picture by hand.
 ▶ over an unchanged project costs nothing: the render keeps `produce/final.stamp`
 beside the video, a hash of what it reads — the encoder settings (not where the
 file goes), the segments, each narration line with its take's size and mtime, each
-recording's path, size and mtime, the aspect, the voice and whether narration is on.
+recording's path, size and mtime, the aspect, the voice and whether narration is on,
+and the effects drawn over the segments, the extra sound lanes mixed under them and
+the frame size they are drawn onto.
 The same hash means the encode is skipped, and the skip is said out loud:
 ">>> the video is already what this page describes — not encoding it again
 (↻ beside Transcode encodes anyway)". A skip writes no new stamp. Anything in those
@@ -663,7 +687,11 @@ that has no take yet (nothing is spoken when the voice is "captions only" — th
 lines ride the subtitle track alone), plans one clip per segment and fits each
 narration line to its clip, writes `produce/clips/final.srt` on the produced
 clock, encodes each clip with the seek before the input, the effect chain, the
-narration mixed over the bed at the Game-audio level and then a limiter, joins
+narration mixed over the bed at the Game-audio level and then a limiter — each
+clip cut to whole frames on the video's running clock, so the video never drifts
+more than half a frame off the cut however many clips there are, its sound kept
+uncompressed in an `.mkv` until the mux, and the bar filling by each clip's time on
+screen as ffmpeg reports how far it got — joins
 the clips by stream copy, moves the cues onto the clips' measured lengths, translates them only after the encodes so the
 encoder never idles behind the model, then loudness-normalises and muxes with the
 subtitle tracks and the mp4 faststart flag, and writes the `.srt` and `.vtt`
@@ -677,7 +705,7 @@ half a render.
 
 ## What it needs
 
-Four HTTP servers, all local by default — an empty Server box in Settings
+Three HTTP servers and ffmpeg, the servers all local by default — an empty Server box in Settings
 means the loopback address below. The app starts none of them; the writing model's
 default port is
 [halogen-flash-server](https://github.com/peonist-ai/halogen-flash-server)'s own.
@@ -702,7 +730,11 @@ into the config folder, its old copy left where it is and never read again) → 
 built-in default; below the box, `NAIVEPOST_TTS_URL` moves the audio server for this
 app alone and `AUDIOCPP_SERVER` for any frontend reading it, and `SD_SERVER` the
 drawing server — while the writing model has no environment override at all, so a
-stale export cannot outrank what the dialog shows.
+stale export cannot outrank what the dialog shows. The Writing, Audio and Drawing
+sections of the dialog each keep named server entries in `servers.json` beside it — a
+dropdown, ＋ New to save what the boxes say now under a name, 🗑 to delete one (it asks
+first; the last one stays) — and picking an entry writes its values into `llm.conf`,
+the one file the steps read.
 
 The vision model has to be able to read images, or Describe is the one job that
 cannot run.
@@ -725,16 +757,17 @@ of §8, the text formats of §6 — the transcripts, `session.tsv`, `events.tsv`
 `retakes.tsv`, `final.txt`, the ASR sidecars, `.frames` and `scenes.tsv`, the
 `AWV4` waveform cache and `requests.tsv` — the Settings dialog of
 [03-shell.md §5](03-shell.md), opened from the header bar's gear: rows for
-the LLM server, key and model with its vision check and Fetch models, ffmpeg and
-firefox, the audio.cpp endpoint with its four model rows and the forced aligner,
-and the sd.cpp server. Each Test button reads what its box holds at that moment,
-marks ✓ or ✗ with the verdict as its tooltip, and mirrors its line into the main
-log as `settings: …`; "Test All" runs all six kinds and reports each one without
-stopping at a failure. The three rows that name a port — the LLM, audio.cpp and
-sd.cpp endpoints — dial the address typed in their box over HTTP and leave their
-timed line in `requests.tsv` like any other request; the rows naming no port
-(ffmpeg, firefox, and the five model boxes) answer from whatever provider this
-build was given, so an unwired one says `nothing wired to probe <row>` rather than
+the LLM server, key and model with its vision check, the Decision model and Fetch
+models, ffmpeg and firefox, the audio.cpp endpoint with its four model rows and the
+forced aligner, and the sd.cpp server. Each Test button reads what its box holds at
+that moment, marks ✓ or ✗ with the verdict as its tooltip, and mirrors its line into
+the main log as `settings: …`; "Test All" runs all twelve rows and reports each one
+without stopping at a failure. The three rows that name a port — the LLM, audio.cpp
+and sd.cpp endpoints — dial the address typed in their box over HTTP and leave their
+timed line in `requests.tsv` like any other request; the model rows ask the server
+their section names (the Model, Vision and Decision rows one completion, the audio
+rows its model list), ffmpeg and firefox are run as programs, and a row nothing was
+wired to (a test build's) says `nothing wired to probe <row>` rather than
 showing a check nobody probed for — and the four servers of
 [02-services.md §1](02-services.md): their loopback defaults, what each
 settings box falls back to, which path and timeout every kind of call has, and
@@ -778,7 +811,8 @@ says so instead of hanging, and a forgotten job can be retried while any other
 failure has to start over. And the details §5 confirms against the code: every
 audio path in a request body is one an upload returned, the speech body carries
 the project language rather than a hard-coded `"en"`, sd.cpp's four waits are
-15/60/30 s at 1 s/10 s, and each Settings row — ten buttons and "Test All" —
+15 s to describe itself, 60 s to submit, 30 s of polling at one ask a second and
+10 s to cancel, and each Settings row — twelve buttons and "Test All" —
 keeps its own verdict while the file is written 600 ms after the last keystroke
 instead of on a Save button. What those buttons do when pressed
 ([F0.13](03-shell.md)): each reads what its box holds at that moment rather
@@ -880,9 +914,10 @@ you left is untouched. And Save ([F0.10](03-shell.md)), refused while a run
 is on: the same name rewrites `naivepost.json`, a new name renames the whole
 folder — never a copy, so the transcripts, frames and renders keep the name —
 and that rename is itself the check, failing onto a folder that already has work
-in it with the files left where they are and the log saying where. And ＋ Add source
+in it with the files left where they are and the log saying where. And Add source
 files… on Prepare ([F0.12](03-shell.md)): refused while a run works, since a copy is
-a run of its own; offering audio and video only, and either copying each pick into the
+a run of its own; offering audio and video only, and — as the **copy into project** tick
+beside it says — either copying each pick into the
 project's `sources/` — through a `.part` renamed at the end, so an interrupted copy never
 looks like a finished file, and skipping one that is already there at the same size — or
 referencing it where it lies. A video arrives as footage, every new row arrives as voice 1, and the status counts what went in:
@@ -932,7 +967,10 @@ halves already exist the log says so and nothing is redone. The log also reports
 level of the mix and of each half, warning when the rest sits 10 dB or more under the mix.
 
 Each source is then read once into `prepare/inputs/<source>/`: its audio down to mono
-16 kHz, the ASR asked unless `words.json` says it was already done, an aligner used when
+16 kHz on the file's own clock — a sound track that starts after the picture (OBS writes its
+sound some 20 ms late) keeps that lead as silence, so word times match what ▶ and the render
+play; an older decode made without it is decoded again once and every time made from it moved
+later by the measured lead, with no server asked again — the ASR asked unless `words.json` says it was already done, an aligner used when
 one is served (and a failed one is only a warning where the ASR timed its own words — a
 hard stop naming that model where nothing else can), and diarization asked unless
 `turns.json` exists. Words become segments broken at a speaker change, a pause over 0.7 s
@@ -949,11 +987,15 @@ parallel — a quarter of the machine's cores, two to eight workers. The `.frame
 grid and the threshold, so a source whose frames were already made at both is skipped with a line
 saying so; a take shorter than one grid step keeps its first frame alone.
 
-The aligner's pass over that audio keeps its pieces at 60 s: the ASR's own chunks when
-their word counts agree with their word times, otherwise windows cut at silences with the
-text shared out by how much of each has speech in it. Each window is trimmed to its sound
-plus a quarter second either side, split at the quietest moment nearest its middle when
-still too long, and halved on an out-of-memory answer down to 15 s. A name in the box is
+The aligner's pass over that audio takes the ASR's own chunks, each with the text the ASR
+heard in it, when those texts joined are the transcript word for word; otherwise 60 s
+windows cut at silences with the text shared out by how much of each has speech in it. A
+piece with no words in it is not asked about. Each window is trimmed to its sound plus a
+quarter second either side and asked whole up to 100 s; a longer one is split at the
+quietest moment nearest its middle, and a window is halved on an out-of-memory answer or
+the aligner's refusal of a window too long for its model, down to 15 s. A server error on a window is asked once more
+before it counts as failed, and words timed past a split piece's end are carried to the
+next piece rather than dropped. A name in the box is
 obeyed — one not served for alignment skips alignment for the run rather than quietly
 using another model, and cut points then come off the waveform; with the box empty, every
 model declared for `align` is tried and the first to answer serves the rest of the run.
@@ -975,8 +1017,12 @@ Where a mark's cut actually lands is read off the waveform, not from the aligner
 times the words fence the edge and the sound picks the quietest moment inside the fence — the last word
 that stays followed up to 0.25 s past its own end for a trailing consonant, then the quietest point
 within 0.4 s; without them the envelope alone places it, reaching back up to 0.8 s and leaving 0.05 s at
-the cut, and a stamp with more than half a second of quiet before it stands where it is rather than
-jumping forward onto the next sound. The envelopes are read from `cache/waves/<take>.wave`, checked
+the cut, and a stamp with more than 0.6 s of quiet before it stands where it is rather than
+jumping forward onto the next sound. Where a removed word and a kept one touch in the aligner's times
+there is no gap to search, and the aligner's 80 ms grid can put that boundary a step off: the edge goes to
+the quietest moment between the two within one grid step, and where they meet in an s, z or sch (read off
+`voice16k.wav`'s zero crossings) it goes round the hiss — a shared hiss is cut in its middle, a dropped
+word's left out, a kept word's taken in whole. The envelopes are read from `cache/waves/<take>.wave`, checked
 against that recording's own size and modification time: a cache made before the file was replaced is
 thrown away rather than trusted, and a take with no cache at all falls back to the word times, so a
 missing envelope never fails the run.
@@ -1027,7 +1073,7 @@ builds run locally with `./release.sh flatpak` (flatpak-builder needed, from
 needed, built in a Debian testing container); both land in `dist/`. Prefer the
 Flatpak where Flatpak exists: the GNOME runtime already carries GTK4, the GTK4
 video sink, GStreamer and an ffmpeg with h264, so nothing is bundled by hand
-and ffmpeg is inside the sandbox. The four servers are not in either; the app
+and ffmpeg is inside the sandbox. The three servers are not in either; the app
 reaches them over HTTP wherever you run them. The AppImage also expects what
 any desktop has: an icon theme, GL, the X11/Wayland and text libraries. Inside
 Flatpak the app writes no desktop entry of its own and offers the model no web
@@ -1047,6 +1093,8 @@ produced. It can be moved, copied or zipped whole.
 <name>.naivepost/
   naivepost.json                    the project: sources, settings, context, prompts
   sources/                        the footage, if you asked for it to be copied in
+  stems/                          the two halves of a ✂ voice separation
+  requests.tsv                    one timed line per request that left the machine
   prepare/
     inputs/<source>/              voice16k.wav, transcript.{txt,tsv,srt},
                                   words.json, asrchunks.json,
@@ -1109,7 +1157,7 @@ time on the wire at all, which is how the file shows what a re-run saved. Nothin
 and the line goes down before the reply is used, so a step that fails on the content afterwards still
 leaves its requests behind. Local work is not in there: ffmpeg and the other subprocesses are logged
 as the commands they ran. At the end of a run the log says it per service — `>>> requests: llm 57 in
-2h 13m on the wire, 4m waiting for a slot; audio 38 in 6m 10s; web 3 in 12s` — and that split of
+2h 13m on the wire, 4m waiting its turn; audio 38 in 6m 10s; web 3 in 12s` — and that split of
 waiting against working shows whether a server's slots are what a run is waiting on, rather than a guess
 about how loaded a box is.
 
@@ -1157,9 +1205,10 @@ same way, where `<screen>` is named after a spec image (`03-window`, `03-sources
 `04-prepare`, `05-cut`, ...) and the window is built from the fixture project at
 `rust/fixtures/demo.naivepost`. There is no host display in this container, so
 both recipes are how the app is seen here. A screen that is really a dialog —
-`03-new-confirm`, `03-policy-form`, `03-settings` — paints the dialog itself
+`03-new-confirm`, `03-settings`, `08-words` — paints the dialog itself
 rather than the window behind it, matching its spec image; the settings dialog
-shows blank badge cells there because nothing has been probed in a snapshot run.
+shows blank badge cells there but for the ffmpeg row, staged as passed the way the
+spec's picture shows it, because nothing else is probed in a snapshot run.
 Screens with no spec image of their own name themselves after the flow they show:
 `03-log-link` shows the log expander
 open with a run's exchange-page line among the lines above it. `04-prepared`
