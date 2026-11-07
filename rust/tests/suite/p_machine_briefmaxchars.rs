@@ -265,6 +265,7 @@ fn clips_with(n: usize, lines: usize) -> Vec<up::BriefClip> {
             seen: (0..lines)
                 .map(|k| format!("clip {} event {}", i + 1, k + 1))
                 .collect(),
+            seen_at: Vec::new(),
             said: (0..lines)
                 .map(|k| format!("clip {} spoken {}", i + 1, k + 1))
                 .collect(),
@@ -520,6 +521,7 @@ fn p_machine_briefmaxchars_s2_the_live_upload_call_answers_get_lines_over_the_wi
     };
     let collected = call::call(
         &scene.tree,
+        "",
         "THE FINISHED VIDEO: 1 clips, 0:12 long. (folded \u{2014} read the rest with get_lines)",
         &empty(),
         &frames,

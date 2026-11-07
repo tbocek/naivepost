@@ -74,6 +74,9 @@ pub struct Plan {
     gaps: Vec<(f64, f64)>,
     snap_points: Vec<f64>,
     marks: Vec<(f64, f64)>,
+    /// The User Context, which `get_context` hands back: it was answered empty, so a model that asked for it was
+    /// told there was none (09-admin, 2026-11-07).
+    context: String,
 }
 
 impl Plan {
@@ -88,6 +91,7 @@ impl Plan {
             gaps: Vec::new(),
             snap_points: Vec::new(),
             marks: Vec::new(),
+            context: String::new(),
         }
     }
 
@@ -336,6 +340,15 @@ impl Plan {
     }
 
     /// Where an edge is allowed to land: word edges, silences, visual cuts. Given by the caller (audio and ffprobe work).
+    pub fn with_context(mut self, context: &str) -> Self {
+        self.context = context.to_string();
+        self
+    }
+
+    pub fn context(&self) -> &str {
+        &self.context
+    }
+
     pub fn with_snap_points(mut self, points: Vec<f64>) -> Self {
         self.snap_points = points;
         self

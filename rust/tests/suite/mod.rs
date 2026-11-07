@@ -187,6 +187,7 @@ mod f2_14_model_mode_widgets;
 mod f2_14_press_dead;
 mod f2_14_press_model;
 mod f2_14_press_words;
+mod f2_14_s2b_model_press_without_a_cut;
 mod f2_14_s2b_progress_on_the_bar;
 mod f2_14_s2b_the_passes_run_after_the_cut;
 mod f2_14_s3_land_through_the_page;

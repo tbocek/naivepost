@@ -201,9 +201,22 @@ pub fn publish_of_run(run: &crate::produce_flow::Run) -> crate::project::Publish
     run.publish.clone().unwrap_or_default()
 }
 
-fn upload_brief_for(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> String {
-    let rows = crate::textfmt::read_session(&tree.session_tsv()).unwrap_or_default();
-    let events = read_all_events(tree, run);
+/// F5.6 S1: the upload brief for this run, from the session's rows on disk.
+pub fn upload_brief_for(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> String {
+    let all = crate::textfmt::read_session(&tree.session_tsv()).unwrap_or_default();
+    // What was seen comes from the session's EVENT rows, already on the session clock the clips are cut on. Each
+    // recording's own events.tsv counts from that recording's first second: read as it stood, every clip listed what
+    // was on screen in every recording at the same local second (09-news: the Game Jam page and the "North Korean fake
+    // job" slide under clip 1), and the stamps a frame answer copies pointed at the wrong recording.
+    let (event_rows, rows): (Vec<_>, Vec<_>) = all.into_iter().partition(|row| row.is_event());
+    let events: Vec<crate::textfmt::FrameEvent> = event_rows
+        .into_iter()
+        .map(|row| crate::textfmt::FrameEvent {
+            start: row.start,
+            end: row.end,
+            text: row.text,
+        })
+        .collect();
     let clips = brief_clips(run, &rows, &events);
     crate::produce_upload::brief(&clips, &run.lines, crate::produce_upload::BRIEF_MAX_CHARS)
 }
@@ -393,10 +406,16 @@ fn brief_clips(
     let mut out = Vec::with_capacity(clips.len());
     let mut at = 0.0;
     for (index, seg) in clips.iter().enumerate() {
-        let seen: Vec<String> = events
+        let inside: Vec<&crate::textfmt::FrameEvent> = events
             .iter()
             .filter(|e| overlaps(e.start, e.end, seg.s, seg.e))
-            .map(|e| e.text.clone())
+            .collect();
+        let seen: Vec<String> = inside.iter().map(|e| e.text.clone()).collect();
+        // The middle of what the event covers inside this clip, from the clip's start: a frame there shows the event
+        // itself, not the fade into it.
+        let seen_at: Vec<f64> = inside
+            .iter()
+            .map(|e| (e.start.max(seg.s) + e.end.min(seg.e)) / 2.0 - seg.s)
             .collect();
         let said: Vec<String> = rows
             .iter()
@@ -417,6 +436,7 @@ fn brief_clips(
             } else {
                 seen
             },
+            seen_at,
             said,
             rate: crate::produce_upload::brief_rate(seg),
             marked: crate::produce_upload::brief_marks(&run.cut.fx, seg),
@@ -428,20 +448,6 @@ fn brief_clips(
 
 fn overlaps(a_s: f64, a_e: f64, b_s: f64, b_e: f64) -> bool {
     a_s < b_e && b_s < a_e
-}
-
-fn read_all_events(
-    tree: &crate::layout::Tree,
-    run: &crate::produce_flow::Run,
-) -> Vec<crate::textfmt::FrameEvent> {
-    let mut all = Vec::new();
-    for source in run.sources.footage.iter() {
-        let stem = source_stem(source);
-        if let Ok(events) = crate::textfmt::read_events(&tree.events_tsv(&stem)) {
-            all.extend(events);
-        }
-    }
-    all
 }
 
 /// The name a source's prepare folder is filed under: its base name without the extension.
@@ -714,6 +720,37 @@ pub fn session_tree() -> crate::layout::Tree {
     })
 }
 
+/// The User Context as the window held it when a Produce press was made, with the folder it belongs to. The halves
+/// run on a worker, where the window's session cannot be read, and `naivepost.json` lags the window until the next
+/// autosave: a context typed just before ▶ or ↻ is still the one the model is given.
+static PRESSED_CONTEXT: std::sync::Mutex<Option<(std::path::PathBuf, String)>> =
+    std::sync::Mutex::new(None);
+
+/// Note the window's User Context for the run a press is starting. Called on the window's thread, at the press.
+pub(crate) fn note_context_at_press() {
+    let Some(context) = crate::ui::window_policy::live_user_context() else {
+        return;
+    };
+    if let Ok(mut pressed) = PRESSED_CONTEXT.lock() {
+        *pressed = Some((crate::startup::open_dir(), context));
+    }
+}
+
+/// The User Context for a call about this folder: what the window held at the press, else the file.
+fn context_for(tree: &crate::layout::Tree) -> String {
+    let pressed = PRESSED_CONTEXT
+        .lock()
+        .ok()
+        .and_then(|pressed| pressed.clone())
+        .filter(|(dir, _)| dir == tree.dir())
+        .map(|(_, context)| context);
+    pressed.unwrap_or_else(|| {
+        crate::project::load(tree.dir())
+            .map(|project| project.context)
+            .unwrap_or_default()
+    })
+}
+
 pub fn upload_ask(
     tree: &crate::layout::Tree,
     publish: &crate::project::Publish,
@@ -736,12 +773,7 @@ pub fn upload_ask(
             lines: &rows,
         };
         let cancelled = || false;
-        // The window's copy first: it is newer than the file until the next autosave.
-        let context = crate::ui::window_policy::live_user_context().unwrap_or_else(|| {
-            crate::project::load(tree.dir())
-                .map(|project| project.context)
-                .unwrap_or_default()
-        });
+        let context = context_for(&tree);
         let collected = crate::produce_upload_call::call(
             &tree,
             &context,

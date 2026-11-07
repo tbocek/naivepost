@@ -195,7 +195,15 @@ pub fn log_lines(call: &Call) -> Vec<String> {
 
     lines.push(came_back(call));
 
-    if call.reply.trim().is_empty() {
+    if call.reply.trim().is_empty() && !call.tool_calls.is_empty() {
+        // A reply made of tool calls alone has no text, and is an answer: "nothing at all" sent people looking for
+        // a fault in a run that was working (09-admin's cut, 2026-11-07).
+        lines.push(format!(
+            ">>> {}: the model called {}",
+            call.step,
+            called_tools(&call.tool_calls)
+        ));
+    } else if call.reply.trim().is_empty() {
         lines.push(format!(
             ">>> {}: the model answered nothing at all",
             call.step
@@ -204,6 +212,31 @@ pub fn log_lines(call: &Call) -> Vec<String> {
         lines.push(format!(">>>   the reply begins: {}", preview(&call.reply)));
     }
     lines
+}
+
+/// The tools one reply called, by name, a repeat counted: `add_segment ×3, finish_cut`.
+fn called_tools(calls: &[ToolCall]) -> String {
+    let mut named: Vec<(&str, usize)> = Vec::new();
+    for call in calls {
+        match named
+            .iter_mut()
+            .find(|(name, _)| *name == call.name.as_str())
+        {
+            Some((_, count)) => *count += 1,
+            None => named.push((call.name.as_str(), 1)),
+        }
+    }
+    named
+        .iter()
+        .map(|(name, count)| {
+            if *count > 1 {
+                format!("{name} \u{d7}{count}")
+            } else {
+                name.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The one line per run naming the page.
@@ -264,7 +297,7 @@ pub fn meta_line(call: &Call, answered: bool) -> String {
         err.clone()
     } else if call.cut_off {
         CUT_OFF_PLAIN.to_string()
-    } else if call.reply.trim().is_empty() {
+    } else if call.reply.trim().is_empty() && call.tool_calls.is_empty() {
         "answered nothing at all".to_string()
     } else {
         duration_of(call.took_secs)
@@ -349,9 +382,9 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
         return html;
     }
 
-    if call.reply.trim().is_empty() {
+    if call.reply.trim().is_empty() && call.tool_calls.is_empty() {
         html.push_str("<p class=\"note\">the model answered nothing at all</p>\n");
-    } else {
+    } else if !call.reply.trim().is_empty() {
         html.push_str(&format!("<pre>{}</pre>\n", esc(&call.reply)));
     }
     // §7's wording for the page: each tool call is noted on the reply as `[tool call name(args)]`.

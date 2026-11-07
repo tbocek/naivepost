@@ -84,6 +84,17 @@ pub fn request(
     after: &[String],
     refused: Option<&str>,
 ) -> String {
+    // Only words that were said are shown and counted: an entry the fixed transcript left empty showed as blank space
+    // and took a place in BEFORE's 25 (09-admin join 4: five empty entries at the seam pushed "Über nächstes Mal" out of
+    // BEFORE, and the reworded restart was not seen whole). The quote is still matched against the whole window.
+    let said = |words: &[String]| -> Vec<String> {
+        words
+            .iter()
+            .filter(|word| !word_list::bare(word).is_empty())
+            .cloned()
+            .collect()
+    };
+    let (before, after) = (said(before), said(after));
     let close = format!(
         "{} {CUT} {}",
         before[before.len().saturating_sub(CLOSE_WORDS)..].join(" "),
@@ -259,7 +270,17 @@ fn quoted_tail(quote: &str, shown: &[String]) -> Option<usize> {
     if wanted.is_empty() {
         return Some(0);
     }
-    (1..=shown.len()).find(|n| bare_words(&shown[shown.len() - n..]) == wanted)
+    (1..=shown.len())
+        .find(|n| bare_words(&shown[shown.len() - n..]) == wanted)
+        // A quote that starts inside an entry holding several words ("that. The" is one entry, timed as one): the
+        // entry goes whole, since it cannot be cut in two. 09-news join 13, "The last article is the following
+        // here." was refused twice and the sentence stayed in twice; the hand cut took "that. The" out whole.
+        .or_else(|| {
+            (1..=shown.len()).find(|n| {
+                let run = bare_words(&shown[shown.len() - n..]);
+                run.len() > wanted.len() && run.ends_with(&wanted)
+            })
+        })
 }
 
 /// How many of AFTER's first shown words the quote names, or `None` when it is not how AFTER starts. The most
@@ -272,6 +293,13 @@ fn quoted_head(quote: &str, shown: &[String]) -> Option<usize> {
     (1..=shown.len())
         .rev()
         .find(|n| bare_words(&shown[..*n]) == wanted)
+        // Ending inside an entry of several words: that entry goes whole, as in [`quoted_tail`].
+        .or_else(|| {
+            (1..=shown.len()).find(|n| {
+                let run = bare_words(&shown[..*n]);
+                run.len() > wanted.len() && run.starts_with(&wanted)
+            })
+        })
 }
 
 /// The refusal sentence inside a tool reply, if the reply is one.

@@ -510,6 +510,7 @@ fn sec_12_decisions_narrate_and_produce_s30_the_upload_brief_prints_the_rate() {
         seconds: 2.0,
         session: "0:00\\u{2013}0:08".to_string(),
         seen: vec!["a slide".to_string()],
+        seen_at: Vec::new(),
         said: vec!["Ann: proof of stake".to_string()],
         rate: produce_upload::brief_rate(&seg),
         marked,

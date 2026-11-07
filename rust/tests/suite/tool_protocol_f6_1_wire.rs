@@ -299,6 +299,7 @@ fn f6_1_s5_a_server_that_refuses_tools_is_asked_again_without_them() {
     let starts = [0.0f64];
     let collected = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &Publish::default(),
         &frames(&moments, &starts),
@@ -375,6 +376,7 @@ fn f6_1_s5_a_refusal_is_remembered_so_the_next_attempt_sends_no_tools_field() {
     let run_once = || {
         call::call(
             &scene.tree,
+            "",
             "BRIEF",
             &Publish::default(),
             &frames(&moments, &starts),
@@ -432,6 +434,7 @@ fn f6_1_s5_a_dead_server_is_not_read_as_a_refusal() {
     let starts = [0.0f64];
     let outcome = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &Publish::default(),
         &frames(&moments, &starts),

@@ -130,3 +130,64 @@ fn sec_04_prepare_5_rules_b3_the_direction_is_not_asked_of_the_model() {
         "P.machine.textEditThinking: this job thinks"
     );
 }
+
+/// A quote that starts (BEFORE) or ends (AFTER) inside a word-list entry holding several words takes that entry
+/// whole: it is timed as one and cannot be cut in two. 09-news join 13: BEFORE ended "with that. The last article
+/// is the following here." with "that. The" one entry; the answer quoted from "The" and was refused twice, so the
+/// sentence stayed in twice. A quote that matches no ending at all is still refused.
+#[test]
+fn sec_04_prepare_5_rules_b3_a_quote_inside_an_entry_of_several_words_takes_it_whole() {
+    let before: Vec<String> = [
+        "we",
+        "land",
+        "with",
+        "that. The",
+        "last",
+        "article",
+        "is",
+        "here.",
+    ]
+    .iter()
+    .map(|w| w.to_string())
+    .collect();
+    let after = words("the last article is here this author found");
+    let refs_before: Vec<&str> = before.iter().map(String::as_str).collect();
+    let refs_after: Vec<&str> = after.iter().map(String::as_str).collect();
+
+    let mut join = textedit::Join::new(&refs_before, &refs_after);
+    let reply = r#"{"drop_before":"The last article is here.","drop_after":""}"#;
+    assert_eq!(
+        joins::answer_join(&mut join, reply, &before, &after),
+        joins::Outcome::Applied {
+            before: 5,
+            after: 0
+        },
+        "the entry the quote starts inside goes with it"
+    );
+
+    let shared: Vec<String> = ["this", "author found", "it"]
+        .iter()
+        .map(|w| w.to_string())
+        .collect();
+    let refs_shared: Vec<&str> = shared.iter().map(String::as_str).collect();
+    let mut join = textedit::Join::new(&refs_before, &refs_shared);
+    let reply = r#"{"drop_before":"","drop_after":"this author"}"#;
+    assert_eq!(
+        joins::answer_join(&mut join, reply, &before, &shared),
+        joins::Outcome::Applied {
+            before: 0,
+            after: 2
+        },
+        "and on AFTER, the entry the quote ends inside"
+    );
+
+    let mut join = textedit::Join::new(&refs_before, &refs_after);
+    let reply = r#"{"drop_before":"The first article is here.","drop_after":""}"#;
+    assert!(
+        matches!(
+            joins::answer_join(&mut join, reply, &before, &after),
+            joins::Outcome::Refused(_)
+        ),
+        "a quote that is not how BEFORE ends is still refused"
+    );
+}

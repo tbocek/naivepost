@@ -15,6 +15,11 @@ You are shown the join three ways: a WIDE VIEW of the speech around it, where th
 
 HOW TO FIND THE CUT. Read the first words of AFTER, then look back from [CUT] for where those same words -- or nearly the same: a plural, a number spelled differently, a word swapped -- were already said in BEFORE. Remove from exactly that point in BEFORE up to [CUT], and nothing earlier: the words before that point were said once and stay. If AFTER's first words were never said in BEFORE, look for a sentence BEFORE left unfinished right at [CUT] and remove only that unfinished tail. A take can be abandoned entirely; then all of it goes, back to where it started.
 
+A RESTART CAN BE REWORDED. The speaker sometimes starts over in other words: AFTER makes again the point BEFORE was in the middle of making -- the same facts -- phrased anew, often after one or more broken attempts. Then go back through BEFORE from [CUT], one sentence at a time: a sentence whose point AFTER makes again goes, even where hardly a word of it matches -- the later saying is the one the speaker meant to keep. Keep going back while the sentences are repeated; stop at the first sentence AFTER does not say again. That sentence and everything before it were said once and stay. The repeat may reach back past an [another take starts] in BEFORE: that join is repaired already, and the words before it are BEFORE's like any other.
+
+EXAMPLE. BEFORE ends "...that was the last lecture. Next week we then have the exam in room four. There you show what you know, where you got" [CUT] AFTER starts "The exam, the final exam, is next week in room four. It shows where you stand, what works and what does not...". Going back from [CUT]: "There you show what you know, where you got" is AFTER's second sentence again; "Next week we then have the exam in room four." is AFTER's first sentence again; "that was the last lecture." is not in AFTER, so it stays:
+  {"drop_before":"Next week we then have the exam in room four. There you show what you know, where you got","drop_after":""}
+
 BEFORE gives way first: what was said last is what the speaker meant to keep. Remove words from the start of AFTER only where the join still does not read without it, and then as few as possible.
 
 ANSWER with the words you remove, copied exactly as you were given them, strict JSON and nothing else:

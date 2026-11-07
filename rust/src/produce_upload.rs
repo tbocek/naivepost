@@ -44,6 +44,11 @@ pub struct BriefClip {
     pub seconds: f64,
     pub session: String,
     pub seen: Vec<String>,
+    /// Where each `seen` line is in the clip, in session seconds from the clip's start: printed as `SEEN +12.5:`, the
+    /// offset a `frame: clip n +s` answer copies. The middle of the event's stretch inside the clip, because its first
+    /// frame can be the crossfade into it (09-news: "+11" was guessed with no stamp and took the fade into the title
+    /// slide). Same order as `seen`; empty, or shorter, where there is no time to give.
+    pub seen_at: Vec<f64>,
     pub said: Vec<String>,
     /// Rate on the produced clock; printed in the header only when not 1.0 (§12 #30).
     pub rate: f64,
@@ -64,7 +69,9 @@ pub fn brief(clips: &[BriefClip], lines: &[crate::narration::Entry], max_chars: 
     // Fold over every clip at once rather than clipping the tail, where the last clips would vanish.
     let folded = unbounded_length(clips, lines) > max_chars;
     for clip in clips {
+        // Its own line: the first SEEN line ran on from the header and lost its place in the clip's list.
         out.push_str(&clip_head(clip));
+        out.push('\n');
         let seen_owned: Vec<String> = if folded {
             clip.seen.iter().take(FOLDED_LINES).cloned().collect()
         } else {
@@ -83,8 +90,11 @@ pub fn brief(clips: &[BriefClip], lines: &[crate::narration::Entry], max_chars: 
         let seen: &[String] = if folded { &seen_owned } else { &clip.seen };
         let said: &[String] = if folded { &said_owned } else { &clip.said };
         let marked: &[String] = if folded { &marked_owned } else { &clip.marked };
-        for event in seen {
-            out.push_str(&format!("  SEEN: {event}\n"));
+        for (index, event) in seen.iter().enumerate() {
+            match clip.seen_at.get(index) {
+                Some(at) => out.push_str(&format!("  SEEN +{at:.1}: {event}\n")),
+                None => out.push_str(&format!("  SEEN: {event}\n")),
+            }
         }
         for spoken in said {
             out.push_str(&format!("  SAID: {spoken}\n"));

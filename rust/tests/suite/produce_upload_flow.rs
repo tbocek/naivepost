@@ -50,6 +50,7 @@ fn clips_with(n: usize, mark: impl Fn(usize) -> (f64, Vec<String>)) -> Vec<up::B
                     naivepost::tools::mm_ss(i as f64 * 12.0 + 12.0)
                 ),
                 seen: vec![format!("a screen showing thing {}", i + 1)],
+                seen_at: Vec::new(),
                 said: vec![format!("someone said line {}", i + 1)],
                 rate,
                 marked,
@@ -1551,4 +1552,103 @@ fn f5_6_talk_above_the_labels_is_not_a_title() {
     assert_eq!(title, None);
     let (title, _, _) = up::peel("Draft\nTITLE: The real one\nTHUMBNAIL: frame: clip 1 +2\nWords.");
     assert_eq!(title.as_deref(), Some("The real one"));
+}
+
+/// F5.6 S1: every SEEN line carries its offset in the clip, so a `frame: clip n +s` answer copies a stamp rather than
+/// guessing one. 09-news: with no stamp the model guessed "+11" for a title slide described at 13.75-16.25 s and took
+/// the fade into it. A line with no time keeps the bare `SEEN:` form.
+#[test]
+fn f5_6_s1_every_seen_line_is_stamped_with_its_offset_in_the_clip() {
+    let mut stamped = clips(1);
+    stamped[0].seen = vec![
+        "the title slide over a mountain photo".to_string(),
+        "slide 2".to_string(),
+    ];
+    stamped[0].seen_at = vec![13.0, 25.04];
+    let brief = up::brief(&stamped, &[], usize::MAX);
+    assert!(
+        brief.contains("  SEEN +13.0: the title slide over a mountain photo\n"),
+        "{brief}"
+    );
+    assert!(brief.contains("  SEEN +25.0: slide 2\n"), "{brief}");
+    let bare = up::brief(&clips(1), &[], usize::MAX);
+    assert!(
+        bare.contains("  SEEN: a screen showing thing 1\n"),
+        "{bare}"
+    );
+}
+
+/// F5.6 S1: what each clip SAW is the session's EVENT rows, on the session clock its clips are cut on, and never a
+/// recording's own events.tsv, which counts from that recording's first second. 09-news: read raw, clip 1 listed the
+/// Game Jam page and the "North Korean fake job" slide of later recordings, and the frame stamps pointed at the wrong
+/// recording. The EVENT rows are not SAID lines as well.
+#[test]
+fn f5_6_s1_what_a_clip_saw_is_on_the_session_clock() {
+    let dir = std::env::temp_dir().join(format!("brief-clock-{}.naivepost", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a project folder");
+    let tree = Tree::new(&dir).expect("a tree");
+    std::fs::create_dir_all(tree.session_tsv().parent().unwrap()).expect("transcript folder");
+    // The second recording starts 40 s into the session: its slide at its own second 5 is session 45.
+    std::fs::write(
+        tree.session_tsv(),
+        "2.00\t8.00\tfirst\tEVENT\tthe title slide over a mountain photo\n\
+         3.00\t7.00\tfirst\tSPEAKER_00\thello and welcome\n\
+         45.00\t50.00\tsecond\tEVENT\tthe slide about the fake job\n\
+         44.00\t49.00\tsecond\tSPEAKER_00\tthe next article\n",
+    )
+    .expect("session.tsv");
+    for (lane, text) in [
+        ("first", "the title slide over a mountain photo"),
+        ("second", "the slide about the fake job"),
+    ] {
+        let events = tree.events_tsv(lane);
+        std::fs::create_dir_all(events.parent().unwrap()).expect("describe folder");
+        std::fs::write(&events, format!("2.00\t8.00\t{text}\n")).expect("events.tsv");
+    }
+    let seg = |s: f64, e: f64| Seg {
+        s,
+        e,
+        rate: 1.0,
+        ..Default::default()
+    };
+    let run = naivepost::produce_flow::Run {
+        cut: naivepost::cut::Cut {
+            segs: vec![seg(0.0, 10.0), seg(40.0, 52.0)],
+            ..Default::default()
+        },
+        lines: Vec::new(),
+        settings: Default::default(),
+        sources: naivepost::run::Snapshot {
+            footage: vec![
+                "/media/first.mp4".to_string(),
+                "/media/second.mp4".to_string(),
+            ],
+            voice: Vec::new(),
+            narrators: Vec::new(),
+        },
+        publish: None,
+        aspect: "16:9".to_string(),
+        clips: 2,
+        publish_written: false,
+        voice: "1".to_string(),
+    };
+    let brief = ui::produce_languages::upload_brief_for(&tree, &run);
+    let clip2 = brief.find("CLIP 2 ").expect("two clips");
+    let (first, second) = brief.split_at(clip2);
+    assert!(
+        first.contains("  SEEN +5.0: the title slide over a mountain photo\n")
+            && !first.contains("fake job"),
+        "clip 1 saw its own slide only:\n{brief}"
+    );
+    assert!(
+        second.contains("  SEEN +7.5: the slide about the fake job\n")
+            && !second.contains("mountain photo"),
+        "clip 2 saw the second recording's slide at its session second:\n{brief}"
+    );
+    assert!(
+        !brief.contains("SAID: EVENT"),
+        "an EVENT row is not something said:\n{brief}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

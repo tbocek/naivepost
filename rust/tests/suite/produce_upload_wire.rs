@@ -280,6 +280,7 @@ fn f5_6_s2_the_youtube_call_offers_thinking_and_the_six_tools() {
     };
     let collected = call::call(
         &scene.tree,
+        "",
         "THE FINISHED VIDEO: 2 clips, 00:24 long.",
         &empty(),
         &frames,
@@ -382,6 +383,7 @@ fn f5_6_s2_each_tool_answers_as_3_9_promises() {
     };
     let collected = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &empty(),
         &frames,
@@ -476,6 +478,7 @@ fn f5_6_s2_finish_names_what_is_still_missing() {
     previous.description = "last run's description".to_string();
     let collected = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &previous,
         &frames,
@@ -534,6 +537,7 @@ fn f5_6_s2_prose_after_a_read_tool_is_the_answer() {
     };
     let collected = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &empty(),
         &frames,
@@ -595,6 +599,7 @@ fn f5_6_s2_prose_after_a_picked_frame_is_still_the_answer() {
     };
     let collected = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &empty(),
         &frames,
@@ -651,6 +656,7 @@ fn f5_6_s2_the_finish_tool_answers_ok_or_names_what_is_missing() {
     };
     let collected = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &empty(),
         &frames,
@@ -676,6 +682,7 @@ fn f5_6_s2_the_finish_tool_answers_ok_or_names_what_is_missing() {
     };
     let second = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &empty(),
         &frames,
@@ -710,6 +717,7 @@ fn f5_6_s2_a_down_llm_is_named() {
     };
     let err = call::call(
         &scene.tree,
+        "",
         "BRIEF",
         &empty(),
         &frames,
