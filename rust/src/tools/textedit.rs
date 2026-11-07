@@ -90,7 +90,13 @@ impl Join {
         // Both ceilings are checked against what has already gone, not just this call: two drops of
         // 30 words each are 60 words, and a per-call check would let that through.
         let already = self.dropped_count(side);
-        let total = already + count;
+        // Both ceilings count words that were said: an entry the fixed transcript left empty (a word
+        // heard and then written out of the text) is not a word on either side (09-dao, a 34-word
+        // first take with 12 empty entries after it counted 46 and was refused).
+        let asked = already + count;
+        // Asked past the end of the side (across calls) still counts every one asked for.
+        let total =
+            spoken(&self.get_words(side, asked)) + asked.saturating_sub(self.all(side).len());
         if total > SEAM_MAX_WORDS {
             return crate::tools::error(&format!(
                 "that is {total} words from the {} side -- one join removes at most \
@@ -98,7 +104,7 @@ impl Join {
                 name(side)
             ));
         }
-        let shown_total = self.shown_count(Side::Before) + self.shown_count(Side::After);
+        let shown_total = spoken(self.shown(Side::Before)) + spoken(self.shown(Side::After));
         if shown_total > 0 && total as f64 > SEAM_CEIL * shown_total as f64 {
             return crate::tools::error(&format!(
                 "{total} of {shown_total} words shown is over the {:.0}% a join may remove -- \
@@ -187,6 +193,14 @@ impl Join {
             Side::After => &self.after,
         }
     }
+}
+
+/// How many of these entries are words that were said: an empty one (written out of the fixed text) is not.
+fn spoken(words: &[String]) -> usize {
+    words
+        .iter()
+        .filter(|word| !crate::word_list::bare(word).is_empty())
+        .count()
 }
 
 pub fn joins_repaired_log(repaired: usize, cached: usize) -> String {

@@ -29,7 +29,7 @@ How the servers are driven and how the passes are sized: request sizes, windows,
 | P.machine.retakeFragmentSeconds | 6.0 | longest line still a broken-off fragment (measured: tails under 2 s, longest 5) | retakeFrag |
 | P.machine.againReachSeconds | 25 | how much of the later take is read for the repeat | againReach |
 | P.machine.seamReachWords | 140 | words shown each side of a join (measured: failures at 63 and 71 abandoned words with 70) | seamReach |
-| P.machine.seamMaxWords | 40 | most words a join may remove | seamMaxWords |
+| P.machine.seamMaxWords | 40 | most words a join may remove (words said: an entry the fixed transcript left empty is not counted, here or in seamCeil; 09-dao: a 34-word first take with 12 empty entries counted 46 and was refused) | seamMaxWords |
 | P.machine.seamCeil | 0.6 | most of the shown words a join may remove | seamCeil |
 | P.machine.seamSnapWords | 3 | at-the-join tolerance (measured: refusals 4→2) | seamSnap |
 | P.machine.seamRetries | 1 | a refused join is asked again this many times (new 2026-09-18) | seamRetries |

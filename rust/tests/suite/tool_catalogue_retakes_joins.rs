@@ -454,6 +454,29 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_a_drop_is_refused_bef
     assert_eq!(long.shown_count(Side::Before), 60);
 }
 
+/// The ceilings count words that were said. An entry the fixed transcript left empty is no word: a 34-word
+/// first take with 12 empty entries after it is 34 words, not 46 (09-dao, 2026-11-06: refused, kept twice).
+#[test]
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_empty_entries_are_not_words() {
+    let mut before: Vec<&str> = vec!["kept"; 60];
+    before.extend(std::iter::repeat("said").take(34));
+    before.extend(std::iter::repeat("").take(12));
+    let mut join = Join::new(&before, &["next", "take"]);
+    let body = join.drop_words(Side::Before, 46);
+    assert!(!body.contains("error"), "34 said words are under 40: {body}");
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(parsed["count"], serde_json::json!(34));
+    assert_eq!(join.dropped_count(Side::Before), 46, "the empty entries go with them");
+
+    // Said words over the maximum are still refused, empty entries or not.
+    let mut over: Vec<&str> = vec!["kept"; 60];
+    over.extend(std::iter::repeat("said").take(41));
+    over.extend(std::iter::repeat("").take(3));
+    let mut join = Join::new(&over, &["next"]);
+    let body = join.drop_words(Side::Before, 44);
+    assert!(body.contains("that is 41 words"), "{body}");
+}
+
 /// `keep_join` is a whole answer that removes nothing; `get_words` reads past the shown cap.
 #[test]
 fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_keeping_is_an_answer_and_words_are_cheap(
