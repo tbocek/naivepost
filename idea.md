@@ -1,6 +1,88 @@
-# Todo
+# Ideas
 
-## Simplify the code
+## Check the cut by ear
+
+After a words-mode cut lands, listen to it the way the viewer will: rebuild the cut's audio, transcribe it, and let the model read what is actually heard at every seam. Where it does not read as one continuous talk, cut the heard words out, measure again, and repeat until nothing more is asked.
+
+Why by ear and not by the transcript: the transcript only has what the recordings' own ASR heard, and the join pass only sees words. The cut audio can hold things neither has. In 09-admin the cut still said "…wo ihr stecken geblieben seid **und dort gibt's wieder ein** das Handin, das dritte Handin…", a leftover that is in no transcript, and only a transcription of the cut found it.
+
+### How it works
+
+1. **Build the cut's audio.** Every segment taken from the recording's `prepare/inputs/<rec>/voice16k.wav`, on the cut's own times; no render. Keep the map cut time → session time, so every cut point's place in the audio is known.
+2. **Transcribe it.** Chunks of at most 55 s (the ASR service's qwen3 rule), split in the quietest place inside a segment, never at a cut point, so every seam is heard whole.
+3. **Align it.** The aligner (qwen3-aligner) gives every heard word its time in the cut. `[cut N]` marks go into the heard text where the segments meet, and every heard word, including words the transcript lacks, has a place.
+4. **Ask.** The model gets the User Context, everything recorded (all recordings' words, the cut's removals marked `{removed: …}`) and the heard text with `[cut N]`. It answers `{"remove":[{"cut":N,"from":"<first heard words to remove>","to":"<last heard words>","reason":"…"}]}`; the later saying has priority, nothing said only once goes, when in doubt nothing changes.
+5. **Cut.** The quotes are found in the heard words near that cut; the stretch from the first to the last becomes a time span in the cut, mapped to session time and removed from the segments, each edge in the middle of the pause beside it. One removal, one Undo.
+6. **Measure again.** The changed places are transcribed again (what it sounds like now), and steps 1–5 run on the new cut. Stop when the model asks for nothing, at most 2–3 rounds.
+
+### On the Cut page
+
+- Runs in the background right after ▶ (words mode) lands the cut, as "checking the seams" on the run bar; cancellable; ↻ runs it again after hand edits; a policy switch turns it off.
+- Every fix shows at its join in the take band: the reason, what was removed, what it sounds like now, with keep / undo. ▶✂✂ visits the changed joins first.
+- Short videos: apply and show. Lectures: suggestions only until the split version is measured (see open questions).
+- Results in `cut/seamcheck.tsv` (join by the two clips it joins, heard text, kind, reason, state open / applied / dismissed), cached on the cut's segments and the prompt.
+- Spec: a new flow F2.15 in `05-cut`, a shipped prompt `spec/prompts/seamcheck.md` that profiles can override under `## seamcheck`, the ASR and aligner use in `02-services`.
+
+Cost: 09-admin (3 min) is about 4 transcription + 4 alignment calls and one LLM call per round. A 40-minute lecture would be about 45 + 45 audio calls and 4–6 LLM calls per round.
+
+### What the experiments showed (2026-11-07/08)
+
+Machine cuts scored against the hand cuts: 09-admin (several, with and without "Hand-in" spelled right), 07-news, 08-news, 09-news, and fresh join-pass cuts of 09-account, 09-dao, 08-dex and 07-webarch. A seam is wrong when machine and hand cut disagree on a word near it (seams where both leave the same words don't count). About a quarter of all seams are wrong, so flagging at random hits about 25%.
+
+**Fixing by ear (the approach above)**, short videos, 3 tries each, then a second round:
+
+| Cut | What happened | Wrong words vs the hand cut |
+|---|---|---|
+| 09-admin, leftover at join 4 | "und dort gibt's wieder ein" removed 3/3 | not countable (no transcript has it) |
+| 09-admin, "Und dort schauen wir an…" already removed by the join pass | "Über nächstes Mal gibt es dann das dritte Handin." removed 3/3, round 2 finished a partial fix | 14 → 5 in 2/3 (the hand cut, except join 1) |
+| 09-admin, old prompt's leftover | "Dort möchte ich dann ebenfalls wieder sehen…" removed over two rounds | 38 → 28 in 2/3 |
+| 09-admin cuts already matching the hand cut | nothing changed, 6/6 | unchanged |
+| 09-news | removed the dangling "with" 6/6 ("…where we land. The last article…" reads better than the hand cut's "…where we land with. The last article…") | +1 |
+| 08-news | removed "which is insanely high." 1/3, which the hand cut keeps | +4 in that try |
+
+Round 2 settles: in 11 of 15 it asked for nothing, and it never kept cutting.
+
+Not solved: the two-sentence reworded restart in 09-admin ("Über nächstes Mal gibt es dann das dritte Handin. Und dort schauen wir an, wie weit ihr seid…" → "Das Handin, das dritte Handin, das wird dann das übernächste Mal fällig. Das ist auch wieder so ein Status, wo ihr seid…") was never removed, 0/6. Over-cuts can't be repaired this way: removed words are not in the cut audio (07-news lost a whole recording, "…created a fake certificate…").
+
+**Flagging only ("does this read correctly?")**, 2 tries each; *hit* = flags on a wrong seam, *found* = wrong seams flagged:
+
+| What the model got | short: hit | short: found | lectures: hit | lectures: found |
+|---|---|---|---|---|
+| cut text from the transcript, with context | 50% | 29% | 38% | 15% |
+| the same, no context | 54% | 34% | 41% | 16% |
+| everything (all words, removals marked) | 63% | 32% | 48% | 14% |
+| speech-to-text of the cut, with context | 52% | 55% | 38% | 12% |
+| the same, no context | 53% | 63% | 31% | 13% |
+| speech-to-text of the cut + full transcript | 49% | 50% | 39% | 18% |
+| per seam, transcript windows | 53% | 26% | 48% | 6% |
+| per seam, audio windows | 36% | 32% | 34% | 21% |
+
+- Hearing the cut doubles what is found on short videos. The User Context makes no measurable difference. Per-seam windows do worse than reading the whole video.
+- Lectures: most misses are taste, not text that reads wrong (09-dao: the hand cut drops "Open Zeppelin Reentrancy, ja.", "Remix, ja.", the on-screen "Hier gab es entsprechend Nein-Stimmen…"; the machine drops "Jede Stimme hier kostet Gas.", which the hand cut keeps).
+- Speech-to-text mishearings ("44" for "544", "Klagt") add flags, mostly away from the seams; keep only flags at a seam.
+- "False" flags include real leftovers the hand cut also kept (a stray "2." before "12 Millionen" in 09-dao, the Paymaster explanation said twice in 09-account), so the hit rates are lower bounds.
+
+**Correcting from text ("would you cut differently?")**, whole video in one ask, wrong words before → after:
+
+| | text + proposal | removals inline | + speech-to-text |
+|---|---|---|---|
+| 07-news | 22 → 12 | 22 → 21 | 22 → 20 |
+| 09-admin, "Hand-in" spelled right | 38 → 38 | 38 → 20 | 38 → 29 |
+| 09-account | 304 → 315 | 304 → 291 | 152 → 127 (1 of 2) |
+| 09-dao | 230 → 239 | reply cut off | 230 → 262 |
+
+Helps on short videos, neutral or worse on lectures; on 4–10k words the reply runs into the output limit.
+
+### Open questions
+
+- **Lectures in parts.** Ask per ~1–2k words of heard text instead of the whole video; untested with the fix-by-ear loop.
+- **Restoring over-cuts.** A second kind of fix that brings words back, using the transcript's word times (they are not in the cut audio).
+- **Two-sentence reworded restarts.** Neither the join pass nor the check removes the 09-admin one; maybe a prompt example, maybe it stays a hand cut.
+- **The names line.** Mishearings ("Handling"/"Handy" for Hand-in) hide repeats from every check; listing the names in the User Context fixes the transcript (join rule 3/6 → 5/6 on 09-admin).
+
+## Todo
+
+### Simplify the code
 
 Biggest gain first. No behaviour changes; the full suite stays green.
 
@@ -9,7 +91,7 @@ Biggest gain first. No behaviour changes; the full suite stays green.
 3. **Remaining duplicates.** Exact copies are shared. Left on purpose, because the names or values differ per module: `stat_recording`, `two_messages`, `human_weight`, `panel_height`, `seeded`. Worth a look by hand: the form hands (`press_*_apply`, `wire_*_buttons`), `text_gate::stage` and `describe_call::stage`, `drive_walk` and its `_for_test` twin.
 4. **Functions only tests call.** The rules nothing else used are gone, with the tests that only checked them. About 70 non-seam functions are left, kept because shared test helpers call them (`encode_command`, `checkpoints`, `click_outcome`, `part_at`, ...), so removing them means rewriting those helpers. The rest are `_for_test` seams, which are fine.
 
-## Suspected bugs
+### Suspected bugs
 
 Found by reading the code while updating the spec. None reproduced or run yet. The spec describes what the code does today, so a fix also changes the spec.
 
@@ -70,7 +152,7 @@ Found by reading the code while updating the spec. None reproduced or run yet. T
 - `produce_screen.rs:136`: webm clears burned-in; `:251` pixel compare; `:519` wrong tooltip.
 - `ui/produce_slots.rs:100`: crop box undraggable. `ui/produce_page_presses.rs:118`: empty box kept.
 
-### Found in the 2026-11-07 spec sync
+#### Found in the 2026-11-07 spec sync
 
 Same rules as above: read, not run.
 
