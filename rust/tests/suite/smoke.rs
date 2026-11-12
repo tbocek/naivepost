@@ -17,6 +17,7 @@ fn project_round_trip() {
             narrator: 2,
             sepvoice: true,
             tracks: vec![0, 1],
+            sound_off: false,
         }],
         policy: naivepost::project::Policy {
             language: naivepost::project::Field {

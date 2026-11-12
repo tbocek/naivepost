@@ -261,7 +261,7 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s4_produce_upload_thumbnail_and_t
 #[test]
 fn sec_11_flow_index_4_model_calls_at_a_glance_s5_setup_is_the_new_policy_call_once() {
     assert_eq!(ITEM, "§11-flow-index#4-model-calls-at-a-glance");
-    // F0.7 — runs when the User Context changes (new): one derivation per change, debounced.
+    // F0.7 — runs on the next ▶ after the User Context changed (new): one derivation per change.
     let s = model_calls::setup();
     assert_eq!(s.stage, Stage::Setup);
     assert_eq!(s.calls.len(), 1, "exactly one model, asked once");
@@ -274,7 +274,7 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s5_setup_is_the_new_policy_call_o
     );
     assert!(
         !policy.cached,
-        "not one of cache/llm's five jobs: the debounce is what bounds it"
+        "not one of cache/llm's five jobs: the tracker is what bounds it: one per changed context"
     );
     assert_eq!(s.asked(), 1);
 

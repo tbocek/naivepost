@@ -165,6 +165,7 @@ impl Scene {
                 narrator: 0,
                 sepvoice: false,
                 tracks: vec![],
+                sound_off: false,
             }],
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()
@@ -197,6 +198,7 @@ impl Scene {
             narrator: 1,
             sepvoice: false,
             tracks: vec![],
+            sound_off: false,
         });
         naivepost::project::save(&project, self.tree.dir()).expect("the session saves");
     }

@@ -9,11 +9,6 @@ use crate::prompts;
 use crate::tool_loop;
 use crate::tools::Tool;
 
-/// Wait after the last keystroke in the User Context before re-deriving.
-///
-/// `policy.debounceMs`: §03 says "debounced" without a number; 500 ms is ours, so no `P.*` row (a bare prefix like `machine.`/`preview.`).
-pub const DEBOUNCE_MS: u64 = 500;
-
 /// The prompt the derivation asks with; its thinking flag is read from [`prompts`] (`prompts::thinking("policy") == false`).
 pub const PROMPT: &str = "policy";
 

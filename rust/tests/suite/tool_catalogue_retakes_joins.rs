@@ -463,10 +463,17 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_empty_entries_are_not
     before.extend(std::iter::repeat("").take(12));
     let mut join = Join::new(&before, &["next", "take"]);
     let body = join.drop_words(Side::Before, 46);
-    assert!(!body.contains("error"), "34 said words are under 40: {body}");
+    assert!(
+        !body.contains("error"),
+        "34 said words are under 40: {body}"
+    );
     let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(parsed["count"], serde_json::json!(34));
-    assert_eq!(join.dropped_count(Side::Before), 46, "the empty entries go with them");
+    assert_eq!(
+        join.dropped_count(Side::Before),
+        46,
+        "the empty entries go with them"
+    );
 
     // Said words over the maximum are still refused, empty entries or not.
     let mut over: Vec<&str> = vec!["kept"; 60];

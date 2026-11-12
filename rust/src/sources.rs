@@ -10,21 +10,23 @@ use crate::run::NARRATOR_SLOTS;
 
 pub const ROW_KEY: &str = "\n\nThe symbols on every row, in order:\n\
     🎥 footage — frames come out of it, and the cut is made of it\n\
+    🔈 sound — a video's own sound is used; off, it hears the separate recording\n\
     🎤 narrator — which of the voices this is; 1 speaks the narration\n\
     ✂ split the voice off — ▶ separates it into the voice and the rest\n\
     🗑 remove — off this list; the file itself is left alone";
 
 /// §4's strings, in the words the spec gives them.
-pub const ADD_TIP: &str = "Add recordings or footage \u{2014} several at once";
-pub const COPY_TIP: &str =
-    "Ticked, an added file is copied into the project's sources/ folder, so the \
-    project holds everything it needs. Unticked, the file is referenced where it is: nothing is \
-    duplicated, and the session breaks if it moves.";
+pub const ADD_TIP: &str =
+    "Add recordings or footage \u{2014} several at once; each is copied into the \
+    project's sources/ folder, so the project holds everything it needs";
 pub const LIST_TIP: &str =
     "Every file here is transcribed, and placed on the session clock by the \
     timestamp in its name";
 pub const FOOTAGE_TIP: &str = "Footage \u{2014} frames come out of this file and it can be cut.\n\
     Off: it is only listened to, which is what a video kept for its audio wants.";
+pub const SOUND_TIP: &str = "Sound \u{2014} this video's own sound is used.\n\
+    Off: its own sound is not used; the video hears the separate recording\n\
+    that ran at the same time (\u{25b6} lines the two up by their sound).";
 pub const NARRATOR_TIP: &str = "Which voice this is. 0 clicks in: nobody yet.\n\
     1 is the voice the narration is spoken in; 2\u{2013}4 are the rest of the group.";
 pub const SEPARATE_TIP: &str =
@@ -57,6 +59,8 @@ impl TrackInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Control {
     Footage,
+    /// §4 (new): whether a video's own sound is used (04 F1.15).
+    Sound,
     Narrator,
     Name,
     Tracks,
@@ -88,6 +92,7 @@ pub fn row_controls(source: &Source, stream_count: usize) -> Vec<Control> {
     let mut controls = vec![];
     if is_video(Path::new(base_name(&source.path))) {
         controls.push(Control::Footage);
+        controls.push(Control::Sound);
     }
     controls.push(Control::Narrator);
     controls.push(Control::Name);
@@ -144,6 +149,19 @@ pub fn toggle_footage(project: &mut Project, index: usize, on: bool) -> bool {
         return false;
     }
     source.footage = on;
+    true
+}
+
+/// §4's sound button: `on` = the video's own sound is used. Only a video has the button: a sound
+/// recording with its sound off would be a row that is nothing.
+pub fn set_own_sound(project: &mut Project, index: usize, on: bool) -> bool {
+    let Some(source) = project.sources.get_mut(index) else {
+        return false;
+    };
+    if !is_video(Path::new(base_name(&source.path))) {
+        return false;
+    }
+    source.sound_off = !on;
     true
 }
 

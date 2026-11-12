@@ -67,6 +67,7 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             narrator: 1,
             sepvoice: true,
             tracks: vec![0, 1],
+            sound_off: false,
         }],
         reference_sources: true,
         vid_dir: Some("clips".to_string()),

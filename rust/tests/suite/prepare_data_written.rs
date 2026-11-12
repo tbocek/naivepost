@@ -339,6 +339,7 @@ impl Scene {
                 narrator: 0,
                 sepvoice: false,
                 tracks: vec![],
+                sound_off: false,
             }],
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()

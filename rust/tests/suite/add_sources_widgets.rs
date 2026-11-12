@@ -55,8 +55,10 @@ fn check_offers_the_chooser(app: &adw::Application) {
         Some("Add source files\u{2026}"),
         "§1's wording for badge 9's own row"
     );
-    let tick = ui::copy_into_project(&window).expect("the button comes with the copy tick");
-    assert_eq!(tick.label().as_deref(), Some("copy into project"));
+    assert!(
+        ui::find_source_widget(&window, "copy-into-project").is_none(),
+        "F0.12 S2: every added file is copied in, so there is no tick to choose with"
+    );
 
     // "The press opened the chooser" is all a headless test can ever check, and the chooser is never
     // answered, so nothing may have been added. The count is this thread's own, zeroed here so the
@@ -147,13 +149,6 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
     fs::write(&txt, vec![b'x'; 3]).unwrap();
     fs::write(&dup, vec![b'x'; 5]).unwrap();
 
-    // S2's default is the copy, read off the live tick rather than assumed.
-    assert!(
-        ui::copy_into_project(&window)
-            .expect("copy tick")
-            .is_active(),
-        "copy defaults on"
-    );
     assert!(
         ui::add_files(
             &window,

@@ -394,6 +394,7 @@ fn recording(path: &str, footage: bool) -> Source {
         // ✂ off: the separation stage has no row, so the press carries no voice-split ask.
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     }
 }
 

@@ -567,6 +567,7 @@ fn add_recording(tree: &Tree, name: &str, bytes: usize) -> Source {
         narrator: 0,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     }
 }
 

@@ -231,6 +231,7 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         narrator: 1,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     });
     project.sources.push(naivepost::project::Source {
         path: "sources/talk.wav".to_string(),
@@ -238,8 +239,14 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         narrator: 2,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     });
     let stages = run_stages::plan(run::Step::Prepare, &project);
+    // §F1.14: two sources could share seconds, so the recordings are lined up by their sound before
+    // anything is timed; the stages after it are the ones this test was written about.
+    assert_eq!(stages[0].name, "sync", "lining up comes first");
+    assert_eq!(stages[0].tasks[0].program, naivepost::sync_sound::SYNC_TASK);
+    let stages = &stages[1..];
     // §04 S6's order: ingest first (frames on one half of the bar, speech on the other), then the
     // understanding stages that read what those wrote: the text gate and describe over the footage row
     // (the gate always planned, judged by the main model when no decision model is set), fix over both.
@@ -343,6 +350,7 @@ fn f0_5_s3_drive_worker_reads_the_run_flags_at_each_checkpoint() {
         narrator: 1,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     });
     let mut bar = RunBar::default();
     run_stages::mirror_switches(&bar);

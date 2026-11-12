@@ -519,6 +519,9 @@ fn delete_current(state: &Editor) {
     };
     select(state, None);
     state.summary.set_text(&said);
+    // The profile was deleted on purpose: the open project lets go of its copy too, or the next paint
+    // would write it straight back (§5b "Carried in the project").
+    crate::ui::profile_form::forget_template(&name);
     crate::ui::profile_form::refresh_all();
 }
 

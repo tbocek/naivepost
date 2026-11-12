@@ -2,7 +2,7 @@
 //!
 //! §1 was rewritten to say where the parts sit: "The page is split left and right by a draggable
 //! divider opened at half: two columns side by side, not one above the other. Left column, top to
-//! bottom: one row with "Add source files…" and the "copy into project" tick, the sources list (it
+//! bottom: one row with "Add source files…", the sources list (it
 //! scrolls, the rows above and below it stay), and, under it, one row of controls … Right column: the
 //! prompt bench, top to bottom: one heading row (left to right: title, mark, then at the row's right
 //! end the row picker and Reset), then one text box filling the rest of column (it scrolls)." And the

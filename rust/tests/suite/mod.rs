@@ -41,6 +41,7 @@ mod cut_edit_invariants;
 mod cut_effect_decisions;
 mod cut_effects_proposed;
 mod cut_fold_rows;
+mod cut_follow;
 mod cut_form_frame_widgets;
 mod cut_hear_mix;
 mod cut_hear_mix_widgets;
@@ -127,7 +128,8 @@ mod f0_11_rescan_refresh_widgets;
 mod f0_12_where_it_runs_the_copy_returns_with_the_run_open;
 mod f0_13_every_test_button_live;
 mod f0_13_health_line;
-/// F0.7's two doors (the debounce and the next ▶) — the wait as a number and the two widget paths that
+mod f0_14_profile_carried_in_the_project;
+/// F0.7's one door (the next ▶) — the widget paths that
 /// demand a derivation; what a derivation set is said in the log, since F0.7 has no form.
 mod f0_14_profiles;
 mod f0_14_profiles_dialog_every_press;
@@ -589,6 +591,7 @@ mod suggest_flow;
 mod svg_drawing_widgets;
 mod switch_tab;
 mod switch_tab_widgets;
+mod sync_sound;
 mod tab_states;
 mod text_formats;
 mod text_formats_sidecars;
@@ -617,6 +620,7 @@ mod wave_cut_points;
 mod web_requests_tsv;
 mod web_tools_f6_1;
 mod web_tools_f6_1_browser;
+mod who;
 mod window_shrinks;
 mod wire;
 mod word_pad_room;

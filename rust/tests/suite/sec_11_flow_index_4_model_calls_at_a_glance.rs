@@ -417,7 +417,7 @@ fn check_prepare_press_logs_its_bill(app: &adw::Application) {
 }
 
 /// S5 through the widget: §4's Setup row (`policy \u{d7}1`) reaches the log of a live window. The derivation
-/// itself runs from its own doors (the User Context debounce and the next ▶), so what is pinned here is the
+/// itself runs from its own door (the next ▶ after the User Context changed), so what is pinned here is the
 /// bill line — a bill naming a call that never went out would be decoration.
 fn check_info_button_logs_the_setup_row(app: &adw::Application) {
     // Same scenario root as the Prepare press above (one per binary): only the LLM address is added,

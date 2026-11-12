@@ -123,6 +123,7 @@ fn cut_window(app: &adw::Application, tag: &str) -> (adw::ApplicationWindow, Pat
         narrator: 0,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     }];
     release_last_window();
     let window = ui::build_window(app, &model, "Prepare");

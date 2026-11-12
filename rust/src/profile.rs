@@ -620,6 +620,32 @@ pub fn file_of(paths: &Paths, name: &str) -> PathBuf {
     dir(paths).join(format!("{safe}.txt"))
 }
 
+/// What a project's own copy of its profile asks of this machine (§5b "Carried in the project").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Carry {
+    /// The project's copy and this machine's file are the same, or neither exists.
+    Nothing,
+    /// This machine has the profile and the project's copy is missing or older: the project takes this text.
+    /// `replaced` says the project held a different copy before.
+    Keep { text: String, replaced: bool },
+    /// This machine has no such profile and the project brought one: it is written here.
+    Restore(String),
+}
+
+/// Compare the text a project carries (`stored`, empty for none) with this machine's file (`None` when
+/// there is none). This machine's profile always wins where it exists: it is the one a person edits.
+pub fn carry(stored: &str, machine: Option<&str>) -> Carry {
+    match machine {
+        Some(text) if text == stored => Carry::Nothing,
+        Some(text) => Carry::Keep {
+            text: text.to_string(),
+            replaced: !stored.is_empty(),
+        },
+        None if stored.trim().is_empty() => Carry::Nothing,
+        None => Carry::Restore(stored.to_string()),
+    }
+}
+
 /// Every profile on this machine, by name, sorted.
 pub fn list(paths: &Paths) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir(paths))

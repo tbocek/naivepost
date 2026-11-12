@@ -44,7 +44,7 @@ Session clock; rows by greedy interval colouring with pins; filmed runs and cell
 
 ### F2.1 Play the recording (▶)
 
-<sub><!-- back -->[← F1.13](04-prepare.md#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F2.2 →](#f22-play-the-cut-)</sub>
+<sub><!-- back -->[← F1.16](04-prepare.md#f116-who-is-who-new) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F2.2 →](#f22-play-the-cut-)</sub>
 
 ```mermaid
 flowchart TD
@@ -352,7 +352,7 @@ Undo/Redo walk the snapshots, both saying "undone — N segment(s) left" (at the
 
 ### F2.14 Suggest a cut
 
-<sub><!-- back -->[← F2.13](#f213-undo-redo-revert-clear) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F3.1 →](06-effects.md#f31-zoom-by-hand)</sub>
+<sub><!-- back -->[← F2.13](#f213-undo-redo-revert-clear) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F2.15 →](#f215-the-camera-follows-the-speaker-new)</sub>
 
 ```mermaid
 flowchart TD
@@ -385,6 +385,31 @@ S2b **P.policy.cutMode = model** (the prototype's Gaming): an attempt that ends 
 S3 Apply: one Undo; hand-placed inserts kept; holes ≤ P.eng.seamMaxSeconds (1.5) closed only if somebody talked in them; both edges of every segment snapped (candidates: silence midpoint 0.8, word edge 0.9, less 0.18 per second away, plus 0.05 outward; within 5 s); marked stretches removed; dead air removed; coalesce; effects clamped to the footage kept and replaced as a list; persist; base. Log ">>> suggested N segments, M:SS total", "walk-back: N stretch(es) after closing holes, M edge(s) moved" and ">>> …and N effect(s): the speeds, the captions and the decorations".
 
 S3b **At most one breath at a join** (new, both the words cut and a model's suggestion, as they land): where the clip before a join ends on an inhale and the clip after it starts with one, the clip before ends where its breath begins; the breath before the next sentence stays; log ">>> cut: two breaths in a row at m:ss -- the clip before ends X s earlier, where its breath begins". A breath is found in the sound (`voice16k.wav`) between the cut and the nearest voiced speech on that side within 1.2 s (pitched, within 20 dB of the recording's speech level), not in the word times, which stretch the next word back over the inhale: at least 0.16 s of 20 ms frames that are unvoiced (autocorrelation peak under 0.35 at 50-400 Hz), noise-like (spectral flatness over 0.4), centred at 2.0-4.2 kHz and 15-45 dB under the speech level (the 90th percentile of the louder half of the recording's 10 ms frames, plus 3 dB). The centre band keeps a word's own closing "s", "ß", "ts" out (4.4-5.4 kHz; an inhale 2.4-3.4 kHz). A clip is never shortened under 0.3 s by it, a join with an insert in it is left alone, and a hand edit is never touched. Measured: 3 of 269 joins in the five lecture projects with a session word list (08-dex 2648.63 "…getradet," inhale | inhale "kann…", heard as two gasps; 07-webarch 799.22, 58731.77); listened to, one breath sounds much better. Tried and dropped: moving every edge to the quietest moment nearby, and a 10 ms fade at each cut — no audible difference at the joins listened to, and the speech recogniser heard none either.
+
+### F2.15 The camera follows the speaker (new)
+
+<sub><!-- back -->[← F2.14](#f214-suggest-a-cut) · [↑ 05 Cut](#05--cut) · [all flows](11-flow-index.md#3-all-flows) · [F3.1 →](06-effects.md#f31-zoom-by-hand)</sub>
+
+```mermaid
+flowchart TD
+  A(["a suggested cut has landed"]) --> G{"two camera rows · prepare/who.json?"}
+  G -- no --> KEEP["every scene keeps the row it has"]:::done
+  G -- yes --> V["each speaker's camera, from prepare/who.json"]
+  V --> FL["who has the floor, second by second<br/>an interjection does not take it"]
+  FL --> SW["switches: a moment before the first word · no shot under the shortest"]
+  SW --> AP["scenes split at the switches · each piece shown from its voice's camera"]
+  AP --> DONE["part of the suggestion's one Undo · “>>> cameras: N switch(es) …”"]:::done
+  classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
+  classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
+```
+
+Two cameras that filmed the same seconds are two rows ([F2.10](#f210-cameras-and-hearing)), and a suggested scene is shown from row 0 unless a person turns its lens badge: the cut model's `add_segment(start, end, why)` names no camera, and the words cut asks no model. In a conversation with one camera on each person the picture has one rule a machine can keep, show whoever is speaking, and it is kept by this rule and not asked of a model: an hour holds hundreds of changes of speaker.
+
+Built 2026-11-11 (`cut_follow`). It runs as the last step of a suggestion, the words cut and a model's alike ([F2.14](#f214-suggest-a-cut) S3, after the walk-back and S3b), inside that suggestion's one Undo, whenever the page has two camera rows and Prepare has written who is who; with one camera row it says nothing. (First draft: switched on by a policy value, P.policy.cameraFollows; `prepare/who.json` is the switch, and removing the file turns it off.) Its three lengths are constants for now, not yet values the User Context can set. On the first seven minutes of the interview it made 11 switches and left 7 interjections on the other's camera, the shots between 5 and 94 seconds long.
+
+S1 **Who is on which camera, and whose voice is whose,** is not asked of the person: it is read off `prepare/who.json`, which Prepare writes ([04 F1.16](04-prepare.md#f116-who-is-who-new)): for each speaker of the transcript, the camera row that shows them. (First draft: the 🎤 voice number on each camera row for the picture, and a P.policy.firstVoice read from the context for the voice; two things to set by hand that the context and the recordings already say.) S2 A speaker `who.json` gives no camera never moves the picture; with no `who.json`, or one naming no camera, S6's "nothing to follow". ">>> cameras: SPEAKER_01 is Thomas, shown on ‹cam2›; SPEAKER_00 is the guest, shown on ‹cam1›". S3 **The floor.** From the words of the heard recording ([04 F1.13](04-prepare.md#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles), each word with its speaker by [04 F1.3](04-prepare.md#f13-per-source-audio--text--word-times--speakers--segments) S6), one speaker's words less than 1 s apart are one stretch of talk. The floor is held by whoever is talking; a stretch shorter than **P.policy.interjectionSeconds** = 1.5 that falls inside the other's talk, or after which the other goes on within 2 s, is an interjection ("mhm", "yes", a laugh) and does not take it. While both talk, and while nobody does, the floor stays where it is. S4 **The switch** is **P.policy.cameraLeadSeconds** = 0.3 before the new speaker's first word, and never before the last word of the one before has ended (then it is at the first word). A shot that would last less than **P.policy.minShotSeconds** = 2.5 is not made: the picture stays, and the next switch is judged from there. S5 **Onto the cut.** Every kept scene is split at the switches inside it and each piece is shown from the camera of whoever holds the floor (`cam`, as the lens badge sets it); nothing is moved, added or removed, so the sound is untouched. A switch nearer than P.policy.minShotSeconds to a join moves onto the join: a cut in the talk and a change of camera at the same instant read as one cut, and a moment apart as a stumble. A scene with no word in it keeps the camera of the scene before. Inserts are left alone. A second a camera did not film is shown from the camera that did. S6 ">>> cameras: N switch(es) -- ‹cam2› for m:ss, ‹cam1› for m:ss; K interjection(s) left on the other's camera"; with two camera rows and no who.json, fewer than two speakers on a camera, or no spoken line of theirs, ">>> cameras: nothing to follow -- ‹why›" and the cut stands as it landed. S7 A person's lens badge still decides any scene afterwards, and Suggest already refuses to run over hand edits.
+
+Not in this flow, and written down so they are not taken for forgotten: a few seconds of the listener during a long answer, both people side by side during a fast exchange, and zooms after a words cut, each on the camera of its scene ([06 §9](06-effects.md#9-where-recordings-overlap) has suggested zooms on row 0 only).
 
 ## 6. Parameters used
 

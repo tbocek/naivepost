@@ -278,13 +278,6 @@ pub fn add_sources_button(window: &adw::ApplicationWindow) -> Option<gtk::Button
         .downcast()
         .ok()
 }
-/// The "copy into project" tick beside it (F0.12 S2), which is what the press reads to decide
-/// between a copy and a reference.
-pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckButton> {
-    find_widget_by_name(window.upcast_ref(), "copy-into-project")?
-        .downcast()
-        .ok()
-}
 /// The step the run bar is holding, if any — read off `RunBar::running` rather than off a button's
 /// face.
 pub fn running_step() -> Option<crate::run::Step> {

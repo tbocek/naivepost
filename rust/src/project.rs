@@ -39,6 +39,10 @@ pub struct ProfileUse {
     /// The profile's `## produce` rows as this project last took them (`Row: value` per line).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub produce_rows: String,
+    /// The profile's whole text as this project last used it (§03-shell §5b "Carried in the project"): a
+    /// project folder copied to another machine brings its profile with it. Written only when there is one.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub template: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -49,6 +53,11 @@ pub struct Source {
     pub narrator: u32,
     pub sepvoice: bool,
     pub tracks: Vec<u32>,
+    /// §4's sound button, off: this video's own sound only lines the file up, and ▶ Prepare gives its
+    /// copy in `sources/` the sound of the separate recording that ran at the same time (04 F1.15).
+    /// Written only when set, so every older project file reads and writes as it did.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub sound_off: bool,
 }
 
 /// Every recording is a voice, 1..N: there is no "no voice", so a row starts at voice 1, the one the
@@ -61,6 +70,7 @@ impl Default for Source {
             narrator: 1,
             sepvoice: false,
             tracks: Vec::new(),
+            sound_off: false,
         }
     }
 }

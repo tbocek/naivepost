@@ -12,7 +12,7 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
 <root>/assets/                     SVG cards and other inserts, shared by every project under the root (a card is reused across sessions); CARDS.md guide; the two built-ins written when the insert chooser is first opened
 <name>.naivepost/
   naivepost.json                     the project (§2)
-  sources/                           copies of added files (when "copy into project" is on); <name>.part while a copy is in flight
+  sources/                           copies of added files (every added file is copied in, an unclosed recording mended on the way: 03 F0.12 S2, S2b); <name>.part while a copy is in flight
   stems/                             voice-separation products: <base>.split-voice.wav, <base>.split-novoice.wav|.mkv
   prepare/
     inputs/meta.env                  INTERVAL (the 0.25 s extraction grid), SCALE always; VIDEO_FILE, VIDEO_BASE when there is footage; AUDIO_FILE, AUDIO_BASE when narrator 1 resolves
@@ -74,10 +74,10 @@ Paths written into any project file follow one rule: inside the project → `pro
 | run_steps | prototype only: the chain's ticked pages; ignored on load, never written (the run bar has no step picker, [03 §2](03-shell.md#2-the-run-bar)) | — |
 | language | prototype and first rewrite only: the Language box's code; read once into P.policy.language (unless the file's policy holds a language of its own, said in the log), never written at the top level | — |
 | no_narration | gone: there is no narration switch ([07 §1](07-narrate.md#1-screen)); ignored on load, never written (first rewrite: the Narration tick, narration off) | |
-| reference_sources | inverted on purpose: absent = copy sources in | false |
+| reference_sources | kept as stored, read by nothing: every added file is copied into `sources/` ([03 F0.12](03-shell.md#f012-add-sources-from-prepare) S2). A project made while files could be referenced keeps its rows where they point. First rewrite: the "copy into project" tick's state, inverted on purpose (absent = copy sources in) | false |
 | vid_dir / aud_dir | last chooser folders | root/input_video, root/input_audio |
 | context | the User Context, verbatim; with a profile, the template filled in (rebuilt on every field change) | "" |
-| profile | new: the profile this project's context is made from and its own values, `{"name": "News show", "values": {"title": "…", "episode": "6"}, "produce_rows": "Preset: veryslow\n…"}` (`produce_rows`: the profile's produce rows as this project last took them, so only rows changed in Profiles since are taken again) ([03 F0.14](03-shell.md#f014-profiles)); absent = free-text context | absent |
+| profile | new: the profile this project's context is made from and its own values, `{"name": "News show", "values": {"title": "…", "episode": "6"}, "produce_rows": "Preset: veryslow\n…"}` (`produce_rows`: the profile's produce rows as this project last took them, so only rows changed in Profiles since are taken again); new: `template`, the profile's whole text as this project last used it, so the project folder copied to another machine brings its profile with it (written only when there is one; [03 §5b](03-shell.md#5b-profiles-new) "Carried in the project") ([03 F0.14](03-shell.md#f014-profiles)); absent = free-text context | absent |
 | policy | new, not in the prototype: the editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)) with a `source` per field (user / model / default) | defaults |
 | produce | encoder settings ([`08-produce.md` §2](08-produce.md#2-flows)), each option spelled as §A lists it (`"resolution": "original"`; the first rewrite wrote `Original`, which its own reader did not know, so the choice was lost on the next open; that spelling is still read); `out_file` is never stored; `vfr` is gone with the peak-rate tick ([08 §1](08-produce.md#1-screen)): ignored on load, never written (first rewrite: the Frame timing tick, `true` = the frame rate as a ceiling) | defaults |
 | publish | upload text and thumbnail state ([§5](#5-producepublishpublishjson)) | absent |

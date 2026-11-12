@@ -34,6 +34,7 @@ fn source(path: &str, footage: bool, narrator: u32) -> Source {
         narrator,
         sepvoice: true,
         tracks: vec![],
+        sound_off: false,
     }
 }
 

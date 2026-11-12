@@ -135,6 +135,7 @@ impl Scene {
                     narrator: 0,
                     sepvoice: false,
                     tracks: vec![],
+                    sound_off: false,
                 },
                 Source {
                     path: format!("project:sources/{AUDIO}"),
@@ -142,6 +143,7 @@ impl Scene {
                     narrator: 0,
                     sepvoice: false,
                     tracks: vec![],
+                    sound_off: false,
                 },
             ],
             ..Project::default()

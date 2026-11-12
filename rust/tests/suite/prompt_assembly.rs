@@ -703,7 +703,8 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s12_cut_user_message_carries_the_conte
 #[test]
 fn sec_09_llm_and_tools_8_prompt_assembly_s13_policy_user_message_keeps_the_refusal_tail() {
     let req = naivepost::policy::request("cut the boring parts");
-    let first = naivepost::policy_call::user_turn(&req, &[]);
+    let held = naivepost::project::Policy::default();
+    let first = naivepost::policy_call::user_turn(&req, &[], &held);
     assert!(
         first.starts_with(narrate_pass::CTX_INTRO),
         "§8's door writes the context block:\n{first}"
@@ -722,13 +723,20 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s13_policy_user_message_keeps_the_refu
         "policy carried a speech rule:\n{first}"
     );
     assert!(
-        first.contains("Set only the fields it settles"),
+        first.contains("Set only the fields the context settles"),
         "the setter instruction is part of the material"
+    );
+    // The fields and their allowed values ride in the first message, so no request is spent asking for them.
+    assert!(
+        first.contains("\"name\":\"decorationsPass\"")
+            && first.contains("\"values\":[\"joins\",\"retakes\",\"none\"]"),
+        "the field list is in the first message:\n{first}"
     );
 
     let again = naivepost::policy_call::user_turn(
         &req,
         &["target_length is not a field the list allows".into()],
+        &held,
     );
     assert!(
         again.starts_with(narrate_pass::CTX_INTRO),

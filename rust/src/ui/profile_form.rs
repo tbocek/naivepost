@@ -168,6 +168,23 @@ pub fn follow_row(editor: &gtk::TextView, on_context: bool) {
     });
 }
 
+/// A profile was deleted in the Profiles window: every open project that used it drops the copy it
+/// carried, so the deletion stands on this machine. Its User Context and values stay.
+pub fn forget_template(name: &str) {
+    let forms: Vec<Rc<Form>> = FORMS.with(|forms| forms.borrow().clone());
+    for form in forms {
+        if let Some(used) = form
+            .session
+            .borrow_mut()
+            .profile
+            .as_mut()
+            .filter(|used| used.name == name)
+        {
+            used.template.clear();
+        }
+    }
+}
+
 /// Re-read every bench's profiles (a profile was saved or deleted in the Profiles window).
 pub fn refresh_all() {
     let forms: Vec<Rc<Form>> = FORMS.with(|forms| forms.borrow().clone());
@@ -213,10 +230,18 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
                 let produce_rows = template_of(name)
                     .map(|template| rows_signature(&template.produce))
                     .unwrap_or_default();
+                // The template rides along (§5b "Carried in the project"); `carry_template` below fills it.
+                let template = held
+                    .profile
+                    .as_ref()
+                    .filter(|used| used.name == name)
+                    .map(|used| used.template.clone())
+                    .unwrap_or_default();
                 held.profile = Some(ProfileUse {
                     name: name.to_string(),
                     values,
                     produce_rows,
+                    template,
                 });
             }
         }
@@ -224,8 +249,49 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
     if let Some((produce, name, rows)) = to_keep {
         keep_produce(&produce, &name, &rows);
     }
-    derive_policy();
+    carry_template(&form.session);
     paint(form);
+}
+
+/// §5b "Carried in the project": the project keeps the whole text of the profile it uses, so its folder can
+/// be copied to another machine. Where this machine has the profile, the project's copy follows it; where
+/// it has none and the project brought one, the profile is written here, and everything that reads a
+/// profile by name finds it.
+fn carry_template(session: &Rc<RefCell<Project>>) {
+    let Some(paths) = crate::settings::from_environment() else {
+        return;
+    };
+    let Some((name, stored)) = session
+        .borrow()
+        .profile
+        .as_ref()
+        .map(|used| (used.name.clone(), used.template.clone()))
+    else {
+        return;
+    };
+    let machine = profile::load(&paths, &name).ok();
+    match profile::carry(&stored, machine.as_deref()) {
+        profile::Carry::Nothing => {}
+        profile::Carry::Keep { text, replaced } => {
+            if let Some(used) = session.borrow_mut().profile.as_mut() {
+                used.template = text;
+            }
+            if replaced {
+                crate::ui::window::log_line(&format!(
+                    ">>> profile {name}: this machine's differs from the copy in the project -- this machine's is used, and the project now carries it"
+                ));
+            }
+        }
+        profile::Carry::Restore(text) => match profile::save(&paths, &name, &text) {
+            Ok(path) => crate::ui::window::log_line(&format!(
+                ">>> profile {name}: not on this machine -- written to {} from the copy the project carries",
+                path.display()
+            )),
+            Err(why) => crate::ui::window::log_line(&format!(
+                "!!! profile {name}: not on this machine, and the project's copy could not be written here -- {why}"
+            )),
+        },
+    }
 }
 
 pub fn follow_profile_produce() {
@@ -289,20 +355,10 @@ fn keep_produce(produce: &crate::project::Produce, name: &str, rows: &[(String, 
     ));
 }
 
-/// F0.7's debounced derivation follows a context change made here, as it follows a typed one.
-fn derive_policy() {
-    if let Some(window) = WINDOW_PAGE.with(
-        |WindowPage {
-             policy_watch_window: w,
-             ..
-         }| w.borrow().clone(),
-    ) {
-        crate::ui::window::schedule_policy_derive(&window);
-    }
-}
-
 /// The dropdown, the form and which of form or text box the scroller holds, from the project.
 fn paint(form: &Rc<Form>) {
+    // First, so a profile the project brought is on this machine before the list of them is read.
+    carry_template(&form.session);
     let names = crate::settings::from_environment()
         .as_ref()
         .map(profile::list)
@@ -562,7 +618,7 @@ fn set_value(form: &Rc<Form>, field: &Field, value: String) {
         let values = profile::values_for(&template, &used.values);
         held.context = profile::fill(&template, &values);
     }
-    derive_policy();
+    carry_template(&form.session);
 }
 
 pub fn refusal(project: &Project) -> Option<String> {

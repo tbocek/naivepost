@@ -5,7 +5,7 @@
 //! - §4 the 🎥 footage toggle, clicked: the session's flag and the status line follow, and a second click undoes it;
 //! - §4 the track menu's ticks on a file with two audio streams: one out, the face counts it; the last one cannot
 //!   come out and springs back with the reason;
-//! - F0.12 S2 the "copy into project" tick: unticked, an added file is referenced where it lies; ticked, copied in;
+//! - F0.12 S2 an added file is always copied into the project's sources/ (the "copy into project" tick is gone);
 //! - F0.14 S4 a profile's choice dropdown and its choice+ picks (named, so they can be pressed) store their value;
 //! - §1/§7 a log line naming a path opens on a CLICK, through the real opener (the first rewrite opened links from
 //!   Enter alone);
@@ -172,7 +172,7 @@ fn check_tracks(window: &adw::ApplicationWindow) {
     ticks[0].set_active(true);
 }
 
-/// F0.12 S2: the tick decides, at the chooser's answer, whether a file is copied in or referenced.
+/// F0.12 S2: an added file is copied into the project, always; there is no tick to say otherwise.
 fn check_copy_tick(
     window: &adw::ApplicationWindow,
     root: &std::path::Path,
@@ -180,25 +180,12 @@ fn check_copy_tick(
 ) {
     let outside = root.join("outside");
     std::fs::create_dir_all(&outside).unwrap();
-    video(&outside.join("2026-10-25 11-00-00.mkv"), 1);
     video(&outside.join("2026-10-25 11-05-00.mkv"), 1);
-    let tick = ui::copy_into_project(window).expect("the copy tick");
-    tick.set_active(false);
-    // The chooser's own response body (`add_files` is what its Accept runs).
-    assert!(ui::window::add_files(
-        window,
-        &[outside.join("2026-10-25 11-00-00.mkv")]
-    ));
-    common::settle_workers();
-    let referenced = ui::session_handle().borrow().sources.iter().any(|source| {
-        source.path.ends_with("11-00-00.mkv") && !source.path.starts_with("project:")
-    });
-    assert!(referenced, "unticked: the file is referenced where it lies");
     assert!(
-        !session.join("sources/2026-10-25 11-00-00.mkv").exists(),
-        "and not copied"
+        ui::find_source_widget(window, "copy-into-project").is_none(),
+        "the copy tick is gone"
     );
-    tick.set_active(true);
+    // The chooser's own response body (`add_files` is what its Accept runs).
     assert!(ui::window::add_files(
         window,
         &[outside.join("2026-10-25 11-05-00.mkv")]
@@ -206,7 +193,7 @@ fn check_copy_tick(
     common::settle_workers();
     assert!(
         session.join("sources/2026-10-25 11-05-00.mkv").exists(),
-        "ticked: copied into the project's sources/"
+        "copied into the project's sources/"
     );
     assert!(ui::session_handle()
         .borrow()

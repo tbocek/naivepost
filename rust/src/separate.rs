@@ -314,6 +314,7 @@ pub fn split_rows(project: &mut Project, index: usize, rest: &str, voice: &str) 
         narrator: held.narrator,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     };
     let voice_row = Source {
         path: voice.to_string(),
@@ -321,6 +322,7 @@ pub fn split_rows(project: &mut Project, index: usize, rest: &str, voice: &str) 
         narrator: held.narrator,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     };
     project.sources.insert(index, voice_row);
     project.sources.insert(index, rest_row);

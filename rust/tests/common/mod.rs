@@ -358,6 +358,7 @@ pub fn footage(path: &str) -> Source {
         narrator: 0,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     }
 }
 

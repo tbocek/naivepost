@@ -46,6 +46,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         sources::row_controls(cam, 3),
         vec![
             Control::Footage,
+            Control::Sound,
             Control::Narrator,
             Control::Name,
             Control::Tracks,
@@ -370,13 +371,8 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     );
     assert_eq!(
         sources::ADD_TIP,
-        "Add recordings or footage \u{2014} several at once"
-    );
-    assert_eq!(
-        sources::COPY_TIP,
-        "Ticked, an added file is copied into the project's sources/ folder, so the project holds \
-         everything it needs. Unticked, the file is referenced where it is: nothing is duplicated, and \
-         the session breaks if it moves."
+        "Add recordings or footage \u{2014} several at once; each is copied into the project's \
+         sources/ folder, so the project holds everything it needs"
     );
     assert_eq!(sources::TRACKS_TITLE, "Audio tracks in this file");
     assert_eq!(
@@ -389,6 +385,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         sources::ROW_KEY,
         "\n\nThe symbols on every row, in order:\n\
          \u{1f3a5} footage \u{2014} frames come out of it, and the cut is made of it\n\
+         \u{1f508} sound \u{2014} a video's own sound is used; off, it hears the separate recording\n\
          \u{1f3a4} narrator \u{2014} which of the voices this is; 1 speaks the narration\n\
          \u{2702} split the voice off \u{2014} \u{25b6} separates it into the voice and the rest\n\
          \u{1f5d1} remove \u{2014} off this list; the file itself is left alone"
@@ -610,27 +607,14 @@ fn check_the_tooltips_are_on_the_widgets(app: &adw::Application) {
         "{ITEM}: the sentence is the spec's"
     );
 
-    // **2** copy into project — the long copy/reference sentence, whole.
-    let copy_: gtk::CheckButton =
-        widget(&window, "copy-into-project").expect("Prepare has the copy tick");
-    assert_eq!(
-        copy_.label().as_deref(),
-        Some("copy into project"),
-        "{ITEM}: badge 2's label"
-    );
-    let copy_tip = copy_.tooltip_text().unwrap_or_default().to_string();
-    assert_eq!(
-        copy_tip,
-        sources::COPY_TIP,
-        "{ITEM}: badge 2 carries the copy/reference sentence"
+    // **2** copy into project — gone: every added file is copied in, and badge 1's tooltip says where.
+    assert!(
+        widget::<gtk::CheckButton>(&window, "copy-into-project").is_none(),
+        "{ITEM}: there is no copy tick"
     );
     assert!(
-        copy_tip.contains("sources/"),
-        "{ITEM}: it names where a copy goes: {copy_tip}"
-    );
-    assert!(
-        copy_tip.contains("the session breaks if it moves"),
-        "{ITEM}: and what referencing costs: {copy_tip}"
+        sources::ADD_TIP.contains("sources/"),
+        "{ITEM}: badge 1 names where the copy goes"
     );
 
     // The list itself (§4's own tooltip), pinned on the widget now.
@@ -772,6 +756,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         sources::row_controls(&cam, 3),
         vec![
             Control::Footage,
+            Control::Sound,
             Control::Narrator,
             Control::Name,
             Control::Tracks,
@@ -948,4 +933,35 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         Err(err) => err,
     };
     assert!(broken.contains("cam.mkv"), "and so does this one: {broken}");
+}
+
+/// §4 (new) the sound button: only on a video, pressed in by default, and its press reaches the session.
+#[test]
+fn sec_03_shell_4_the_sound_button_is_a_videos_and_stores_its_state() {
+    common::pin_private_cwd();
+    let mut project = naivepost::project::Project {
+        sources: vec![row("cam.mkv", true, 1), row("mic.flac", false, 1)],
+        ..Default::default()
+    };
+    assert!(sources::row_controls(&project.sources[0], 1).contains(&Control::Sound));
+    assert!(
+        !sources::row_controls(&project.sources[1], 1).contains(&Control::Sound),
+        "a sound recording with its sound off would be a row that is nothing"
+    );
+    assert!(
+        !project.sources[0].sound_off,
+        "a video's own sound is used until someone says otherwise"
+    );
+    assert!(sources::set_own_sound(&mut project, 0, false));
+    assert!(project.sources[0].sound_off);
+    assert!(
+        !sources::set_own_sound(&mut project, 1, false),
+        "refused on a sound recording"
+    );
+    assert!(!project.sources[1].sound_off);
+    // Written only when set: an older project file reads and writes as it did.
+    let off = serde_json::to_string(&project.sources[0]).unwrap();
+    assert!(off.contains("\"sound_off\":true"), "{off}");
+    let on = serde_json::to_string(&project.sources[1]).unwrap();
+    assert!(!on.contains("sound_off"), "{on}");
 }

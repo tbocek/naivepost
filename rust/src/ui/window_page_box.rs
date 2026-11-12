@@ -34,16 +34,15 @@ use crate::ui::window::{press_effect_item, session_reads, STRIP_HEIGHT, STRIP_WI
 use crate::ui::window_bench::bench_box;
 use crate::ui::window_doors::find_widget_by_name;
 use crate::ui::window_policy::main_window;
-use crate::ui::window_project::{ADD_LABEL, COPY_LABEL};
+use crate::ui::window_project::ADD_LABEL;
 
 /// One page of the window. Prepare's two widgets are handed back so `build_window` wires *that* button; elsewhere both are `None`.
 pub(crate) fn page_box(
     page: &str,
-    project: &Project,
     session: &Rc<RefCell<Project>>,
     status: &gtk::Label,
     window: &adw::ApplicationWindow,
-) -> (gtk::Widget, Option<gtk::Button>, Option<gtk::CheckButton>) {
+) -> (gtk::Widget, Option<gtk::Button>) {
     let view = adw::ToolbarView::new();
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -74,7 +73,7 @@ pub(crate) fn page_box(
     title_row.set_visible(false);
     box_.append(&title_row);
 
-    let mut prepare: Option<(gtk::Button, gtk::CheckButton)> = None;
+    let mut prepare: Option<gtk::Button> = None;
     if page == "Prepare" {
         // §1: two columns split by a draggable divider opened at half: left = files and session, right = prompt bench.
         let left = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -83,16 +82,10 @@ pub(crate) fn page_box(
         let add_ = gtk::Button::with_label(ADD_LABEL);
         add_.set_widget_name("add-sources-button");
         add_.set_tooltip_text(Some(sources::ADD_TIP));
-        let copy_ = gtk::CheckButton::with_label(COPY_LABEL);
-        copy_.set_widget_name("copy-into-project");
-        copy_.set_tooltip_text(Some(sources::COPY_TIP));
-        // Ticked: bring the files inside the project by default (F0.12 S2).
-        copy_.set_active(!project.reference_sources);
 
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         row.set_widget_name("add-sources-row");
         row.append(&add_);
-        row.append(&copy_);
         left.append(&row);
 
         // §1 gives the list its OWN scroller; otherwise a long list pushes the row under it out of the column
@@ -146,7 +139,7 @@ pub(crate) fn page_box(
         split.set_vexpand(true);
         split.set_position(PREPARE_HALF_PX);
 
-        prepare = Some((add_, copy_));
+        prepare = Some(add_);
     }
 
     // The User Context is not drawn here: §04 §1 puts it in the prompt bench.
@@ -371,8 +364,7 @@ pub(crate) fn page_box(
     view.set_vexpand(true);
     view.set_vexpand_set(true);
     // Only Prepare hands its widgets back; `build_window` wires them directly, since `find_widget_by_name` would reach an arbitrary page's copy.
-    let (add_, copy_) = prepare.map_or((None, None), |(add_, copy_)| (Some(add_), Some(copy_)));
-    (view.upcast(), add_, copy_)
+    (view.upcast(), prepare)
 }
 
 /// Installs [`cut_screen::toolbar_css`] once per process, like `produce_page` and `narrate_page`: the button padding is what overflows §1's floor.

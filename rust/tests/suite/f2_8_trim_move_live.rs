@@ -143,6 +143,7 @@ fn cut_window(
         narrator: 0,
         sepvoice: false,
         tracks: vec![],
+        sound_off: false,
     }];
     let window = ui::build_window(app, &model, "Prepare");
     hold_last_window(window.clone());

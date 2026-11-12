@@ -52,6 +52,7 @@ fn one_source(footage: bool) -> Vec<Source> {
         narrator: 1,
         sepvoice: false,
         tracks: vec![0],
+        sound_off: false,
     }]
 }
 
@@ -361,6 +362,7 @@ fn check_the_lock_is_asked_of_the_live_session(app: &adw::Application) {
         narrator: 0,
         sepvoice: false,
         tracks: vec![0],
+        sound_off: false,
     });
     click_tab(&window, Page::Cut);
     assert_eq!(

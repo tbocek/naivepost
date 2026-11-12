@@ -18,6 +18,7 @@ fn source(path: &str, footage: bool, sepvoice: bool) -> Source {
         narrator: 0,
         sepvoice,
         tracks: vec![],
+        sound_off: false,
     }
 }
 

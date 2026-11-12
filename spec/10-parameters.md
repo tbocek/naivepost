@@ -107,6 +107,9 @@ What the finished video is like: lengths, silences, budgets, what runs. One row 
 | P.policy.decorationDensity | "three or four across five minutes of finished video" | from the effects prompt | fxRules |
 | P.policy.markingPass | retakes | which Prepare marking pass runs: joins ([F1.10](04-prepare.md#f110-repair-the-joins)), retakes ([F1.9](04-prepare.md#f19-mark-retakes)) or none — from the User Context | styleRead/styleMoments |
 | P.policy.cutMode | model | how Suggest builds the cut: words (derived from the marked text, no model) or model | styleRead/styleMoments |
+| P.policy.cameraLeadSeconds | 0.3 | the camera changes this long before the new speaker's first word ([05 F2.15](05-cut.md#f215-the-camera-follows-the-speaker-new)); new, a constant for now |  |
+| P.policy.interjectionSeconds | 1.5 | a shorter stretch of talk inside the other's does not take the picture ([05 F2.15](05-cut.md#f215-the-camera-follows-the-speaker-new)); new, a constant for now |  |
+| P.policy.minShotSeconds | 2.5 | no shot shorter than this is made by the camera rule ([05 F2.15](05-cut.md#f215-the-camera-follows-the-speaker-new)); new, a constant for now |  |
 | P.policy.captionsPass | on | whether [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut) is called at all | new |
 | P.policy.speedPass | on | whether [F3.10](06-effects.md#f310-speeds-proposed-by-the-model) is called at all | new |
 | P.policy.decorationsPass | on | whether [F3.11](06-effects.md#f311-decorations-proposed-by-the-model) is called at all | new |

@@ -38,6 +38,8 @@ pub const NARRATOR_ICON: &str = "audio-input-microphone-symbolic";
 /// The 🎥 footage toggle's face: §4's camera.
 pub const FOOTAGE_ICON: &str = "camera-video-symbolic";
 pub const SEPARATE_ICON: &str = "audio-speakers-symbolic";
+/// §4 (new): the sound button's face, a loudspeaker; pressed in while the video's own sound is used.
+pub const SOUND_ICON: &str = "audio-volume-high-symbolic";
 
 /// A symbol control: an icon, flat so a row of them reads as one band rather than a row of boxes,
 /// and carrying §4's key to the four symbols at the end of its tooltip.
@@ -184,6 +186,13 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
         footage.set_active(source.footage);
         wire_footage(&footage, session.clone(), &rows.status, index, name.clone());
         box_.append(&footage);
+    }
+
+    if controls.contains(&Control::Sound) {
+        let sound = icon_toggle(SOUND_ICON, &format!("sound-{index}"), sources::SOUND_TIP);
+        sound.set_active(!source.sound_off);
+        wire_sound(&sound, session.clone(), &rows.status, index, name.clone());
+        box_.append(&sound);
     }
 
     let narrator = icon_button("", &format!("narrator-{index}"), sources::NARRATOR_TIP);
@@ -354,6 +363,30 @@ fn wire_footage(
         }
         // Refused (only a video may be footage): the button goes back, so it never shows what the
         // session does not hold, as 🗣's refusal does.
+        button.set_active(!button.is_active());
+    });
+}
+
+fn wire_sound(
+    sound: &gtk::ToggleButton,
+    session: Rc<RefCell<Project>>,
+    status: &gtk::Label,
+    index: usize,
+    name: String,
+) {
+    let status = status.clone();
+    sound.connect_clicked(move |button| {
+        if sources::set_own_sound(&mut session.borrow_mut(), index, button.is_active()) {
+            status.set_text(&format!(
+                "{name}: {}",
+                if button.is_active() {
+                    "its own sound is used"
+                } else {
+                    "its own sound is off \u{2014} it hears the separate recording"
+                }
+            ));
+            return;
+        }
         button.set_active(!button.is_active());
     });
 }

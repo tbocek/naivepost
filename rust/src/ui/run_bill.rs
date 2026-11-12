@@ -17,7 +17,7 @@ pub fn line_for(step: run::Step) -> Option<String> {
     Some(format!("{}: {}", summary.stage.label(), summary.one_line()))
 }
 
-/// The Setup row: `policy ×1`, the call F0.7 makes when the User Context changes; `derive_policy` prints it after a derivation.
+/// The Setup row: `policy ×1`, the call F0.7 makes on the next ▶ after the User Context changed; `derive_policy` prints it after a derivation.
 pub fn setup_line() -> String {
     let summary = model_calls::setup();
     format!("{}: {}", summary.stage.label(), summary.one_line())
