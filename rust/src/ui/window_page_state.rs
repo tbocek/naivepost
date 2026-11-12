@@ -66,9 +66,7 @@ pub(crate) struct WindowPage {
     /// Per-window record of which User Context the policy was derived from (F0.7). Newest last.
     pub(crate) policy_trackers:
         std::cell::RefCell<Vec<std::rc::Rc<std::cell::RefCell<crate::policy::Tracker>>>>,
-    pub(crate) policy_debounce: std::cell::RefCell<Vec<glib::SourceId>>,
     pub(crate) policy_watch_window: std::cell::RefCell<Option<adw::ApplicationWindow>>,
-    pub(crate) derive_generation: std::cell::Cell<u64>,
     /// One window's preview state, beside `SESSION`; newest slot wins.
     pub(crate) preview_players:
         std::cell::RefCell<Vec<std::rc::Rc<std::cell::RefCell<crate::preview::Player>>>>,
@@ -155,9 +153,7 @@ thread_local! {
         narrate_stages: std::cell::RefCell::new(Vec::new()),
         policy_senders: std::cell::RefCell::new(Vec::new()),
         policy_trackers: std::cell::RefCell::new(Vec::new()),
-        policy_debounce: std::cell::RefCell::new(Vec::new()),
         policy_watch_window: std::cell::RefCell::new(None),
-        derive_generation: std::cell::Cell::new(0),
         preview_players: std::cell::RefCell::new(Vec::new()),
         last_ask: std::cell::RefCell::new(None),
         last_open: std::cell::RefCell::new(None),

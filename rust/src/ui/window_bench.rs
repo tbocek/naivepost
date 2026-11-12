@@ -237,16 +237,6 @@ pub(crate) fn bench_box(
         mark_for_text.set_visible(bench::shows_mark(&current, edited));
         reset_for_text.set_visible(bench::shows_reset(&current, edited));
         reset_for_text.set_sensitive(bench::shows_reset(&current, edited));
-        if bench::is_context(&current) {
-            if let Some(window) = WINDOW_PAGE.with(
-                |WindowPage {
-                     policy_watch_window: w,
-                     ..
-                 }| w.borrow().clone(),
-            ) {
-                ui::schedule_policy_derive(&window);
-            }
-        }
     });
 
     (heading, scroller)

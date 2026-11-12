@@ -275,7 +275,36 @@ pub fn suggested_cut(before: &Cut, answer: &Applied) -> Cut {
         scene.cam = crate::effect_overlap::suggested_scene_cam_of(scene, &rows);
     }
     landed.fx = answer.effects.clone();
+    follow_the_speaker(&mut landed);
     landed
+}
+
+/// §F2.15: with two camera rows and Prepare's who.json, every landed scene is shown from the camera of
+/// whoever is speaking. Part of the suggestion, so its one Undo takes it back with the rest.
+fn follow_the_speaker(landed: &mut Cut) {
+    let recordings = crate::ui::page_recordings();
+    let rows = crate::timeline::rows_for(&recordings, landed);
+    let mut distinct = rows.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    // One camera row: nothing to choose between, nothing said.
+    if distinct.len() < 2 {
+        return;
+    }
+    let Some(Some(tree)) = session_tree() else {
+        return;
+    };
+    match crate::cut_follow::follow(&tree, &landed.segs, &recordings, &rows) {
+        Ok((segs, logs)) => {
+            landed.segs = segs;
+            for line in &logs {
+                crate::ui::window::log_line(line);
+            }
+        }
+        Err(why) => {
+            crate::ui::window::log_line(&format!(">>> cameras: nothing to follow -- {why}"))
+        }
+    }
 }
 
 /// At most one breath at each join of a suggestion (§ suggestions, [`crate::cut_breaths`]): read off the recordings

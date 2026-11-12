@@ -72,7 +72,7 @@ pub fn answer_at(
     let model = conf.model.clone();
     let paths = settings::from_environment();
     let system = policy_system(paths.as_ref(), &req);
-    let user = user_turn(&req, refusals);
+    let user = user_turn(&req, refusals, policy);
     let parts = cache_parts(&system, &user, &model, refusals.len());
     if let Some(tree) = tree {
         if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
@@ -96,7 +96,11 @@ pub fn answer_at(
     let mut answered = false;
     let mut proposals: Vec<Proposal> = Vec::new();
     let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
-        proposals.push(proposal_of(asked));
+        // Only `set_policy` proposes a value. A `get_context` or `finish` pushed here read as a
+        // set_policy naming no field: refused, and the whole derivation asked a second time.
+        if asked.name == "set_policy" {
+            proposals.push(proposal_of(asked));
+        }
         tool_answer(asked, &req, policy)
     };
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<Turn, String> {
@@ -307,10 +311,16 @@ fn policy_system(paths: Option<&Paths>, req: &DerivationRequest) -> String {
 /// ([`crate::prompt_assembly::user_message`] — `policy` has no row in the per-job table, so its
 /// system message keeps the whole house prompt and its user message gets the context block with no
 /// speech rule), plus -- on a retry -- the sentences its last answer was refused for.
-pub fn user_turn(req: &DerivationRequest, refusals: &[String]) -> String {
-    let material = "Set only the fields it settles. Call get_context if you want the fields and their ranges again, \
-         and finish when you are done.";
-    let mut out = crate::prompt_assembly::user_message(&req.context, req.prompt, material);
+pub fn user_turn(req: &DerivationRequest, refusals: &[String], policy: &Policy) -> String {
+    // The fields and their allowed values go with the first message: a model that had to call
+    // get_context to learn them spent a whole request on it, every derivation.
+    let fields = serde_json::Value::Array(fields_as_offered(policy)).to_string();
+    let material = format!(
+        "THE FIELDS you may set, each with its current value and the values it allows (an empty list: a number, or for language a code):\n{fields}\n\n\
+         Set only the fields the context settles, all of them in one answer, and call finish when you are done. \
+         get_context gives the context and this list again."
+    );
+    let mut out = crate::prompt_assembly::user_message(&req.context, req.prompt, &material);
     if !refusals.is_empty() {
         out.push_str("\n\nYour previous answer was refused:\n");
         for refusal in refusals {

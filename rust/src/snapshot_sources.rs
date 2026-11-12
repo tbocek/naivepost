@@ -41,6 +41,7 @@ fn camera_rows() -> Vec<Source> {
         narrator,
         sepvoice: false,
         tracks: vec![0],
+        sound_off: false,
     })
     .collect()
 }
@@ -102,6 +103,7 @@ pub fn staged() -> Project {
             sepvoice: false,
             // Both streams ticked: §4's face reads "<on>/<total>"; one of two would hear half its own audio.
             tracks: vec![0, 1],
+            sound_off: false,
         });
     }
     // The fixture's real separate recording: an audio row, which earns no footage toggle.
@@ -111,6 +113,7 @@ pub fn staged() -> Project {
         narrator: 1,
         sepvoice: true,
         tracks: vec![0],
+        sound_off: false,
     });
     Project {
         sources,

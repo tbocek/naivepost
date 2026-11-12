@@ -122,6 +122,7 @@ fn check_plan_lands_through_the_button(app: &adw::Application) {
             narrator: 1,
             sepvoice: false,
             tracks: vec![],
+            sound_off: false,
         },
     ];
     let window = ui::build_window(app, &model, "Prepare");

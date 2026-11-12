@@ -179,6 +179,7 @@ fn check_the_button(app: &adw::Application) {
             narrator: 0,
             sepvoice: false,
             tracks: vec![],
+            sound_off: false,
         }],
         ..Default::default()
     };

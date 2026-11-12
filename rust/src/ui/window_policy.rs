@@ -1,4 +1,4 @@
-//! F0.7's policy doors and F0.13's gear: the User Context tracker, the debounced derivation, the session
+//! F0.7's policy doors and F0.13's gear: the User Context tracker, the derivation a ▶ runs, the session
 //! policy's read/write doors, and the wires into them. Split out of `window.rs`, which is past its size
 //! budget; its doors are re-exported through `window`.
 
@@ -12,7 +12,6 @@ use crate::layout;
 use crate::policy;
 use crate::project::Origin;
 use crate::ui::settings;
-use crate::ui::window_doors::find_widget_by_name;
 use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindow) {
@@ -265,102 +264,4 @@ fn finish_derivation(
     // says what was asked rather than what is about to be.
     crate::ui::window::log_line(&crate::ui::run_bill::setup_line());
     derived
-}
-
-pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
-    let held = window.clone();
-    WINDOW_PAGE.with(
-        |WindowPage {
-             policy_debounce: pending,
-             ..
-         }| {
-            if let Some(id) = pending.borrow_mut().pop() {
-                id.remove();
-            }
-            let id = glib::timeout_add_local(
-                std::time::Duration::from_millis(policy::DEBOUNCE_MS),
-                move || {
-                    WINDOW_PAGE.with(
-                        |WindowPage {
-                             policy_debounce: p, ..
-                         }| p.borrow_mut().clear(),
-                    );
-                    if WINDOW_PAGE.with(
-                        |WindowPage {
-                             policy_senders: senders,
-                             ..
-                         }| senders.borrow().is_empty(),
-                    ) {
-                        derive_in_background(&held);
-                    } else {
-                        let derived = derive_policy();
-                        say_status(&held, &derived);
-                    }
-                    glib::ControlFlow::Break
-                },
-            );
-            pending.borrow_mut().push(id);
-        },
-    );
-}
-
-fn say_status(window: &adw::ApplicationWindow, derived: &policy::Derived) {
-    if let Some(status) = find_widget_by_name(window.upcast_ref(), "status-line")
-        .and_then(|w| w.downcast::<gtk::Label>().ok())
-    {
-        status.set_text(&derived.status());
-    }
-}
-
-fn derive_in_background(window: &adw::ApplicationWindow) {
-    let context = user_context();
-    let Some(session) =
-        WINDOW_PAGE.with(|WindowPage { session: slots, .. }| slots.borrow().last().cloned())
-    else {
-        return;
-    };
-    let policy = session.borrow().policy.clone();
-    let live = live_session_policy();
-    let generation = WINDOW_PAGE.with(
-        |WindowPage {
-             derive_generation: newest,
-             ..
-         }| {
-            newest.set(newest.get() + 1);
-            newest.get()
-        },
-    );
-    let (tell, told) = std::sync::mpsc::channel();
-    let asked = context.clone();
-    std::thread::spawn(move || {
-        crate::policy_call::set_live_policy(&live);
-        let mut policy = policy;
-        let derived = policy::derive(&mut policy, &asked, &mut crate::policy_call::answer);
-        // What the leg said went to THIS thread's log sink; it travels back with the answer.
-        let said = super::window_logs::window_logs();
-        let _ = tell.send((policy, derived, said));
-    });
-    let held = window.clone();
-    glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-        match told.try_recv() {
-            Ok((policy, derived, said)) => {
-                for line in said {
-                    crate::ui::window::log_line(&line);
-                }
-                let newest = WINDOW_PAGE.with(
-                    |WindowPage {
-                         derive_generation: newest,
-                         ..
-                     }| newest.get(),
-                ) == generation;
-                if newest && user_context() == context {
-                    let derived = finish_derivation(&session, policy, derived, &context);
-                    say_status(&held, &derived);
-                }
-                glib::ControlFlow::Break
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-            Err(_) => glib::ControlFlow::Break,
-        }
-    });
 }

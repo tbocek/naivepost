@@ -916,11 +916,13 @@ folder — never a copy, so the transcripts, frames and renders keep the name �
 and that rename is itself the check, failing onto a folder that already has work
 in it with the files left where they are and the log saying where. And Add source
 files… on Prepare ([F0.12](03-shell.md)): refused while a run works, since a copy is
-a run of its own; offering audio and video only, and — as the **copy into project** tick
-beside it says — either copying each pick into the
+a run of its own; offering audio and video only, and copying each pick into the
 project's `sources/` — through a `.part` renamed at the end, so an interrupted copy never
-looks like a finished file, and skipping one that is already there at the same size — or
-referencing it where it lies. A video arrives as footage, every new row arrives as voice 1, and the status counts what went in:
+looks like a finished file, and skipping one that is already there at the same size. There is
+no tick to reference a file where it lies: the project holds everything it is made of, and a
+recording whose recorder was killed before it closed the file (no length in its header) is
+written again on its way in, around the same pictures and sound, so the steps that ask a file
+how long it is get an answer. A video arrives as footage, every new row arrives as voice 1, and the status counts what went in:
 "added 2 source(s)", "added 1 of 3 — the rest were already in", "already in the session —
 nothing added". The copy counts on the run bar as it goes — the bar means how much of the import is
 on disk, so it moves with the bytes rather than with the rows — and each accepted file appears in the

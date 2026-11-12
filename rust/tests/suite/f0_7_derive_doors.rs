@@ -1,10 +1,9 @@
-//! F0.7 — the door the derivation runs behind on a press, and the debounce it waits on.
+//! F0.7 — the one door the derivation runs behind: a press of ▶. Typing asks no model.
 //!
 //! `tests/suite/policy_derive.rs` proves the rules (S1 defaults, S2 the request's shape, S3 validation,
 //! S4 what gets stored). What it cannot pin is the header line of §F0.7: "Runs after the User Context
-//! changes (debounced; on the next ▶)". The ▶ door has a widget test here — a press derives a context
-//! nobody derived from, once, and says the result in the log — plus the wait itself as a number, so a
-//! change to it cannot pass unnoticed.
+//! changes, on the next ▶". The ▶ door has a widget test here — a press derives a context nobody derived
+//! from, once, and says the result in the log.
 //!
 //! One application, one `connect_activate`, one `#[test]` per door: these checks mutate process-shared
 //! state (this window's live session policy and the sender slot), so each runs once in
@@ -19,44 +18,11 @@ use naivepost::policy::{self, Proposal};
 use naivepost::project::Origin;
 use naivepost::ui;
 
-static RAN_DEBOUNCE_LOGIC: AtomicBool = AtomicBool::new(false);
 static RAN_PRESS_DOOR: AtomicBool = AtomicBool::new(false);
 
 /// The context every check types: words the model can answer with one field, so an assertion about the
 /// stored value says the derivation ran rather than that a default happened to match.
 const CONTEXT: &str = "cut on the words, not the model";
-
-// ---------------------------------------------------------------------------
-// the debounce: §F0.7 says "debounced" and gives no number; `policy::DEBOUNCE_MS` is ours.
-// ---------------------------------------------------------------------------
-
-/// Whether a keystroke has been quiet long enough to earn the request. This is the arithmetic the
-/// program's timer applies (`window_policy::schedule_policy_derive` arms a `glib::timeout_add_local`
-/// for exactly this many ms and cancels a pending one on the next keystroke); the constant lives in
-/// `policy`, so pinning it here is what stops the wait drifting without a test noticing. No program-side
-/// predicate exists because the timer IS the implementation — see `fx_band::keystroke_lands`, which
-/// does the same job for §A.9's 300 ms.
-fn quiet_long_enough(pending_ms: u64) -> bool {
-    pending_ms >= policy::DEBOUNCE_MS
-}
-
-#[test]
-fn f0_7_debounce_the_wait_is_the_parameter_and_a_later_keystroke_cancels_the_first() {
-    common::pin_private_cwd();
-    // §F0.7's word is "debounced" and spec/03-shell.md names no number, so 500 ms is the app's own
-    // engineering constant (`policy.rs`: long enough that typing a paragraph costs one request).
-    assert_eq!(
-        policy::DEBOUNCE_MS,
-        500,
-        "§F0.7's debounce changed: update the spec text or the constant, not this test silently"
-    );
-    // A keystroke still inside the wait has NOT earned a request: that is what makes a burst of typing
-    // one call instead of one per letter.
-    assert!(!quiet_long_enough(policy::DEBOUNCE_MS - 1));
-    assert!(quiet_long_enough(policy::DEBOUNCE_MS));
-    assert!(quiet_long_enough(3 * policy::DEBOUNCE_MS));
-    RAN_DEBOUNCE_LOGIC.store(true, Ordering::SeqCst);
-}
 
 // ---------------------------------------------------------------------------
 // the harness the two widget doors share

@@ -51,7 +51,7 @@ Preview vs render, deliberately different: preview runs speed at one flat rate (
 
 ### F3.1 Zoom by hand
 
-<sub><!-- back -->[← F2.14](05-cut.md#f214-suggest-a-cut) · [↑ 06 Effects](#06--effects) · [all flows](11-flow-index.md#3-all-flows) · [F3.2 →](#f32-aspect-ratio)</sub>
+<sub><!-- back -->[← F2.15](05-cut.md#f215-the-camera-follows-the-speaker-new) · [↑ 06 Effects](#06--effects) · [all flows](11-flow-index.md#3-all-flows) · [F3.2 →](#f32-aspect-ratio)</sub>
 
 ![Zoom: the box drawn on the preview and its form](img/06-zoom.png)
 

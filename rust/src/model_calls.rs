@@ -193,7 +193,7 @@ pub fn produce(instruction: &str, frame_named: bool, cues: usize, languages: usi
     s
 }
 
-/// Setup: `policy ×1` — new, run when the User Context changes.
+/// Setup: `policy ×1` — new, run on the next ▶ after the User Context changed.
 pub fn setup() -> Summary {
     let mut s = Summary::new(Stage::Setup);
     s.calls.push(Call {

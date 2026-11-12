@@ -118,6 +118,7 @@ fn seed(tag: &str, kept: &[&str]) -> (PathBuf, Tree, String) {
             narrator: 1,
             sepvoice: false,
             tracks: vec![0],
+            sound_off: false,
         }],
         ..Project::default()
     };

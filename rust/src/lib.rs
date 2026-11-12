@@ -24,6 +24,7 @@ pub mod cut_delete;
 pub mod cut_effect_decisions;
 pub mod cut_effects_pass;
 pub mod cut_fold;
+pub mod cut_follow;
 pub mod cut_fps;
 pub mod cut_hear;
 pub mod cut_insert;
@@ -232,6 +233,7 @@ pub mod startup;
 pub mod stop_legs;
 pub mod subprocess;
 pub mod suggest;
+pub mod sync_sound;
 pub mod tab_states;
 pub mod text_gate;
 pub mod text_gate_call;
@@ -257,6 +259,7 @@ pub mod wave_build;
 pub mod web_browser;
 pub mod web_request_log;
 pub mod web_tools;
+pub mod who;
 pub mod word_list;
 
 /// The four pages, in the order the user works through them (spec/00-principles.md §1).

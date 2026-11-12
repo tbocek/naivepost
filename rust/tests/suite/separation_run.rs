@@ -376,6 +376,7 @@ fn source(path: &str, sepvoice: bool) -> Source {
         narrator: 1,
         sepvoice,
         tracks: vec![],
+        sound_off: false,
     }
 }
 

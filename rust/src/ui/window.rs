@@ -208,13 +208,13 @@ pub fn build_window_at(
     let stack = adw::ViewStack::new();
     // §1: measure each tab on its own, so `main-divider` shrinks to what THIS page needs.
     super::window_log::per_tab_stack(&stack);
-    let mut prepare_add: Option<(gtk::Button, gtk::CheckButton)> = None;
+    let mut prepare_add: Option<gtk::Button> = None;
     for page in Page::all() {
         let name = page.label();
-        let (child, add_, copy_) = page_box(name, project, &session, &status, &window);
+        let (child, add_) = page_box(name, &session, &status, &window);
         stack.add_titled_with_icon(&child, Some(name), name, page.icon());
-        if let (Some(add_), Some(copy_)) = (add_, copy_) {
-            prepare_add = Some((add_, copy_));
+        if let Some(add_) = add_ {
+            prepare_add = Some(add_);
         }
     }
     if !page.is_empty() {
@@ -480,8 +480,8 @@ the Produce settings",
     header.pack_end(&tab_info);
 
     // Handed over rather than found by name: `page_box` runs once per tab, so `find` would return an arbitrary page's button.
-    if let Some((add_, copy_)) = prepare_add {
-        wire_add(&window, &add_, &copy_, &bar, &status, &session);
+    if let Some(add_) = prepare_add {
+        wire_add(&window, &add_, &bar, &status, &session);
     }
 
     box_.append(&header);
@@ -894,7 +894,7 @@ pub use crate::ui::window_policy::{
     built_window, derive_policy, live_session_policy, main_window, policy_is_current,
     set_policy_sender_for_tests, set_session_context,
 };
-pub(crate) use crate::ui::window_policy::{schedule_policy_derive, user_context, wire_settings};
+pub(crate) use crate::ui::window_policy::{user_context, wire_settings};
 
 pub(crate) type LineStates =
     std::cell::RefCell<Vec<Rc<std::cell::RefCell<(cut_line::LinePos, cut_line::LineWriter)>>>>;
@@ -1045,8 +1045,8 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
 }
 
 pub use crate::ui::window_doors::{
-    add_sources_button, copy_into_project, find_source_widget, find_status, inputs_readout,
-    log_expander, mark_narration_owed, new_button, new_tooltip, open_button, outputs_folder_button,
+    add_sources_button, find_source_widget, find_status, inputs_readout, log_expander,
+    mark_narration_owed, new_button, new_tooltip, open_button, outputs_folder_button,
     outputs_label, outputs_readout, outputs_sentence, paint_project_title, play_button,
     play_tooltip, progress_bar, progress_tooltip, rescan_button, rescan_tooltip, run_queue,
     running_step, save_button, save_tooltip, session_handle, session_sources, set_marking_pass,

@@ -38,8 +38,9 @@ _files filter:
     # The display pool: started once and left running for the next run; a lock without its server is stale.
     for ((i = 0; i < jobs; i++)); do
         d=$((base + i))
-        if [ ! -S "/tmp/.X11-unix/X$d" ]; then
-            rm -f "/tmp/.X$d-lock"
+        # A socket without its server is as stale as a lock without one: a restart of the machine leaves both.
+        if [ ! -S "/tmp/.X11-unix/X$d" ] || ! pgrep -f "Xvfb :$d " >/dev/null; then
+            rm -f "/tmp/.X$d-lock" "/tmp/.X11-unix/X$d"
             # setsid: out of this run's process group and tree, so a runner that stops the run leaves the pool up.
             (setsid Xvfb ":$d" -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 &)
         fi

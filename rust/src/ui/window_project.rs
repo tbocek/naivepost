@@ -20,9 +20,7 @@ use crate::shell::Shell;
 use crate::startup;
 use crate::ui::rescan_apply;
 use crate::ui::source_rows;
-use crate::ui::window::{
-    copy_into_project, find_status, find_widget_by_name, log_line, progress_bar,
-};
+use crate::ui::window::{find_status, find_widget_by_name, log_line, progress_bar};
 use crate::ui::window_page_state::{WindowPage, PAGE as WINDOW_PAGE};
 
 pub(crate) const NEW_TIP: &str =
@@ -167,10 +165,9 @@ pub fn last_open_ask_for_test() -> Option<gtk::FileDialog> {
     )
 }
 
-/// Prepare's two widgets (F0.12): the button that adds files, and the tick that decides whether they come
-/// inside the project. The ellipsis is the single character §1's screenshot shows.
+/// Prepare's button that adds files (F0.12); every added file is copied into the project, so there is no
+/// tick beside it. The ellipsis is the single character §1's screenshot shows.
 pub(crate) const ADD_LABEL: &str = "Add source files…";
-pub(crate) const COPY_LABEL: &str = "copy into project";
 
 pub(crate) const RESCAN_TIP: &str = "Rescan inputs and outputs";
 
@@ -209,15 +206,14 @@ pub(crate) fn wire_rescan(
     });
 }
 
-/// Where a press of "Add source files…" goes: [`add_sources`] decides whether it may happen and what is
-/// copied or only referenced.
+/// Where a press of "Add source files…" goes: [`add_sources`] decides whether it may happen and how each
+/// file is copied in.
 ///
 /// A copy is a run of its own (F0.12 S0): it reports through the bookkeeping ▶ uses ([`add_files`] feeds
 /// `runqueue::Queue`) rather than a second bar. The session is the window's private copy, as in [`wire_rescan`].
 pub(crate) fn wire_add(
     window: &adw::ApplicationWindow,
     button: &gtk::Button,
-    copy_into: &gtk::CheckButton,
     bar: &Rc<RefCell<run::RunBar>>,
     status: &gtk::Label,
     session: &Rc<RefCell<Project>>,
@@ -226,15 +222,13 @@ pub(crate) fn wire_add(
     let bar = bar.clone();
     let status = status.clone();
     let session = session.clone();
-    // The tick is read when the chooser is answered, not when it opened.
-    let copy_into = copy_into.clone();
     button.connect_clicked(move |_| {
         // S0 first: no chooser opens while something else runs.
         if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
             status.set_text(reason);
             return;
         }
-        ask_add_sources(&window, &status, &session, &copy_into);
+        ask_add_sources(&window, &status, &session);
     });
 }
 
@@ -251,7 +245,6 @@ fn ask_add_sources(
     window: &adw::ApplicationWindow,
     status: &gtk::Label,
     session: &Rc<RefCell<Project>>,
-    copy_into: &gtk::CheckButton,
 ) {
     let chooser = gtk::FileChooserNative::builder()
         .title(add_sources::CHOOSER_TITLE)
@@ -275,7 +268,6 @@ fn ask_add_sources(
 
     let _status = status.clone();
     let _session = session.clone();
-    let _copy_into = copy_into.clone();
     // The same stand-in New, Save and Rescan use.
     let _root = std::env::current_dir().unwrap_or_default();
     let window = window.clone();
@@ -369,7 +361,8 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
     ) else {
         panic!("the window has no run bar, status line, session, queue or progress bar");
     };
-    let copy = copy_into_project(window).is_some_and(|tick| tick.is_active());
+    // F0.12 S2: every added file comes inside the project.
+    let copy = true;
     let root = std::env::current_dir().unwrap_or_default();
     let dir = startup::open_dir();
     // S0 again at the seam: pressed while a run is on, it says the sentence and stops before any byte moves.
@@ -412,25 +405,25 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
                 &format!("copying {}", landed.name),
             );
             paint_import(&progress, &queue);
-            // `add_sources`' own rule: the copy finds this file already on disk at its size and only stats it.
-            let added = add_sources::add(
+            // S2b: a recording that had to be mended on its way in says so.
+            if let Some(said) = &landed.said {
+                log_line(said);
+            }
+            // The bytes are in (the worker's `copy_one`); only the row is added here, so a mended copy is
+            // never written over by a second byte-for-byte copy.
+            let answer = add_sources::add_rows(
                 &mut session.borrow_mut(),
                 &root,
                 &dir,
                 std::slice::from_ref(&landed.file),
                 copy,
             );
-            match added {
-                Ok(answer) => {
-                    let (went_in, already) = counted.get();
-                    counted.set((
-                        went_in + answer.added,
-                        already + answer.asked - answer.added,
-                    ));
-                    draw_new_rows(&window, &session, &status);
-                }
-                Err(err) => log_line(&err),
-            }
+            let (went_in, already) = counted.get();
+            counted.set((
+                went_in + answer.added,
+                already + answer.asked - answer.added,
+            ));
+            draw_new_rows(&window, &session, &status);
         }
     };
     let finish = {
@@ -474,6 +467,8 @@ struct Landed {
     file: std::path::PathBuf,
     name: String,
     fraction: f64,
+    /// S2b's sentence when the file had to be mended, or could not be.
+    said: Option<String>,
 }
 
 /// The copy half of a press, on the worker. `Ok(true)` when ⏹ ended it between two files.
@@ -489,14 +484,33 @@ fn copy_files(
         .map(|file| file.metadata().map(|meta| meta.len()).unwrap_or(0))
         .sum();
     let mut done_bytes = 0u64;
+    // The configured ffmpeg and the ffprobe beside it, as every other step finds them.
+    let configured = crate::settings::from_environment()
+        .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
+        .unwrap_or_default();
+    let ffmpeg = crate::separate_media::program(&configured);
+    let ffprobe = crate::services::ffprobe_for(&configured, "ffprobe");
     for file in files {
         if crate::cancel_leg::cancelled() {
             return Ok(true);
         }
         let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+        let name = file
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut said = None;
         if copy {
-            // `add_sources`' own copy rule (`.part` then rename, same size skipped); not reimplemented here.
-            add_sources::copy_one(file, dir).map_err(|err| err.to_string())?;
+            // `add_sources`' own copy rule (`.part` then rename, same size skipped, a recording with no
+            // length in its header mended); not reimplemented here.
+            let repair = add_sources::Repair {
+                ffprobe: &ffprobe,
+                ffmpeg: &ffmpeg,
+                run: &crate::source_probe::run_ffprobe,
+            };
+            said = add_sources::copy_one(file, dir, Some(&repair))
+                .map_err(|err| err.to_string())?
+                .said(&name);
         }
         done_bytes += size;
         // The bar means bytes on disk, not task count: three tiny files beside one long recording are not mostly copied.
@@ -507,11 +521,9 @@ fn copy_files(
         };
         note(Landed {
             file: file.clone(),
-            name: file
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default(),
+            name,
             fraction,
+            said,
         });
     }
     Ok(false)

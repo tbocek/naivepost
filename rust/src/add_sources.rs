@@ -6,6 +6,51 @@ use std::path::{Path, PathBuf};
 
 use crate::layout::{self, Tree};
 use crate::project::{Project, Source};
+use crate::source_probe::Tool;
+
+/// The two programs a repair asks (F0.12 S2b), and the leg that starts them: the page passes
+/// [`crate::source_probe::run_ffprobe`], a test its stub.
+pub struct Repair<'a> {
+    pub ffprobe: &'a str,
+    pub ffmpeg: &'a str,
+    pub run: &'a Tool,
+}
+
+/// What became of one file of the pick (F0.12 S2, S2b).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Copied {
+    /// Not a source, already inside the project, or already in `sources/` as it should be.
+    Skipped,
+    /// Byte for byte.
+    Copied,
+    /// Its header held no length, so the copy was written again around the same pictures and sound;
+    /// `seconds` is the length the copy's header now gives.
+    Repaired { seconds: f64 },
+    /// Its header holds no length and writing it again did not give one: copied byte for byte, and
+    /// why the repair came to nothing.
+    Unrepaired(String),
+}
+
+impl Copied {
+    /// The log's sentence for a file that needed mending; nothing for one that did not.
+    pub fn said(&self, name: &str) -> Option<String> {
+        match self {
+            Copied::Repaired { seconds } => Some(format!(
+                ">>> {name}: the recording was never closed (no length in its header) -- the copy in sources/ is written again around the same {}, {} long",
+                if is_video(Path::new(name)) {
+                    "pictures and sound"
+                } else {
+                    "sound"
+                },
+                crate::tools::mm_ss(*seconds)
+            )),
+            Copied::Unrepaired(why) => Some(format!(
+                "!!! {name}: no length in its header and the repair gave none ({why}) -- copied as it is; the steps that need its length will say so"
+            )),
+            Copied::Skipped | Copied::Copied => None,
+        }
+    }
+}
 
 /// S0's refusal.
 pub const RUN_REFUSAL: &str = "a run is already active \u{2014} stop it first (\u{23f9})";
@@ -90,10 +135,6 @@ pub fn add(
     files: &[PathBuf],
     copy: bool,
 ) -> Result<Added, String> {
-    // S2's total comes from every file asked for, taken before the first byte moves.
-    let sizes: Vec<u64> = files.iter().map(|file| size(file)).collect();
-    let total: u64 = sizes.iter().sum();
-
     // S0's second half, and only for a copy: referencing in place needs no folder, so it is never
     // refused for the want of one.
     let tree = Tree::new(dir).ok();
@@ -102,12 +143,30 @@ pub fn add(
         fs::create_dir_all(&sources).map_err(|_| NO_SOURCES_DIR.to_string())?;
     }
 
+    if copy {
+        for file in files {
+            copy_in(file, &tree, dir, &sources, None)?;
+        }
+    }
+
+    Ok(add_rows(project, root, dir, files, copy))
+}
+
+/// S3 → S5 alone: the rows for files whose bytes are already where they belong. The window copies on
+/// a worker ([`copy_one`]) and calls this as each file lands, so a repaired copy is never written over.
+pub fn add_rows(
+    project: &mut Project,
+    root: &Path,
+    dir: &Path,
+    files: &[PathBuf],
+    copy: bool,
+) -> Added {
+    let sources = dir.join("sources");
+    let sizes: Vec<u64> = files.iter().map(|file| size(file)).collect();
+    let total: u64 = sizes.iter().sum();
     let mut progress = Vec::new();
     let mut done = 0u64;
-    for (file, size) in files.iter().zip(sizes) {
-        if copy {
-            copy_in(file, &tree, dir, &sources)?;
-        }
+    for size in sizes {
         done += size;
         progress.push(Progress { done, total });
     }
@@ -153,13 +212,13 @@ pub fn add(
     let asked = files.len();
     let status = status(added, already);
 
-    Ok(Added {
+    Added {
         added,
         asked,
         paths,
         progress,
         status,
-    })
+    }
 }
 
 /// S5's status.
@@ -178,32 +237,117 @@ fn inside(file: &Path, dir: &Path) -> bool {
 
 /// S2's copy of one file, per file rather than for the whole pick: F0.12's bar reports the bytes as
 /// they land, so the seam in `ui` needs to drive one file at a time and still use this rule alone.
-pub fn copy_one(file: &Path, dir: &Path) -> Result<(), String> {
+/// With `repair`, a recording whose header holds no length is mended on its way in (S2b).
+pub fn copy_one(file: &Path, dir: &Path, repair: Option<&Repair>) -> Result<Copied, String> {
     let tree = Tree::new(dir).ok();
     let sources = dir.join("sources");
-    copy_in(file, &tree, dir, &sources)
+    copy_in(file, &tree, dir, &sources, repair)
+}
+
+/// What a file's header says about its length.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Header {
+    Seconds(f64),
+    /// ffprobe reads the file and its header holds no length (`N/A`): a recorder killed mid-write,
+    /// whose container was never closed.
+    NoLength,
+    /// ffprobe cannot read the file at all: nothing a repair could start from.
+    Unreadable,
+}
+
+/// Ask ffprobe for the header's length.
+pub fn header(repair: &Repair, path: &Path) -> Header {
+    let shown = path.display().to_string();
+    let args = [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nw=1:nk=1",
+        shown.as_str(),
+    ];
+    match (repair.run)(repair.ffprobe, &args) {
+        Err(_) => Header::Unreadable,
+        Ok(answer) => match answer.trim().parse::<f64>() {
+            Ok(seconds) if seconds > 0.0 => Header::Seconds(seconds),
+            _ => Header::NoLength,
+        },
+    }
+}
+
+/// S2b's ffmpeg arguments: every stream written again into a closed container, nothing decoded.
+/// FLAC is the exception: its length lives in a header a stream copy carries over as it was, so its
+/// samples are packed again, which loses nothing.
+pub fn repair_args(from: &Path, to: &Path) -> Vec<String> {
+    let mut args: Vec<String> = ["-v", "error", "-y", "-i"].map(String::from).to_vec();
+    args.push(from.display().to_string());
+    args.extend(["-map", "0"].map(String::from));
+    if extension(from) == ".flac" {
+        args.extend(["-c:a", "flac"].map(String::from));
+    } else {
+        args.extend(["-c", "copy"].map(String::from));
+    }
+    args.push(to.display().to_string());
+    args
 }
 
 /// `.part` then rename, so a copy interrupted by a pulled drive or a full disk never looks like a
 /// finished file.
-fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Result<(), String> {
+fn copy_in(
+    file: &Path,
+    tree: &Option<Tree>,
+    dir: &Path,
+    sources: &Path,
+    repair: Option<&Repair>,
+) -> Result<Copied, String> {
     if !is_media(file) || inside(file, dir) {
-        return Ok(());
+        return Ok(Copied::Skipped);
     }
     let name = file
         .file_name()
         .ok_or_else(|| format!("{} has no name to copy it under", file.display()))?;
     let to = sources.join(name);
     if fs::metadata(&to).is_ok_and(|had| had.len() == size(file)) {
-        return Ok(());
+        return Ok(Copied::Skipped);
     }
-
-    let mut in_ =
-        BufReader::new(File::open(file).map_err(|err| format!("{}: {err}", file.display()))?);
     let part = match tree {
         Some(tree) => tree.copy_part(&name.to_string_lossy()),
         None => part_beside(&to),
     };
+
+    // S2b: only a file that can be read at all and says no length is mended; one ffprobe cannot
+    // open is copied as it is and the step that needs it says so.
+    let mut unrepaired = None;
+    if let Some(repair) = repair.filter(|repair| header(repair, file) == Header::NoLength) {
+        // A mended copy is a different size from its recording, so the size rule above never
+        // matches it: it is recognised by having the length its recording lacks.
+        if to.exists() && !newer(file, &to) && matches!(header(repair, &to), Header::Seconds(_)) {
+            return Ok(Copied::Skipped);
+        }
+        // ffmpeg picks the container by the name's ending, so the mended file is written beside
+        // the `.part` under the recording's own ending.
+        let mended = mended_beside(&part, file);
+        let asked = repair_args(file, &mended);
+        let flags: Vec<&str> = asked.iter().map(String::as_str).collect();
+        let ran = (repair.run)(repair.ffmpeg, &flags);
+        match (ran, header(repair, &mended)) {
+            (Ok(_), Header::Seconds(seconds)) => {
+                fs::rename(&mended, &to).map_err(|err| format!("{}: {err}", to.display()))?;
+                return Ok(Copied::Repaired { seconds });
+            }
+            (ran, _) => {
+                let _ = fs::remove_file(&mended);
+                unrepaired = Some(match ran {
+                    Err(err) => err.lines().last().unwrap_or("ffmpeg failed").to_string(),
+                    Ok(_) => "the file written again has no length either".to_string(),
+                });
+            }
+        }
+    }
+
+    let mut in_ =
+        BufReader::new(File::open(file).map_err(|err| format!("{}: {err}", file.display()))?);
     let mut out = File::create(&part).map_err(|err| format!("{}: {err}", part.display()))?;
     // The writer is a scope of its own: `io::copy` must have let go of `out` before the flush and
     // the rename, or the `.part` would still be open when it is moved onto its real name.
@@ -218,7 +362,26 @@ fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Resu
     }
     drop(out);
     fs::rename(&part, &to).map_err(|err| format!("{}: {err}", to.display()))?;
-    Ok(())
+    Ok(match unrepaired {
+        Some(why) => Copied::Unrepaired(why),
+        None => Copied::Copied,
+    })
+}
+
+/// Whether the recording was written after the copy: then the copy is of an older file.
+fn newer(file: &Path, copy: &Path) -> bool {
+    let stamp = |path: &Path| fs::metadata(path).and_then(|meta| meta.modified()).ok();
+    match (stamp(file), stamp(copy)) {
+        (Some(file), Some(copy)) => file > copy,
+        _ => true,
+    }
+}
+
+/// `<part>.<the recording's ending>`: in flight like the `.part`, and named so ffmpeg knows the container.
+fn mended_beside(part: &Path, file: &Path) -> PathBuf {
+    let mut mended = part.as_os_str().to_os_string();
+    mended.push(extension(file));
+    PathBuf::from(mended)
 }
 
 fn part_beside(to: &Path) -> PathBuf {

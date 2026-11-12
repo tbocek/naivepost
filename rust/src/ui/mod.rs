@@ -372,7 +372,6 @@ pub use window::add_files;
 pub use window::add_sources_button;
 pub use window::arrow_steps;
 pub use window::build_window;
-pub use window::copy_into_project;
 pub use window::derive_policy;
 pub use window::find_source_widget;
 pub use window::flush_line_on_close;

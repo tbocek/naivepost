@@ -70,6 +70,7 @@ fn project() -> Project {
             narrator: 1,
             sepvoice: false,
             tracks: vec![],
+            sound_off: false,
         }],
         ..Project::default()
     }

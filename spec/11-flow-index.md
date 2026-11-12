@@ -64,6 +64,9 @@ flowchart LR
 | [F1.11](04-prepare.md#f111-place-the-edges-of-a-mark) | Place the edges of a mark | [04](04-prepare.md) |
 | [F1.12](04-prepare.md#f112-hand-edit-the-text) | Hand-edit final.txt | [04](04-prepare.md) |
 | [F1.13](04-prepare.md#f113-the-sessions-word-list-shared-by-retakes-joins-finaltxt-and-subtitles) | The session's word list (glue, dress, respell) | [04](04-prepare.md) |
+| [F1.14](04-prepare.md#f114-line-the-recordings-up-by-sound-new) | Line the recordings up by sound (new) | [04](04-prepare.md) |
+| [F1.15](04-prepare.md#f115-a-video-whose-own-sound-is-off-hears-the-separate-recording-new) | A video whose own sound is off hears the separate recording (new) | [04](04-prepare.md) |
+| [F1.16](04-prepare.md#f116-who-is-who-new) | Who is who: each speaker's name and camera (new) | [04](04-prepare.md) |
 | [F2.1](05-cut.md#f21-play-the-recording-) | Play the recording | [05](05-cut.md) |
 | [F2.2](05-cut.md#f22-play-the-cut-) | Play the cut | [05](05-cut.md) |
 | [F2.3](05-cut.md#f23-review-every-cut-) | Review every cut | [05](05-cut.md) |
@@ -78,6 +81,7 @@ flowchart LR
 | [F2.12](05-cut.md#f212-insert-a-card-still-video-or-sound) | Insert a card, still, video or sound | [05](05-cut.md) |
 | [F2.13](05-cut.md#f213-undo-redo-revert-clear) | Undo, Redo, Revert, Clear | [05](05-cut.md) |
 | [F2.14](05-cut.md#f214-suggest-a-cut) | Suggest a cut | [05](05-cut.md) |
+| [F2.15](05-cut.md#f215-the-camera-follows-the-speaker-new) | The camera follows the speaker (new) | [05](05-cut.md) |
 | [F3.1](06-effects.md#f31-zoom-by-hand) | Zoom by hand | [06](06-effects.md) |
 | [F3.2](06-effects.md#f32-aspect-ratio) | Aspect ratio | [06](06-effects.md) |
 | [F3.3](06-effects.md#f33-speed-and-stop-by-hand) | Speed and stop by hand | [06](06-effects.md) |
@@ -116,7 +120,7 @@ flowchart LR
 | Cut | cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1 | the cut call with cutMode model only; each pass only when the policy switches it on |
 | Narrate | narrate ×1 (+web) · TTS ×(lines) | |
 | Produce | youtube ×1 (+web) · sd.cpp ×1 when drawn · translate ×(languages × batches) | translation batches run side by side up to the same `slots` |
-| Setup | policy ×1 | new; when the context changes |
+| Setup | policy ×1 | new; on the next ▶ after the context changed |
 
 ## 5. Where each kind of decision lives (directive A)
 

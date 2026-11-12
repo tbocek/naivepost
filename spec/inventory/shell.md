@@ -144,7 +144,7 @@ Project JSON (naivepost.json):
 | RunSteps | run_steps | ticked chain pages (rewrite: ignored, never written) |
 | Language | language | ASR language; absent → "en" |
 | NoNarration | no_narration | |
-| RefSources | reference_sources | inverted on purpose: absent = copy sources into the project |
+| RefSources | reference_sources | kept as stored and read by nothing: every added file is copied into the project (03 F0.12 S2). First rewrite: inverted on purpose, absent = copy sources into the project |
 | VidDir/AudDir | vid_dir/aud_dir | chooser folders (storePath) |
 | InDir/OutDir | in_dir/out_dir | legacy read only |
 | *Hints | describe_hints … narrate_hints | legacy, folded into prompts once |

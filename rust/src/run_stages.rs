@@ -91,6 +91,12 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
     match step {
         run::Step::Prepare => {
             let mut stages = Vec::new();
+            // §F1.14 first: every time written after it is on the session clock, so the recordings are
+            // lined up by their sound before a frame is named or a word is timed.
+            let sync = crate::sync_sound::stage(project);
+            if !sync.tasks.is_empty() {
+                stages.push(sync);
+            }
             let frames = crate::frames_run::stage(project);
             if !frames.tasks.is_empty() {
                 stages.push(frames);
@@ -121,6 +127,11 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             let fix = crate::fix_call::stage(project);
             if !fix.tasks.is_empty() {
                 stages.push(fix);
+            }
+            // §F1.16 last: who is who reads the session the fix stage merged.
+            let who = crate::who::stage(project);
+            if !who.tasks.is_empty() {
+                stages.push(who);
             }
             stages
         }
@@ -168,8 +179,8 @@ fn speech_stage(project: &Project) -> Stage {
 pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
     match name {
         "separation" => Some(prepare_run::Phase::Separate),
-        "frames" | "speech" => Some(prepare_run::Phase::Ingest),
-        "textgate" | "describe" | "fix" => Some(prepare_run::Phase::Understand),
+        "sync" | "frames" | "speech" => Some(prepare_run::Phase::Ingest),
+        "textgate" | "describe" | "fix" | "who" => Some(prepare_run::Phase::Understand),
         _ => None,
     }
 }
@@ -587,6 +598,24 @@ where
                 queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
+            if task.program == crate::who::WHO_TASK {
+                if let Err(error) = crate::who::run_task(task, &mut log) {
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
+                continue;
+            }
+            if task.program == crate::sync_sound::SYNC_TASK {
+                if let Err(error) = crate::sync_sound::run_task(task, &mut log) {
+                    return ended_by(&stop_flag, stage.name, error, ran, progress.left);
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
+                continue;
+            }
             if task.program == crate::frames_run::FRAMES_TASK {
                 if let Err(error) = crate::frames_run::run_task(task, &mut log) {
                     return ended_by(&stop_flag, stage.name, error, ran, progress.left);
@@ -825,6 +854,19 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     }
     let pcm = crate::decode_audio::ensure(&tree, &lane, &source_path, &conf.ffmpeg, log)?;
     crate::wave_build::ensure(&tree, &lane, &source_path, log)?;
+    // §F1.15: a row that carries the same sound as another is not transcribed again; it is written up as
+    // silence, as a start/stop is, so every later step finds its files and adds nothing from it.
+    if let Some(carrier) = crate::sync_sound::same_as(&tree, &lane) {
+        // The start/stop path of F1.3 S2 (a length under the shortest take): the row's files are written
+        // whole with nothing in them and no server is asked. Its own lines would call the row a start/stop,
+        // so this one is said in their place.
+        let _ = pcm;
+        crate::audio_task::transcribe_source(&tree, &paths, &lane, 0.0, &language, log)?;
+        log(&format!(
+            ">>> [{lane}] the same sound as {carrier} -- not transcribed again"
+        ));
+        return Ok(());
+    }
     let duration = probe_duration(&conf.ffmpeg, &pcm, log)?;
     let passage =
         crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language, log)?;

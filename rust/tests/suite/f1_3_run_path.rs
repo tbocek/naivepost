@@ -211,6 +211,7 @@ impl Scene {
             narrator: 0,
             sepvoice: VOICE_ON.load(Ordering::SeqCst) != 0,
             tracks: vec![],
+            sound_off: false,
         };
         naivepost::project::save(
             &Project {

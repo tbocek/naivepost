@@ -178,6 +178,7 @@ impl Scene {
                     narrator: 0,
                     sepvoice: true,
                     tracks: vec![],
+                    sound_off: false,
                 }],
                 ..Project::default()
             },

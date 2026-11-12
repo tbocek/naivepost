@@ -264,6 +264,7 @@ impl Scene {
                 narrator: 0,
                 sepvoice: false,
                 tracks: vec![],
+                sound_off: false,
             }],
             context: SCENE_CONTEXT.to_string(),
             ..Default::default()
@@ -334,6 +335,7 @@ impl Scene {
                     narrator: 0,
                     sepvoice: false,
                     tracks: vec![],
+                    sound_off: false,
                 }],
                 context: SCENE_CONTEXT.to_string(),
                 ..Default::default()
@@ -1040,6 +1042,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers
                 narrator: 0,
                 sepvoice: false,
                 tracks: vec![],
+                sound_off: false,
             },
             naivepost::project::Source {
                 path: "project:sources/commentary.wav".to_string(),
@@ -1047,6 +1050,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers
                 narrator: 1,
                 sepvoice: false,
                 tracks: vec![],
+                sound_off: false,
             },
         ],
         context: "a lecture on linear algebra".to_string(),
